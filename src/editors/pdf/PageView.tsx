@@ -4,6 +4,7 @@ import type { Annotation, Box, PageRef, TextAnn, Tool } from './types';
 import { annBox, normBox, resizeAnn, translateAnn, FONT_CSS, LINE_HEIGHT } from './geometry';
 import { uid } from '../../lib/util';
 import { MessageSquare } from 'lucide-react';
+import { scheduleRender, distanceFromView } from './renderQueue';
 
 export interface ToolStyle {
   color: string;
@@ -79,7 +80,7 @@ function PageViewInner(p: Props) {
     const io = new IntersectionObserver((entries) => {
       const e = entries[entries.length - 1];
       setVisible(e.isIntersecting);
-    }, { root: p.scrollRoot, rootMargin: '1200px 0px' });
+    }, { root: p.scrollRoot, rootMargin: '1000px 0px' });
     io.observe(el);
     return () => io.disconnect();
   }, [p.scrollRoot]);
@@ -102,33 +103,46 @@ function PageViewInner(p: Props) {
     }
     let task: any = null;
     let cancelled = false;
-    const t = setTimeout(async () => {
-      try {
-        const page = await p.doc!.getPage(p.pageRef.index + 1);
+    let cancelJob: (() => void) | null = null;
+    // Wait for zooming to settle, then queue the render by distance from the viewport.
+    const t = setTimeout(
+      () => {
         if (cancelled) return;
-        const dpr = window.devicePixelRatio || 1;
-        let rs = p.scale * dpr;
-        const maxPixels = 16_000_000;
-        if (p.width * p.height * rs * rs > maxPixels) rs = Math.sqrt(maxPixels / (p.width * p.height));
-        const vp = page.getViewport({ scale: rs, rotation: p.rotation });
-        const off = document.createElement('canvas');
-        off.width = Math.floor(vp.width);
-        off.height = Math.floor(vp.height);
-        task = page.render({ canvasContext: off.getContext('2d')!, viewport: vp });
-        await task.promise;
-        if (cancelled) return;
-        canvas.width = off.width;
-        canvas.height = off.height;
-        canvas.getContext('2d')!.drawImage(off, 0, 0);
-        setRendered({ scale: p.scale, rotation: p.rotation });
-        p.onCanvas(p.pageRef.id, canvas, rs);
-      } catch (err: any) {
-        if (err?.name !== 'RenderingCancelledException') console.error(err);
-      }
-    }, rendered ? 120 : 0);
+        cancelJob = scheduleRender(distanceFromView(wrapRef.current, p.scrollRoot), async () => {
+          if (cancelled) return;
+          try {
+            const page = await p.doc!.getPage(p.pageRef.index + 1);
+            if (cancelled) return;
+            const dpr = window.devicePixelRatio || 1;
+            let rs = p.scale * dpr;
+            const maxPixels = 12_000_000;
+            if (p.width * p.height * rs * rs > maxPixels) rs = Math.sqrt(maxPixels / (p.width * p.height));
+            const vp = page.getViewport({ scale: rs, rotation: p.rotation });
+            const off = document.createElement('canvas');
+            off.width = Math.floor(vp.width);
+            off.height = Math.floor(vp.height);
+            task = page.render({ canvasContext: off.getContext('2d', { willReadFrequently: false })!, viewport: vp });
+            await task.promise;
+            if (cancelled) return;
+            // Hand the finished bitmap to the visible canvas without another copy.
+            const bitmap = await createImageBitmap(off);
+            if (cancelled) return bitmap.close();
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            (canvas.getContext('bitmaprenderer') as ImageBitmapRenderingContext).transferFromImageBitmap(bitmap);
+            setRendered({ scale: p.scale, rotation: p.rotation });
+            p.onCanvas(p.pageRef.id, off, rs);
+          } catch (err: any) {
+            if (err?.name !== 'RenderingCancelledException') console.error(err);
+          }
+        });
+      },
+      rendered ? 140 : 0
+    );
     return () => {
       cancelled = true;
       clearTimeout(t);
+      cancelJob?.();
       task?.cancel();
     };
   }, [visible, p.doc, p.pageRef.index, p.scale, p.rotation]);

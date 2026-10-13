@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from './pdfjs';
 import type { PageRef } from './types';
+import { scheduleRender } from './renderQueue';
 
 interface ThumbProps {
   doc: PDFDocumentProxy | null;
@@ -37,7 +38,8 @@ const Thumb = memo(function Thumb(p: ThumbProps) {
     if (!visible || !p.doc || !canvasRef.current) return;
     let task: any;
     let cancelled = false;
-    (async () => {
+    const cancelJob = scheduleRender(50 + p.number, async () => {
+      if (cancelled) return;
       const page = await p.doc!.getPage(p.pageRef.index + 1);
       if (cancelled) return;
       const vp1 = page.getViewport({ scale: 1, rotation: p.rotation });
@@ -50,9 +52,10 @@ const Thumb = memo(function Thumb(p: ThumbProps) {
       try {
         await task.promise;
       } catch {}
-    })();
+    });
     return () => {
       cancelled = true;
+      cancelJob();
       task?.cancel();
     };
   }, [visible, p.doc, p.pageRef.index, p.rotation]);

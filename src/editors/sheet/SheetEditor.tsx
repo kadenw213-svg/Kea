@@ -239,11 +239,19 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
     b.style.setProperty('--sy', `${b.scrollTop}px`);
     const vw = b.clientWidth - HEADER_W,
       vh = b.clientHeight - HEADER_H;
-    const r0 = Math.max(fz.rows, geo.findRow(b.scrollTop + frozenH) - 2);
-    const r1 = Math.min(rows - 1, geo.findRow(b.scrollTop + vh) + 3);
-    const c0 = Math.max(fz.cols, geo.findCol(b.scrollLeft + frozenW) - 1);
-    const c1 = Math.min(cols - 1, geo.findCol(b.scrollLeft + vw) + 2);
-    setView((v) => (v.r0 === r0 && v.r1 === r1 && v.c0 === c0 && v.c1 === c1 ? v : { r0, r1, c0, c1 }));
+    const r0 = Math.max(fz.rows, geo.findRow(b.scrollTop + frozenH) - 8);
+    const r1 = Math.min(rows - 1, geo.findRow(b.scrollTop + vh) + 10);
+    const c0 = Math.max(fz.cols, geo.findCol(b.scrollLeft + frozenW) - 3);
+    const c1 = Math.min(cols - 1, geo.findCol(b.scrollLeft + vw) + 4);
+    setView((v) => {
+      // Keep the current window while the visible area is still inside it (fewer re-renders while scrolling).
+      const vr0 = geo.findRow(b.scrollTop + frozenH),
+        vr1 = geo.findRow(b.scrollTop + vh),
+        vc0 = geo.findCol(b.scrollLeft + frozenW),
+        vc1 = geo.findCol(b.scrollLeft + vw);
+      const inside = v.r0 <= Math.max(fz.rows, vr0 - 1) && v.r1 >= Math.min(rows - 1, vr1 + 1) && v.c0 <= Math.max(fz.cols, vc0) && v.c1 >= Math.min(cols - 1, vc1 + 1);
+      return inside ? v : { r0, r1, c0, c1 };
+    });
     if (b.scrollTop + b.clientHeight > b.scrollHeight - 300) setExtraRows((x) => x + 100);
     if (b.scrollLeft + b.clientWidth > b.scrollWidth - 300) setExtraCols((x) => x + 10);
   }, [geo, rows, cols, fz.rows, fz.cols, frozenW, frozenH]);

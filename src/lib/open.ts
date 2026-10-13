@@ -53,6 +53,7 @@ export function newFile(kind: EditorKind) {
   const names: Record<string, string> = {
     doc: 'Untitled document',
     sheet: 'Untitled spreadsheet',
+    slides: 'Untitled presentation',
     code: 'Untitled',
     pdf: 'Untitled'
   };

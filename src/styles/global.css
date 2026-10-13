@@ -787,3 +787,39 @@ button {
   animation: spin 1.4s linear infinite;
   color: var(--accent);
 }
+
+/* ---------- Motion ---------- */
+.pane:not([hidden]) {
+  animation: pane-in 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes pane-in {
+  from {
+    transform: translateY(6px);
+  }
+}
+.pdf-scroll,
+.doc-scroll,
+.sheet-body,
+.home,
+.thumbs,
+.code-host .cm-scroller {
+  overscroll-behavior: contain;
+}
+.tab,
+.btn,
+.icon-btn,
+.menu-item,
+.start-thumb,
+.recent-item,
+.thumb {
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

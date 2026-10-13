@@ -35,7 +35,7 @@
 }
 .card-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 16px;
 }
 .start-card {
@@ -71,6 +71,9 @@
 }
 .start-thumb.sheet {
   color: #81c995;
+}
+.start-thumb.slides {
+  color: #fcad70;
 }
 .start-thumb.code {
   color: #c58af9;

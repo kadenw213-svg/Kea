@@ -12,6 +12,10 @@ let mainWindow = null;
 let allowClose = false;
 let pendingOpen = collectFileArgs(process.argv);
 
+// Smooth, GPU-accelerated scrolling everywhere.
+app.commandLine.appendSwitch('enable-smooth-scrolling');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ]);
@@ -175,7 +179,8 @@ app.on('window-all-closed', () => {
 // ---------- Recent files ----------
 function readRecent() {
   try {
-    return JSON.parse(fs.readFileSync(RECENT_FILE(), 'utf8'));
+    const list = JSON.parse(fs.readFileSync(RECENT_FILE(), 'utf8'));
+    return Array.isArray(list) ? list.filter((r) => r && typeof r.path === 'string') : [];
   } catch {
     return [];
   }

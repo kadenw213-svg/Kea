@@ -4,7 +4,7 @@ import { useTabs } from '../store';
 import { FileIcon } from './FileIcon';
 import { MenuButton } from './Popover';
 import { newFile, openWithDialog } from '../lib/open';
-import { FileText, Sheet, FileCode2, FolderOpen } from 'lucide-react';
+import { FileText, Sheet, FileCode2, FolderOpen, Presentation } from 'lucide-react';
 import { requestCloseTab } from '../lib/closing';
 import { isMac } from '../lib/util';
 import { useUpdates, openUpdates } from './Updates';
@@ -41,6 +41,9 @@ export function TitleBar() {
               </button>
               <button className="menu-item" onClick={() => (newFile('sheet'), close())}>
                 <Sheet size={16} color="#81c995" /> New spreadsheet
+              </button>
+              <button className="menu-item" onClick={() => (newFile('slides'), close())}>
+                <Presentation size={16} color="#fcad70" /> New presentation
               </button>
               <button className="menu-item" onClick={() => (openWithDialog(), close())}>
                 <FolderOpen size={16} /> Open file… <span className="kbd">Ctrl+O</span>
@@ -116,6 +119,9 @@ export function TitleBar() {
               </button>
               <button className="menu-item" onClick={() => (newFile('sheet'), close())}>
                 <Sheet size={16} color="#81c995" /> Spreadsheet
+              </button>
+              <button className="menu-item" onClick={() => (newFile('slides'), close())}>
+                <Presentation size={16} color="#fcad70" /> Presentation
               </button>
               <button className="menu-item" onClick={() => (newFile('code'), close())}>
                 <FileCode2 size={16} color="#c58af9" /> Text file

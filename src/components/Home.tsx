@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileText, Sheet, FileCode2, FolderOpen, Combine, Images, Search, X, FolderSearch, FileType2 } from 'lucide-react';
+import { FileText, Sheet, FileCode2, FolderOpen, Combine, Images, Search, X, FolderSearch, FileType2, Presentation } from 'lucide-react';
 import { api, RecentEntry } from '../lib/api';
 import { newFile, openPaths, openWithDialog } from '../lib/open';
 import { FileIcon } from './FileIcon';
@@ -82,6 +82,12 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                 <Sheet size={34} />
               </div>
               <span>Spreadsheet</span>
+            </button>
+            <button className="start-card" onClick={() => newFile('slides')}>
+              <div className="start-thumb slides">
+                <Presentation size={34} />
+              </div>
+              <span>Presentation</span>
             </button>
             <button className="start-card" onClick={() => newFile('code')}>
               <div className="start-thumb code">

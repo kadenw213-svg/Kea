@@ -1,7 +1,7 @@
 # Slate Office
 
 A clean, dark, fully offline office suite for Windows (and macOS). One tabbed window for PDFs,
-documents, spreadsheets, text/code files and images. Nothing is uploaded anywhere.
+documents, spreadsheets, presentations, text/code files and images. Nothing is uploaded anywhere.
 
 ## Install / run
 
@@ -39,7 +39,14 @@ To ship a new version:
 - Fill PDF forms, combine PDFs, turn images into a PDF, print
 - "Dark pages" reading mode (view only)
 
-**Documents (.docx, .html)**
+**Presentations (.pptx)**
+- Opens PowerPoint files with their layouts, theme colours, backgrounds, placeholders, shapes,
+  pictures, bullets and speaker notes; saves back to .pptx
+- New decks with themes (Slate, Paper, Midnight, Ember, Mint) and layouts
+- Text boxes, shapes, lines, arrows, images; drag, resize, snap-to-centre guides, reorder slides
+- Full-screen presenting (F5), export to PDF, print
+
+**Documents (.docx, .doc, .odt, .rtf, .html)**
 - Word-style editor on a page: headings, fonts, sizes, colours, highlight, lists, checklists,
   tables (merge/split, add/remove rows & columns), images, links, page breaks, find & replace
 - Opens and saves real Word files with formatting kept (own .docx reader/writer)
@@ -75,7 +82,9 @@ To ship a new version:
 
 - PDF edits are written into the page content when you save; they stay editable until you close the file.
 - Encrypted PDFs open for viewing but can't be saved yet.
-- Old binary `.doc`, `.rtf`, `.odt` and presentations (`.pptx`) aren't supported yet.
+- Old `.doc` files open with all their text but simplified formatting; `.odt`/`.rtf`/`.doc` save as `.docx`.
+- Old binary `.ppt` and OpenDocument presentations (`.odp`) need converting to `.pptx` first.
+- PowerPoint charts, SmartArt and animations aren't shown yet; tables appear as text.
 - Spreadsheet charts, conditional formatting and cell borders aren't supported yet.
 
 ## Project layout
@@ -86,6 +95,7 @@ src/App.tsx      tabs, shortcuts, drag & drop
 src/editors/pdf  PDF viewer/editor (pdf.js render, pdf-lib save)
 src/editors/doc  document editor (TipTap) + docx import/export
 src/editors/sheet spreadsheet grid, formula engine, xlsx/csv io
+src/editors/slides presentation editor + pptx import/export
 src/editors/code text/code editor (CodeMirror)
 src/editors/image image viewer
 ```

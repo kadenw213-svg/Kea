@@ -73,6 +73,7 @@ import type { Tab } from '../../store';
 import { editorRegistry, setDirty, toast, prompt } from '../../store';
 import { FontSize, ParagraphFormat, PageBreak, ResizableImage, Search as SearchExt, searchKey, cleanPastedHtml } from './extensions';
 import { docxToHtml } from './docxImport';
+import { odtToHtml, rtfToHtml, docToHtml } from './otherFormats';
 import { jsonToDocx } from './docxExport';
 import { saveTabFile, exportFile, SaveFormat } from '../../lib/save';
 import { extOf, baseName } from '../../lib/fileTypes';
@@ -97,8 +98,14 @@ export default function DocEditor({ tab, active }: { tab: Tab; active: boolean }
       try {
         if (!tab.data) return setHtml('');
         const ext = extOf(tab.name);
-        if (ext === 'docx') setHtml(await docxToHtml(tab.data));
-        else {
+        const head = bytesToText(tab.data.subarray(0, 8));
+        if (ext === 'docx' || ext === 'docm' || ext === 'dotx') setHtml(await docxToHtml(tab.data));
+        else if (ext === 'odt') setHtml(await odtToHtml(tab.data));
+        else if (ext === 'rtf' || head.startsWith('{\\rtf')) setHtml(rtfToHtml(bytesToText(tab.data)));
+        else if (ext === 'doc' && tab.data[0] === 0xd0 && tab.data[1] === 0xcf) {
+          setHtml(docToHtml(tab.data));
+          toast('Opened an old Word file. All text is kept; some formatting may be simplified. Saving creates a .docx.');
+        } else {
           const text = bytesToText(tab.data);
           const body = new DOMParser().parseFromString(text, 'text/html').body;
           body.querySelectorAll('script, style, iframe, object, embed').forEach((n) => n.remove());

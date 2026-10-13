@@ -13,6 +13,7 @@ const PdfEditor = lazy(() => import('./editors/pdf/PdfEditor'));
 const DocEditor = lazy(() => import('./editors/doc/DocEditor'));
 const SheetEditor = lazy(() => import('./editors/sheet/SheetEditor'));
 const CodeEditor = lazy(() => import('./editors/code/CodeEditor'));
+const SlidesEditor = lazy(() => import('./editors/slides/SlidesEditor'));
 const ImageViewer = lazy(() => import('./editors/image/ImageViewer'));
 
 function EditorFor({ tab, active }: { tab: Tab; active: boolean }) {
@@ -23,6 +24,8 @@ function EditorFor({ tab, active }: { tab: Tab; active: boolean }) {
       return <DocEditor tab={tab} active={active} />;
     case 'sheet':
       return <SheetEditor tab={tab} active={active} />;
+    case 'slides':
+      return <SlidesEditor tab={tab} active={active} />;
     case 'code':
       return <CodeEditor tab={tab} active={active} />;
     case 'image':
