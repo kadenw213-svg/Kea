@@ -1,7 +1,7 @@
 {
   "name": "slate-office",
   "productName": "Slate Office",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A clean, dark, offline office suite: PDF editor, documents, spreadsheets, text and images.",
   "author": "kadenw213-svg",
   "license": "MIT",
@@ -94,72 +94,86 @@
     "fileAssociations": [
       {
         "ext": "pdf",
-        "name": "PDF Document",
+        "name": "SlateOffice.pdf",
+        "description": "PDF Document",
         "role": "Editor"
       },
       {
         "ext": "docx",
-        "name": "Word Document",
-        "role": "Editor"
-      },
-      {
-        "ext": "xlsx",
-        "name": "Excel Workbook",
-        "role": "Editor"
-      },
-      {
-        "ext": "csv",
-        "name": "CSV File",
-        "role": "Editor"
-      },
-      {
-        "ext": "txt",
-        "name": "Text File",
-        "role": "Editor"
-      },
-      {
-        "ext": "md",
-        "name": "Markdown File",
-        "role": "Editor"
-      },
-      {
-        "ext": "html",
-        "name": "HTML Document",
-        "role": "Editor"
-      },
-      {
-        "ext": "xls",
-        "name": "Excel 97-2003 Workbook",
-        "role": "Editor"
-      },
-      {
-        "ext": "ods",
-        "name": "OpenDocument Spreadsheet",
-        "role": "Editor"
-      },
-      {
-        "ext": "tsv",
-        "name": "Tab-separated Values",
-        "role": "Editor"
-      },
-      {
-        "ext": "pptx",
-        "name": "PowerPoint Presentation",
-        "role": "Editor"
-      },
-      {
-        "ext": "odt",
-        "name": "OpenDocument Text",
-        "role": "Editor"
-      },
-      {
-        "ext": "rtf",
-        "name": "Rich Text Document",
+        "name": "SlateOffice.docx",
+        "description": "Word Document",
         "role": "Editor"
       },
       {
         "ext": "doc",
-        "name": "Word 97-2003 Document",
+        "name": "SlateOffice.doc",
+        "description": "Word 97-2003 Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "odt",
+        "name": "SlateOffice.odt",
+        "description": "OpenDocument Text",
+        "role": "Editor"
+      },
+      {
+        "ext": "rtf",
+        "name": "SlateOffice.rtf",
+        "description": "Rich Text Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "html",
+        "name": "SlateOffice.html",
+        "description": "HTML Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "xlsx",
+        "name": "SlateOffice.xlsx",
+        "description": "Excel Workbook",
+        "role": "Editor"
+      },
+      {
+        "ext": "xls",
+        "name": "SlateOffice.xls",
+        "description": "Excel 97-2003 Workbook",
+        "role": "Editor"
+      },
+      {
+        "ext": "ods",
+        "name": "SlateOffice.ods",
+        "description": "OpenDocument Spreadsheet",
+        "role": "Editor"
+      },
+      {
+        "ext": "csv",
+        "name": "SlateOffice.csv",
+        "description": "CSV File",
+        "role": "Editor"
+      },
+      {
+        "ext": "tsv",
+        "name": "SlateOffice.tsv",
+        "description": "Tab-separated Values",
+        "role": "Editor"
+      },
+      {
+        "ext": "pptx",
+        "name": "SlateOffice.pptx",
+        "description": "PowerPoint Presentation",
+        "role": "Editor"
+      },
+      {
+        "ext": "txt",
+        "name": "SlateOffice.txt",
+        "description": "Text File",
+        "role": "Editor"
+      },
+      {
+        "ext": "md",
+        "name": "SlateOffice.md",
+        "description": "Markdown File",
         "role": "Editor"
       }
     ],
@@ -179,7 +193,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Slate Office"
+      "shortcutName": "Slate Office",
+      "include": "build/installer.nsh"
     },
     "mac": {
       "target": [

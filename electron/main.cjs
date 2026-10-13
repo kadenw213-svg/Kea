@@ -10,7 +10,21 @@ const MAX_RECENT = 30;
 
 let mainWindow = null;
 let allowClose = false;
+let rendererReady = false;
 let pendingOpen = collectFileArgs(process.argv);
+
+// Small rolling log in the user data folder, for diagnosing problems on real machines.
+function log(...parts) {
+  try {
+    const file = path.join(app.getPath('userData'), 'slate.log');
+    const line = `[${new Date().toISOString()}] ${parts.map((p) => (p instanceof Error ? p.stack : typeof p === 'string' ? p : JSON.stringify(p))).join(' ')}
+`;
+    if (fs.existsSync(file) && fs.statSync(file).size > 512 * 1024) fs.renameSync(file, file + '.old');
+    fs.appendFileSync(file, line);
+  } catch {}
+}
+process.on('uncaughtException', (err) => log('uncaughtException', err));
+process.on('unhandledRejection', (err) => log('unhandledRejection', err));
 
 // Smooth, GPU-accelerated scrolling everywhere.
 app.commandLine.appendSwitch('enable-smooth-scrolling');
@@ -22,16 +36,28 @@ protocol.registerSchemesAsPrivileged([
 
 // Single instance: opening a file from Explorer while the app runs sends it to the existing window.
 if (!app.requestSingleInstanceLock()) {
-  app.quit();
+  app.exit(0);
 } else {
   app.on('second-instance', (_e, argv) => {
     const files = collectFileArgs(argv);
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-      if (files.length) mainWindow.webContents.send('app:open-paths', files);
+    log('second-instance', files);
+    // If the window was lost (crash, never shown), bring a fresh one up instead of swallowing the request.
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      pendingOpen.push(...files);
+      if (app.isReady()) createWindow();
+      return;
     }
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    if (!mainWindow.isVisible()) mainWindow.show();
+    mainWindow.focus();
+    sendOpen(files);
   });
+}
+
+function sendOpen(files) {
+  if (!files.length) return;
+  if (mainWindow && !mainWindow.isDestroyed() && rendererReady) mainWindow.webContents.send('app:open-paths', files);
+  else pendingOpen.push(...files);
 }
 
 function collectFileArgs(argv) {
@@ -71,7 +97,21 @@ function createWindow() {
 
   Menu.setApplicationMenu(null);
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  // Show as soon as there is something to paint, and never leave the window hidden.
+  rendererReady = false;
+  const win = mainWindow;
+  const reveal = () => {
+    if (!win.isDestroyed() && !win.isVisible()) win.show();
+  };
+  win.once('ready-to-show', reveal);
+  win.webContents.once('did-finish-load', reveal);
+  setTimeout(reveal, 3000);
+  win.webContents.on('did-fail-load', (_e, code, desc) => log('did-fail-load', code, desc));
+  win.webContents.on('render-process-gone', (_e, details) => {
+    log('render-process-gone', details);
+    rendererReady = false;
+    if (!win.isDestroyed() && details.reason !== 'clean-exit') win.reload();
+  });
 
   if (DEV_URL) mainWindow.loadURL(DEV_URL);
   else mainWindow.loadURL('app://slate/index.html');
@@ -114,7 +154,10 @@ function createWindow() {
     mainWindow.webContents.send('app:before-close');
   });
 
-  mainWindow.on('closed', () => (mainWindow = null));
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    rendererReady = false;
+  });
 
   // Developer aid: SLATE_CAPTURE=path.png captures a screenshot after load, then exits.
   if (process.env.SLATE_CAPTURE) {
@@ -141,6 +184,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  log('start', app.getVersion(), process.argv.slice(1));
   protocol.handle('app', async (request) => {
     const url = new URL(request.url);
     let rel = decodeURIComponent(url.pathname);
@@ -168,8 +212,12 @@ app.whenReady().then(() => {
 app.on('open-file', (e, filePath) => {
   // macOS: file opened from Finder / dock.
   e.preventDefault();
-  if (mainWindow) mainWindow.webContents.send('app:open-paths', [filePath]);
-  else pendingOpen.push(filePath);
+  sendOpen([filePath]);
+});
+
+// Anything that quits the app (updates, shutdown) must not be blocked by the unsaved-work prompt.
+app.on('before-quit', () => {
+  allowClose = true;
 });
 
 app.on('window-all-closed', () => {
@@ -199,6 +247,7 @@ function readFileEntry(p) {
 
 // ---------- IPC ----------
 ipcMain.handle('app:get-pending-open', () => {
+  rendererReady = true;
   const files = pendingOpen;
   pendingOpen = [];
   return files;
@@ -346,7 +395,10 @@ function getUpdater() {
   autoUpdater.on('update-not-available', () => send({ status: 'latest' }));
   autoUpdater.on('download-progress', (p) => send({ status: 'downloading', percent: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', (info) => send({ status: 'ready', version: info.version }));
-  autoUpdater.on('error', (err) => send({ status: 'error', message: friendlyUpdateError(err) }));
+  autoUpdater.on('error', (err) => {
+    log('updater error', err);
+    send({ status: 'error', message: friendlyUpdateError(err) });
+  });
   updater = autoUpdater;
   return updater;
 }
@@ -379,5 +431,7 @@ ipcMain.handle('update:download', async () => {
 ipcMain.on('update:install', () => {
   // The renderer has already asked about unsaved work.
   allowClose = true;
-  setImmediate(() => getUpdater().quitAndInstall(false, true));
+  log('installing update');
+  // Silent install, then relaunch: no installer wizard to get stuck behind.
+  setImmediate(() => getUpdater().quitAndInstall(true, true));
 });
