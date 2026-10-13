@@ -162,6 +162,8 @@ function createWindow() {
   // Developer aid: SLATE_CAPTURE=path.png captures a screenshot after load, then exits.
   if (process.env.SLATE_CAPTURE) {
     mainWindow.webContents.once('did-finish-load', () => {
+      // Background windows don't run CSS animations, so turn them off for captures.
+      mainWindow.webContents.insertCSS('*,*::before,*::after{transition:none!important;animation:none!important}');
       setTimeout(async () => {
         if (process.env.SLATE_EVAL) {
           try {
@@ -185,6 +187,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   log('start', app.getVersion(), process.argv.slice(1));
+  require('./ai.cjs').register({ log, getWindow: () => mainWindow });
   protocol.handle('app', async (request) => {
     const url = new URL(request.url);
     let rel = decodeURIComponent(url.pathname);

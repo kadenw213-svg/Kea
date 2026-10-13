@@ -38,6 +38,76 @@ export interface SlateApi {
   downloadUpdate(): Promise<boolean>;
   installUpdate(): void;
   onUpdateState(cb: (s: UpdateState) => void): () => void;
+  ai: AiApi;
+}
+
+export type AiTier = 'light' | 'balanced' | 'best';
+export interface AiSettings {
+  slider: number;
+  tier: AiTier;
+  contextSize: number;
+  maxTokens: number;
+  gpu: boolean;
+  gpuLayers: 'auto' | number;
+  threads: number;
+  temperature: number;
+  keepLoaded: boolean;
+  custom: boolean;
+}
+export interface AiModelState {
+  tier: AiTier;
+  label: string;
+  model: string;
+  license: string;
+  size: number;
+  minRam: number;
+  blurb: string;
+  installed: boolean;
+  download: { status: 'downloading' | 'paused' | 'verifying' | 'done' | 'error'; received: number; total: number; error?: string } | null;
+}
+export interface AiHardware {
+  gpu: string | false;
+  gpuNames: string[];
+  vramTotal: number;
+  vramFree: number;
+  unified: boolean;
+  ramTotal: number;
+  ramFree: number;
+  cpuThreads: number;
+  cpuName: string;
+}
+export interface AiState {
+  hardware: AiHardware;
+  settings: AiSettings;
+  recommended: { slider: number; tier: AiTier; contextSize: number; maxTokens: number };
+  presets: { tier: AiTier; contextSize: number; maxTokens: number }[];
+  models: AiModelState[];
+}
+export interface AiGenerateRequest {
+  system?: string;
+  history?: { role: 'user' | 'assistant'; text: string }[];
+  prompt: string;
+  maxTokens?: number;
+  temperature?: number;
+  jsonSchema?: any;
+}
+export type AiEvent =
+  | { type: 'token'; id: string; text: string }
+  | { type: 'done'; id: string; text: string; tokensPerSecond?: number; aborted?: boolean }
+  | { type: 'error'; id: string; message: string };
+export interface AiApi {
+  state(): Promise<AiState>;
+  setSettings(patch: Partial<AiSettings>): Promise<AiSettings>;
+  resetSettings(): Promise<AiSettings>;
+  download(tier: AiTier): Promise<boolean>;
+  pauseDownload(tier: AiTier): Promise<boolean>;
+  deleteModel(tier: AiTier): Promise<boolean>;
+  generate(req: AiGenerateRequest): Promise<string>;
+  stop(id: string): Promise<boolean>;
+  count(text: string): Promise<number>;
+  benchmark(): Promise<{ loadMs: number; tokensPerSecond: number }>;
+  onEvent(cb: (e: AiEvent) => void): () => void;
+  onDownload(cb: (m: AiModelState) => void): () => void;
 }
 
 export interface UpdateState {

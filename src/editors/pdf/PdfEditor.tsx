@@ -64,6 +64,9 @@ import { ColorPicker } from '../../components/ColorPicker';
 import { imagesToPdf, imageToPng, mimeFor } from '../../lib/pdfTools';
 import { extOf, baseName } from '../../lib/fileTypes';
 import './pdf.css';
+import { AiButton } from '../../components/ai/AiButton';
+import { publishSelection } from '../../components/ai/aiStore';
+import { proxyAi, AiHooks } from '../../store';
 
 const CSS_UNITS = 96 / 72;
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
@@ -1003,15 +1006,73 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   const saveCopy = () =>
     exportFile(`${baseName(tab.name)} copy.pdf`, { name: 'PDF document', ext: 'pdf', build });
 
+  const pageText = async (ref: PageRef) => {
+    const rects = (await textRectsFor(ref)).slice().sort((a, b) => a.y - b.y || a.x - b.x);
+    const lines: { y: number; h: number; parts: TextItemRect[] }[] = [];
+    for (const r of rects) {
+      const line = lines.find((l) => Math.abs(l.y - r.y) < Math.max(2, Math.min(l.h, r.h) * 0.5));
+      if (line) line.parts.push(r);
+      else lines.push({ y: r.y, h: r.h, parts: [r] });
+    }
+    return lines
+      .sort((a, b) => a.y - b.y)
+      .map((l) => l.parts.sort((a, b) => a.x - b.x).map((p) => p.str).join(' ').replace(/\s+/g, ' ').trim())
+      .join('\n');
+  };
+  const aiRef = useRef<AiHooks>(null as any);
+  aiRef.current = {
+    noun: 'PDF',
+    insertLabel: 'Add as comment',
+    async getDocument() {
+      const sections: { id: string; label: string; text: string }[] = [];
+      const pages = history.get().pages;
+      for (let i = 0; i < pages.length; i++) {
+        const text = await pageText(pages[i]);
+        if (text.trim()) sections.push({ id: pages[i].id, label: `Page ${i + 1}`, text });
+      }
+      return { full: sections.map((s) => `[Page ${s.label.slice(5)}]\n${s.text}`).join('\n\n'), sections };
+    },
+    insertText(text) {
+      const ref = history.get().pages[currentIndex];
+      if (!ref) return false;
+      const s = history.get();
+      const a: Annotation = { id: uid(), pageId: ref.id, type: 'note', x: 24, y: 24, text: text.replace(/\*\*/g, ''), color: DEFAULTS.note };
+      history.commit({ ...s, annots: [...s.annots, a] });
+      markDirty();
+      setSelectedId(a.id);
+      scrollToPage(currentIndex);
+      return true;
+    },
+    reveal(quote) {
+      const words = quote.replace(/[“”"]/g, '').trim().split(/\s+/).slice(0, 6).join(' ');
+      if (!words) return false;
+      setSearchOpen(true);
+      setQuery(words);
+      return true;
+    }
+  };
   const latestHandlers = useRef({ save, print, build });
   latestHandlers.current = { save, print, build };
   useEffect(() => {
     editorRegistry.set(tab.id, {
       save: (a) => latestHandlers.current.save(a),
       print: () => latestHandlers.current.print(),
-      debugBuild: () => latestHandlers.current.build()
+      debugBuild: () => latestHandlers.current.build(),
+      ai: proxyAi(aiRef)
     });
   }, [tab.id]);
+
+  // Report highlighted PDF text to the AI sidebar.
+  useEffect(() => {
+    if (!active) return;
+    const onSel = () => {
+      const s = window.getSelection();
+      if (!s || s.isCollapsed || !s.anchorNode || !scrollRef.current?.contains(s.anchorNode)) return;
+      publishSelection(tab.id, s.toString());
+    };
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
+  }, [active]);
 
   // ---------- Keyboard ----------
   useEffect(() => {
@@ -1243,6 +1304,8 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
           <ZoomIn size={18} />
         </button>
         <div className="tb-sep" />
+        <div className="tb-end">
+        <AiButton />
         <button className="btn primary sm" onClick={() => save(false)} title="Save (Ctrl+S)">
           <Save size={16} /> Save
         </button>
@@ -1278,6 +1341,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
             </>
           )}
         </MenuButton>
+        </div>
       </div>
 
       {(showOptions || searchOpen) && (

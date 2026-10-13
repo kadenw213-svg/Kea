@@ -37,6 +37,28 @@ contextBridge.exposeInMainWorld('api', {
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.send('update:install'),
+  ai: {
+    state: () => ipcRenderer.invoke('ai:state'),
+    setSettings: (patch) => ipcRenderer.invoke('ai:set-settings', patch),
+    resetSettings: () => ipcRenderer.invoke('ai:reset-settings'),
+    download: (tier) => ipcRenderer.invoke('ai:download', tier),
+    pauseDownload: (tier) => ipcRenderer.invoke('ai:pause-download', tier),
+    deleteModel: (tier) => ipcRenderer.invoke('ai:delete-model', tier),
+    generate: (req) => ipcRenderer.invoke('ai:generate', req),
+    stop: (id) => ipcRenderer.invoke('ai:stop', id),
+    count: (text) => ipcRenderer.invoke('ai:count', text),
+    benchmark: () => ipcRenderer.invoke('ai:benchmark'),
+    onEvent: (cb) => {
+      const fn = (_e, m) => cb(m);
+      ipcRenderer.on('ai:event', fn);
+      return () => ipcRenderer.removeListener('ai:event', fn);
+    },
+    onDownload: (cb) => {
+      const fn = (_e, m) => cb(m);
+      ipcRenderer.on('ai:download', fn);
+      return () => ipcRenderer.removeListener('ai:download', fn);
+    }
+  },
   onUpdateState: (cb) => {
     const fn = (_e, state) => cb(state);
     ipcRenderer.on('update:state', fn);

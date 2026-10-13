@@ -3,6 +3,9 @@ import { TitleBar } from './components/TitleBar';
 import { HomeScreen } from './components/Home';
 import { Overlays } from './components/Overlays';
 import { UpdateDialog, initUpdates } from './components/Updates';
+import { AiSidebar } from './components/ai/AiSidebar';
+import { AiSettingsDialog } from './components/ai/AiSettings';
+import { toggleAi } from './components/ai/aiStore';
 import { useTabs, editorRegistry, Tab } from './store';
 import { api } from './lib/api';
 import { openEntry, openPaths, openWithDialog, newFile } from './lib/open';
@@ -72,6 +75,9 @@ export function App() {
       } else if (k === 'w') {
         e.preventDefault();
         requestCloseTab(activeId);
+      } else if (k === 'j' && !e.shiftKey) {
+        e.preventDefault();
+        toggleAi();
       } else if (k === 'p') {
         e.preventDefault();
         handle?.print?.();
@@ -84,6 +90,17 @@ export function App() {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+
+  // Mouse wheel scrolls toolbars sideways when they're wider than the window.
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      const bar = (e.target as HTMLElement)?.closest?.('.toolbar') as HTMLElement | null;
+      if (!bar || bar.scrollWidth <= bar.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      bar.scrollLeft += e.deltaY;
+    };
+    window.addEventListener('wheel', onWheel, { passive: true });
+    return () => window.removeEventListener('wheel', onWheel);
   }, []);
 
   // Drop files anywhere to open them.
@@ -131,6 +148,7 @@ export function App() {
   return (
     <div className="app">
       <TitleBar />
+      <div className="workspace-row">
       <div className="workspace">
         {tabs.map((t) => (
           <div key={`${t.id}:${t.version}`} className="pane" hidden={t.id !== activeId}>
@@ -150,12 +168,15 @@ export function App() {
           </div>
         ))}
       </div>
+      <AiSidebar />
+      </div>
       {dragging && (
         <div className="drop-overlay">
           <div>Drop to open</div>
         </div>
       )}
       <UpdateDialog />
+      <AiSettingsDialog />
       <Overlays />
     </div>
   );

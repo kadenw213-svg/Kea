@@ -23,6 +23,9 @@ import { extOf, baseName } from '../../lib/fileTypes';
 import { api } from '../../lib/api';
 import { MenuButton } from '../../components/Popover';
 import './code.css';
+import { AiButton } from '../../components/ai/AiButton';
+import { publishSelection } from '../../components/ai/aiStore';
+import { proxyAi, AiHooks } from '../../store';
 
 const LANGS: Record<string, { name: string; ext: () => any }> = {
   js: { name: 'JavaScript', ext: () => javascript() },
@@ -128,6 +131,10 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
         lang ? lang.ext() : [],
         EditorView.updateListener.of((u) => {
           if (u.docChanged) setDirty(tab.id, true);
+          if (u.selectionSet) {
+            const m = u.state.selection.main;
+            if (m.to > m.from) publishSelection(tab.id, u.state.sliceDoc(m.from, m.to));
+          }
           if (u.docChanged || u.selectionSet) {
             const s = u.state.selection.main;
             const line = u.state.doc.lineAt(s.head);
@@ -183,10 +190,60 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
       `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(tab.name)}</title><style>@page{margin:0.6in}body{margin:0}pre{font:10pt Consolas,'Courier New',monospace;white-space:pre-wrap;word-break:break-word}</style></head><body><pre>${escapeHtml(text)}</pre></body></html>`
     );
   };
+  const aiRef = useRef<AiHooks>(null as any);
+  aiRef.current = {
+    noun: 'file',
+    insertLabel: 'Insert below',
+    async getDocument() {
+      const v = viewRef.current;
+      const text = v ? v.state.doc.toString() : '';
+      const lines = text.split('\n');
+      const sections: { id: string; label: string; text: string }[] = [];
+      for (let i = 0; i < lines.length; i += 60) sections.push({ id: `l${i + 1}`, label: `Lines ${i + 1}–${Math.min(lines.length, i + 60)}`, text: lines.slice(i, i + 60).join('\n') });
+      return { full: text, sections };
+    },
+    replaceSelection(text) {
+      const v = viewRef.current;
+      const m = v?.state.selection.main;
+      if (!v || !m || m.from === m.to) return false;
+      v.dispatch({ changes: { from: m.from, to: m.to, insert: text }, selection: { anchor: m.from + text.length } });
+      v.focus();
+      return true;
+    },
+    insertText(text) {
+      const v = viewRef.current;
+      if (!v) return false;
+      const line = v.state.doc.lineAt(v.state.selection.main.to);
+      const insert = '\n' + text;
+      v.dispatch({ changes: { from: line.to, insert }, selection: { anchor: line.to + insert.length } });
+      v.focus();
+      return true;
+    },
+    reveal(quote) {
+      const v = viewRef.current;
+      if (!v) return false;
+      const doc = v.state.doc.toString();
+      const q = quote.trim().slice(0, 80);
+      let i = doc.indexOf(q);
+      if (i < 0) i = doc.toLowerCase().indexOf(q.toLowerCase());
+      if (i < 0) return false;
+      v.dispatch({ selection: { anchor: i, head: i + q.length }, scrollIntoView: true });
+      v.focus();
+      return true;
+    },
+    replaceQuote(quote, replacement) {
+      const v = viewRef.current;
+      if (!v) return false;
+      const i = v.state.doc.toString().indexOf(quote);
+      if (i < 0) return false;
+      v.dispatch({ changes: { from: i, to: i + quote.length, insert: replacement } });
+      return true;
+    }
+  };
   const handlers = useRef({ save, print });
   handlers.current = { save, print };
   useEffect(() => {
-    editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), print: () => handlers.current.print(), debugBuild: () => build() });
+    editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), print: () => handlers.current.print(), debugBuild: () => build(), ai: proxyAi(aiRef) });
   }, [tab.id]);
 
   const cmd = (fn: (v: EditorView) => boolean) => {
@@ -222,6 +279,8 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
           <Plus size={16} />
         </button>
         <div className="tb-spacer" />
+        <div className="tb-end">
+        <AiButton />
         <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => save(false)} title="Save (Ctrl+S)">
           <Save size={16} /> Save
         </button>
@@ -244,6 +303,7 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
             </>
           )}
         </MenuButton>
+        </div>
       </div>
       <div className="code-host" ref={hostRef} />
       <div className="statusbar">

@@ -83,6 +83,9 @@ import { MenuButton } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
 import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
+import { docAiHooks } from './aiHooks';
+import { AiButton } from '../../components/ai/AiButton';
+import { publishSelection } from '../../components/ai/aiStore';
 
 const FONTS = ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Segoe UI', 'Times New Roman', 'Trebuchet MS', 'Verdana', 'Courier New', 'Consolas', 'Comic Sans MS'];
 const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72];
@@ -262,9 +265,23 @@ function DocEditorInner({ tab, active, initialHtml }: { tab: Tab; active: boolea
       save: (a) => handlers.current.save(a),
       print: () => handlers.current.print(),
       exportPdf: async () => void (await handlers.current.exportPdf()),
-      debugBuild: () => jsonToDocx(editorRef.current!.getJSON() as any)
+      debugBuild: () => jsonToDocx(editorRef.current!.getJSON() as any),
+      ai: docAiHooks(() => editorRef.current)
     });
   }, [tab.id]);
+
+  // Report highlighted text to the AI sidebar.
+  useEffect(() => {
+    if (!editor) return;
+    const onSel = () => {
+      const { from, to } = editor.state.selection;
+      if (to > from) publishSelection(tab.id, editor.state.doc.textBetween(from, to, '\n', ' '));
+    };
+    editor.on('selectionUpdate', onSel);
+    return () => {
+      editor.off('selectionUpdate', onSel);
+    };
+  }, [editor])
 
   // ---------- Shortcuts ----------
   useEffect(() => {
@@ -601,6 +618,8 @@ function Toolbar(p: {
         {p.paper === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
       </B>
       <div className="tb-sep" />
+      <div className="tb-end">
+      <AiButton />
       <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => p.onSave(false)} title="Save (Ctrl+S)">
         <Save size={16} /> Save
       </button>
@@ -633,6 +652,7 @@ function Toolbar(p: {
           </>
         )}
       </MenuButton>
+      </div>
     </div>
   );
 }

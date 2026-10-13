@@ -28,6 +28,14 @@ To ship a new version:
 
 ## What it does
 
+**AI sidebar (runs on your computer)**
+- Highlight text, press **AI** or **Ctrl+J**: the text appears in the sidebar; ask questions about it,
+  or use **Explain**, **Summarize** or **Suggest edits** (one-click Apply, Ctrl+Z to undo)
+- Switch to **Whole document** to work with everything; long files are read in parts
+- Works in documents, PDFs, spreadsheets, presentations and code; answers can be inserted back
+- Fully offline after a one-time model download (1–4.7 GB). Picks a model for your PC automatically;
+  **AI settings** (S menu) has a speed ⟷ quality slider, GPU/threads/context options and a speed test
+
 **PDF editor**
 - Fast viewer with thumbnails, zoom (Ctrl+wheel), search (Ctrl+F) and selectable text
 - **Edit existing text**: click any line, retype it (matches font size, colour and background)

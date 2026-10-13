@@ -8,7 +8,8 @@ import { FileText, Sheet, FileCode2, FolderOpen, Presentation } from 'lucide-rea
 import { requestCloseTab } from '../lib/closing';
 import { isMac } from '../lib/util';
 import { useUpdates, openUpdates } from './Updates';
-import { RefreshCw, Info, Github } from 'lucide-react';
+import { RefreshCw, Info, Github, Sparkles } from 'lucide-react';
+import { useAi } from './ai/aiStore';
 
 export function TitleBar() {
   const { tabs, activeId, setActive, moveTab } = useTabs();
@@ -34,6 +35,9 @@ export function TitleBar() {
               <button className="menu-item" onClick={() => (openUpdates(), close())}>
                 <RefreshCw size={16} /> {hasUpdate ? 'Update available' : 'Check for updates'}
                 {hasUpdate && <span className="kbd" style={{ color: 'var(--accent)' }}>●</span>}
+              </button>
+              <button className="menu-item" onClick={() => (useAi.getState().set({ settingsOpen: true }), close())}>
+                <Sparkles size={16} /> AI settings
               </button>
               <div className="menu-sep" />
               <button className="menu-item" onClick={() => (newFile('doc'), close())}>

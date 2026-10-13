@@ -823,3 +823,19 @@ button {
     scroll-behavior: auto !important;
   }
 }
+
+/* Primary actions stay pinned to the right of every toolbar, even when space is tight. */
+.tb-end {
+  position: sticky;
+  right: -10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 0 10px 0 10px;
+  background: var(--surface-2);
+  flex-shrink: 0;
+  height: 100%;
+  box-shadow: -14px 0 14px -8px var(--surface-2);
+  z-index: 1;
+}

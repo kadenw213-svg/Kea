@@ -53,6 +53,9 @@ import { mimeFor } from '../../lib/pdfTools';
 import { MenuButton } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
 import './slides.css';
+import { AiButton } from '../../components/ai/AiButton';
+import { publishSelection } from '../../components/ai/aiStore';
+import { proxyAi, AiHooks } from '../../store';
 
 function useHistory<T>(initial: T) {
   const state = useRef(initial);
@@ -485,11 +488,74 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
   const print = async () => {
     await api.printHtml(staticHtml());
   };
+  const aiRef = useRef<AiHooks>(null as any);
+  aiRef.current = {
+    noun: 'presentation',
+    insertLabel: 'Add to slide',
+    async getDocument() {
+      const d = h.get();
+      const sections = d.slides.map((s, i) => {
+        const texts = s.els.filter((e) => e.html && !e.locked).sort((a, b) => (a.role === 'title' ? -1 : b.role === 'title' ? 1 : a.y - b.y)).map((e) => htmlText(e.html!));
+        return { id: s.id, label: `Slide ${i + 1}`, text: `Slide ${i + 1}:\n${texts.join('\n')}${s.notes ? `\nSpeaker notes: ${s.notes}` : ''}` };
+      });
+      return { full: sections.map((x) => x.text).join('\n\n'), sections };
+    },
+    insertText(text) {
+      const plain = text.replace(/\*\*/g, '');
+      if (editingId && textNode.current) {
+        textNode.current.focus();
+        document.execCommand('insertText', false, plain);
+        return true;
+      }
+      const lines = plain.split('\n').filter((l) => l.trim());
+      const isList = lines.length > 1 && lines.every((l) => /^\s*([-*•]|\d+[.)])\s+/.test(l));
+      const html = isList
+        ? `<ul>${lines.map((l) => `<li>${escapeHtml(l.replace(/^\s*([-*•]|\d+[.)])\s+/, ''))}</li>`).join('')}</ul>`
+        : lines.map((l) => `<p>${escapeHtml(l)}</p>`).join('');
+      const el = textEl({ x: deck.w * 0.1, y: deck.h * 0.25, w: deck.w * 0.8, h: deck.h * 0.6, size: 20, color: guessTextColor(slide.bg), html });
+      addEl(el);
+      return true;
+    },
+    replaceSelection(text) {
+      const plain = text.replace(/\*\*/g, '');
+      const s = window.getSelection();
+      if (editingId && textNode.current && s && !s.isCollapsed) {
+        document.execCommand('insertText', false, plain);
+        return true;
+      }
+      if (sel && sel.html !== undefined) {
+        updateEl(sel.id, { html: plain.split('\n').filter((l) => l.trim()).map((l) => `<p>${escapeHtml(l)}</p>`).join('') });
+        return true;
+      }
+      return false;
+    },
+    reveal(quote) {
+      const q = quote.replace(/[“”"]/g, '').trim().toLowerCase().slice(0, 40);
+      const i = h.get().slides.findIndex((s) => s.els.some((e) => e.html && htmlText(e.html).toLowerCase().includes(q)) || s.notes.toLowerCase().includes(q));
+      if (i < 0) return false;
+      setIdx(i);
+      return true;
+    }
+  };
   const handlers = useRef({ save, print });
   handlers.current = { save, print };
   useEffect(() => {
-    editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), print: () => handlers.current.print(), debugBuild: () => writePptx(h.get()) });
+    editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), print: () => handlers.current.print(), debugBuild: () => writePptx(h.get()), ai: proxyAi(aiRef) });
   }, [tab.id]);
+
+  // Report highlighted text (while editing) or the selected box's text to the AI sidebar.
+  useEffect(() => {
+    if (!active) return;
+    const onSel = () => {
+      const s = window.getSelection();
+      if (s && !s.isCollapsed && textNode.current && s.anchorNode && textNode.current.contains(s.anchorNode)) publishSelection(tab.id, s.toString());
+    };
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
+  }, [active]);
+  useEffect(() => {
+    if (sel?.html && !editingId) publishSelection(tab.id, htmlText(sel.html));
+  }, [selId]);
 
   // ---------- Keyboard ----------
   useEffect(() => {
@@ -709,9 +775,11 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
         <B on={notesOpen} title="Speaker notes" onClick={() => setNotesOpen((o) => !o)}>
           <StickyNote size={18} />
         </B>
+        <div className="tb-end">
         <button className="btn tonal sm" onClick={() => (finishEditing(), setPresenting(idx))} title="Present from this slide (Shift+F5) — F5 from start">
           <Play size={15} /> Present
         </button>
+        <AiButton />
         <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => save(false)} title="Save (Ctrl+S)">
           <Save size={16} /> Save
         </button>
@@ -737,6 +805,7 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
             </>
           )}
         </MenuButton>
+        </div>
       </div>
 
       <div className="slides-body">
@@ -901,6 +970,11 @@ function Presenter({ deck, start, onExit }: { deck: Deck; start: number; onExit(
 }
 
 // ---------- HTML helpers ----------
+function htmlText(html: string): string {
+  const d = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  d.querySelectorAll('p, li, br, div').forEach((n) => n.append('\n'));
+  return (d.body.textContent || '').replace(/\n{2,}/g, '\n').trim();
+}
 function stripStyle(html: string, prop: string): string {
   const d = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html').body.firstElementChild as HTMLElement;
   d.querySelectorAll<HTMLElement>('[style]').forEach((n) => {

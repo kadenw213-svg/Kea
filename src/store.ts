@@ -19,6 +19,47 @@ export interface EditorHandle {
   exportPdf?(): Promise<void>;
   /** Produce the file bytes without saving (used by automated checks). */
   debugBuild?(): Promise<Uint8Array>;
+  /** Hooks the AI sidebar uses to read and change the document. */
+  ai?: AiHooks;
+}
+
+export interface DocSection {
+  id: string;
+  label: string;
+  text: string;
+}
+
+export interface AiHooks {
+  /** Short noun for the UI: "document", "PDF", "sheet", "presentation", "file". */
+  noun: string;
+  getDocument(): Promise<{ full: string; sections: DocSection[] }>;
+  /** Replace the current selection; false if this editor can't. */
+  replaceSelection?(text: string): boolean;
+  /** Insert after the selection / at the cursor (or as a comment for PDFs). */
+  insertText?(text: string): boolean;
+  /** Scroll to and highlight a quote from the document. */
+  reveal?(quote: string): boolean;
+  /** Find a quote and replace it (used by "Apply" on suggestions). */
+  replaceQuote?(quote: string, replacement: string): boolean;
+  insertLabel?: string;
+}
+
+/** Stable hooks object that always calls the editor's latest implementation. */
+export function proxyAi(ref: { current: AiHooks }): AiHooks {
+  const c = ref.current;
+  return {
+    get noun() {
+      return ref.current.noun;
+    },
+    get insertLabel() {
+      return ref.current.insertLabel;
+    },
+    getDocument: () => ref.current.getDocument(),
+    ...(c.replaceSelection ? { replaceSelection: (t: string) => ref.current.replaceSelection?.(t) ?? false } : {}),
+    ...(c.insertText ? { insertText: (t: string) => ref.current.insertText?.(t) ?? false } : {}),
+    ...(c.reveal ? { reveal: (q: string) => ref.current.reveal?.(q) ?? false } : {}),
+    ...(c.replaceQuote ? { replaceQuote: (q: string, r: string) => ref.current.replaceQuote?.(q, r) ?? false } : {})
+  };
 }
 
 interface TabState {

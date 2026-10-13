@@ -69,6 +69,9 @@ import { clamp, escapeHtml, modKey } from '../../lib/util';
 import { MenuButton, Popover } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
 import './sheet.css';
+import { AiButton } from '../../components/ai/AiButton';
+import { publishSelection } from '../../components/ai/aiStore';
+import { proxyAi, AiHooks } from '../../store';
 
 interface Pos {
   r: number;
@@ -1018,11 +1021,68 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
   };
   const exportPdf = () => exportFile(`${baseName(tab.name)}.pdf`, { name: 'PDF', ext: 'pdf', build: () => api.pdfFromHtml(printHtml()) });
 
+  const aiRef = useRef<AiHooks>(null as any);
+  aiRef.current = {
+    noun: 'spreadsheet',
+    insertLabel: 'Put in cells',
+    async getDocument() {
+      const w = h.get();
+      const c = new Calc(w);
+      const sections = w.sheets.map((s) => {
+        const u = usedRange(s);
+        const lines: string[] = [];
+        for (let r = 0; r < Math.min(u.rows, 2000); r++) {
+          const row: string[] = [];
+          for (let col = 0; col < Math.min(u.cols, 60); col++) row.push(formatValue(c.value(s, r, col), s.cells[key(r, col)]?.s));
+          lines.push(row.join('\t').replace(/\t+$/, ''));
+        }
+        return { id: s.id, label: `Sheet ${s.name}`, text: `Sheet "${s.name}"\n` + lines.join('\n') };
+      });
+      return { full: sections.map((x) => x.text).join('\n\n'), sections };
+    },
+    insertText(text) {
+      const plain = text.replace(/\*\*/g, '').replace(/^\s*[-*•]\s+/gm, '').trim();
+      // A formula reply goes into the active cell; tables/lists fill downwards.
+      const formula = plain.match(/^=\S.*$/m);
+      if (formula && plain.split('\n').length <= 3) {
+        setInput(cur.r, cur.c, formula[0].trim());
+        return true;
+      }
+      paste(plain);
+      return true;
+    },
+    replaceSelection(text) {
+      return aiRef.current.insertText!(text);
+    },
+    reveal(quote) {
+      const q = quote.replace(/[“”"]/g, '').trim().toLowerCase().slice(0, 40);
+      if (!q) return false;
+      for (const k in sheet.cells) {
+        const { r, c } = parseKey(k);
+        if (formatValue(calc.value(sheet, r, c), sheet.cells[k].s).toLowerCase().includes(q)) {
+          select({ r, c });
+          bodyRef.current?.focus();
+          return true;
+        }
+      }
+      return false;
+    }
+  };
   const handlers = useRef({ save, print });
   handlers.current = { save, print };
   useEffect(() => {
-    editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), print: () => handlers.current.print(), debugBuild: () => writeXlsx(h.get()) });
+    editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), print: () => handlers.current.print(), debugBuild: () => writeXlsx(h.get()), ai: proxyAi(aiRef) });
   }, [tab.id]);
+
+  // Report the selected cells (as tab-separated text) to the AI sidebar.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const g = { ...sel, r2: Math.min(sel.r2, Math.max(used.rows - 1, sel.r1), sel.r1 + 500), c2: Math.min(sel.c2, Math.max(used.cols - 1, sel.c1), sel.c1 + 50) };
+      const text = rangeTsv(g);
+      if (text.replace(/\s/g, '')) publishSelection(tab.id, (g.r1 === g.r2 && g.c1 === g.c2 ? '' : `Cells ${addr(g.r1, g.c1)}:${addr(g.r2, g.c2)}\n`) + text);
+    }, 150);
+    return () => clearTimeout(t);
+  }, [sel.r1, sel.r2, sel.c1, sel.c2, si]);
 
   // ---------- Keyboard ----------
   const onGridKey = (e: React.KeyboardEvent) => {
@@ -1780,6 +1840,8 @@ function SheetToolbar(p: {
         <Search size={18} />
       </B>
       <div className="tb-sep" />
+      <div className="tb-end">
+      <AiButton />
       <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => p.onSave(false)} title="Save (Ctrl+S)">
         <Save size={16} /> Save
       </button>
@@ -1808,6 +1870,7 @@ function SheetToolbar(p: {
           </>
         )}
       </MenuButton>
+      </div>
     </div>
   );
 }
