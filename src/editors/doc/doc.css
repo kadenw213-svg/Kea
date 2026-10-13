@@ -1,0 +1,373 @@
+.doc-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.size-ctl {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.size-val {
+  min-width: 38px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.size-val:hover {
+  background: var(--hover);
+}
+
+.table-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 18px);
+  gap: 3px;
+}
+.tg-cell {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+}
+.tg-cell.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* ---------- Page ---------- */
+.doc-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 24px 80px;
+  cursor: text;
+}
+.doc-page {
+  --paper: #1e1f20;
+  --ink: #e3e3e3;
+  --ink-2: #c4c7c5;
+  --rule: #444746;
+  --tint: #2a2b2d;
+  width: 816px; /* 8.5in */
+  min-height: 1056px; /* 11in */
+  margin: 0 auto;
+  padding: 96px; /* 1in margins */
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  cursor: text;
+}
+.doc-page.paper-light {
+  --paper: #ffffff;
+  --ink: #202124;
+  --ink-2: #5f6368;
+  --rule: #c4c7c5;
+  --tint: #f1f3f4;
+}
+
+.doc-content {
+  outline: none;
+  font-family: Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.3;
+  min-height: 864px;
+  user-select: text;
+  word-wrap: break-word;
+  tab-size: 4;
+  caret-color: var(--accent);
+}
+.paper-light .doc-content {
+  caret-color: #1a73e8;
+}
+
+/*
+ * Spacing rules: every paragraph gets the same small gap after it, empty
+ * paragraphs are exactly one line tall, and nothing adds stray margins.
+ * Enter = one new paragraph. Shift+Enter = line break inside a paragraph.
+ */
+.doc-content p {
+  margin: 0 0 6pt;
+  min-height: 1.3em;
+}
+.doc-content h1,
+.doc-content h2,
+.doc-content h3,
+.doc-content h4 {
+  line-height: 1.25;
+  min-height: 1.25em;
+}
+.doc-content h1 {
+  font-size: 20pt;
+  font-weight: 400;
+  margin: 18pt 0 6pt;
+}
+.doc-content h2 {
+  font-size: 16pt;
+  font-weight: 400;
+  margin: 16pt 0 6pt;
+}
+.doc-content h3 {
+  font-size: 14pt;
+  font-weight: 400;
+  color: var(--ink-2);
+  margin: 14pt 0 4pt;
+}
+.doc-content h4 {
+  font-size: 12pt;
+  font-weight: 700;
+  color: var(--ink-2);
+  margin: 12pt 0 4pt;
+}
+.doc-content > :first-child {
+  margin-top: 0 !important;
+}
+.doc-content ul,
+.doc-content ol {
+  margin: 0 0 6pt;
+  padding-left: 24pt;
+}
+.doc-content li > p {
+  margin: 0 0 2pt;
+}
+.doc-content li > ul,
+.doc-content li > ol {
+  margin: 0;
+}
+.doc-content ul {
+  list-style: disc;
+}
+.doc-content ul ul {
+  list-style: circle;
+}
+.doc-content ul ul ul {
+  list-style: square;
+}
+.doc-content ol ol {
+  list-style: lower-alpha;
+}
+.doc-content ol ol ol {
+  list-style: lower-roman;
+}
+.doc-content li::marker {
+  color: var(--ink-2);
+}
+.doc-content ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 2pt;
+}
+.doc-content ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.doc-content ul[data-type='taskList'] li > label {
+  flex: 0 0 auto;
+  user-select: none;
+  margin-top: 0.2em;
+}
+.doc-content ul[data-type='taskList'] li > label input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.doc-content ul[data-type='taskList'] li > div {
+  flex: 1;
+}
+.doc-content ul[data-type='taskList'] li[data-checked='true'] > div {
+  text-decoration: line-through;
+  color: var(--ink-2);
+}
+.doc-content blockquote {
+  margin: 0 0 6pt;
+  border-left: 3px solid var(--rule);
+  padding-left: 12pt;
+  color: var(--ink-2);
+}
+.doc-content pre {
+  background: var(--tint);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 10pt;
+  line-height: 1.45;
+  margin: 0 0 6pt;
+  white-space: pre-wrap;
+}
+.doc-content code {
+  font-family: Consolas, 'Courier New', monospace;
+  background: var(--tint);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-size: 0.92em;
+}
+.doc-content pre code {
+  background: none;
+  padding: 0;
+}
+.doc-content a {
+  color: #8ab4f8;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.paper-light .doc-content a {
+  color: #1155cc;
+}
+.doc-content hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 10pt 0;
+}
+.doc-content hr.ProseMirror-selectednode {
+  border-top-color: var(--accent);
+}
+.doc-content mark {
+  border-radius: 2px;
+  padding: 0 1px;
+  color: #202124;
+}
+.doc-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 4pt 0 8pt;
+  border-radius: 2px;
+}
+.doc-content img[data-align='center'] {
+  margin-left: auto;
+  margin-right: auto;
+}
+.doc-content img[data-align='right'] {
+  margin-left: auto;
+}
+.doc-content img.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.doc-content .page-break {
+  position: relative;
+  height: 24px;
+  margin: 12px -96px;
+  background: var(--bg);
+  cursor: default;
+}
+.doc-content .page-break::after {
+  content: 'Page break';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.doc-content .page-break.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+
+/* Tables */
+.doc-content table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0 0 8pt;
+  overflow: hidden;
+}
+.doc-content td,
+.doc-content th {
+  border: 1px solid var(--rule);
+  padding: 4pt 6pt;
+  vertical-align: top;
+  position: relative;
+  min-width: 2em;
+}
+.doc-content th {
+  background: var(--tint);
+  font-weight: 600;
+  text-align: left;
+}
+.doc-content td p,
+.doc-content th p {
+  margin: 0;
+}
+.doc-content .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(124, 172, 248, 0.22);
+  pointer-events: none;
+}
+.doc-content .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.doc-content.resize-cursor,
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+.tableWrapper {
+  overflow-x: auto;
+}
+
+/* Placeholder */
+.doc-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--ink-2);
+  opacity: 0.6;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Search */
+.search-match {
+  background: rgba(253, 214, 99, 0.45);
+  border-radius: 2px;
+}
+.search-match.current {
+  background: rgba(255, 145, 0, 0.75);
+  color: #202124;
+}
+
+/* Explicit black text written on a light page stays readable on the dark page. */
+.paper-dark .doc-content [style*='color: #000000'],
+.paper-dark .doc-content [style*='color: rgb(0, 0, 0)'],
+.paper-dark .doc-content [style*='color: #000;'] {
+  color: var(--ink) !important;
+}
+
+.ProseMirror-gapcursor:after {
+  border-top-color: var(--ink);
+}
+
+.zoom-ctl {
+  display: inline-flex;
+  align-items: center;
+}
+.zoom-ctl .icon-btn.sm {
+  width: 22px;
+  height: 22px;
+}
+.zoom-pct {
+  border: none;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  min-width: 40px;
+  font-size: 12px;
+}
+.zoom-pct:hover {
+  color: var(--text);
+}
