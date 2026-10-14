@@ -21,7 +21,11 @@ import {
   Layers,
   ListChecks,
   ScrollText,
-  Globe
+  Globe,
+  SlidersHorizontal,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink
 } from 'lucide-react';
 import { wikiQuery, wikiChars } from '../../lib/ai';
 import { FlashcardsView, QuizView } from './Study';
@@ -39,9 +43,10 @@ import '../../styles/ai.css';
 
 let cancelFlag = { cancelled: false };
 
-export type EditMode = 'suggest' | 'track' | 'direct';
+export type EditMode = 'suggest' | 'comment' | 'track' | 'direct';
 const EDIT_MODES: { id: EditMode; label: string; help: string }[] = [
   { id: 'suggest', label: 'Suggest', help: 'AI edits wait in this sidebar until you click Apply or Replace.' },
+  { id: 'comment', label: 'Comment', help: 'Suggested edits are left as comments from "Slate AI" on the sentences they are about, like a reviewer (documents only; elsewhere this works like Suggest).' },
   { id: 'track', label: 'Ask first', help: 'AI edits go into the document as suggestions from "Slate AI" that you accept or reject (documents only; elsewhere this works like Suggest).' },
   { id: 'direct', label: 'Edit directly', help: 'AI edits change the text right away. Ctrl+Z undoes them.' }
 ];
@@ -76,13 +81,16 @@ export function AiSidebar() {
   const rawHooks = editorRegistry.get(activeId)?.ai;
   const editMode = useSettings((s) => (s.values['ai.editMode'] as EditMode) || 'suggest');
   // "Ask first" only exists where the editor can track changes; elsewhere it behaves like Suggest.
-  const effMode: EditMode = editMode === 'track' && !rawHooks?.track ? 'suggest' : editMode;
+  const effMode: EditMode = (editMode === 'track' && !rawHooks?.track) || (editMode === 'comment' && !rawHooks?.addComment) ? 'suggest' : editMode;
   const hooks = withMode(rawHooks, effMode);
   const canEdit = !!(rawHooks?.replaceQuote || rawHooks?.replaceSelection);
   const depth = useSettings((s) => (s.values['ai.depth'] as Depth) || 'standard');
   const instructions = useSettings((s) => String(s.values['ai.instructions'] || ''));
   const [showInstr, setShowInstr] = useState(false);
-  const wikiOn = useSettings((s) => !!s.values['ai.wikipedia']);
+  const wikiOn = useSettings((s) => s.values['ai.wikipedia'] !== false);
+  const wikiNoticeSeen = useSettings((s) => !!s.values['ai.wikiNoticeSeen']);
+  const customised = depth !== 'standard' || editMode !== 'suggest' || !wikiOn;
+  const [ctxOpen, setCtxOpen] = useState(false);
 
   // Load model state when first opened.
   useEffect(() => {
@@ -109,15 +117,19 @@ export function AiSidebar() {
   const model = ai.state?.models.find((m) => m.tier === settings?.tier);
   const ready = !!model?.installed;
 
-  const getContext = async (): Promise<TaskContext | null> => {
+  const getContext = async (general = false): Promise<TaskContext | null> => {
+    const base = { contextSize: settings?.contextSize || 8192, maxTokens: settings?.maxTokens || 1024 };
+    // Questions work anywhere, even with no file open (or an empty one).
     if (!hooks) {
-      toast('Open a document to use the AI sidebar.');
+      if (general) return { text: '', scopeLabel: 'no file', docName: 'no file', noun: 'file', ...base };
+      toast('Open a document, PDF, sheet or presentation to use this.');
       return null;
     }
     let text = '';
     if (scope === 'selection' && selection) text = selection;
     else text = (await hooks.getDocument()).full;
     if (!text.trim()) {
+      if (general) return { text: '', scopeLabel: 'no file', docName, noun, ...base };
       toast(`There's no text in this ${noun} yet.`);
       return null;
     }
@@ -141,9 +153,9 @@ export function AiSidebar() {
       toast('Download an AI model first (it only takes a minute).');
       return;
     }
-    const ctx = await getContext();
+    const ctx = await getContext(label === 'ask');
     if (!ctx) return;
-    const ctxLabel = scope === 'selection' && selection ? `${wordCount(selection)} selected words` : `Whole ${noun}`;
+    const ctxLabel = !ctx.text ? 'General question' : scope === 'selection' && selection ? `${wordCount(selection)} selected words` : `Whole ${noun}`;
     push({ id: uid(), role: 'user', text: userText, context: ctxLabel });
     const aid = uid();
     const retry = () => run(label, userText, task, kind, opts);
@@ -154,20 +166,18 @@ export function AiSidebar() {
     setStatus(kind === 'text' ? '' : 'Starting…');
     try {
       // "Check Wikipedia": look the topic up first so the local model can use current facts.
-      if (opts.wiki && useSettings.getState().values['ai.wikipedia']) {
+      const sv = useSettings.getState().values;
+      const wikiFor = label === 'ask' ? sv['ai.wikiAsk'] !== false : label === 'explain' ? sv['ai.wikiExplain'] !== false : label === 'summarize' ? !!sv['ai.wikiSummarize'] : false;
+      // Offline (or the lookup fails / finds nothing): answer from the local AI only, quietly.
+      if (sv['ai.wikipedia'] !== false && wikiFor && navigator.onLine) {
         setStatus('Checking Wikipedia…');
         try {
           const q = await wikiQuery(scope === 'selection' && selection ? selection : ctx.text.slice(0, 1500), label === 'ask' ? userText : null, () => flag.cancelled);
-          const refs = await api.wikiLookup(q, {
-            lang: String(useSettings.getState().values['ai.wikiLang'] || 'en'),
-            max: Number(useSettings.getState().values['ai.wikiArticles']) || 1,
-            chars: wikiChars(depth, ctx.contextSize)
-          });
+          const refs = q ? await api.wikiLookup(q, { lang: String(sv['ai.wikiLang'] || 'en'), max: Number(sv['ai.wikiArticles']) || 1, chars: wikiChars(depth, ctx.contextSize), intro: wikiChars(depth, ctx.contextSize) <= 2000 }) : [];
           ctx.refs = refs;
-          patch(aid, refs.length ? { wiki: refs.map((r) => ({ title: r.title, url: r.url, edited: r.edited })) } : { wikiNote: `No Wikipedia article found for “${q}”. Answered from the AI’s own knowledge.` });
+          if (refs.length) patch(aid, { wiki: refs.map((r) => ({ title: r.title, url: r.url, edited: r.edited })) });
         } catch (err: any) {
           if (err?.message === 'CANCELLED') throw err;
-          patch(aid, { wikiNote: "Couldn't reach Wikipedia (offline?). Answered from the AI’s own knowledge." });
         }
         setStatus('');
       }
@@ -182,7 +192,13 @@ export function AiSidebar() {
         else patch(aid, { kind: 'text', streaming: false, error: true, text: `I couldn't make ${kind === 'quiz' ? 'a quiz' : 'flashcards'} from this. Try a longer passage, or Try again.` });
       } else if (kind === 'suggestions') {
         if (!result.length) patch(aid, { kind: 'text', streaming: false, text: 'This reads well already. I have no specific edits to suggest.' });
-        else if (effMode !== 'suggest' && hooks?.replaceQuote && !flag.cancelled) {
+        else if (effMode === 'comment' && rawHooks?.addComment && !flag.cancelled) {
+          // Comment: leave each suggestion as a reviewer comment on its sentence.
+          const applied: number[] = [];
+          (result as Suggestion[]).forEach((s, i) => rawHooks.addComment!(s.quote, `${s.issue ? s.issue[0].toUpperCase() + s.issue.slice(1).replace(/\.?$/, '.') + ' ' : ''}Suggested: “${s.suggestion}”`) && applied.push(i));
+          patch(aid, { data: result, streaming: false, text: '', applied, appliedHow: 'comment' });
+          if (applied.length) toast(`Left ${applied.length} comment${applied.length > 1 ? 's' : ''} in the document.`, 'success');
+        } else if ((effMode === 'track' || effMode === 'direct') && hooks?.replaceQuote && !flag.cancelled) {
           // Ask first / Edit directly: put the edits into the document straight away.
           const applied: number[] = [];
           (result as Suggestion[]).forEach((s, i) => hooks.replaceQuote!(s.quote, s.suggestion) && applied.push(i));
@@ -197,7 +213,7 @@ export function AiSidebar() {
         } else patch(aid, { data: result, streaming: false, text: '' });
       } else {
         let replaced: AiMessage['replaced'];
-        if (opts.autoReplace && effMode !== 'suggest' && hooks?.replaceSelection && !flag.cancelled && result.text.trim()) {
+        if (opts.autoReplace && (effMode === 'track' || effMode === 'direct') && hooks?.replaceSelection && !flag.cancelled && result.text.trim()) {
           if (hooks.replaceSelection(markdownToPlain(result.text))) replaced = effMode as 'direct' | 'track';
         }
         patch(aid, { streaming: false, text: result.text, speed: result.tokensPerSecond, replaced });
@@ -219,7 +235,7 @@ export function AiSidebar() {
   };
 
   const explain = () => run('explain', 'Explain this', runExplain, 'text', { wiki: true });
-  const summarize = () => run('summarize', 'Summarize this', runSummarize);
+  const summarize = () => run('summarize', 'Summarize this', runSummarize, 'text', { wiki: true });
   const suggest = () => run('suggest', 'Suggest edits', runSuggest, 'suggestions');
   const studyCount = (k: string, d: number) => Math.max(1, Math.min(30, Number(useSettings.getState().values[k]) || d));
   const studyLevel = () => ((useSettings.getState().values['ai.studyDifficulty'] as Difficulty) || 'medium');
@@ -266,10 +282,34 @@ export function AiSidebar() {
     return () => window.removeEventListener('keydown', onKey, true);
   });
 
+  // The question box starts at one line and grows with what you type.
+  useEffect(() => {
+    const ta = inputRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight, 150)}px`;
+  }, [input]);
+
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = Number(useSettings.getState().values['ai.sidebarWidth']) || 380;
+    document.body.classList.add('col-resizing');
+    const move = (ev: PointerEvent) => useSettings.getState().set({ 'ai.sidebarWidth': Math.round(Math.min(640, Math.max(300, startW + (startX - ev.clientX)))) });
+    const up = () => {
+      document.body.classList.remove('col-resizing');
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   const visible = useMemo(() => (find && findOpen ? ai.messages.filter((m) => (m.text + JSON.stringify(m.data || '')).toLowerCase().includes(find.toLowerCase())) : ai.messages), [ai.messages, find, findOpen]);
 
   return (
     <aside className={`ai-sidebar ${ai.open ? 'open' : ''}`} aria-hidden={!ai.open}>
+      <div className="ai-resize" title="Drag to resize" onPointerDown={startResize} onDoubleClick={() => useSettings.getState().set({ 'ai.sidebarWidth': 380 })} />
       <div className="ai-inner" ref={rootRef}>
         <div className="ai-head">
           <div className="ai-title">
@@ -292,9 +332,18 @@ export function AiSidebar() {
               <ScrollText size={15} />
               {instructions.trim() && <span className="ai-dot" />}
             </button>
-            <button className="icon-btn sm" title="AI settings" onClick={() => openSettings('ai')}>
-              <Settings2 size={15} />
-            </button>
+            <MenuButton
+              title="Answer options: depth, AI edits, Wikipedia"
+              align="right"
+              button={(open) => (
+                <button className={`icon-btn sm ${open ? 'active' : ''}`} style={{ position: 'relative' }}>
+                  <SlidersHorizontal size={15} />
+                  {customised && <span className="ai-dot" />}
+                </button>
+              )}
+            >
+              {(close) => <OptionsMenu close={close} canEdit={canEdit} />}
+            </MenuButton>
             <button className="icon-btn sm" title="Close (Ctrl+J)" onClick={() => setAiOpen(false)}>
               <X size={16} />
             </button>
@@ -313,30 +362,34 @@ export function AiSidebar() {
 
         {showInstr && <InstructionsBox onClose={() => setShowInstr(false)} />}
 
-        {/* Context box */}
-        <div className="ai-context">
+        {/* Context box (compact; expands to show the full highlight) */}
+        <div className={`ai-context ${ctxOpen ? 'open' : ''}`}>
           <div className="ai-context-head">
-            <div className="seg small">
-              <button className={scope === 'selection' ? 'on' : ''} disabled={!selection} onClick={() => ai.set({ scope: 'selection', scopeChosen: true })}>
-                Selection
-              </button>
-              <button className={scope === 'document' ? 'on' : ''} onClick={() => ai.set({ scope: 'document', scopeChosen: true })}>
-                Whole {noun}
-              </button>
-            </div>
+            {hooks ? (
+              <div className="seg small">
+                <button className={scope === 'selection' ? 'on' : ''} disabled={!selection} onClick={() => ai.set({ scope: 'selection', scopeChosen: true })}>
+                  Selection
+                </button>
+                <button className={scope === 'document' ? 'on' : ''} onClick={() => ai.set({ scope: 'document', scopeChosen: true })}>
+                  Whole {noun}
+                </button>
+              </div>
+            ) : (
+              <span className="ai-context-empty">General questions · no file open</span>
+            )}
             <div style={{ display: 'flex', alignItems: 'center' }}>
               {selection && (
                 <button
-                  className={`icon-btn sm ${ai.pinned ? 'active' : ''}`}
+                  className={`icon-btn xs ${ai.pinned ? 'active' : ''}`}
                   title={ai.pinned ? 'Unpin (follow new highlights)' : 'Pin this text'}
                   onClick={() => ai.set(ai.pinned ? { pinned: false, pinnedText: null, pinnedTab: null } : { pinned: true, pinnedText: selection, pinnedTab: activeId })}
                 >
-                  {ai.pinned ? <Pin size={14} /> : <PinOff size={14} />}
+                  {ai.pinned ? <Pin size={13} /> : <PinOff size={13} />}
                 </button>
               )}
               {selection && (
                 <button
-                  className="icon-btn sm"
+                  className="icon-btn xs"
                   title="Clear"
                   onClick={() => {
                     const sel = { ...useAi.getState().selections };
@@ -344,92 +397,50 @@ export function AiSidebar() {
                     ai.set({ selections: sel, pinned: false, pinnedText: null, scope: 'document' });
                   }}
                 >
-                  <X size={14} />
+                  <X size={13} />
+                </button>
+              )}
+              {scope === 'selection' && selection && (
+                <button className="icon-btn xs" title={ctxOpen ? 'Show less' : 'Show all of the highlighted text'} onClick={() => setCtxOpen(!ctxOpen)}>
+                  {ctxOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
               )}
             </div>
           </div>
-          {scope === 'selection' && selection ? (
-            <>
-              <div className="ai-context-text">{selection}</div>
-              <div className="ai-context-meta">
-                {wordCount(selection)} words {ai.pinned ? '· pinned' : '· updates when you highlight something else'}
+          {hooks &&
+            (scope === 'selection' && selection ? (
+              <div className="ai-context-text" title={`${wordCount(selection)} words${ai.pinned ? ' · pinned' : ''}`}>
+                {selection}
               </div>
-            </>
-          ) : (
-            <div className="ai-context-empty">
-              {hooks ? (
-                <>
-                  Using the whole {noun}: <b>{docName}</b>
-                  <div className="ai-context-meta">Highlight text in the {noun} to focus on just that part.</div>
-                </>
-              ) : (
-                'Open a document, PDF, sheet or presentation to use AI.'
-              )}
-            </div>
-          )}
+            ) : (
+              <div className="ai-context-line">
+                <b>{docName}</b> · highlight text to focus on part of it
+              </div>
+            ))}
         </div>
 
-        {/* Quick options */}
-        <div className="ai-chips">
-          <button className="ai-chip" onClick={explain} disabled={!!ai.busy} title="Alt+1">
-            <Lightbulb size={15} /> Explain
+        {/* Quick options (they work on a file, so they're hidden with no file open) */}
+        {hooks && <div className="ai-chips">
+          <button className="ai-chip" onClick={explain} disabled={!!ai.busy} title="Explain (Alt+1)">
+            <Lightbulb size={14} /> Explain
           </button>
-          <button className="ai-chip" onClick={summarize} disabled={!!ai.busy} title="Alt+2">
-            <ListCollapse size={15} /> Summarize
+          <button className="ai-chip" onClick={summarize} disabled={!!ai.busy} title="Summarize (Alt+2)">
+            <ListCollapse size={14} /> Summarize
           </button>
-          <button className="ai-chip" onClick={suggest} disabled={!!ai.busy} title="Alt+3">
-            <Wand2 size={15} /> Suggest edits
+          <button className="ai-chip" onClick={suggest} disabled={!!ai.busy} title="Suggest edits (Alt+3)">
+            <Wand2 size={14} /> Edits
           </button>
           <MenuButton
             title="Study: flashcards and practice quizzes"
             button={(open) => (
               <button className={`ai-chip ${open ? 'on' : ''}`} disabled={!!ai.busy}>
-                <GraduationCap size={15} /> Study
+                <GraduationCap size={14} /> Study
               </button>
             )}
           >
             {(close) => <StudyMenu close={close} onCards={flashcards} onQuiz={quiz} />}
           </MenuButton>
-        </div>
-        <div className="ai-editmode">
-          <span className="muted">Depth</span>
-          <button
-            className={`ai-wiki ${wikiOn ? 'on' : ''}`}
-            role="switch"
-            aria-checked={wikiOn}
-            title={wikiOn ? 'Checking Wikipedia for up-to-date facts (Explain and questions). Only the topic words are sent.' : 'Off: answers come only from your file and the AI on this PC. Turn on to check Wikipedia for up-to-date facts.'}
-            onClick={() => useSettings.getState().set({ 'ai.wikipedia': !wikiOn })}
-          >
-            <Globe size={13} /> Wikipedia
-          </button>
-          <div className="seg small" role="radiogroup" aria-label="How detailed answers are">
-            {DEPTHS.map((d) => (
-              <button key={d.id} role="radio" aria-checked={depth === d.id} className={depth === d.id ? 'on' : ''} title={d.help} onClick={() => useSettings.getState().set({ 'ai.depth': d.id })}>
-                {d.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {canEdit && (
-          <div className="ai-editmode">
-            <span className="muted">AI edits</span>
-            <div className="seg small" role="radiogroup" aria-label="How AI edits are applied">
-              {EDIT_MODES.map((m) => (
-                <button
-                  key={m.id}
-                  role="radio"
-                  aria-checked={editMode === m.id}
-                  className={editMode === m.id ? 'on' : ''}
-                  title={m.help}
-                  onClick={() => useSettings.getState().set({ 'ai.editMode': m.id })}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        </div>}
 
         {/* Conversation */}
         <div className="ai-list" ref={listRef}>
@@ -437,7 +448,7 @@ export function AiSidebar() {
           {ready && ai.messages.length === 0 && (
             <div className="ai-empty">
               <Sparkles size={28} />
-              <div>Highlight something, then ask about it. Or ask about the whole {noun}.</div>
+              <div>Ask anything. Or highlight part of your {noun} and ask about it.</div>
               <div className="muted">Everything runs on your computer. Nothing is uploaded.</div>
             </div>
           )}
@@ -451,13 +462,26 @@ export function AiSidebar() {
           )}
         </div>
 
+        {wikiOn && !wikiNoticeSeen && ready && (
+          <div className="ai-notice">
+            <Globe size={13} />
+            <span>Answers check Wikipedia for current facts (search words only).</span>
+            <button className="link-btn" onClick={() => useSettings.getState().set({ 'ai.wikiNoticeSeen': true })}>
+              OK
+            </button>
+            <button className="link-btn" onClick={() => useSettings.getState().set({ 'ai.wikipedia': false, 'ai.wikiNoticeSeen': true })}>
+              Turn off
+            </button>
+          </div>
+        )}
+
         {/* Composer */}
         <div className="ai-composer">
           <textarea
             ref={inputRef}
-            rows={2}
+            rows={1}
             value={input}
-            placeholder={ready ? (scope === 'selection' && selection ? 'Ask about the highlighted text…' : `Ask about this ${noun}…`) : ai.state ? 'Download a model to start' : 'Starting AI…'}
+            placeholder={ready ? (scope === 'selection' && selection ? 'Ask anything, or about the highlight…' : 'Ask anything…') : ai.state ? 'Download a model to start' : 'Starting AI…'}
             disabled={!ready}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -505,24 +529,13 @@ function MessageView({ m, hooks, highlight }: { m: AiMessage; hooks: any; highli
       ) : (
         <div className="ai-md" dangerouslySetInnerHTML={{ __html: marked + (m.streaming ? '<span class="ai-caret"></span>' : '') }} />
       )}
-      {!m.streaming && (m.wiki?.length || m.wikiNote) ? (
+      {!m.streaming && m.wiki?.length ? (
         <div className="ai-wiki-src">
-          <Globe size={13} />
-          {m.wiki?.length ? (
-            <span>
-              Checked on Wikipedia:{' '}
-              {m.wiki.map((w, i) => (
-                <span key={w.url}>
-                  {i > 0 && ', '}
-                  <a href={w.url} target="_blank" rel="noreferrer" title={w.edited ? `Last edited ${w.edited.slice(0, 10)}` : undefined}>
-                    {w.title}
-                  </a>
-                </span>
-              ))}
-            </span>
-          ) : (
-            <span className="muted">{m.wikiNote}</span>
-          )}
+          {m.wiki.map((w) => (
+            <a key={w.url} className="wiki-chip" href={w.url} target="_blank" rel="noreferrer" title={`Open the Wikipedia article${w.edited ? ` (last edited ${w.edited.slice(0, 10)})` : ''}`}>
+              <Globe size={12} /> Wikipedia: {w.title} <ExternalLink size={11} />
+            </a>
+          ))}
         </div>
       ) : null}
       {m.replaced && (
@@ -560,6 +573,53 @@ function MessageView({ m, hooks, highlight }: { m: AiMessage; hooks: any; highli
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Answer options popover: depth, how AI edits are applied, Wikipedia. Everything else lives in Settings → AI. */
+function OptionsMenu({ close, canEdit }: { close(): void; canEdit: boolean }) {
+  const v = useSettings((s) => s.values);
+  const set = (k: string, val: any) => useSettings.getState().set({ [k]: val });
+  const depth = (v['ai.depth'] as Depth) || 'standard';
+  const mode = (v['ai.editMode'] as EditMode) || 'suggest';
+  const wiki = v['ai.wikipedia'] !== false;
+  return (
+    <div className="ai-options">
+      <div className="opt-label">Depth</div>
+      <div className="seg small opt-seg">
+        {DEPTHS.map((d) => (
+          <button key={d.id} className={depth === d.id ? 'on' : ''} title={d.help} onClick={() => set('ai.depth', d.id)}>
+            {d.label}
+          </button>
+        ))}
+      </div>
+      <div className="opt-help">{DEPTHS.find((d) => d.id === depth)?.help}</div>
+      {canEdit && (
+        <>
+          <div className="opt-label">AI edits</div>
+          <div className="seg small opt-seg">
+            {EDIT_MODES.map((m) => (
+              <button key={m.id} className={mode === m.id ? 'on' : ''} title={m.help} onClick={() => set('ai.editMode', m.id)}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="opt-help">{EDIT_MODES.find((m) => m.id === mode)?.help}</div>
+        </>
+      )}
+      <label className="opt-toggle">
+        <span>
+          <Globe size={14} /> Check Wikipedia
+        </span>
+        <button role="switch" aria-checked={wiki} className={`switch ${wiki ? 'on' : ''}`} onClick={() => set('ai.wikipedia', !wiki)}>
+          <span />
+        </button>
+      </label>
+      <div className="menu-sep" />
+      <button className="menu-item" onClick={() => (close(), openSettings('ai'))}>
+        <Settings2 size={15} /> All AI settings…
+      </button>
     </div>
   );
 }
@@ -648,14 +708,16 @@ function StudyMenu({ close, onCards, onQuiz }: { close(): void; onCards(): void;
   );
 }
 
-function SuggestionsReport({ list, hooks, initial, how }: { list: Suggestion[]; hooks: any; initial?: number[]; how?: 'direct' | 'track' }) {
+function SuggestionsReport({ list, hooks, initial, how }: { list: Suggestion[]; hooks: any; initial?: number[]; how?: 'direct' | 'track' | 'comment' }) {
   const [applied, setApplied] = useState<Set<number>>(() => new Set(initial || []));
   return (
     <div className="ai-msg assistant">
       {how && initial && (
         <div className="ai-applied">
           <Check size={13} />
-          {how === 'track'
+          {how === 'comment'
+            ? ` Left ${initial.length} of ${list.length} suggestions as comments in the document.`
+            : how === 'track'
             ? ` ${initial.length} of ${list.length} edits added to the document as suggestions.`
             : ` Made ${initial.length} of ${list.length} edits. Ctrl+Z undoes them.`}
           {initial.length < list.length && ' The rest couldn’t be matched to the text; apply them below.'}

@@ -1,7 +1,8 @@
 import type { Editor } from '@tiptap/react';
 import type { AiHooks, DocSection } from '../../store';
 import { markdownToHtml } from '../../lib/ai';
-import { reviewKey } from './review';
+import { reviewKey, newCommentId } from './review';
+import type { CommentThread } from './docMeta';
 
 const norm = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -41,7 +42,7 @@ export function findQuote(editor: Editor, quote: string): { from: number; to: nu
   return null;
 }
 
-export function docAiHooks(get: () => Editor | null): AiHooks {
+export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThread) => void): AiHooks {
   return {
     noun: 'document',
     insertLabel: 'Insert below',
@@ -78,6 +79,21 @@ export function docAiHooks(get: () => Editor | null): AiHooks {
       ed.chain().focus().setTextSelection(r).scrollIntoView().run();
       return true;
     },
+    ...(addThread
+      ? {
+          addComment(quote: string, text: string) {
+            const ed = get();
+            if (!ed) return false;
+            const r = findQuote(ed, quote);
+            if (!r) return false;
+            const id = newCommentId();
+            // Mark the sentence without moving the user's cursor, then add the thread to the comment rail.
+            ed.view.dispatch(ed.state.tr.addMark(r.from, r.to, ed.schema.marks.comment.create({ id })));
+            addThread({ id, author: 'Slate AI', text, at: Date.now(), replies: [] });
+            return true;
+          }
+        }
+      : {}),
     track(fn) {
       const ed = get();
       if (!ed) return fn();

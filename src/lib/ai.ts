@@ -82,15 +82,29 @@ const KNOWLEDGE = (depth: Depth) =>
 
 // ---------- Check Wikipedia ----------
 /** Characters of article text to give the model, by depth (bounded by what fits in its memory). */
+export const WIKI_AMOUNTS = { intro: 1500, medium: 4000, long: 8000 } as const;
 export function wikiChars(depth: Depth, contextSize: number) {
-  const want = Number(setting('ai.wikiChars')) || (depth === 'brief' ? 1500 : depth === 'standard' ? 3000 : 6000);
+  // Settings → AI → Wikipedia: how much to read at each depth (defaults favour speed for quick answers).
+  const key = depth === 'deep' ? 'ai.wikiAmountDeep' : depth === 'expert' ? 'ai.wikiAmountExpert' : 'ai.wikiAmountQuick';
+  const def = depth === 'deep' ? 'medium' : depth === 'expert' ? 'long' : 'intro';
+  const want = WIKI_AMOUNTS[(setting(key) as keyof typeof WIKI_AMOUNTS) || def] || WIKI_AMOUNTS[def];
   return Math.max(800, Math.min(want, Math.floor(contextSize * CHARS_PER_TOKEN * 0.35)));
 }
 
-/** Words to search Wikipedia for: short highlights as-is, otherwise ask the model for the topic. */
+const QUESTION_WORDS = /\b(what|whats|what's|who|whom|whose|when|where|why|how|which|is|are|was|were|do|does|did|can|could|should|would|will|the|a|an|of|about|explain|tell|me|please|define|describe|mean|means|meaning)\b/gi;
+
+/**
+ * Words to search Wikipedia for. Fast (default): a short highlight or the question itself, minus question words.
+ * Accurate (or a long highlight): the local AI names the best article first (about 2 s).
+ */
 export async function wikiQuery(text: string, question: string | null, cancelled: () => boolean): Promise<string> {
   const short = (s: string) => s.trim().split(/\s+/).length <= 8;
+  const accurate = setting('ai.wikiFind') === 'accurate';
   if (!question && short(text)) return text.trim();
+  if (question && !accurate) {
+    const q = question.replace(/[?!.,"]/g, ' ').replace(QUESTION_WORDS, ' ').replace(/\s+/g, ' ').trim();
+    if (q) return q;
+  }
   const out = await complete(
     {
       system: 'You name encyclopedia topics. Reply with only a Wikipedia article title (1-6 words), nothing else.',
@@ -282,7 +296,7 @@ export async function runSummarize(ctx: TaskContext, cb: TaskCallbacks, depth: D
   return stream(
     {
       system: systemPrompt(),
-      prompt: `Summarize ${ctx.scopeLabel} from "${ctx.docName}"${condensed ? ' (provided as notes, because it is long)' : ''}.\n${SUMMARY_STYLE[depth]}\n\n${quote(text)}`,
+      prompt: `Summarize ${ctx.scopeLabel} from "${ctx.docName}"${condensed ? ' (provided as notes, because it is long)' : ''}.\n${SUMMARY_STYLE[depth]}\n\n${quote(text)}${ctx.refs?.length ? refsBlock(ctx.refs) + '\n(Use the reference only for background; summarize the text itself.)' : ''}`,
       maxTokens
     },
     cb
@@ -304,7 +318,7 @@ export async function runAsk(question: string, history: { role: 'user' | 'assist
     {
       system: systemPrompt(),
       history,
-      prompt: `Here is ${ctx.scopeLabel} from "${ctx.docName}"${note}:\n${quote(text)}${refsBlock(ctx.refs)}\n\nRequest: ${question}${ANSWER_STYLE[depth] ? `\n\n(${ANSWER_STYLE[depth]}${KNOWLEDGE(depth)})` : ''}`,
+      prompt: `${text.trim() ? `Here is ${ctx.scopeLabel} from "${ctx.docName}"${note}:\n${quote(text)}\n(The request may be about this file or about anything else. If it isn't about the file, just answer it.)` : 'There is no file for this request; answer it from your knowledge.'}${refsBlock(ctx.refs)}\n\nRequest: ${question}${ANSWER_STYLE[depth] ? `\n\n(${ANSWER_STYLE[depth]}${KNOWLEDGE(depth)})` : ''}`,
       maxTokens
     },
     cb

@@ -99,7 +99,7 @@ export interface SlateApi {
     close(): Promise<boolean>;
     onClosed(cb: () => void): () => void;
   };
-  wikiLookup(query: string, opts?: { lang?: string; max?: number; chars?: number }): Promise<WikiArticle[]>;
+  wikiLookup(query: string, opts?: { lang?: string; max?: number; chars?: number; intro?: boolean }): Promise<WikiArticle[]>;
   speech: {
     state(): Promise<SpeechModel[]>;
     download(id: string): Promise<boolean>;

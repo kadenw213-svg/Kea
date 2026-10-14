@@ -1,3 +1,4 @@
+import { Logo } from '../Logo';
 import { useEffect, useMemo, useState } from 'react';
 import * as Icons from 'lucide-react';
 import { X, Search, RotateCcw, FolderOpen, ExternalLink } from 'lucide-react';
@@ -206,7 +207,7 @@ function AboutPanel() {
   return (
     <div className="about">
       <div className="about-hero">
-        <div className="brand-mark big">S</div>
+        <Logo size={56} />
         <div>
           <div className="about-name">Slate Office {version}</div>
           <div className="muted">A free, offline office suite. Open source under the MIT license.</div>

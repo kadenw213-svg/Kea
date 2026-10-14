@@ -131,7 +131,12 @@ export const SECTIONS: Section[] = [
         ]
       },
       { key: 'appearance.surfaceContrast', label: 'Panel contrast', type: 'range', default: 0, min: -2, max: 3, step: 1, advanced: true, help: 'Makes panels and cards stand out more (or less) from the background.' },
-      { key: 'appearance.radius', label: 'Corner roundness', type: 'range', default: 1, min: 0, max: 1.5, step: 0.25, advanced: true }
+      { key: 'appearance.radius', label: 'Corner roundness', type: 'range', default: 1, min: 0, max: 1.5, step: 0.25, advanced: true },
+      { key: 'appearance.toolbarSize', label: 'Toolbar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }, { value: 1.3, label: 'Extra large' }] },
+      { key: 'appearance.tabSize', label: 'Tab bar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }] },
+      { key: 'appearance.menuFont', label: 'Menu text size', type: 'number', default: 13.5, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true },
+      { key: 'ai.sidebarWidth', label: 'AI sidebar width', type: 'number', default: 380, min: 300, max: 640, step: 10, unit: 'px', advanced: true, help: 'You can also drag the sidebar\u2019s left edge.' },
+      { key: 'appearance.aiFont', label: 'AI answer text size', type: 'number', default: 13, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true }
     ]
   },
   {
@@ -543,5 +548,12 @@ function applyAppearance() {
   };
   root.setProperty('--font', fonts[v['appearance.uiFont']] || fonts.inter);
   document.documentElement.classList.toggle('reduce-motion', !!v['appearance.reduceMotion']);
+  // Sizes of individual parts (Appearance → advanced).
+  const num = (k: string, d: number) => (Number.isFinite(Number(v[k])) && v[k] !== '' && v[k] != null ? Number(v[k]) : d);
+  root.setProperty('--tb-zoom', String(num('appearance.toolbarSize', 1)));
+  root.setProperty('--tab-zoom', String(num('appearance.tabSize', 1)));
+  root.setProperty('--menu-font', `${num('appearance.menuFont', 13.5)}px`);
+  root.setProperty('--ai-w', `${Math.min(640, Math.max(300, num('ai.sidebarWidth', 380)))}px`);
+  root.setProperty('--ai-font', `${num('appearance.aiFont', 13)}px`);
   api.setZoom(Number(v['appearance.scale']) || 1);
 }

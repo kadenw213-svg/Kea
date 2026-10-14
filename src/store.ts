@@ -48,6 +48,8 @@ export interface AiHooks {
   replaceQuote?(quote: string, replacement: string): boolean;
   /** Run edits so they show up as tracked suggestions (accept / reject) instead of changing the text. */
   track?<T>(fn: () => T): T;
+  /** Leave a reviewer comment (from "Slate AI") on a quote; false if the quote can't be found. */
+  addComment?(quote: string, text: string): boolean;
   insertLabel?: string;
 }
 
@@ -66,6 +68,7 @@ export function proxyAi(ref: { current: AiHooks }): AiHooks {
     ...(c.insertText ? { insertText: (t: string) => ref.current.insertText?.(t) ?? false } : {}),
     ...(c.reveal ? { reveal: (q: string) => ref.current.reveal?.(q) ?? false } : {}),
     ...(c.replaceQuote ? { replaceQuote: (q: string, r: string) => ref.current.replaceQuote?.(q, r) ?? false } : {}),
+    ...(c.addComment ? { addComment: (q: string, t: string) => ref.current.addComment?.(q, t) ?? false } : {}),
     ...(c.track ? { track: <T,>(fn: () => T) => (ref.current.track ? ref.current.track(fn) : fn()) } : {})
   };
 }

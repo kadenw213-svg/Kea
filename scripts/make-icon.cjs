@@ -1,22 +1,23 @@
-// Renders build/icon.png (1024px, transparent corners) with Electron. Run: electron scripts/make-icon.cjs
+// Renders build/icon.png (1024px, transparent margin) from build/logo.svg with Electron.
+// Run: npx electron scripts/make-icon.cjs [out.png]   (the app's in-window logo uses the same SVG)
 const { app, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const draw = `(() => {
+
+const svg = fs.readFileSync(path.join(__dirname, '..', 'build', 'logo.svg'), 'utf8');
+const out = process.argv.find((a) => a.endsWith('.png')) || path.join(__dirname, '..', 'build', 'icon.png');
+const draw = `(async () => {
+  const img = new Image();
+  img.src = 'data:image/svg+xml;base64,' + ${JSON.stringify(Buffer.from(svg).toString('base64'))};
+  await img.decode();
   const c = document.createElement('canvas'); c.width = c.height = 1024;
-  const g = c.getContext('2d');
-  const grad = g.createLinearGradient(72, 72, 952, 952);
-  grad.addColorStop(0, '#a8c7fa'); grad.addColorStop(0.45, '#7cacf8'); grad.addColorStop(1, '#c58af9');
-  g.fillStyle = grad; g.beginPath(); g.roundRect(72, 72, 880, 880, 200); g.fill();
-  g.translate(252, 252); g.scale(520 / 24, 520 / 24);
-  g.strokeStyle = '#0b1d3a'; g.lineWidth = 1.6; g.lineCap = 'round'; g.lineJoin = 'round';
-  for (const d of ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6', 'M8 13h8', 'M8 17h5']) g.stroke(new Path2D(d));
+  c.getContext('2d').drawImage(img, 72, 72, 880, 880);
   return c.toDataURL('image/png');
 })()`;
 app.whenReady().then(async () => {
   const win = new BrowserWindow({ show: false });
   await win.loadURL('data:text/html,<html></html>');
   const url = await win.webContents.executeJavaScript(draw);
-  fs.writeFileSync(path.join(__dirname, '..', 'build', 'icon.png'), Buffer.from(url.split(',')[1], 'base64'));
+  fs.writeFileSync(out, Buffer.from(url.split(',')[1], 'base64'));
   app.quit();
 });

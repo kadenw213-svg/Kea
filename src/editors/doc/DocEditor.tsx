@@ -443,6 +443,9 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     await api.printHtml(printableHtml(editor!, tab.name, true, metaRef.current), { noMargins: !metaRef.current.pageless });
   };
 
+  // AI "Comment" mode adds threads through the same path as the comment rail.
+  const updateMetaRef = useRef(updateMeta);
+  updateMetaRef.current = updateMeta;
   const handlers = useRef({ save, print, exportPdf });
   handlers.current = { save, print, exportPdf };
   useEffect(() => {
@@ -455,7 +458,10 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
         return renderAllMath(editorRef.current!.getJSON()).then(() => api.pdfFromHtml(printableHtml(editorRef.current!, name, true, metaRef.current), { noMargins: !metaRef.current.pageless }));
       },
       debugBuild: () => jsonToDocx(editorRef.current!.getJSON() as any, metaRef.current, baseName(useTabs.getState().tabs.find((t) => t.id === tab.id)?.name || '')),
-      ai: docAiHooks(() => editorRef.current)
+      ai: docAiHooks(
+        () => editorRef.current,
+        (t) => updateMetaRef.current({ ...metaRef.current, comments: [...metaRef.current.comments, t] })
+      )
     });
   }, [tab.id]);
 

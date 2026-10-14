@@ -254,11 +254,23 @@ function DepthPicker() {
   );
 }
 
-/** Settings for "Check Wikipedia": off by default; only the topic words leave this PC. */
+/** Settings → AI → Wikipedia. On by default; only the search words leave this PC, and offline it quietly answers locally. */
 function WikiSettings() {
   const v = useSettings((s) => s.values);
   const set = (k: string, val: any) => useSettings.getState().set({ [k]: val });
-  const on = !!v['ai.wikipedia'];
+  const on = v['ai.wikipedia'] !== false;
+  const amount = (k: string, def: string) => (
+    <select className="select" value={v[k] || def} onChange={(e) => set(k, e.target.value)}>
+      <option value="intro">Introduction only (fastest)</option>
+      <option value="medium">Medium</option>
+      <option value="long">Long (most detail, slower)</option>
+    </select>
+  );
+  const use = (k: string, def: boolean, label: string) => (
+    <label className="wiki-use">
+      <input type="checkbox" checked={v[k] === undefined ? def : !!v[k]} onChange={(e) => set(k, e.target.checked)} /> {label}
+    </label>
+  );
   return (
     <div className="wiki-settings">
       <label className="depth-opt">
@@ -267,19 +279,28 @@ function WikiSettings() {
           <b>Check Wikipedia for up-to-date facts</b>
           <span className="muted">
             {' '}
-            · Explain and questions look the topic up on Wikipedia and give the article to the AI on this PC, with a link under the answer. Only the search words are sent, never your file. Also a switch in the AI sidebar.
+            · The AI on this PC reads the matching Wikipedia article before answering and links it under the answer. Only the search words are sent, never your file. With no internet it simply answers on its own.
           </span>
         </span>
       </label>
       {on && (
         <div className="wiki-grid">
-          <label>Wikipedia language</label>
-          <select className="select" value={v['ai.wikiLang'] || 'en'} onChange={(e) => set('ai.wikiLang', e.target.value)}>
-            {[['en', 'English'], ['simple', 'Simple English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['pl', 'Polish'], ['ru', 'Russian'], ['ja', 'Japanese'], ['zh', 'Chinese'], ['ar', 'Arabic']].map(([c, l]) => (
-              <option key={c} value={c}>
-                {l}
-              </option>
-            ))}
+          <label>Use for</label>
+          <span className="wiki-uses">
+            {use('ai.wikiExplain', true, 'Explain')}
+            {use('ai.wikiAsk', true, 'Questions')}
+            {use('ai.wikiSummarize', false, 'Summarize')}
+          </span>
+          <label>Brief and Standard answers read</label>
+          {amount('ai.wikiAmountQuick', 'intro')}
+          <label>Deep answers read</label>
+          {amount('ai.wikiAmountDeep', 'medium')}
+          <label>Expert answers read</label>
+          {amount('ai.wikiAmountExpert', 'long')}
+          <label>Finding the article</label>
+          <select className="select" value={v['ai.wikiFind'] || 'fast'} onChange={(e) => set('ai.wikiFind', e.target.value)}>
+            <option value="fast">Fast: search your words directly</option>
+            <option value="accurate">Accurate: the AI picks the topic first (about 2 s slower)</option>
           </select>
           <label>Articles to read</label>
           <select className="select" value={v['ai.wikiArticles'] || 1} onChange={(e) => set('ai.wikiArticles', Number(e.target.value))}>
@@ -287,12 +308,13 @@ function WikiSettings() {
             <option value={2}>2</option>
             <option value={3}>3 (broadest)</option>
           </select>
-          <label>Article text to use</label>
-          <select className="select" value={v['ai.wikiChars'] || 0} onChange={(e) => set('ai.wikiChars', Number(e.target.value))}>
-            <option value={0}>Automatic (more for Deep and Expert)</option>
-            <option value={1500}>Short (the introduction)</option>
-            <option value={4000}>Medium</option>
-            <option value={8000}>Long (slower)</option>
+          <label>Wikipedia language</label>
+          <select className="select" value={v['ai.wikiLang'] || 'en'} onChange={(e) => set('ai.wikiLang', e.target.value)}>
+            {[['en', 'English'], ['simple', 'Simple English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['pl', 'Polish'], ['ru', 'Russian'], ['ja', 'Japanese'], ['zh', 'Chinese'], ['ar', 'Arabic']].map(([c, l]) => (
+              <option key={c} value={c}>
+                {l}
+              </option>
+            ))}
           </select>
         </div>
       )}

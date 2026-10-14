@@ -14,11 +14,14 @@
   overflow: hidden;
   transition: width 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+.ai-sidebar {
+  position: relative;
+}
 .ai-sidebar.open {
-  width: 392px;
+  width: calc(var(--ai-w, 380px) + 12px);
 }
 .ai-inner {
-  width: 380px;
+  width: var(--ai-w, 380px);
   height: calc(100% - 10px);
   margin: 0 10px 10px 2px;
   background: var(--surface);
@@ -222,7 +225,7 @@
   color: var(--danger);
 }
 .ai-md {
-  font-size: 13px;
+  font-size: var(--ai-font, 13px);
   line-height: 1.6;
   user-select: text;
 }
@@ -889,4 +892,210 @@
   align-items: center;
   margin: 10px 0 0 30px;
   font-size: 13px;
+}
+
+/* ---------- v0.13 compact sidebar: most of the space goes to the answers ---------- */
+.ai-head {
+  padding: 6px 6px 4px 14px;
+}
+.ai-title {
+  font-size: 13.5px;
+}
+.ai-context {
+  margin: 2px 10px 6px;
+  padding: 5px 6px 6px 8px;
+  border-radius: 12px;
+}
+.ai-context-head {
+  margin-bottom: 3px;
+}
+.ai-context-text {
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: 2.8em; /* two lines; the chevron expands it */
+  overflow: hidden;
+  padding: 0 0 0 8px;
+}
+.ai-context.open .ai-context-text {
+  max-height: 160px;
+  overflow-y: auto;
+}
+.ai-context-line {
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 2px;
+}
+.ai-context-line b {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.ai-context-empty {
+  font-size: 12px;
+}
+.icon-btn.xs {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+.ai-chips {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 10px 6px;
+  gap: 5px;
+}
+.ai-chip {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.ai-list {
+  padding: 2px 10px 10px;
+}
+.ai-composer {
+  margin: 0 10px 10px;
+  padding: 5px 5px 5px 12px;
+  border-radius: 14px;
+  align-items: center;
+}
+.ai-composer textarea {
+  min-height: 20px;
+  font-size: 13px;
+  padding: 4px 0;
+}
+.ai-send {
+  width: 30px;
+  height: 30px;
+}
+.ai-resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 10px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 3;
+}
+.ai-resize:hover {
+  background: linear-gradient(90deg, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px);
+  opacity: 0.6;
+}
+.ai-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.ai-notice svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.ai-notice .link-btn {
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+.ai-wiki-src {
+  flex-wrap: wrap;
+}
+.wiki-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-2) !important;
+  text-decoration: none;
+}
+.wiki-chip:hover {
+  border-color: var(--accent);
+  color: var(--text) !important;
+  background: var(--accent-soft);
+}
+.wiki-chip svg {
+  color: var(--accent);
+}
+/* Answer options popover */
+.ai-options {
+  width: 300px;
+  padding: 6px 4px 2px;
+}
+.opt-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  margin: 6px 8px 5px;
+}
+.ai-options .seg {
+  display: flex;
+  width: auto;
+  margin: 0 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+.ai-options .seg button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  padding: 4px 6px;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.ai-options .seg button:hover:not(.on) {
+  background: var(--hover);
+  color: var(--text);
+}
+.ai-options .seg button.on {
+  background: var(--accent-soft);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.opt-help {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin: 5px 8px 4px;
+  line-height: 1.4;
+  white-space: normal;
+}
+.opt-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 8px 6px;
+  font-size: 13px;
+}
+.opt-toggle span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.opt-toggle svg {
+  color: var(--accent);
+}
+.wiki-uses {
+  display: flex;
+  gap: 14px;
+}
+.wiki-use {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }

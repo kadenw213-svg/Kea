@@ -15,7 +15,7 @@ export interface AiMessage {
   speed?: number;
   /** Suggestions already put into the document (indexes), and how. */
   applied?: number[];
-  appliedHow?: 'direct' | 'track';
+  appliedHow?: 'direct' | 'track' | 'comment';
   /** Wikipedia articles this answer was checked against, or why the check didn't happen. */
   wiki?: { title: string; url: string; edited: string | null }[];
   wikiNote?: string;

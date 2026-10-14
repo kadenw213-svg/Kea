@@ -1,3 +1,4 @@
+import { Logo } from './Logo';
 import { useRef, useState } from 'react';
 import { Popover } from './Popover';
 import { Columns2, PanelRightClose, XSquare } from 'lucide-react';
@@ -34,7 +35,7 @@ export function TitleBar() {
           title="Slate Office menu"
           button={() => (
             <button className="brand">
-              <div className="brand-mark">S</div>
+              <Logo size={22} />
               {hasUpdate && <span className="update-dot" />}
             </button>
           )}

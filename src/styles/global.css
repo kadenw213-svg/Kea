@@ -1009,3 +1009,26 @@ body.col-resizing * {
 .voice-model .muted {
   font-size: 12px;
 }
+
+/* ---------- Element sizes (Settings → Appearance → advanced) ---------- */
+.toolbar {
+  zoom: var(--tb-zoom, 1);
+}
+.titlebar {
+  zoom: var(--tab-zoom, 1);
+}
+.popover .menu-item,
+.popover .menu-title {
+  font-size: var(--menu-font, 13.5px);
+}
+
+.slate-logo {
+  display: inline-block;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.slate-logo svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}

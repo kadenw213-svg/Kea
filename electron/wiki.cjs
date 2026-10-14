@@ -5,7 +5,10 @@ const { ipcMain, net } = require('electron');
 const UA = 'SlateOffice/1.0 (https://github.com/kadenw213-svg/slate-office)';
 
 async function getJson(url) {
-  const res = await net.fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
+  // A slow connection must never hold up an answer: give up after 4 s and answer locally.
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 4000);
+  const res = await net.fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: ctl.signal }).finally(() => clearTimeout(timer));
   if (!res.ok) throw new Error(`Wikipedia lookup failed (${res.status}).`);
   return res.json();
 }
@@ -18,12 +21,18 @@ async function lookup(query, opts = {}) {
   const api = `https://${lang}.wikipedia.org/w/api.php?format=json&formatversion=2&origin=*`;
   const q = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 200);
   if (!q) return [];
-  const search = await getJson(`${api}&action=query&list=search&srlimit=${max}&srprop=&srsearch=${encodeURIComponent(q)}`);
-  const titles = (search.query?.search || []).map((s) => s.title);
+  const search = await getJson(`${api}&action=query&list=search&srlimit=${Math.max(6, max)}&srprop=&srsearch=${encodeURIComponent(q)}`);
+  // Prefer articles whose title is made only of the searched words ("Industrial Revolution" over
+  // "Second Industrial Revolution" for "when did the industrial revolution start"); longest such title first.
+  const words = new Set(q.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+  const fits = (t) => (t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).every((w) => words.has(w));
+  const found = (search.query?.search || []).map((s, i) => ({ title: s.title, i, fit: fits(s.title), len: s.title.length }));
+  found.sort((a, b) => (a.fit !== b.fit ? (a.fit ? -1 : 1) : a.fit ? b.len - a.len : a.i - b.i));
+  const titles = found.slice(0, max).map((f) => f.title);
   const out = [];
   for (const title of titles) {
     const j = await getJson(
-      `${api}&action=query&prop=extracts|info|revisions&explaintext=1&exsectionformat=plain&inprop=url&rvprop=timestamp&redirects=1&titles=${encodeURIComponent(title)}`
+      `${api}&action=query&prop=extracts|info|revisions&explaintext=1${opts.intro ? '&exintro=1' : ''}&exsectionformat=plain&inprop=url&rvprop=timestamp&redirects=1&titles=${encodeURIComponent(title)}`
     );
     const p = j.query?.pages?.[0];
     if (!p || p.missing || !p.extract) continue;
