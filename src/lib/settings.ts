@@ -255,6 +255,32 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'writing',
+    label: 'Grammar & spelling',
+    icon: 'SpellCheck',
+    blurb: 'Grammar checking runs entirely on this computer (Harper). Nothing you write is sent anywhere.',
+    fields: [
+      { key: 'grammar.enabled', label: 'Check grammar and style as you type', type: 'toggle', default: true },
+      {
+        key: 'grammar.dialect',
+        label: 'English',
+        type: 'select',
+        default: 'American',
+        options: [
+          { value: 'American', label: 'American' },
+          { value: 'British', label: 'British' },
+          { value: 'Canadian', label: 'Canadian' },
+          { value: 'Australian', label: 'Australian' },
+          { value: 'Indian', label: 'Indian' }
+        ]
+      },
+      { key: 'grammar.style', label: 'Style suggestions (wordiness, repetition, word choice)', type: 'toggle', default: true },
+      { key: 'grammar.punctuation', label: 'Punctuation and formatting', type: 'toggle', default: true, advanced: true },
+      { key: 'grammar.capitalization', label: 'Capitalization', type: 'toggle', default: true, advanced: true },
+      { key: 'grammar.spelling', label: 'Spelling (in addition to the red spell-check underline)', type: 'toggle', default: false, advanced: true }
+    ]
+  },
+  {
     id: 'code',
     label: 'Text & code',
     icon: 'FileCode2',

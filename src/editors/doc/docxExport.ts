@@ -24,12 +24,18 @@ import {
   TabStopType,
   FootnoteReferenceRun,
   LeaderType,
+  CommentRangeStart,
+  CommentRangeEnd,
+  CommentReference,
+  InsertedTextRun,
+  DeletedTextRun,
   type IRunOptions,
   type ParagraphChild
 } from 'docx';
 import JSZip from 'jszip';
 import { dataUrlToBytes } from '../../lib/util';
 import { DocMeta, defaultMeta, HeaderFooter, metaExtras, expandFields } from './docMeta';
+import { texToPng } from './math';
 
 /** Default look when a document has no settings of its own. */
 export const DOC_DEFAULTS = defaultMeta().defaults;
@@ -78,6 +84,21 @@ async function imageSize(src: string): Promise<{ w: number; h: number }> {
 function runsFrom(nodes: JSONNode[] | undefined, ctx?: Ctx): ParagraphChild[] {
   const out: ParagraphChild[] = [];
   for (const n of nodes || []) {
+    if (n.type === 'math') {
+      const k = `${n.attrs?.display ? 'D' : 'I'}:${n.attrs?.latex || ''}`;
+      const png = ctx?.math.get(k);
+      if (png) {
+        out.push(
+          new ImageRun({
+            type: 'png',
+            data: png.data,
+            transformation: { width: png.w, height: png.h },
+            altText: { title: 'Equation', name: 'Equation', description: `slate-math:${k}` }
+          })
+        );
+      } else out.push(new TextRun({ text: String(n.attrs?.latex || ''), italics: true }));
+      continue;
+    }
     if (n.type === 'citation') {
       const text = String(n.attrs?.text || '');
       ctx?.citeOrder.push({ ids: n.attrs?.ids || [], page: n.attrs?.page || '', text });
@@ -95,6 +116,17 @@ function runsFrom(nodes: JSONNode[] | undefined, ctx?: Ctx): ParagraphChild[] {
       continue;
     }
     if (n.type !== 'text' || !n.text) continue;
+    const textIdx = ctx ? ctx.textIndex++ : 0;
+    // Comments: open a range where one starts, close it after the last text it covers.
+    const cmtIds = (n.marks || []).filter((m) => m.type === 'comment' && m.attrs?.id).map((m) => m.attrs.id as string);
+    if (ctx) {
+      for (const id of cmtIds) {
+        if (!ctx.openComments.has(id) && ctx.commentNum.has(id)) {
+          ctx.openComments.add(id);
+          out.push(new CommentRangeStart(ctx.commentNum.get(id)!));
+        }
+      }
+    }
     const opts: any = {};
     let link: string | null = null;
     for (const m of n.marks || []) {
@@ -145,8 +177,24 @@ function runsFrom(nodes: JSONNode[] | undefined, ctx?: Ctx): ParagraphChild[] {
       if (i) children.push(new Tab());
       if (p) children.push(p);
     });
-    const run = new TextRun({ ...(opts as IRunOptions), children, ...(link ? { style: 'Hyperlink' } : {}) });
-    out.push(link ? new ExternalHyperlink({ link, children: [run] }) : run);
+    const ins = (n.marks || []).find((m) => m.type === 'insertion');
+    const del = (n.marks || []).find((m) => m.type === 'deletion');
+    let run: any;
+    if (ins || del) {
+      // Suggestions become Word tracked changes.
+      const rev = { id: ctx ? ctx.revId++ : 1, author: String((ins || del)!.attrs?.author || 'Slate'), date: new Date(Number((ins || del)!.attrs?.at) || Date.now()).toISOString() };
+      run = del ? new DeletedTextRun({ ...(opts as IRunOptions), ...rev, text: n.text.replace(/\t/g, ' ') }) : new InsertedTextRun({ ...(opts as IRunOptions), ...rev, text: n.text.replace(/\t/g, ' ') });
+    } else run = new TextRun({ ...(opts as IRunOptions), children, ...(link ? { style: 'Hyperlink' } : {}) });
+    out.push(link && !ins && !del ? new ExternalHyperlink({ link, children: [run] }) : run);
+    if (ctx) {
+      for (const id of cmtIds) {
+        if (ctx.commentEnd.get(id) === textIdx && ctx.openComments.has(id)) {
+          const num = ctx.commentNum.get(id)!;
+          out.push(new CommentRangeEnd(num), new TextRun({ children: [new CommentReference(num)] }));
+          ctx.openComments.delete(id);
+        }
+      }
+    }
   }
   return out;
 }
@@ -157,6 +205,30 @@ interface Ctx {
   footnotes: Record<number, { children: Paragraph[] }>;
   meta: DocMeta;
   citeOrder: { ids: string[]; page: string; text: string }[];
+  /** Comment id → Word's numeric id, the text-node index where each comment ends, and a running index. */
+  commentNum: Map<string, number>;
+  commentEnd: Map<string, number>;
+  openComments: Set<string>;
+  textIndex: number;
+  revId: number;
+  math: Map<string, { data: Uint8Array; w: number; h: number } | null>;
+}
+
+/** Number every comment and find the last piece of text it covers (document order). */
+function scanComments(json: JSONNode, ctx: Ctx) {
+  let i = 0;
+  const walk = (n: JSONNode) => {
+    if (n.type === 'text') {
+      for (const m of n.marks || []) {
+        if (m.type !== 'comment' || !m.attrs?.id) continue;
+        if (!ctx.commentNum.has(m.attrs.id)) ctx.commentNum.set(m.attrs.id, ctx.commentNum.size);
+        ctx.commentEnd.set(m.attrs.id, i);
+      }
+      i++;
+    }
+    for (const c of n.content || []) walk(c);
+  };
+  walk(json);
 }
 
 /** Simple inline HTML (<i>, <b>) from a bibliography entry → Word runs. */
@@ -387,8 +459,38 @@ async function addSlatePart(bytes: Uint8Array, meta: DocMeta, extra: Record<stri
 export async function jsonToDocx(json: JSONNode, metaIn?: DocMeta | null, title = ''): Promise<Uint8Array> {
   const meta = metaIn || defaultMeta();
   const D = meta.defaults;
-  const ctx: Ctx = { listInstance: 0, footnoteId: 0, footnotes: {}, meta, citeOrder: [] };
+  const ctx: Ctx = { listInstance: 0, footnoteId: 0, footnotes: {}, meta, citeOrder: [], commentNum: new Map(), commentEnd: new Map(), openComments: new Set(), textIndex: 0, revId: 1, math: new Map() };
+  // Draw every equation first (Word gets crisp images; the LaTeX rides along as alt text).
+  const fontPx = (meta.defaults.sizePt * 96) / 72;
+  const mathJobs: Promise<void>[] = [];
+  const findMath = (n: JSONNode) => {
+    if (n.type === 'math') {
+      const k = `${n.attrs?.display ? 'D' : 'I'}:${n.attrs?.latex || ''}`;
+      if (!ctx.math.has(k)) {
+        ctx.math.set(k, null);
+        mathJobs.push(texToPng(n.attrs?.latex || '', !!n.attrs?.display, fontPx).then((png) => void ctx.math.set(k, png)).catch(() => {}));
+      }
+    }
+    (n.content || []).forEach(findMath);
+  };
+  findMath(json);
+  await Promise.all(mathJobs);
+  scanComments(json, ctx);
   const children = await blocksFrom(json.content, ctx);
+  const commentDefs = meta.comments
+    .filter((t) => ctx.commentNum.has(t.id))
+    .map((t) => ({
+      id: ctx.commentNum.get(t.id)!,
+      author: t.author,
+      initials: t.author
+        .split(/\s+/)
+        .map((w) => w[0] || '')
+        .join('')
+        .slice(0, 3)
+        .toUpperCase(),
+      date: new Date(t.at || Date.now()),
+      children: [new Paragraph(t.text), ...t.replies.map((r) => new Paragraph(`${r.author}: ${r.text}`))]
+    }));
   const bulletChars = ['●', '○', '■'];
   const numberFormats = [LevelFormat.DECIMAL, LevelFormat.LOWER_LETTER, LevelFormat.LOWER_ROMAN];
   const levels = (kind: 'bullet' | 'number') =>
@@ -412,6 +514,7 @@ export async function jsonToDocx(json: JSONNode, metaIn?: DocMeta | null, title 
     creator: 'Slate Office',
     title: title || undefined,
     footnotes: ctx.footnotes,
+    ...(commentDefs.length ? { comments: { children: commentDefs } } : {}),
     styles: {
       default: {
         document: {
@@ -463,5 +566,5 @@ export async function jsonToDocx(json: JSONNode, metaIn?: DocMeta | null, title 
     ]
   });
   const blob = await Packer.toBlob(doc);
-  return addSlatePart(new Uint8Array(await blob.arrayBuffer()), meta, { citations: ctx.citeOrder });
+  return addSlatePart(new Uint8Array(await blob.arrayBuffer()), meta, { citations: ctx.citeOrder, commentIds: Object.fromEntries([...ctx.commentNum].map(([id, n]) => [n, id])) });
 }

@@ -77,7 +77,11 @@ import {
   BookOpen,
   ListTree,
   Maximize2,
-  Target
+  Target,
+  MessageSquarePlus,
+  PenLine,
+  FilePenLine,
+  Sigma
 } from 'lucide-react';
 import type { Tab } from '../../store';
 import { editorRegistry, setDirty, toast, prompt, useTabs } from '../../store';
@@ -86,12 +90,18 @@ import { docxToDoc } from './docxImport';
 import { Footnote, Pagination, pageGroups, hfHtml, footnotesOf } from './pagination';
 import { DocMeta, defaultMeta, pageBox, hfFor, cssLineHeight, PAGE_SIZES } from './docMeta';
 import { PageSetupDialog, HeaderFooterDialog } from './DocDialogs';
-import { setting, useSetting } from '../../lib/settings';
+import { setting, useSetting, openSettings, useSettings } from '../../lib/settings';
 import { DOMSerializer } from '@tiptap/pm/model';
 import { Citation, Bibliography, refreshCitations } from './citations';
 import { CitationsDialog, CiteTarget } from './CitationsDialog';
 import { TableOfContents, refreshToc } from './toc';
 import { paginationKey } from './pagination';
+import { CommentMark, Insertion, Deletion, Review, reviewKey, newCommentId, listChanges } from './review';
+import { ReviewRail } from './ReviewRail';
+import { Grammar, GrammarIssue, applyFix, ignoreIssue, recheckGrammar } from './grammar';
+import { MathNode, renderAllMath, inlineMathSvgs } from './math';
+import { MathDialog } from './MathDialog';
+
 import { odtToHtml, rtfToHtml, docToHtml } from './otherFormats';
 import { jsonToDocx } from './docxExport';
 import { saveTabFile, exportFile, SaveFormat } from '../../lib/save';
@@ -211,6 +221,14 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   const [citeTarget, setCiteTarget] = useState<CiteTarget | null>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [selWords, setSelWords] = useState(0);
+  const [mode, setMode] = useState<'edit' | 'suggest'>('edit');
+  const [reviewVersion, setReviewVersion] = useState(0);
+  const [activeComment, setActiveComment] = useState<string | null>(null);
+  const [draftComment, setDraftComment] = useState<string | null>(null);
+  const [showResolved, setShowResolved] = useState(false);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [grIssue, setGrIssue] = useState<{ issue: GrammarIssue; rect: DOMRect } | null>(null);
+  const [mathEdit, setMathEdit] = useState<{ pos: number | null; latex: string; display: boolean } | null>(null);
   const showHints = useSetting<boolean>('doc.statusHints');
   const userName = useSetting<string>('user.name');
   const updateMeta = (m: DocMeta) => {
@@ -255,7 +273,13 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
       Pagination,
       Citation,
       Bibliography,
-      TableOfContents
+      TableOfContents,
+      CommentMark,
+      Insertion,
+      Deletion,
+      Review,
+      Grammar,
+      MathNode
     ],
     content: initialHtml,
     autofocus: initialHtml ? false : 'start',
@@ -311,6 +335,17 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
       } else if (v !== text) ed.view.dispatch(ed.state.tr.setNodeMarkup(pos, undefined, { text: v }));
       ed.commands.focus();
     };
+    let rvTimer: any = null;
+    st.review.author = () => setting<string>('user.name') || 'You';
+    st.grammar.onIssueClick = (issue: GrammarIssue, rect: DOMRect) => setGrIssue({ issue, rect });
+    st.math.onEdit = (pos: number) => {
+      const node = editorRef.current?.state.doc.nodeAt(pos);
+      if (node?.type.name === 'math') setMathEdit({ pos, latex: node.attrs.latex, display: node.attrs.display });
+    };
+    st.review.onChange = () => {
+      clearTimeout(rvTimer);
+      rvTimer = setTimeout(() => setReviewVersion((v) => v + 1), 120);
+    };
     st.citation.onEdit = (pos: number) => {
       const node = editorRef.current?.state.doc.nodeAt(pos);
       if (!node || node.type.name !== 'citation') return;
@@ -331,6 +366,32 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   useEffect(() => {
     editorRef.current?.commands.relayout();
   }, [tab.name]);
+  // Re-check grammar when its settings change.
+  useEffect(() => {
+    let last = '';
+    return useSettings.subscribe((s) => {
+      const sig = JSON.stringify(Object.entries(s.values).filter(([k]) => k.startsWith('grammar.')));
+      if (sig !== last) {
+        if (last && editorRef.current) recheckGrammar(editorRef.current.view);
+        last = sig;
+      }
+    });
+  }, []);
+  useEffect(() => {
+    if (!grIssue) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
+      if (e.target instanceof HTMLElement && e.target.closest('.gr-pop')) return;
+      setGrIssue(null);
+    };
+    window.addEventListener('mousedown', close, true);
+    window.addEventListener('keydown', close, true);
+    editorRef.current?.on('update', () => setGrIssue(null));
+    return () => {
+      window.removeEventListener('mousedown', close, true);
+      window.removeEventListener('keydown', close, true);
+    };
+  }, [grIssue]);
 
   const countTimer = useRef<any>(null);
   const scheduleCount = (ed: Editor) => {
@@ -359,7 +420,10 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     exportFile(`${baseName(tab.name)}.pdf`, {
       name: 'PDF',
       ext: 'pdf',
-      build: () => api.pdfFromHtml(printableHtml(editor!, tab.name, true, metaRef.current), { noMargins: !metaRef.current.pageless })
+      build: async () => {
+        await renderAllMath(editor!.getJSON());
+        return api.pdfFromHtml(printableHtml(editor!, tab.name, true, metaRef.current), { noMargins: !metaRef.current.pageless });
+      }
     });
   const exportText = () =>
     exportFile(`${baseName(tab.name)}.txt`, {
@@ -370,6 +434,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   const exportHtml = () =>
     exportFile(`${baseName(tab.name)}.html`, { name: 'Web page', ext: 'html', build: async () => textToBytes(printableHtml(editor!, tab.name, false, metaRef.current)) });
   const print = async () => {
+    await renderAllMath(editor!.getJSON());
     await api.printHtml(printableHtml(editor!, tab.name, true, metaRef.current), { noMargins: !metaRef.current.pageless });
   };
 
@@ -382,7 +447,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
       exportPdf: async () => void (await handlers.current.exportPdf()),
       debugPdf: () => {
         const name = useTabs.getState().tabs.find((t) => t.id === tab.id)?.name || '';
-        return api.pdfFromHtml(printableHtml(editorRef.current!, name, true, metaRef.current), { noMargins: !metaRef.current.pageless });
+        return renderAllMath(editorRef.current!.getJSON()).then(() => api.pdfFromHtml(printableHtml(editorRef.current!, name, true, metaRef.current), { noMargins: !metaRef.current.pageless }));
       },
       debugBuild: () => jsonToDocx(editorRef.current!.getJSON() as any, metaRef.current, baseName(useTabs.getState().tabs.find((t) => t.id === tab.id)?.name || '')),
       ai: docAiHooks(() => editorRef.current)
@@ -396,6 +461,10 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
       const { from, to } = editor.state.selection;
       if (to > from) publishSelection(tab.id, editor.state.doc.textBetween(from, to, '\n', ' '));
       setSelWords(to > from ? (editor.state.doc.textBetween(from, to, ' ', ' ').match(/\S+/g) || []).length : 0);
+      // Clicking commented or suggested text highlights its card.
+      const marks = editor.state.selection.$from.marks();
+      const m = marks.find((x) => x.type.name === 'comment') || marks.find((x) => x.type.name === 'insertion' || x.type.name === 'deletion');
+      if (m) setActiveComment(m.attrs.id);
     };
     editor.on('selectionUpdate', onSel);
     return () => {
@@ -407,6 +476,11 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && (e.key === '=' || e.code === 'Equal')) {
+        e.preventDefault();
+        setMathEdit({ pos: null, latex: '', display: false });
+        return;
+      }
       if (e.key === 'Escape' && focusMode) {
         setFocusMode(false);
         if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -418,6 +492,11 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
         e.preventDefault();
         setCiteTarget(null);
         setDialog('cite');
+        return;
+      }
+      if (k === 'm' && e.altKey) {
+        e.preventDefault();
+        addComment();
         return;
       }
       if (k === 'f') {
@@ -447,6 +526,21 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   useEffect(() => {
     if (active && editor && !editor.isFocused) setTimeout(() => editor.commands.focus(), 0);
   }, [active, editor]);
+
+  const addComment = () => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    if (ed.state.selection.empty) return toast('Select some text to comment on.');
+    const id = newCommentId();
+    ed.chain().focus().addComment(id).run();
+    setDraftComment(id);
+    setActiveComment(id);
+  };
+  const switchMode = (m: 'edit' | 'suggest') => {
+    setMode(m);
+    editorRef.current?.commands.setSuggesting(m === 'suggest');
+    if (m === 'suggest') toast('Suggesting: your edits show as suggestions others can accept or reject.');
+  };
 
   const setLink = async () => {
     if (!editor) return;
@@ -481,6 +575,15 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     ['--doc-first' as any]: `${D.firstLineIn}in`
   } as React.CSSProperties;
   const firstHeader = hfFor(meta, 'header', 0);
+  const hasChanges = reviewVersion >= 0 && listChanges(editor.state).length > 0;
+  const showRail = meta.comments.length > 0 || !!draftComment || hasChanges;
+  // Highlight the active comment, and hide the highlight of resolved ones.
+  const railCss =
+    (activeComment ? `.doc-content [data-comment="${activeComment}"], .doc-content [data-change="${activeComment}"] { background: var(--cmt-active) !important; }` : '') +
+    meta.comments
+      .filter((t) => t.resolved)
+      .map((t) => `.doc-content [data-comment="${t.id}"] { background: none !important; border-bottom: none !important; }`)
+      .join('');
   const insertFootnote = () => {
     const pos = editor.state.selection.to;
     editor.chain().focus().setTextSelection(pos).insertFootnote('').run();
@@ -512,12 +615,54 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
           setTimeout(() => refreshCitations(editor, metaRef.current), 0);
         }}
         onToc={() => editor.chain().focus().insertToc().run()}
+        onMath={() => setMathEdit({ pos: null, latex: '', display: false })}
+        mode={mode}
+        onMode={switchMode}
+        onComment={addComment}
         onFocusMode={() => {
           setFocusMode(true);
           document.documentElement.requestFullscreen?.().catch(() => {});
           toast('Focus mode. Press Esc to exit.');
         }}
       />
+      {mathEdit && (
+        <MathDialog
+          initial={mathEdit.latex}
+          display={mathEdit.display}
+          onClose={() => (setMathEdit(null), editor.commands.focus())}
+          onRemove={mathEdit.pos != null ? () => (editor.view.dispatch(editor.state.tr.delete(mathEdit.pos!, mathEdit.pos! + 1)), setMathEdit(null)) : undefined}
+          onSave={(latex, display) => {
+            if (mathEdit.pos != null) {
+              const node = editor.state.doc.nodeAt(mathEdit.pos);
+              if (node?.type.name === 'math') editor.view.dispatch(editor.state.tr.setNodeMarkup(mathEdit.pos, undefined, { latex, display }));
+            } else editor.chain().focus().insertMath(latex, display).run();
+            setMathEdit(null);
+          }}
+        />
+      )}
+      {grIssue && (
+        <div className="gr-pop" style={{ left: Math.min(grIssue.rect.left, window.innerWidth - 340), top: grIssue.rect.bottom + 6 }}>
+          <div className="gr-kind">{grIssue.issue.kind.replace(/([a-z])([A-Z])/g, '$1 $2')}</div>
+          <div className="gr-msg">{grIssue.issue.message}</div>
+          {grIssue.issue.suggestions.length > 0 && (
+            <div className="gr-fixes">
+              {grIssue.issue.suggestions.slice(0, 5).map((f, i) => (
+                <button key={i} className="btn sm tonal" onClick={() => (applyFix(editor.view, grIssue.issue, f), setGrIssue(null))}>
+                  {f.kind === 'remove' ? 'Remove' : f.text || '(remove)'}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="gr-foot">
+            <button className="link-btn" onClick={() => (ignoreIssue(editor.view, grIssue.issue), setGrIssue(null))}>
+              Ignore
+            </button>
+            <button className="link-btn" onClick={() => (setGrIssue(null), openSettings('writing'))}>
+              Grammar settings
+            </button>
+          </div>
+        </div>
+      )}
       {dialog === 'page' && <PageSetupDialog meta={meta} onClose={() => setDialog(null)} onApply={updateMeta} />}
       {dialog === 'hf' && <HeaderFooterDialog meta={meta} author={userName} onClose={() => setDialog(null)} onApply={updateMeta} />}
       {dialog === 'cite' && (
@@ -562,6 +707,8 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
           if (Array.from(e.dataTransfer.files).some((f) => f.type.startsWith('image/'))) e.stopPropagation();
         }}
       >
+        <div className={`doc-stage ${showRail ? 'with-rail' : ''}`} ref={stageRef}>
+        <style>{railCss}</style>
         <div className={`doc-page paper-${paper} ${meta.pageless ? 'pageless' : 'paged'}`} style={pageVars} onMouseDown={(e) => e.target === e.currentTarget && (e.preventDefault(), editor.commands.focus('end'))}>
           {!meta.pageless && (
             <div
@@ -572,6 +719,23 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
             />
           )}
           <EditorContent editor={editor} />
+        </div>
+        {showRail && (
+          <ReviewRail
+            editor={editor}
+            meta={meta}
+            me={userName || 'You'}
+            version={reviewVersion}
+            active={activeComment}
+            setActive={setActiveComment}
+            draftId={draftComment}
+            onDraftDone={() => setDraftComment(null)}
+            onMeta={updateMeta}
+            showResolved={showResolved}
+            setShowResolved={setShowResolved}
+            stage={stageRef.current}
+          />
+        )}
         </div>
       </div>
       <div className="statusbar">
@@ -645,7 +809,11 @@ function Toolbar(p: {
   onCite(): void;
   onBibliography(): void;
   onToc(): void;
+  onMath(): void;
   onFocusMode(): void;
+  mode: 'edit' | 'suggest';
+  onMode(m: 'edit' | 'suggest'): void;
+  onComment(): void;
 }) {
   const { editor } = p;
   const chain = () => editor.chain().focus();
@@ -819,33 +987,36 @@ function Toolbar(p: {
           );
         }}
       </MenuButton>
-      <B on={editor.isActive('taskList')} title="Checklist" onClick={() => chain().toggleTaskList().run()}>
-        <ListChecks size={18} />
-      </B>
       <B on={editor.isActive('bulletList')} title="Bulleted list (Ctrl+Shift+8)" onClick={() => chain().toggleBulletList().run()}>
         <List size={18} />
       </B>
       <B on={editor.isActive('orderedList')} title="Numbered list (Ctrl+Shift+7)" onClick={() => chain().toggleOrderedList().run()}>
         <ListOrdered size={18} />
       </B>
-      <B
-        title="Decrease indent (Shift+Tab)"
-        onClick={() => (editor.isActive('listItem') ? chain().liftListItem('listItem').run() : editor.isActive('taskItem') ? chain().liftListItem('taskItem').run() : chain().outdent().run())}
-      >
-        <IndentDecrease size={18} />
-      </B>
-      <B
-        title="Increase indent (Tab)"
-        onClick={() => (editor.isActive('listItem') ? chain().sinkListItem('listItem').run() : editor.isActive('taskItem') ? chain().sinkListItem('taskItem').run() : chain().indent().run())}
-      >
-        <IndentIncrease size={18} />
-      </B>
-      <B title="Clear formatting (Ctrl+\)" onClick={() => chain().unsetAllMarks().setParagraph().setLineHeight(null).run()}>
-        <RemoveFormatting size={18} />
-      </B>
       <MenuButton title="More formatting" button={(open) => <button className={`icon-btn ${open ? 'active' : ''}`}><Heading size={18} /></button>}>
         {(close) => (
           <>
+            <button className="menu-item" onClick={() => (chain().toggleTaskList().run(), close())}>
+              <ListChecks size={16} /> Checklist
+            </button>
+            <button
+              className="menu-item"
+              onClick={() => (
+                editor.isActive('listItem') ? chain().liftListItem('listItem').run() : editor.isActive('taskItem') ? chain().liftListItem('taskItem').run() : chain().outdent().run(), close()
+              )}
+            >
+              <IndentDecrease size={16} /> Decrease indent <span className="kbd">Shift+Tab</span>
+            </button>
+            <button
+              className="menu-item"
+              onClick={() => (editor.isActive('listItem') ? chain().sinkListItem('listItem').run() : editor.isActive('taskItem') ? chain().sinkListItem('taskItem').run() : chain().indent().run(), close())}
+            >
+              <IndentIncrease size={16} /> Increase indent <span className="kbd">Tab</span>
+            </button>
+            <button className="menu-item" onClick={() => (chain().unsetAllMarks().setParagraph().setLineHeight(null).run(), close())}>
+              <RemoveFormatting size={16} /> Clear formatting
+            </button>
+            <div className="menu-sep" />
             <button className="menu-item" onClick={() => (chain().toggleStrike().run(), close())}>
               <Strikethrough size={16} /> Strikethrough <span className="kbd">Ctrl+Shift+X</span>
             </button>
@@ -888,6 +1059,9 @@ function Toolbar(p: {
             <button className="menu-item" onClick={() => (p.onFootnote(), close())}>
               <Asterisk size={16} /> Footnote <span className="kbd">Ctrl+Alt+F</span>
             </button>
+            <button className="menu-item" onClick={() => (p.onMath(), close())}>
+              <Sigma size={16} /> Equation <span className="kbd">Alt+=</span>
+            </button>
             <button className="menu-item" onClick={() => (chain().setPageBreak().run(), close())}>
               <SeparatorHorizontal size={16} /> Page break <span className="kbd">Ctrl+Enter</span>
             </button>
@@ -908,18 +1082,33 @@ function Toolbar(p: {
         )}
       </MenuButton>
 
+      <B title="Comment (Ctrl+Alt+M)" onClick={p.onComment}>
+        <MessageSquarePlus size={18} />
+      </B>
+
       <div className="tb-spacer" />
-      <B title="Page setup" onClick={p.onPageSetup}>
-        <FileCog size={18} />
-      </B>
-      <B title="Focus mode" onClick={p.onFocusMode}>
-        <Maximize2 size={18} />
-      </B>
+      <MenuButton
+        title="Editing mode"
+        button={() => (
+          <button className={`mode-btn ${p.mode === 'suggest' ? 'suggest' : ''}`} title="Editing mode">
+            {p.mode === 'suggest' ? <FilePenLine size={16} /> : <PenLine size={16} />}
+            {p.mode === 'suggest' ? 'Suggesting' : 'Editing'}
+          </button>
+        )}
+      >
+        {(close) => (
+          <>
+            <button className="menu-item" onClick={() => (p.onMode('edit'), close())}>
+              <PenLine size={16} /> Editing <span className="kbd">edit directly</span>
+            </button>
+            <button className="menu-item" onClick={() => (p.onMode('suggest'), close())}>
+              <FilePenLine size={16} /> Suggesting <span className="kbd">edits become suggestions</span>
+            </button>
+          </>
+        )}
+      </MenuButton>
       <B title="Find and replace (Ctrl+F)" onClick={p.onFind}>
         <Search size={18} />
-      </B>
-      <B title={p.paper === 'dark' ? 'Light page' : 'Dark page'} onClick={() => p.setPaper(p.paper === 'dark' ? 'light' : 'dark')}>
-        {p.paper === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
       </B>
       <div className="tb-sep" />
       <div className="tb-end">
@@ -952,6 +1141,19 @@ function Toolbar(p: {
             <div className="menu-sep" />
             <button className="menu-item" onClick={() => (p.onPrint(), close())}>
               <Printer size={16} /> Print… <span className="kbd">Ctrl+P</span>
+            </button>
+            <div className="menu-sep" />
+            <button className="menu-item" onClick={() => (p.onPageSetup(), close())}>
+              <FileCog size={16} /> Page setup
+            </button>
+            <button className="menu-item" onClick={() => (p.onHeaderFooter(), close())}>
+              <PanelTop size={16} /> Header, footer &amp; page numbers
+            </button>
+            <button className="menu-item" onClick={() => (p.onFocusMode(), close())}>
+              <Maximize2 size={16} /> Focus mode
+            </button>
+            <button className="menu-item" onClick={() => (p.setPaper(p.paper === 'dark' ? 'light' : 'dark'), close())}>
+              {p.paper === 'dark' ? <Sun size={16} /> : <Moon size={16} />} {p.paper === 'dark' ? 'White page' : 'Dark page'}
             </button>
           </>
         )}
@@ -1137,7 +1339,7 @@ function printableHtml(editor: Editor, title: string, forPrint: boolean, meta: D
   const nodeHtml = (i: number) => {
     const wrap = document.createElement('div');
     wrap.appendChild(serializer.serializeNode(editor.state.doc.child(i)));
-    return wrap.innerHTML;
+    return inlineMathSvgs(wrap.innerHTML);
   };
   const esc = (s: string) => escapeHtml(s);
   const notesBlock = (notes: { n: number; text: string }[]) =>
@@ -1158,7 +1360,7 @@ function printableHtml(editor: Editor, title: string, forPrint: boolean, meta: D
       .join('');
   } else {
     const notes = footnotesOf(editor.state.doc).map(({ n, text }) => ({ n, text }));
-    body = `<div class="content">${editor.getHTML()}</div>${notes.length ? `<h3>Notes</h3>${notesBlock(notes)}` : ''}`;
+    body = `<div class="content">${inlineMathSvgs(editor.getHTML())}</div>${notes.length ? `<h3>Notes</h3>${notesBlock(notes)}` : ''}`;
   }
   const embedded = btoa(unescape(encodeURIComponent(JSON.stringify(meta))));
   const pageW = (meta.page.landscape ? meta.page.height : meta.page.width).toFixed(3);
@@ -1210,6 +1412,13 @@ hr { border: none; border-top: 1px solid #c4c7c5; margin: 10pt 0; }
 a { color: #1155cc; }
 .page-break { ${paged ? 'display: none;' : 'break-after: page; page-break-after: always; height: 0;'} }
 .bibliography, .toc { text-indent: 0; }
+.cmt { background: none; }
+ins.sg-ins { color: #137333; text-decoration: underline; }
+.gr-err { text-decoration: none; }
+.math { display: inline-block; vertical-align: middle; }
+.math.display { display: block; text-align: center; margin: 4pt 0; }
+.math svg { vertical-align: middle; }
+del.sg-del { color: #a50e0e; text-decoration: line-through; }
 .bib-title { text-align: center; margin: 0; ${meta.citationStyle === 'apa' ? 'font-weight: 700;' : ''} }
 .bib-entry { padding-left: 0.5in; text-indent: -0.5in; margin: 0; overflow-wrap: anywhere; }
 .bib-empty, .toc-empty { display: none; }

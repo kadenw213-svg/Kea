@@ -30,6 +30,11 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Ctrl+F', 'Find'],
       ['Ctrl+H', 'Find and replace'],
       ['Ctrl+K', 'Insert link'],
+      ['Ctrl+Alt+C', 'Insert citation'],
+      ['Ctrl+Alt+F', 'Insert footnote'],
+      ['Ctrl+Alt+M', 'Comment on the selection'],
+      ['Alt+=', 'Insert equation'],
+      ['Ctrl+Enter', 'Page break'],
       ['Ctrl+= / Ctrl+-', 'Zoom in / out'],
       ['Ctrl+0', 'Reset zoom'],
       ['Ctrl+Z / Ctrl+Y', 'Undo / redo']

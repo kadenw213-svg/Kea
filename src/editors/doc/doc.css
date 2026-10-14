@@ -827,3 +827,354 @@
   flex-direction: column;
   gap: 6px;
 }
+
+/* ---------- Comments & suggestions ---------- */
+.doc-stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 18px;
+  min-width: fit-content;
+}
+.doc-stage .doc-page {
+  margin: 0;
+  flex: 0 0 auto;
+}
+.doc-page {
+  --cmt: rgba(253, 214, 99, 0.22);
+  --cmt-line: rgba(253, 214, 99, 0.8);
+  --cmt-active: rgba(253, 214, 99, 0.45);
+}
+.doc-page.paper-light {
+  --cmt: rgba(251, 188, 4, 0.25);
+  --cmt-line: #f9ab00;
+  --cmt-active: rgba(251, 188, 4, 0.5);
+}
+.doc-content .cmt {
+  background: var(--cmt);
+  border-bottom: 2px solid var(--cmt-line);
+}
+.doc-content ins.sg-ins {
+  text-decoration: none;
+  color: #81c995;
+  border-bottom: 1.5px solid #81c995;
+}
+.doc-content del.sg-del {
+  color: #f28b82;
+  text-decoration: line-through;
+  text-decoration-color: #f28b82;
+}
+.paper-light .doc-content ins.sg-ins {
+  color: #137333;
+  border-bottom-color: #137333;
+}
+.paper-light .doc-content del.sg-del {
+  color: #a50e0e;
+  text-decoration-color: #a50e0e;
+}
+.rv-rail {
+  position: relative;
+  width: 290px;
+  flex: 0 0 290px;
+  align-self: stretch;
+}
+.rv-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  background: var(--bg);
+  border-radius: 12px;
+}
+.rv-resolved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.rv-cards {
+  position: relative;
+}
+.rv-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: default;
+  transition: top 0.18s ease, box-shadow 0.15s, transform 0.15s;
+  cursor: pointer;
+}
+.rv-card.active {
+  box-shadow: var(--shadow);
+  border-color: var(--border-strong);
+  transform: translateX(-6px);
+  z-index: 2;
+}
+.rv-card.resolved {
+  opacity: 0.65;
+}
+.rv-card.change {
+  border-left: 3px solid #81c995;
+}
+.rv-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rv-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.rv-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.rv-meta b {
+  font-weight: 500;
+}
+.rv-meta span {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.rv-text {
+  margin: 6px 0 0 34px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.rv-change {
+  margin: 6px 0 0 34px;
+  color: var(--text-2);
+  word-break: break-word;
+}
+.rv-change ins {
+  color: #81c995;
+  text-decoration: none;
+  font-weight: 500;
+}
+.rv-change del {
+  color: #f28b82;
+}
+.rv-reply {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.rv-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  min-height: 60px;
+  resize: vertical;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  outline: none;
+}
+.rv-input:focus {
+  border-color: var(--accent);
+}
+.rv-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+.rv-replybox {
+  margin-top: 8px;
+}
+.rv-replybox .input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mode-btn:hover {
+  background: var(--surface-3);
+}
+.mode-btn.suggest {
+  color: #81c995;
+  border-color: rgba(129, 201, 149, 0.6);
+  background: rgba(129, 201, 149, 0.1);
+}
+.rv-head {
+  position: absolute;
+  top: -44px;
+  left: 0;
+  right: 0;
+  background: transparent;
+  padding: 0;
+}
+.doc-stage.with-rail {
+  margin-top: 44px;
+}
+
+/* ---------- Grammar ---------- */
+.doc-content .gr-err {
+  text-decoration: underline wavy #7cacf8;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: none;
+  cursor: pointer;
+}
+.doc-content .gr-err.gr-spelling,
+.doc-content .gr-err.gr-typo {
+  text-decoration-color: #f28b82;
+}
+.paper-light .doc-content .gr-err {
+  text-decoration-color: #1a73e8;
+}
+.gr-pop {
+  position: fixed;
+  z-index: 60;
+  width: 320px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  font-size: 13px;
+  animation: pop 0.12s ease-out;
+}
+.gr-kind {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.gr-msg {
+  color: var(--text);
+  line-height: 1.45;
+}
+.gr-fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.gr-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+/* ---------- Equations ---------- */
+.doc-content .math {
+  display: inline-block;
+  vertical-align: middle;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0 1px;
+  text-indent: 0;
+  line-height: 1;
+}
+.doc-content .math svg {
+  vertical-align: middle;
+}
+.doc-content .math.display {
+  display: block;
+  text-align: center;
+  margin: 4pt 0;
+}
+.doc-content .math:hover {
+  background: var(--tint);
+}
+.doc-content .math.ProseMirror-selectednode {
+  outline: 1px solid var(--accent);
+}
+.math-error {
+  color: #f28b82;
+  font-size: 12px;
+  font-family: var(--font);
+}
+.math-dialog {
+  width: 640px;
+  max-width: 94vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.math-preview {
+  min-height: 70px;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #000;
+  border-radius: 12px;
+  padding: 14px;
+  margin: 6px 0 10px;
+  overflow-x: auto;
+}
+.math-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 70px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 14px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+  resize: vertical;
+}
+.math-input:focus {
+  border-color: var(--accent);
+}
+.math-group {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 8px;
+  align-items: start;
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+.math-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.math-btns .chip-btn {
+  min-width: 34px;
+  font-size: 13px;
+}

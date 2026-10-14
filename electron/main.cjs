@@ -210,12 +210,14 @@ app.whenReady().then(() => {
     const filePath = path.normalize(path.join(DIST, rel));
     if (!filePath.startsWith(DIST)) return new Response('Forbidden', { status: 403 });
     const res = await net.fetch(pathToFileURL(filePath).toString());
+    // WebAssembly (the offline grammar checker) must be served with its proper type.
+    if (filePath.endsWith('.wasm')) return new Response(res.body, { status: res.status, headers: { 'Content-Type': 'application/wasm' } });
     if (!filePath.endsWith('.html')) return res;
     // Lock the renderer down: only our own code, no remote content.
     const headers = new Headers(res.headers);
     headers.set(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'"
+      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'"
     );
     return new Response(res.body, { status: res.status, headers });
   });

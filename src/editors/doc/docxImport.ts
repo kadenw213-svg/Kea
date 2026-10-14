@@ -144,6 +144,33 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
   }
   const citeRecords: { ids: string[]; page: string; text: string }[] = extra?.citations || [];
   let citeIdx = 0;
+
+  // Comments (Word id → text) and the ids Slate used for them.
+  const commentIds: Record<string, string> = extra?.commentIds || {};
+  const cid = (wid: string) => commentIds[wid] || `w${wid}`;
+  const wordComments: { id: string; author: string; at: number; text: string }[] = [];
+  const cmXml = await read('word/comments.xml');
+  if (cmXml) {
+    for (const c of Array.from(parse(cmXml).getElementsByTagNameNS(W, 'comment'))) {
+      const id = attr(c, 'id');
+      if (id == null) continue;
+      const text = Array.from(c.getElementsByTagNameNS(W, 'p'))
+        .map((p) => Array.from(p.getElementsByTagNameNS(W, 't')).map((t) => t.textContent || '').join(''))
+        .filter(Boolean)
+        .join('\n');
+      wordComments.push({ id: cid(id), author: attr(c, 'author') || 'Someone', at: Date.parse(attr(c, 'date') || '') || Date.now(), text });
+    }
+  }
+  const openComments = new Set<string>();
+  const wrapComments = (html: string) => {
+    let out = html;
+    for (const id of openComments) out = `<span data-comment="${escapeHtml(id)}">${out}</span>`;
+    return out;
+  };
+  const changeAttrs = (el: Element) => {
+    const at = Date.parse(attr(el, 'date') || '') || Date.now();
+    return `data-change="r${escapeHtml(attr(el, 'id') || '0')}" data-author="${escapeHtml(attr(el, 'author') || 'Someone')}" data-at="${at}"`;
+  };
   const doc = parse(docXml);
 
   // Relationships (links + images)
@@ -271,6 +298,7 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
     for (const c of Array.from(r.children)) {
       switch (c.localName) {
         case 't':
+        case 'delText':
           inner += escapeHtml(c.textContent || '');
           break;
         case 'tab':
@@ -302,6 +330,13 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
         }
         case 'drawing':
         case 'pict': {
+          const descr = c.getElementsByTagNameNS('http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing', 'docPr')[0]?.getAttribute('descr') || '';
+          if (descr.startsWith('slate-math:')) {
+            const k = descr.slice('slate-math:'.length);
+            const display = k.startsWith('D:');
+            inner += `<span data-math="${escapeHtml(k.slice(2))}"${display ? ' data-display' : ''}></span>`;
+            break;
+          }
           const blip = c.getElementsByTagNameNS(A, 'blip')[0];
           const rid = blip?.getAttributeNS(R, 'embed') || (c.getElementsByTagName('v:imagedata')[0]?.getAttributeNS(R, 'id') ?? null);
           if (rid) {
@@ -317,7 +352,7 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
     }
     if (!inner) return '';
     // Images are lifted out as blocks later, so keep them unformatted.
-    if (inner.includes('\u0000IMG') || inner.includes('PAGEBREAK') || inner.startsWith('<sup data-footnote')) return inner;
+    if (inner.includes('\u0000IMG') || inner.includes('PAGEBREAK') || inner.startsWith('<sup data-footnote') || inner.startsWith('<span data-math')) return inner;
     const css: string[] = [];
     if (p.color && p.color !== '#000000') css.push(`color: ${p.color}`);
     if (p.size && Math.abs(p.size - baseSize) > 0.01) css.push(`font-size: ${p.size}pt`);
@@ -336,9 +371,40 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
     let html = '';
     for (const c of Array.from(container.children)) {
       switch (c.localName) {
-        case 'r':
-          html += await runHtml(c, paraRun);
+        case 'r': {
+          const h = await runHtml(c, paraRun);
+          html += h && openComments.size && !h.includes('\u0000') ? wrapComments(h) : h;
           break;
+        }
+        case 'oMath':
+        case 'oMathPara': {
+          // Word's own equations: keep their text (Slate can't edit Office Math yet).
+          const text = Array.from(c.getElementsByTagNameNS('http://schemas.openxmlformats.org/officeDocument/2006/math', 't'))
+            .map((t) => t.textContent || '')
+            .join('');
+          if (text) html += `<em>${escapeHtml(text)}</em>`;
+          break;
+        }
+        case 'commentRangeStart': {
+          const id = attr(c, 'id');
+          if (id != null) openComments.add(cid(id));
+          break;
+        }
+        case 'commentRangeEnd': {
+          const id = attr(c, 'id');
+          if (id != null) openComments.delete(cid(id));
+          break;
+        }
+        case 'ins': {
+          const inner = await inlineHtml(c, paraRun);
+          html += inner ? `<ins ${changeAttrs(c)}>${inner}</ins>` : '';
+          break;
+        }
+        case 'del': {
+          const inner = await inlineHtml(c, paraRun);
+          html += inner ? `<del ${changeAttrs(c)}>${inner}</del>` : '';
+          break;
+        }
         case 'hyperlink': {
           const rid = c.getAttributeNS(R, 'id');
           const anchor = attr(c, 'anchor');
@@ -349,14 +415,13 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
         }
         case 'smartTag':
         case 'customXml':
-        case 'ins':
         case 'fldSimple':
           html += await inlineHtml(c, paraRun);
           break;
         case 'sdt':
           html += await inlineHtml(kid(c, 'sdtContent')!, paraRun);
           break;
-        // w:del (tracked deletions) and w:instrText are intentionally skipped.
+        // w:instrText (field codes) is intentionally skipped.
       }
     }
     return html;
@@ -669,11 +734,15 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
     }
   }
 
+  // Comments written in Word (or anything without Slate's richer copy).
+  if (wordComments.length) meta.comments = wordComments.map((c) => ({ ...c, replies: [] }));
+
   // ---------- Slate's own data (citations, comments, goal…) ----------
   if (extra) {
     try {
       if (extra.sources) meta.sources = extra.sources;
-      if (extra.comments) meta.comments = extra.comments;
+      // Slate's copy has replies and resolved state; keep any comments added in Word since.
+      if (extra.comments) meta.comments = [...extra.comments, ...wordComments.filter((w) => !extra.comments.some((c: any) => c.id === w.id)).map((c) => ({ ...c, replies: [] }))];
       if (extra.citationStyle) meta.citationStyle = extra.citationStyle;
       if ('wordGoal' in extra) meta.wordGoal = extra.wordGoal;
       if ('pageless' in extra) meta.pageless = extra.pageless;
