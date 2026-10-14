@@ -9,6 +9,7 @@ import { formatBytes } from '../../lib/util';
 import { SHORTCUTS } from './shortcuts';
 import { GooglePanel } from './GooglePanel';
 import { useUpdates } from '../Updates';
+import { VoiceSettingsExtras } from '../VoiceTyping';
 
 function FieldControl({ f, value, onChange }: { f: Field; value: any; onChange: (v: any) => void }) {
   switch (f.type) {
@@ -214,7 +215,7 @@ function AboutPanel() {
         <div className="about-title">Built with Llama</div>
         <p>
           The "Balanced" AI model is Llama 3.2. Llama 3.2 is licensed under the Llama 3.2 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved. The "Light" and "Best" models
-          are Qwen2.5 by Alibaba Cloud, under the Apache License 2.0. Models run entirely on this computer.
+          are Qwen2.5 by Alibaba Cloud, under the Apache License 2.0. Voice typing uses OpenAI Whisper (MIT licence) with Transformers.js and ONNX Runtime. Models run entirely on this computer.
         </p>
         <div className="about-links">
           <a href="#" onClick={(e) => (e.preventDefault(), openBundled('licenses/LLAMA-3.2-LICENSE.txt'))}>
@@ -308,6 +309,7 @@ export function SettingsDialog() {
           </button>
         )}
         {cur.id === 'files' && <FilesExtras />}
+        {cur.id === 'voice' && <VoiceSettingsExtras />}
         {cur.id === 'privacy' && <PrivacyExtras />}
       </>
     );

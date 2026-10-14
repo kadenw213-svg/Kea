@@ -901,3 +901,111 @@ body.col-resizing * {
   box-shadow: -14px 0 14px -8px var(--surface-2);
   z-index: 1;
 }
+
+/* ---------- Voice typing ---------- */
+.voice-panel {
+  position: fixed;
+  left: 50%;
+  bottom: 54px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 360px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 12px 10px 12px 14px;
+  border-radius: 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+}
+.voice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+.voice-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.voice-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  margin-bottom: 2px;
+}
+.voice-mic {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  background: var(--surface-4);
+  color: var(--text);
+  flex-shrink: 0;
+  transition: background 0.15s, box-shadow 0.1s;
+}
+.voice-mic.on {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 0 0 calc(3px + var(--lvl, 0) * 10px) color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.voice-actions {
+  display: flex;
+  gap: 2px;
+}
+.voice-setup {
+  flex: 1;
+  font-size: 12.5px;
+  display: grid;
+  gap: 8px;
+}
+.voice-dl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.voice-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-4);
+  overflow: hidden;
+}
+.voice-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s;
+}
+.voice-models {
+  margin-top: 8px;
+}
+.voice-model {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  margin: 6px 0;
+}
+.voice-model.on {
+  border-color: var(--accent);
+}
+.voice-model label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+  font-size: 13px;
+}
+.voice-model .muted {
+  font-size: 12px;
+}

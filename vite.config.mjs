@@ -11,7 +11,8 @@ export default defineConfig({
     chunkSizeWarningLimit: 6000,
     target: 'chrome128'
   },
+  worker: { format: 'es' },
   optimizeDeps: {
-    exclude: ['pdfjs-dist']
+    exclude: ['pdfjs-dist', '@huggingface/transformers']
   }
 });

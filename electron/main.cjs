@@ -203,6 +203,7 @@ app.whenReady().then(() => {
   require('./present.cjs').register({ log, getWindow: () => mainWindow });
   require('./search.cjs').register();
   require('./tts.cjs').register();
+  require('./speech.cjs').register({ log, getWindow: () => mainWindow });
   const applySpell = () => session.defaultSession.setSpellCheckerEnabled(settings.get('general.spellcheck', true) !== false);
   applySpell();
   settings.onChange(applySpell);
@@ -210,14 +211,31 @@ app.whenReady().then(() => {
     const url = new URL(request.url);
     let rel = decodeURIComponent(url.pathname);
     if (rel === '/' || rel === '') rel = '/index.html';
+    // Downloaded voice-typing models live in the user's data folder, not inside the app.
+    // Cross-origin isolation lets WebAssembly use several CPU cores (voice typing, OCR). "credentialless"
+    // doesn't block anything Slate loads; every file comes from the app itself.
+    const isoHeaders = (res, extra = {}) => {
+      const headers = new Headers(res.headers);
+      headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+      headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
+      headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+      for (const [k, v] of Object.entries(extra)) headers.set(k, v);
+      return headers;
+    };
+    const isolated = (res, extra) => new Response(res.body, { status: res.status, headers: isoHeaders(res, extra) });
+    if (rel.startsWith('/__speech/')) {
+      const p = require('./speech.cjs').resolveServed(rel.slice('/__speech/'.length));
+      if (!p || !fs.existsSync(p)) return new Response('Not found', { status: 404 });
+      return isolated(await net.fetch(pathToFileURL(p).toString()));
+    }
     const filePath = path.normalize(path.join(DIST, rel));
     if (!filePath.startsWith(DIST)) return new Response('Forbidden', { status: 403 });
     const res = await net.fetch(pathToFileURL(filePath).toString());
     // WebAssembly (the offline grammar checker) must be served with its proper type.
-    if (filePath.endsWith('.wasm')) return new Response(res.body, { status: res.status, headers: { 'Content-Type': 'application/wasm' } });
-    if (!filePath.endsWith('.html')) return res;
+    if (filePath.endsWith('.wasm')) return isolated(res, { 'Content-Type': 'application/wasm' });
+    if (!filePath.endsWith('.html')) return isolated(res);
     // Lock the renderer down: only our own code, no remote content.
-    const headers = new Headers(res.headers);
+    const headers = isoHeaders(res);
     headers.set(
       'Content-Security-Policy',
       "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'"

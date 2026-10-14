@@ -14,6 +14,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Ctrl+Shift+P / Alt+/', 'Command palette: run anything, find files, search inside files'],
       ['Ctrl+Shift+H', 'Version history'],
       ['Ctrl+J', 'Show or hide the AI sidebar'],
+      ['Ctrl+Alt+V', 'Voice typing: talk and Slate types (Esc stops)'],
       ['Ctrl+\\', 'Split view: two tabs side by side (again to close)']
     ]
   },

@@ -16,6 +16,7 @@ import { api } from './lib/api';
 import { openEntry, openPaths, openWithDialog, newFile } from './lib/open';
 import { requestCloseTab, requestQuit } from './lib/closing';
 import { modKey } from './lib/util';
+import { VoiceTypingPanel, toggleVoice } from './components/VoiceTyping';
 
 const PdfEditor = lazy(() => import('./editors/pdf/PdfEditor'));
 const DocEditor = lazy(() => import('./editors/doc/DocEditor'));
@@ -96,6 +97,12 @@ export function App() {
       }
       if (!modKey(e)) return;
       const k = e.key.toLowerCase();
+      if (e.altKey && !e.shiftKey && (k === 'v' || e.code === 'KeyV')) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleVoice();
+        return;
+      }
       if (k === ',') {
         e.preventDefault();
         openSettings();
@@ -241,6 +248,7 @@ export function App() {
       <UpdateDialog />
       <SettingsDialog />
       <CommandPalette />
+      <VoiceTypingPanel />
       <VersionHistoryDialog />
       <Overlays />
     </div>

@@ -303,6 +303,23 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'voice',
+    label: 'Voice typing',
+    icon: 'Mic',
+    blurb: 'Talk and Slate types for you, in documents, slides, cells and text boxes. Start it with Ctrl+Alt+V. Speech is turned into text on this PC; nothing is uploaded.',
+    fields: [
+      { key: 'voice.model', label: 'Speech model', type: 'select', default: 'base', options: [{ value: 'tiny', label: 'Fastest (English)' }, { value: 'base', label: 'Balanced (English)' }, { value: 'small', label: 'Most accurate (English)' }, { value: 'base-multi', label: 'Balanced (many languages)' }, { value: 'small-multi', label: 'Most accurate (many languages)' }] },
+      { key: 'voice.language', label: 'Language you speak', type: 'select', default: 'auto', options: [{ value: 'auto', label: 'Detect automatically' }, { value: 'english', label: 'English' }, { value: 'spanish', label: 'Spanish' }, { value: 'french', label: 'French' }, { value: 'german', label: 'German' }, { value: 'italian', label: 'Italian' }, { value: 'portuguese', label: 'Portuguese' }, { value: 'dutch', label: 'Dutch' }, { value: 'polish', label: 'Polish' }, { value: 'russian', label: 'Russian' }, { value: 'ukrainian', label: 'Ukrainian' }, { value: 'turkish', label: 'Turkish' }, { value: 'arabic', label: 'Arabic' }, { value: 'hindi', label: 'Hindi' }, { value: 'chinese', label: 'Chinese' }, { value: 'japanese', label: 'Japanese' }, { value: 'korean', label: 'Korean' }, { value: 'vietnamese', label: 'Vietnamese' }, { value: 'indonesian', label: 'Indonesian' }, { value: 'tagalog', label: 'Tagalog' }], when: (v) => String(v['voice.model'] || '').endsWith('-multi') },
+      { key: 'voice.commands', label: 'Say "new line" or "new paragraph" to start one', type: 'toggle', default: true },
+      { key: 'voice.filterFillers', label: 'Leave out "um" and "uh"', type: 'toggle', default: true },
+      { key: 'voice.pause', label: 'Pause that ends a phrase', type: 'number', default: 700, min: 200, max: 3000, step: 50, unit: 'ms', advanced: true, help: 'Your words appear after you pause this long. Longer pauses give the model more context (often more accurate) but text appears later.' },
+      { key: 'voice.maxPhrase', label: 'Longest phrase before typing anyway', type: 'number', default: 20, min: 5, max: 30, unit: 'seconds', advanced: true },
+      { key: 'voice.sensitivity', label: 'Microphone sensitivity', type: 'range', default: 5, min: 1, max: 10, step: 1, advanced: true, help: 'Raise it if quiet speech is missed; lower it if background noise gets typed.' },
+      { key: 'voice.noiseSuppression', label: 'Reduce background noise', type: 'toggle', default: true, advanced: true },
+      { key: 'voice.idleStop', label: 'Stop listening after silence of', type: 'number', default: 60, min: 0, max: 3600, unit: 'seconds', advanced: true, help: '0 keeps listening until you stop it.' }
+    ]
+  },
+  {
     id: 'slides',
     label: 'Presentations',
     icon: 'Presentation',

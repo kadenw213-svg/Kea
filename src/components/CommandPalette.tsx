@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { Search, FileText, Sheet, Presentation, FileCode2, FolderOpen, Settings, History, RefreshCw, Sparkles, Home, LayoutTemplate, FileSearch, Loader2, AppWindow, Columns2 } from 'lucide-react';
+import { toggleVoice } from './VoiceTyping';
+import { Search, FileText, Sheet, Presentation, FileCode2, FolderOpen, Settings, History, RefreshCw, Sparkles, Home, LayoutTemplate, FileSearch, Loader2, AppWindow, Columns2, Mic } from 'lucide-react';
 import { useTabs } from '../store';
 import { api, RecentEntry } from '../lib/api';
 import { newFile, openWithDialog, openPaths } from '../lib/open';
@@ -87,6 +88,7 @@ export function CommandPalette() {
       ...tabs
         .filter((t) => t.id !== useTabs.getState().activeId)
         .map((t) => ({ id: 'beside-' + t.id, group: 'Open tabs', label: `Open beside: ${t.name}`, hint: 'Split view', icon: <Columns2 size={16} />, run: act(() => (useTabs.getState().closeSplit(), useTabs.getState().openSplit(t.id))) })),
+      { id: 'voice', group: 'Tools', label: 'Voice typing', hint: 'Ctrl+Alt+V', icon: <Mic size={16} />, run: act(() => toggleVoice()) },
       { id: 'updates', group: 'Tools', label: 'Check for updates', icon: <RefreshCw size={16} />, run: act(() => openUpdates()) },
       ...SECTIONS.map((s) => ({ id: 'set-' + s.id, group: 'Settings', label: `Settings: ${s.label}`, icon: <Settings size={16} />, run: act(() => openSettings(s.id)) })),
       ...SECTIONS.flatMap((s) => s.fields.map((f) => ({ id: 'opt-' + f.key, group: 'Settings', label: f.label, hint: s.label, icon: <Settings size={16} />, run: act(() => openSettings(s.id)) }))),

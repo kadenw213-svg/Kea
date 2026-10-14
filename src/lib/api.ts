@@ -99,6 +99,13 @@ export interface SlateApi {
     close(): Promise<boolean>;
     onClosed(cb: () => void): () => void;
   };
+  speech: {
+    state(): Promise<SpeechModel[]>;
+    download(id: string): Promise<boolean>;
+    pause(id: string): Promise<boolean>;
+    remove(id: string): Promise<boolean>;
+    onDownload(cb: (m: SpeechModel) => void): () => void;
+  };
   tts: {
     voices(): Promise<string[]>;
     speak(text: string, voice: string, rate: number): Promise<boolean>;
@@ -245,6 +252,17 @@ declare global {
   interface Window {
     api: SlateApi;
   }
+}
+
+export interface SpeechModel {
+  id: string;
+  repo: string;
+  label: string;
+  blurb: string;
+  englishOnly: boolean;
+  size: number;
+  installed: boolean;
+  download: { status: string; received: number; total: number; error?: string } | null;
 }
 
 export const api: SlateApi = window.api;

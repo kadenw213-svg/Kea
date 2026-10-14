@@ -43,6 +43,17 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('present:closed', fn);
     }
   },
+  speech: {
+    state: () => ipcRenderer.invoke('speech:state'),
+    download: (id) => ipcRenderer.invoke('speech:download', id),
+    pause: (id) => ipcRenderer.invoke('speech:pause', id),
+    remove: (id) => ipcRenderer.invoke('speech:delete', id),
+    onDownload: (cb) => {
+      const fn = (_e, m) => cb(m);
+      ipcRenderer.on('speech:download', fn);
+      return () => ipcRenderer.removeListener('speech:download', fn);
+    }
+  },
   tts: {
     voices: () => ipcRenderer.invoke('tts:voices'),
     speak: (text, voice, rate) => ipcRenderer.invoke('tts:speak', text, voice, rate),

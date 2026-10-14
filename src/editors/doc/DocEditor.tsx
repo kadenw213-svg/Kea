@@ -103,6 +103,8 @@ import { Grammar, GrammarIssue, applyFix, ignoreIssue, recheckGrammar } from './
 import { MathNode, renderAllMath, inlineMathSvgs } from './math';
 import { MathDialog } from './MathDialog';
 import { ReadAloudBar } from './ReadAloud';
+import { toggleVoice } from '../../components/VoiceTyping';
+import { Mic } from 'lucide-react';
 
 import { odtToHtml, rtfToHtml, docToHtml } from './otherFormats';
 import { jsonToDocx } from './docxExport';
@@ -1165,6 +1167,9 @@ function Toolbar(p: {
             </button>
             <button className="menu-item" onClick={() => (p.onReadAloud(), close())}>
               <Volume2 size={16} /> Read aloud <span className="kbd">Ctrl+Alt+R</span>
+            </button>
+            <button className="menu-item" onClick={() => (close(), toggleVoice())}>
+              <Mic size={16} /> Voice typing <span className="kbd">Ctrl+Alt+V</span>
             </button>
             <button className="menu-item" onClick={() => (p.setPaper(p.paper === 'dark' ? 'light' : 'dark'), close())}>
               {p.paper === 'dark' ? <Sun size={16} /> : <Moon size={16} />} {p.paper === 'dark' ? 'White page' : 'Dark page'}
