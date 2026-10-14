@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -6,7 +6,7 @@ const { pathToFileURL } = require('url');
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 const DIST = path.join(__dirname, '..', 'dist');
 const RECENT_FILE = () => path.join(app.getPath('userData'), 'recent.json');
-const MAX_RECENT = 30;
+const MAX_RECENT = () => Math.max(0, Number(require('./settings.cjs').get('files.recentMax', 30)) || 0);
 
 let mainWindow = null;
 let allowClose = false;
@@ -16,6 +16,7 @@ let pendingOpen = collectFileArgs(process.argv);
 // Small rolling log in the user data folder, for diagnosing problems on real machines.
 function log(...parts) {
   try {
+    if (require('./settings.cjs').get('privacy.log', true) === false) return;
     const file = path.join(app.getPath('userData'), 'slate.log');
     const line = `[${new Date().toISOString()}] ${parts.map((p) => (p instanceof Error ? p.stack : typeof p === 'string' ? p : JSON.stringify(p))).join(' ')}
 `;
@@ -26,9 +27,6 @@ function log(...parts) {
 process.on('uncaughtException', (err) => log('uncaughtException', err));
 process.on('unhandledRejection', (err) => log('unhandledRejection', err));
 
-// Smooth, GPU-accelerated scrolling everywhere.
-app.commandLine.appendSwitch('enable-smooth-scrolling');
-app.commandLine.appendSwitch('enable-gpu-rasterization');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
@@ -36,6 +34,12 @@ protocol.registerSchemesAsPrivileged([
 
 // Developer aid: SLATE_USERDATA runs a separate profile (and lock), so tests don't touch a running copy.
 if (process.env.SLATE_USERDATA) app.setPath('userData', process.env.SLATE_USERDATA);
+const settings = require('./settings.cjs');
+
+// Smooth, GPU-accelerated scrolling everywhere (both can be turned off in Settings → General → Advanced).
+if (settings.get('general.smoothScrolling', true)) app.commandLine.appendSwitch('enable-smooth-scrolling');
+if (settings.get('general.hardwareAcceleration', true)) app.commandLine.appendSwitch('enable-gpu-rasterization');
+else app.disableHardwareAcceleration();
 
 // Single instance: opening a file from Explorer while the app runs sends it to the existing window.
 if (!app.requestSingleInstanceLock()) {
@@ -192,6 +196,11 @@ app.whenReady().then(() => {
   log('start', app.getVersion(), process.argv.slice(1));
   require('./ai.cjs').register({ log, getWindow: () => mainWindow });
   require('./files.cjs').register({ log, getWindow: () => mainWindow });
+  settings.register();
+  require('./history.cjs').register({ log });
+  const applySpell = () => session.defaultSession.setSpellCheckerEnabled(settings.get('general.spellcheck', true) !== false);
+  applySpell();
+  settings.onChange(applySpell);
   protocol.handle('app', async (request) => {
     const url = new URL(request.url);
     let rel = decodeURIComponent(url.pathname);
@@ -242,7 +251,7 @@ function readRecent() {
 }
 function writeRecent(list) {
   try {
-    fs.writeFileSync(RECENT_FILE(), JSON.stringify(list.slice(0, MAX_RECENT), null, 2));
+    fs.writeFileSync(RECENT_FILE(), JSON.stringify(list.slice(0, MAX_RECENT()), null, 2));
   } catch {}
 }
 
@@ -275,7 +284,10 @@ ipcMain.handle('dialog:open', async (_e, opts = {}) => {
 ipcMain.handle('dialog:save', async (_e, opts = {}) => {
   const res = await dialog.showSaveDialog(mainWindow, {
     title: opts.title || 'Save',
-    defaultPath: opts.defaultPath,
+    defaultPath:
+      opts.defaultPath && !path.isAbsolute(opts.defaultPath)
+        ? path.join(settings.get('files.defaultFolder', '') || app.getPath('documents'), opts.defaultPath)
+        : opts.defaultPath,
     filters: opts.filters
   });
   return res.canceled ? null : res.filePath;
@@ -284,6 +296,12 @@ ipcMain.handle('dialog:save', async (_e, opts = {}) => {
 ipcMain.handle('file:read', (_e, p) => readFileEntry(p));
 
 ipcMain.handle('file:write', (_e, p, data) => {
+  // Keep the previous contents in version history before replacing them.
+  try {
+    require('./history.cjs').snapshot(p);
+  } catch (err) {
+    log('history snapshot failed', err);
+  }
   // Write to a temp file first so a crash mid-save never corrupts the original.
   const tmp = p + '.slate-tmp';
   const buf = Buffer.from(data);
@@ -421,7 +439,10 @@ ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('update:check', async () => {
   if (!app.isPackaged) return { status: 'dev' };
   try {
-    await getUpdater().checkForUpdates();
+    const u = getUpdater();
+    u.autoDownload = settings.get('updates.autoDownload', false) === true;
+    u.allowPrerelease = settings.get('updates.prerelease', false) === true;
+    await u.checkForUpdates();
     return { status: 'started' };
   } catch (err) {
     return { status: 'error', message: friendlyUpdateError(err) };

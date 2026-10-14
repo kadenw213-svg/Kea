@@ -1,4 +1,5 @@
 import { Download, Pause, Play, Cpu, CheckCircle2 } from 'lucide-react';
+import { openSettings } from '../../lib/settings';
 import { useAi } from './aiStore';
 import { api, AiModelState } from '../../lib/api';
 
@@ -68,7 +69,7 @@ export function ModelSetup() {
           <button className="btn primary sm" onClick={() => api.ai.download(rec.tier)}>
             <Download size={14} /> Download {rec.label} ({gb(rec.size)})
           </button>
-          <button className="btn sm" onClick={() => ai.set({ settingsOpen: true })}>
+          <button className="btn sm" onClick={() => openSettings('ai')}>
             Choose another
           </button>
         </div>

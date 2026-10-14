@@ -41,6 +41,7 @@ import { kindFor, extOf } from '../lib/fileTypes';
 import { Preview } from './home/Preview';
 import { ConnectDrives } from './home/ConnectDrives';
 import { DriveLogo } from './home/DriveLogo';
+import { useSetting } from '../lib/settings';
 
 function greeting() {
   const h = new Date().getHours();
@@ -100,6 +101,15 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   const [filter, setFilter] = useState<FilterId>('all');
   const [showDrives, setShowDrives] = useState(false);
   const loadSeq = useRef(0);
+  const showStart = useSetting<boolean>('home.showStart');
+  const showTools = useSetting<boolean>('home.showTools');
+  const showGreeting = useSetting<boolean>('home.greeting');
+  const showPreviews = useSetting<boolean>('home.previews');
+  const cardSize = useSetting<string>('home.cardSize');
+  const showDesc = useSetting<boolean>('home.descriptions');
+  const previewOnline = useSetting<boolean>('home.previewOnline');
+  const allTypes = useSetting<boolean>('home.showAllTypes');
+  const hidden = useSetting<boolean>('home.showHidden');
 
   const view = settings.view || 'grid';
   const tone = settings.tone || 'dark';
@@ -155,7 +165,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
         next = recent.map((r, i) => ({ ...r, size: stats[i]?.size, mtime: stats[i]?.mtime, missing: !stats[i]?.exists }) as Item).filter((r: any) => !r.missing);
       } else {
         const cloud = cloudOf(dir);
-        next = await api.listDir(dir, { cloud: !!cloud, allOnline: cloud === 'gdrive' });
+        next = await api.listDir(dir, { cloud: !!cloud && !previewOnline, allOnline: cloud === 'gdrive', allTypes, hidden });
       }
       if (seq === loadSeq.current) setItems(next);
     } catch (e: any) {
@@ -166,7 +176,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
-  }, [dir, drives]);
+  }, [dir, drives, previewOnline, allTypes, hidden]);
 
   useEffect(() => {
     if (visible) load();
@@ -176,11 +186,11 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   useEffect(() => {
     if (!dir || !query.trim()) return setSearchHits(null);
     const t = setTimeout(async () => {
-      const hits = await api.searchDir(dir, query).catch(() => []);
+      const hits = await api.searchDir(dir, query, { allTypes, hidden }).catch(() => []);
       setSearchHits(hits);
     }, 250);
     return () => clearTimeout(t);
-  }, [dir, query]);
+  }, [dir, query, allTypes, hidden]);
 
   const pickSource = (id: string) => {
     setSourceId(id);
@@ -340,10 +350,16 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   return (
     <div className="home">
       <div className="home-inner">
-        <h1 className="home-title">{greeting()}</h1>
-        <p className="home-sub">Open anything, or start something new. Your files stay on this computer and your own drives.</p>
+        {showGreeting && (
+          <>
+            <h1 className="home-title">{greeting()}</h1>
+            <p className="home-sub">Open anything, or start something new. Your files stay on this computer and your own drives.</p>
+          </>
+        )}
 
+        {(showStart || showTools) && (
         <section className="home-start">
+          {showStart && (
           <div className="start-row">
             <button className="start-card" onClick={() => newFile('doc')}>
               <div className="start-thumb doc">
@@ -376,6 +392,8 @@ export function HomeScreen({ visible }: { visible: boolean }) {
               <span>Edit a PDF</span>
             </button>
           </div>
+          )}
+          {showTools && (
           <div className="tool-row">
             <button className="tool-chip" onClick={openWithDialog}>
               <FolderOpen size={16} /> Open a file
@@ -387,7 +405,9 @@ export function HomeScreen({ visible }: { visible: boolean }) {
               <Images size={16} /> Images to PDF
             </button>
           </div>
+          )}
         </section>
+        )}
 
         <section className="files-area">
           <nav className="sources">
@@ -533,13 +553,13 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                 </div>
               )
             ) : view === 'grid' ? (
-              <div className={`file-grid tone-${tone}`}>
+              <div className={`file-grid tone-${tone} size-${cardSize} ${showDesc ? '' : 'no-desc'}`}>
                 {shown.map((it) => {
                   const desc = meta[it.path.toLowerCase()]?.description;
                   return (
                     <div key={it.path} className="fcard" onClick={() => open(it)} title={it.path}>
                       <div className="fcard-thumb">
-                        <Preview path={it.path} name={it.name} mtime={it.mtime} online={it.online} />
+                        <Preview path={it.path} name={it.name} mtime={it.mtime} online={it.online} iconOnly={!showPreviews} />
                       </div>
                       <div className="fcard-body">
                         <div className="fcard-title">
@@ -547,7 +567,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                           <span className="fcard-name">{it.name}</span>
                           {more(it)}
                         </div>
-                        {desc ? (
+                        {!showDesc ? null : desc ? (
                           <div className="fcard-desc">{desc}</div>
                         ) : (
                           <button

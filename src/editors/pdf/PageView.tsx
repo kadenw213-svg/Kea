@@ -194,7 +194,8 @@ function PageViewInner(p: Props) {
         a = { id, pageId: p.pageRef.id, type, rects: [{ x: pt.x, y: pt.y, w: 0, h: 0 }], color: s.color, opacity: type === 'highlight' ? 0.4 : 1 };
         break;
       case 'whiteout':
-        a = { id, pageId: p.pageRef.id, type: 'whiteout', x: pt.x, y: pt.y, w: 0, h: 0, stroke: null, fill: s.fill || '#ffffff', strokeWidth: 0, opacity: 1 };
+      case 'redact':
+        a = { id, pageId: p.pageRef.id, type, x: pt.x, y: pt.y, w: 0, h: 0, stroke: null, fill: s.fill || (type === 'redact' ? '#000000' : '#ffffff'), strokeWidth: 0, opacity: 1 };
         break;
       default:
         a = { id, pageId: p.pageRef.id, type: type as 'rect' | 'ellipse', x: pt.x, y: pt.y, w: 0, h: 0, stroke: s.color, fill: s.fill, strokeWidth: s.strokeWidth, opacity: s.opacity };
@@ -470,6 +471,14 @@ function PageViewInner(p: Props) {
 function SvgAnn({ a, interactive }: { a: Annotation; interactive: boolean }) {
   const pe = interactive ? 'all' : 'none';
   switch (a.type) {
+    case 'redact':
+      // Shown with a red dashed outline so it's clear this area will be removed on save.
+      return (
+        <g data-ann-id={a.id} style={{ pointerEvents: pe as any }}>
+          <rect x={a.x} y={a.y} width={a.w} height={a.h} fill={a.fill || '#000'} />
+          <rect x={a.x} y={a.y} width={a.w} height={a.h} fill="none" stroke="#f28b82" strokeWidth={1.2} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+        </g>
+      );
     case 'rect':
     case 'whiteout':
       return (

@@ -18,6 +18,7 @@ import {
   Search,
   Check
 } from 'lucide-react';
+import { openSettings } from '../../lib/settings';
 import { useAi, setAiOpen, AiMessage } from './aiStore';
 import { useTabs, editorRegistry, toast, prompt as askText } from '../../store';
 import { api } from '../../lib/api';
@@ -193,7 +194,7 @@ export function AiSidebar() {
                 <Plus size={16} />
               </button>
             )}
-            <button className="icon-btn sm" title="AI settings" onClick={() => ai.set({ settingsOpen: true })}>
+            <button className="icon-btn sm" title="AI settings" onClick={() => openSettings('ai')}>
               <Settings2 size={15} />
             </button>
             <button className="icon-btn sm" title="Close (Ctrl+J)" onClick={() => setAiOpen(false)}>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { X, Download, Trash2, CheckCircle2, Gauge, RotateCcw, Cpu, MonitorSmartphone } from 'lucide-react';
+import { Download, Trash2, CheckCircle2, Gauge, RotateCcw, Cpu, MonitorSmartphone } from 'lucide-react';
 import { useAi } from './aiStore';
+import { useSetting, useSettings } from '../../lib/settings';
 import { api, AiSettings as Settings, AiTier } from '../../lib/api';
 import { DownloadProgress } from './ModelSetup';
 import { toast, ask } from '../../store';
@@ -8,20 +9,21 @@ import { toast, ask } from '../../store';
 const gb = (n: number) => `${(n / 1024 ** 3).toFixed(1)} GB`;
 const SLIDER_LABELS = ['Fastest', 'Fast', 'Balanced', 'High quality', 'Best quality'];
 
-export function AiSettingsDialog() {
+/** AI section of the Settings window. */
+export function AiSettingsPanel() {
   const ai = useAi();
   const [bench, setBench] = useState<{ loadMs: number; tokensPerSecond: number } | null>(null);
   const [benching, setBenching] = useState(false);
-  const [advanced, setAdvanced] = useState(false);
+  const advanced = useSetting<boolean>('ui.showAdvanced');
+  const setAdvanced = (fn: (a: boolean) => boolean) => useSettings.getState().set({ 'ui.showAdvanced': fn(!!advanced) });
 
   useEffect(() => {
-    if (ai.settingsOpen) api.ai.state().then((state) => ai.set({ state }));
-  }, [ai.settingsOpen]);
+    api.ai.state().then((state) => ai.set({ state }));
+  }, []);
 
-  if (!ai.settingsOpen || !ai.state) return null;
+  if (!ai.state) return <div className="muted">Loading…</div>;
   const st = ai.state;
   const s = st.settings;
-  const close = () => ai.set({ settingsOpen: false });
   const update = async (patch: Partial<Settings>) => {
     const settings = await api.ai.setSettings(patch);
     ai.set({ state: { ...st, settings } });
@@ -42,14 +44,8 @@ export function AiSettingsDialog() {
   };
 
   return (
-    <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="dialog ai-settings">
-        <div className="ai-settings-head">
-          <h2>AI settings</h2>
-          <button className="icon-btn sm" onClick={close}>
-            <X size={16} />
-          </button>
-        </div>
+    <div className="ai-settings embedded">
+      <div>
 
         <div className="hw-card">
           <MonitorSmartphone size={18} />
@@ -222,9 +218,6 @@ export function AiSettingsDialog() {
             }}
           >
             <RotateCcw size={14} /> Reset to recommended
-          </button>
-          <button className="btn primary" onClick={close}>
-            Done
           </button>
         </div>
       </div>

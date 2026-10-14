@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { EditorKind } from './lib/fileTypes';
 import { uid } from './lib/util';
+import { setting } from './lib/settings';
 
 export interface Tab {
   id: string;
@@ -88,7 +89,10 @@ export const useTabs = create<TabState>((set, get) => ({
     const idx = tabs.findIndex((t) => t.id === id);
     const next = tabs.filter((t) => t.id !== id);
     let nextActive = activeId;
-    if (activeId === id) nextActive = (next[idx] || next[idx - 1] || HOME).id;
+    if (activeId === id) {
+      const pref = setting<string>('general.tabsCloseToLeft');
+      nextActive = (pref === 'home' ? HOME : pref === 'left' ? next[idx - 1] || next[idx] || HOME : next[idx] || next[idx - 1] || HOME).id;
+    }
     editorRegistry.delete(id);
     set({ tabs: next, activeId: nextActive });
   },
@@ -112,7 +116,11 @@ export const useTabs = create<TabState>((set, get) => ({
 export const editorRegistry = new Map<string, EditorHandle>();
 (window as any).__slate = { useTabs: () => useTabs, editorRegistry };
 
+/** Counts edits per tab, so a save only marks a tab clean if nothing changed while it was saving. */
+export const editSeq = new Map<string, number>();
+
 export function setDirty(id: string, dirty: boolean) {
+  if (dirty) editSeq.set(id, (editSeq.get(id) || 0) + 1);
   const t = useTabs.getState().tabs.find((x) => x.id === id);
   if (t && t.dirty !== dirty) useTabs.getState().updateTab(id, { dirty });
 }

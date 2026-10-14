@@ -1,6 +1,7 @@
 import { api, FilePreview } from './api';
 import { extOf, kindFor } from './fileTypes';
 import { bytesToText } from './util';
+import { setting } from './settings';
 
 /**
  * Home screen previews. Each file gets a small description of its first page (an image for PDFs and
@@ -8,7 +9,7 @@ import { bytesToText } from './util';
  * cached on disk next to the app settings and refreshed when the file's modified time changes.
  */
 
-const MAX_BYTES = 80 * 1024 * 1024;
+const maxBytes = () => (Number(setting('home.previewMaxMb')) || 80) * 1024 * 1024;
 const THUMB_W = 420;
 const memory = new Map<string, FilePreview>();
 const pending = new Map<string, Promise<FilePreview>>();
@@ -67,7 +68,7 @@ async function makePreview(path: string): Promise<FilePreview> {
   const ext = extOf(name);
   if (ext === 'gdoc' || ext === 'gsheet' || ext === 'gslides') return { type: 'none' };
   const [st] = await api.statMany([path]);
-  if (!st?.exists || (st.size || 0) > MAX_BYTES) return { type: 'none' };
+  if (!st?.exists || (st.size || 0) > maxBytes()) return { type: 'none' };
   const { data } = await api.readFile(path);
   const kind = kindFor(name, data);
   switch (kind) {

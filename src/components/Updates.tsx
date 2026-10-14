@@ -4,6 +4,7 @@ import { Download, RefreshCw, CheckCircle2, AlertCircle, Sparkles, X } from 'luc
 import { api, UpdateState } from '../lib/api';
 import { useTabs } from '../store';
 import { requestCloseTab } from '../lib/closing';
+import { setting } from '../lib/settings';
 
 interface UpdateStore {
   state: UpdateState;
@@ -34,6 +35,7 @@ export function initUpdates() {
     useUpdates.getState().set({ state });
   });
   setTimeout(() => {
+    if (!setting('updates.autoCheck')) return;
     silent = true;
     api.checkForUpdates().then((r) => {
       if (r.status === 'dev' || r.status === 'error') silent = false;

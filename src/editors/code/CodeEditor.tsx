@@ -3,7 +3,8 @@ import { EditorView, basicSetup } from 'codemirror';
 import { EditorState, Compartment } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { HighlightStyle, syntaxHighlighting, indentUnit } from '@codemirror/language';
+import { useSetting } from '../../lib/settings';
 import { openSearchPanel } from '@codemirror/search';
 import { tags as t } from '@lezer/highlight';
 import { javascript } from '@codemirror/lang-javascript';
@@ -99,15 +100,27 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
   const viewRef = useRef<EditorView | null>(null);
   const wrapComp = useRef(new Compartment());
   const sizeComp = useRef(new Compartment());
+  const prefsComp = useRef(new Compartment());
+  const lineNumbers = useSetting<boolean>('code.lineNumbers');
+  const tabSize = Number(useSetting('code.tabSize')) || 2;
+  const codeFont = useSetting<string>('code.font');
+  const highlightLine = useSetting<boolean>('code.highlightLine');
+  const defaultWrap = useSetting<boolean>('code.wrap');
+  const defaultSize = Number(useSetting('code.fontSize')) || 14;
+  const prefs = () => [
+    EditorState.tabSize.of(tabSize),
+    indentUnit.of(' '.repeat(tabSize)),
+    EditorView.theme({
+      '.cm-content, .cm-gutters': { fontFamily: codeFont },
+      ...(lineNumbers ? {} : { '.cm-lineNumbers': { display: 'none' } }),
+      ...(highlightLine ? {} : { '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'transparent' } })
+    })
+  ];
   const meta = useRef({ eol: '\n', bom: false });
-  const [wrap, setWrap] = useState(() => {
-    try {
-      return localStorage.getItem('slate.code.wrap') !== 'false';
-    } catch {
-      return true;
-    }
-  });
-  const [fontSize, setFontSize] = useState(14);
+  const [wrap, setWrap] = useState(defaultWrap);
+  const [fontSize, setFontSize] = useState(defaultSize);
+  useEffect(() => setWrap(defaultWrap), [defaultWrap]);
+  useEffect(() => setFontSize(defaultSize), [defaultSize]);
   const [pos, setPos] = useState({ line: 1, col: 1, sel: 0, lines: 1 });
   const ext = extOf(tab.name);
   const lang = LANGS[ext];
@@ -127,6 +140,7 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
         theme,
         syntaxHighlighting(highlight),
         wrapComp.current.of(wrap ? EditorView.lineWrapping : []),
+        prefsComp.current.of(prefs()),
         sizeComp.current.of(EditorView.theme({ '.cm-content, .cm-gutters': { fontSize: `${fontSize}px` } })),
         lang ? lang.ext() : [],
         EditorView.updateListener.of((u) => {
@@ -151,10 +165,10 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
 
   useEffect(() => {
     viewRef.current?.dispatch({ effects: wrapComp.current.reconfigure(wrap ? EditorView.lineWrapping : []) });
-    try {
-      localStorage.setItem('slate.code.wrap', String(wrap));
-    } catch {}
   }, [wrap]);
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: prefsComp.current.reconfigure(prefs()) });
+  }, [lineNumbers, tabSize, codeFont, highlightLine]);
   useEffect(() => {
     viewRef.current?.dispatch({ effects: sizeComp.current.reconfigure(EditorView.theme({ '.cm-content, .cm-gutters': { fontSize: `${fontSize}px` } })) });
   }, [fontSize]);

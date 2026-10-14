@@ -60,7 +60,44 @@ export interface HomeSettings {
   source?: string;
 }
 
+export interface VersionInfo {
+  id: string;
+  ts: number;
+  size: number;
+  label?: string;
+}
+export interface RecoveryEntry {
+  tabId: string;
+  name: string;
+  path: string | null;
+  kind: string;
+  ext: string;
+  savedAt: number;
+}
+
 export interface SlateApi {
+  setZoom(factor: number): void;
+  settings: {
+    get(): Promise<Record<string, any>>;
+    set(patch: Record<string, any>): Promise<Record<string, any>>;
+    onChange(cb: (all: Record<string, any>) => void): () => void;
+  };
+  history: {
+    list(path: string): Promise<VersionInfo[]>;
+    read(path: string, id: string): Promise<Uint8Array>;
+    snapshot(path: string, label?: string): Promise<VersionInfo | null>;
+    label(path: string, id: string, label: string): Promise<VersionInfo[]>;
+    remove(path: string, id: string): Promise<VersionInfo[]>;
+    usage(): Promise<number>;
+    clear(): Promise<boolean>;
+    openFolder(): Promise<string>;
+  };
+  recovery: {
+    put(meta: Omit<RecoveryEntry, 'savedAt'>, data: Uint8Array): Promise<boolean>;
+    drop(tabId: string): Promise<boolean>;
+    list(): Promise<RecoveryEntry[]>;
+    read(tabId: string): Promise<Uint8Array>;
+  };
   platform: string;
   openDialog(opts?: { title?: string; multi?: boolean; filters?: FileFilter[] }): Promise<FileEntry[]>;
   saveDialog(opts?: { title?: string; defaultPath?: string; filters?: FileFilter[] }): Promise<string | null>;
@@ -72,14 +109,17 @@ export interface SlateApi {
   addRecent(p: string): Promise<RecentEntry[]>;
   removeRecent(p: string): Promise<RecentEntry[]>;
   clearRecent(): Promise<RecentEntry[]>;
-  listDir(dir: string, opts?: { cloud?: boolean; allOnline?: boolean }): Promise<DirEntry[]>;
-  searchDir(dir: string, query: string): Promise<DirEntry[]>;
+  listDir(dir: string, opts?: { cloud?: boolean; allOnline?: boolean; allTypes?: boolean; hidden?: boolean }): Promise<DirEntry[]>;
+  searchDir(dir: string, query: string, opts?: { allTypes?: boolean; hidden?: boolean }): Promise<DirEntry[]>;
   statMany(paths: string[]): Promise<{ path: string; exists: boolean; size?: number; mtime?: number }[]>;
   knownFolders(): Promise<KnownFolder[]>;
   openFolderDialog(): Promise<string | null>;
   isDir(p: string): Promise<boolean>;
   openPath(p: string): Promise<string>;
   getPreview(p: string): Promise<FilePreview | null>;
+  clearPreviews(): Promise<boolean>;
+  clearMeta(): Promise<Record<string, FileMeta>>;
+  openDataFolder(): Promise<string>;
   setPreview(p: string, preview: FilePreview): Promise<boolean>;
   getMeta(): Promise<Record<string, FileMeta>>;
   setMeta(p: string, patch: FileMeta): Promise<Record<string, FileMeta>>;

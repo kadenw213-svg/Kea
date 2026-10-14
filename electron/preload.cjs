@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, webUtils } = require('electron');
+const { contextBridge, ipcRenderer, webUtils, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   platform: process.platform,
@@ -12,13 +12,42 @@ contextBridge.exposeInMainWorld('api', {
   addRecent: (p) => ipcRenderer.invoke('recent:add', p),
   removeRecent: (p) => ipcRenderer.invoke('recent:remove', p),
   clearRecent: () => ipcRenderer.invoke('recent:clear'),
+  setZoom: (f) => webFrame.setZoomFactor(f),
+  settings: {
+    get: () => ipcRenderer.invoke('settings:get'),
+    set: (patch) => ipcRenderer.invoke('settings:set', patch),
+    onChange: (cb) => {
+      const fn = (_e, all) => cb(all);
+      ipcRenderer.on('settings:changed', fn);
+      return () => ipcRenderer.removeListener('settings:changed', fn);
+    }
+  },
+  history: {
+    list: (p) => ipcRenderer.invoke('history:list', p),
+    read: (p, id) => ipcRenderer.invoke('history:read', p, id),
+    snapshot: (p, label) => ipcRenderer.invoke('history:snapshot', p, label),
+    label: (p, id, label) => ipcRenderer.invoke('history:label', p, id, label),
+    remove: (p, id) => ipcRenderer.invoke('history:delete', p, id),
+    usage: () => ipcRenderer.invoke('history:usage'),
+    clear: () => ipcRenderer.invoke('history:clear'),
+    openFolder: () => ipcRenderer.invoke('history:open-folder')
+  },
+  recovery: {
+    put: (meta, data) => ipcRenderer.invoke('recovery:put', meta, data),
+    drop: (tabId) => ipcRenderer.invoke('recovery:drop', tabId),
+    list: () => ipcRenderer.invoke('recovery:list'),
+    read: (tabId) => ipcRenderer.invoke('recovery:read', tabId)
+  },
   listDir: (dir, opts) => ipcRenderer.invoke('fs:list', dir, opts),
-  searchDir: (dir, q) => ipcRenderer.invoke('fs:search', dir, q),
+  searchDir: (dir, q, opts) => ipcRenderer.invoke('fs:search', dir, q, opts),
   statMany: (paths) => ipcRenderer.invoke('fs:stat-many', paths),
   knownFolders: () => ipcRenderer.invoke('fs:known-folders'),
   openFolderDialog: () => ipcRenderer.invoke('dialog:open-folder'),
   isDir: (p) => ipcRenderer.invoke('fs:is-dir', p),
   openPath: (p) => ipcRenderer.invoke('shell:open-path', p),
+  clearPreviews: () => ipcRenderer.invoke('preview:clear'),
+  clearMeta: () => ipcRenderer.invoke('meta:clear'),
+  openDataFolder: () => ipcRenderer.invoke('app:open-data-folder'),
   getPreview: (p) => ipcRenderer.invoke('preview:get', p),
   setPreview: (p, preview) => ipcRenderer.invoke('preview:set', p, preview),
   getMeta: () => ipcRenderer.invoke('meta:all'),

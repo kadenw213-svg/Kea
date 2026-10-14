@@ -818,3 +818,19 @@ button.fcard-desc.add:hover {
     display: none;
   }
 }
+
+/* Card sizes (Settings → Home) */
+.file-grid.size-small {
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 14px;
+}
+.file-grid.size-small .fcard-thumb {
+  height: 132px;
+}
+.file-grid.size-large {
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 22px;
+}
+.file-grid.size-large .fcard-thumb {
+  height: 228px;
+}

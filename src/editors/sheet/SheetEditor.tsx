@@ -62,7 +62,7 @@ import {
 } from './model';
 import { colName, addr, parseAddr, shiftFormula, adjustForInsert, renameSheetRefs, FormulaError, FUNCTION_NAMES, formulaRefs, compare, dateToSerial } from './formula';
 import { readWorkbook, writeXlsx, writeCsv, writeOds, parseCsv } from './io';
-import { saveTabFile, exportFile, SaveFormat } from '../../lib/save';
+import { saveTabFile, exportFile, SaveFormat, isSilentSave } from '../../lib/save';
 import { extOf, baseName } from '../../lib/fileTypes';
 import { api } from '../../lib/api';
 import { clamp, escapeHtml, modKey } from '../../lib/util';
@@ -981,9 +981,11 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
     return [xlsx, csv, tsv, ods];
   };
   const save = async (saveAs: boolean) => {
+    if (editing && isSilentSave()) return false;
     if (editing) commitEdit();
     const ext = tab.path ? extOf(tab.path) : '';
     if (!saveAs && (ext === 'csv' || ext === 'tsv') && (h.get().sheets.length > 1 || Object.values(sheet.cells).some((c) => c.s || c.f))) {
+      if (isSilentSave()) return false;
       const choice = await ask(
         'Save as CSV?',
         'CSV files only keep the values of the current sheet. Formatting, formulas and other sheets will be lost. Save as an Excel workbook to keep everything.',

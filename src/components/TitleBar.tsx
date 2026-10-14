@@ -9,7 +9,9 @@ import { requestCloseTab } from '../lib/closing';
 import { isMac } from '../lib/util';
 import { useUpdates, openUpdates } from './Updates';
 import { RefreshCw, Info, Github, Sparkles } from 'lucide-react';
-import { useAi } from './ai/aiStore';
+import { openSettings } from '../lib/settings';
+import { openHistory } from './settings/VersionHistory';
+import { Settings as SettingsIcon, History } from 'lucide-react';
 
 export function TitleBar() {
   const { tabs, activeId, setActive, moveTab } = useTabs();
@@ -36,7 +38,13 @@ export function TitleBar() {
                 <RefreshCw size={16} /> {hasUpdate ? 'Update available' : 'Check for updates'}
                 {hasUpdate && <span className="kbd" style={{ color: 'var(--accent)' }}>●</span>}
               </button>
-              <button className="menu-item" onClick={() => (useAi.getState().set({ settingsOpen: true }), close())}>
+              <button className="menu-item" onClick={() => (openSettings(), close())}>
+                <SettingsIcon size={16} /> Settings <span className="kbd">Ctrl+,</span>
+              </button>
+              <button className="menu-item" onClick={() => (openHistory(), close())}>
+                <History size={16} /> Version history <span className="kbd">Ctrl+Shift+H</span>
+              </button>
+              <button className="menu-item" onClick={() => (openSettings('ai'), close())}>
                 <Sparkles size={16} /> AI settings
               </button>
               <div className="menu-sep" />

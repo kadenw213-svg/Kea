@@ -99,10 +99,10 @@ async function listDir(dir, opts = {}) {
   }
   const entries = [];
   for (const name of names) {
-    if (!visible(name)) continue;
+    if (!opts.hidden && !visible(name)) continue;
     const e = statEntry(dir, name);
     if (!e) continue;
-    if (e.dir ? SKIP_DIRS.has(name.toLowerCase()) : !SHOWN_EXT.has(extOf(name))) continue;
+    if (e.dir ? SKIP_DIRS.has(name.toLowerCase()) : !opts.allTypes && !SHOWN_EXT.has(extOf(name))) continue;
     entries.push(e);
   }
   if (opts.cloud) {
@@ -113,7 +113,7 @@ async function listDir(dir, opts = {}) {
 }
 
 /** Name search under a folder (breadth-first, bounded so huge drives stay responsive). */
-function searchDir(root, query, limit = 200) {
+function searchDir(root, query, opts = {}, limit = 200) {
   const q = String(query || '').toLowerCase().trim();
   if (!q) return [];
   const out = [];
@@ -130,12 +130,12 @@ function searchDir(root, query, limit = 200) {
       continue;
     }
     for (const it of items) {
-      if (!visible(it.name)) continue;
+      if (!opts.hidden && !visible(it.name)) continue;
       if (it.isDirectory()) {
         if (depth < 8 && !SKIP_DIRS.has(it.name.toLowerCase())) queue.push({ dir: path.join(dir, it.name), depth: depth + 1 });
         continue;
       }
-      if (!SHOWN_EXT.has(extOf(it.name)) || !it.name.toLowerCase().includes(q)) continue;
+      if ((!opts.allTypes && !SHOWN_EXT.has(extOf(it.name))) || !it.name.toLowerCase().includes(q)) continue;
       const e = statEntry(dir, it.name);
       if (e) out.push(e);
       if (out.length >= limit) break;
@@ -374,7 +374,7 @@ function register({ log, getWindow }) {
   const send = (m) => getWindow()?.webContents.send('drives:progress', m);
 
   ipcMain.handle('fs:list', (_e, dir, opts) => listDir(dir, opts));
-  ipcMain.handle('fs:search', (_e, dir, q) => searchDir(dir, q));
+  ipcMain.handle('fs:search', (_e, dir, q, opts) => searchDir(dir, q, opts || {}));
   ipcMain.handle('fs:stat-many', (_e, paths) =>
     (paths || []).map((p) => {
       try {
@@ -394,6 +394,15 @@ function register({ log, getWindow }) {
   ipcMain.handle('shell:open-path', (_e, p) => shell.openPath(p));
 
   ipcMain.handle('preview:get', (_e, p) => getPreview(p));
+  ipcMain.handle('preview:clear', () => {
+    fs.rmSync(previewDir(), { recursive: true, force: true });
+    return true;
+  });
+  ipcMain.handle('meta:clear', () => {
+    writeJson(userFile('file-meta.json'), {});
+    return {};
+  });
+  ipcMain.handle('app:open-data-folder', () => shell.openPath(app.getPath('userData')));
   ipcMain.handle('preview:set', (_e, p, preview) => setPreview(p, preview));
 
   ipcMain.handle('meta:all', () => readJson(userFile('file-meta.json'), {}));

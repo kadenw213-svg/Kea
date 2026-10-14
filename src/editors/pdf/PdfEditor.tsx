@@ -12,6 +12,7 @@ import {
   Minus,
   MoveUpRight,
   Eraser,
+  SquareSlash,
   MessageSquarePlus,
   ImagePlus,
   Signature,
@@ -57,7 +58,7 @@ import { SignatureModal } from './SignatureModal';
 import { buildPdf, readFormFields, isEncrypted, FormFieldInfo, FormValues } from './save';
 import { annBox, rotateAnn, translateAnn, BASELINE_EM } from './geometry';
 import { uid, clamp, bytesToDataUrl, modKey, escapeHtml } from '../../lib/util';
-import { saveTabFile, exportFile } from '../../lib/save';
+import { saveTabFile, exportFile, isSilentSave } from '../../lib/save';
 import { api } from '../../lib/api';
 import { MenuButton, Popover } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
@@ -71,7 +72,7 @@ import { proxyAi, AiHooks } from '../../store';
 const CSS_UNITS = 96 / 72;
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
 
-type StyleKey = 'text' | 'highlight' | 'underline' | 'strike' | 'ink' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'whiteout' | 'note';
+type StyleKey = 'text' | 'highlight' | 'underline' | 'strike' | 'ink' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'whiteout' | 'redact' | 'note';
 
 const baseStyle = (color: string, extra: Partial<ToolStyle> = {}): ToolStyle => ({
   color,
@@ -96,6 +97,7 @@ const INITIAL_STYLES: Record<StyleKey, ToolStyle> = {
   line: baseStyle(DEFAULTS.shape),
   arrow: baseStyle(DEFAULTS.shape),
   whiteout: baseStyle('#ffffff', { fill: '#ffffff' }),
+  redact: baseStyle('#000000', { fill: '#000000' }),
   note: baseStyle(DEFAULTS.note)
 };
 
@@ -118,6 +120,7 @@ const TOOL_KEYS: Record<string, Tool> = {
   l: 'line',
   a: 'arrow',
   w: 'whiteout',
+  x: 'redact',
   n: 'note'
 };
 
@@ -360,7 +363,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
         setSelectedId(a.id);
         setEditingId(opts?.edit ? a.id : null);
         const t: Tool = latest.current.tool;
-        if (['rect', 'ellipse', 'line', 'arrow', 'whiteout', 'note'].includes(t)) setToolState('select');
+        if (['rect', 'ellipse', 'line', 'arrow', 'whiteout', 'redact', 'note'].includes(t)) setToolState('select');
       },
       onEditing: (id: string | null) => {
         setEditingId((cur) => {
@@ -968,6 +971,8 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   };
 
   const save = async (saveAs: boolean) => {
+    // Autosave never interrupts typing in a text box, and never shows dialogs.
+    if (isSilentSave() && (encrypted || editingId)) return false;
     if (encrypted) {
       await ask(
         'This PDF is encrypted',
@@ -1250,7 +1255,8 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
             </>
           )}
         </MenuButton>
-        <ToolBtn t="whiteout" icon={<Eraser size={18} />} label="Whiteout / redact area" keyHint="W" />
+        <ToolBtn t="whiteout" icon={<Eraser size={18} />} label="Whiteout (covers, doesn't remove)" keyHint="W" />
+        <ToolBtn t="redact" icon={<SquareSlash size={18} />} label="Redact (permanently removes on save)" keyHint="X" />
         <ToolBtn t="note" icon={<MessageSquarePlus size={18} />} label="Comment" keyHint="N" />
         <button className="icon-btn" title="Insert image (I)" onClick={insertImage}>
           <ImagePlus size={18} />
@@ -1629,7 +1635,9 @@ function toolHint(t: Tool): string {
     case 'ink':
       return 'Draw freely on the page';
     case 'whiteout':
-      return 'Drag to cover content';
+      return 'Drag to cover content. Text underneath stays in the file. Use Redact (X) to remove it';
+    case 'redact':
+      return 'Drag over anything to remove. On save it is permanently deleted and that page becomes an image';
     case 'note':
       return 'Click to add a comment';
     case 'line':
@@ -1662,19 +1670,19 @@ function OptionsBar({
   const isText = type === 'text' || type === 'edittext';
   const isShape = type === 'rect' || type === 'ellipse';
   const hasStroke = isShape || type === 'ink' || type === 'line' || type === 'arrow';
-  const hasColor = type !== 'whiteout' && type !== 'image';
+  const hasColor = type !== 'whiteout' && type !== 'redact' && type !== 'image';
   const hasOpacity = hasStroke || type === 'highlight';
   const align = selected?.type === 'text' ? selected.align : 'left';
 
   return (
     <>
       {hasColor && <ColorPicker title={isText ? 'Text color' : 'Color'} icon={isText ? <Type size={16} /> : <Palette size={16} />} value={style.color} onChange={(c) => c && onStyle({ color: c })} />}
-      {(isShape || type === 'whiteout' || (isText && selected)) && (
+      {(isShape || type === 'whiteout' || type === 'redact' || (isText && selected)) && (
         <ColorPicker
-          title={type === 'whiteout' ? 'Cover color' : isText ? 'Background' : 'Fill'}
+          title={type === 'whiteout' || type === 'redact' ? 'Box color' : isText ? 'Background' : 'Fill'}
           icon={<PaintBucket size={16} />}
           value={style.fill}
-          allowNone={type !== 'whiteout'}
+          allowNone={type !== 'whiteout' && type !== 'redact'}
           noneLabel="No fill"
           onChange={(c) => onStyle({ fill: c })}
         />

@@ -1,11 +1,16 @@
 import { useTabs, editorRegistry, ask } from '../store';
 import { api } from './api';
+import { setting } from './settings';
+import { autosaveNow } from './autosave';
 
 /** Close a tab, offering to save unsaved changes first. Resolves false if the user cancelled. */
 export async function requestCloseTab(id: string): Promise<boolean> {
   const tab = useTabs.getState().tabs.find((t) => t.id === id);
   if (!tab || tab.kind === 'home') return true;
-  if (tab.dirty) {
+  // Files with a location are saved quietly (unless Settings says to always ask).
+  if (tab.dirty && tab.path && setting('general.closeBehavior') !== 'ask') await autosaveNow(id);
+  const fresh = useTabs.getState().tabs.find((t) => t.id === id);
+  if (fresh?.dirty) {
     useTabs.getState().setActive(id);
     const choice = await ask(`Save changes to ${tab.name}?`, 'Your changes will be lost if you close without saving.', [
       { id: 'discard', label: "Don't save", danger: true },

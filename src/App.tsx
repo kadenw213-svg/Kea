@@ -4,7 +4,10 @@ import { HomeScreen } from './components/Home';
 import { Overlays } from './components/Overlays';
 import { UpdateDialog, initUpdates } from './components/Updates';
 import { AiSidebar } from './components/ai/AiSidebar';
-import { AiSettingsDialog } from './components/ai/AiSettings';
+import { SettingsDialog } from './components/settings/SettingsDialog';
+import { VersionHistoryDialog, openHistory } from './components/settings/VersionHistory';
+import { openSettings, setting } from './lib/settings';
+import { initAutosave, restoreOnStart } from './lib/autosave';
 import { toggleAi } from './components/ai/aiStore';
 import { useTabs, editorRegistry, Tab } from './store';
 import { api } from './lib/api';
@@ -44,8 +47,10 @@ export function App() {
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
-    api.getPendingOpen().then((p) => {
-      if (p.length) openPaths(p);
+    initAutosave();
+    api.getPendingOpen().then(async (p) => {
+      if (p.length) await openPaths(p);
+      await restoreOnStart(p.length > 0);
     });
     const offOpen = api.onOpenPaths((p) => openPaths(p));
     const offClose = api.onBeforeClose(() => requestQuit());
@@ -61,6 +66,16 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if (!modKey(e)) return;
       const k = e.key.toLowerCase();
+      if (k === ',') {
+        e.preventDefault();
+        openSettings();
+        return;
+      }
+      if (k === 'h' && e.shiftKey) {
+        e.preventDefault();
+        openHistory();
+        return;
+      }
       const { activeId, tabs, setActive } = useTabs.getState();
       const handle = editorRegistry.get(activeId);
       if (k === 's') {
@@ -71,7 +86,7 @@ export function App() {
         openWithDialog();
       } else if (k === 'n' && !e.shiftKey) {
         e.preventDefault();
-        newFile('doc');
+        newFile(setting('general.newKind') || 'doc');
       } else if (k === 'w') {
         e.preventDefault();
         requestCloseTab(activeId);
@@ -176,7 +191,8 @@ export function App() {
         </div>
       )}
       <UpdateDialog />
-      <AiSettingsDialog />
+      <SettingsDialog />
+      <VersionHistoryDialog />
       <Overlays />
     </div>
   );

@@ -17,6 +17,7 @@ export type Tool =
   | 'line'
   | 'arrow'
   | 'whiteout'
+  | 'redact'
   | 'note';
 
 export type FontFamily = 'Helvetica' | 'Times' | 'Courier';
@@ -49,7 +50,8 @@ export interface TextAnn extends Base, Box {
 }
 
 export interface ShapeAnn extends Base, Box {
-  type: 'rect' | 'ellipse' | 'whiteout';
+  /** 'redact' boxes permanently remove everything underneath when the PDF is saved. */
+  type: 'rect' | 'ellipse' | 'whiteout' | 'redact';
   stroke: string | null;
   fill: string | null;
   strokeWidth: number;

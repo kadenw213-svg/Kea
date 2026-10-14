@@ -84,12 +84,12 @@ function Body({ p, name }: { p: FilePreview; name: string }) {
   }
 }
 
-function PreviewInner({ path, name, mtime, online }: { path: string; name: string; mtime?: number; online?: boolean }) {
+function PreviewInner({ path, name, mtime, online, iconOnly }: { path: string; name: string; mtime?: number; online?: boolean; iconOnly?: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const [p, setP] = useState<FilePreview | undefined>(() => cachedPreview(path, mtime));
 
   useEffect(() => {
-    if (online || p) return;
+    if (online || p || iconOnly) return;
     const el = host.current as any;
     let alive = true;
     el.__show = () => {
@@ -101,9 +101,9 @@ function PreviewInner({ path, name, mtime, online }: { path: string; name: strin
       alive = false;
       lazy.unobserve(el);
     };
-  }, [path, mtime, online]);
+  }, [path, mtime, online, iconOnly]);
 
-  const empty = !p || p.type === 'none';
+  const empty = iconOnly || !p || p.type === 'none';
   return (
     <div ref={host} className={`pv ${empty ? 'empty' : ''} ${p ? 'ready' : ''}`}>
       {empty ? (

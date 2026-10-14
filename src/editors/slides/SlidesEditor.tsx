@@ -45,7 +45,7 @@ import { Deck, El, Slide, THEMES, Theme, layoutSlide, newDeck, cloneSlide, textE
 import { SlideView, SLIDE_CSS } from './SlideView';
 import { readPptx } from './pptxImport';
 import { writePptx } from './pptxExport';
-import { saveTabFile, exportFile } from '../../lib/save';
+import { saveTabFile, exportFile, isSilentSave } from '../../lib/save';
 import { extOf, baseName } from '../../lib/fileTypes';
 import { uid, clamp, modKey, bytesToDataUrl, escapeHtml } from '../../lib/util';
 import { api } from '../../lib/api';
@@ -480,7 +480,8 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
       .join('');
     return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(baseName(tab.name))}</title><style>@page{size:${d.w / 72}in ${d.h / 72}in;margin:0}html,body{margin:0;padding:0}.pg{width:${d.w}px;height:${d.h}px;overflow:hidden;break-after:page;page-break-after:always;zoom:${96 / 72}}.pg:last-child{break-after:auto;page-break-after:auto}${SLIDE_CSS}</style></head><body>${pages}</body></html>`;
   };
-  const save = (saveAs: boolean) => {
+  const save = async (saveAs: boolean) => {
+    if (editingId && isSilentSave()) return false;
     if (editingId) finishEditing();
     return saveTabFile(tab.id, [{ name: 'PowerPoint presentation', ext: 'pptx', build: () => writePptx(h.get()) }], saveAs || (!!tab.path && extOf(tab.path) !== 'pptx'));
   };

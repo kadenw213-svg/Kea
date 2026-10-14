@@ -15,9 +15,43 @@ import {
   PDFRadioGroup,
   PDFOptionList
 } from 'pdf-lib';
-import type { Annotation, PageRef, TextAnn } from './types';
+import type { Annotation, PageRef, TextAnn, ShapeAnn } from './types';
 import { hexToRgb01, BASELINE_EM, LINE_HEIGHT } from './geometry';
 import { dataUrlToBytes } from '../../lib/util';
+import { loadPdf } from './pdfjs';
+import { setting } from '../../lib/settings';
+
+/**
+ * True redaction: draw the page (as it currently looks) into an image, paint the redaction boxes onto
+ * the pixels, and use that image as the new page. Nothing under the boxes survives (no text, images,
+ * links or form fields), unlike a box drawn on top. Returns PNG bytes and the page size in points.
+ */
+async function rasterizeRedacted(src: Uint8Array, index: number, userRotation: number, boxes: { x: number; y: number; w: number; h: number; fill: string }[]) {
+  const dpi = Math.min(600, Math.max(72, Number(setting('pdf.redactDpi')) || 200));
+  const scale = dpi / 72;
+  const doc = await loadPdf(src);
+  try {
+    const page = await doc.getPage(index + 1);
+    const rotation = (((page.rotate + userRotation) % 360) + 360) % 360;
+    const vp = page.getViewport({ scale, rotation });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(vp.width);
+    canvas.height = Math.ceil(vp.height);
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    for (const b of boxes) {
+      ctx.fillStyle = b.fill || '#000000';
+      // Grow by a pixel so anti-aliased edges of removed text can't peek out.
+      ctx.fillRect(Math.floor(b.x * scale) - 1, Math.floor(b.y * scale) - 1, Math.ceil(b.w * scale) + 2, Math.ceil(b.h * scale) + 2);
+    }
+    const blob: Blob = await new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('Could not draw the page'))), 'image/png'));
+    return { png: new Uint8Array(await blob.arrayBuffer()), width: vp.width / scale, height: vp.height / scale };
+  } finally {
+    doc.destroy();
+  }
+}
 
 type Mapper = (vx: number, vy: number) => [number, number];
 
@@ -135,6 +169,7 @@ async function drawAnnotation(doc: PDFDocument, page: PDFPage, a: Annotation, ma
 
   switch (a.type) {
     case 'whiteout':
+    case 'redact':
     case 'rect': {
       const r = rectFromBox(a.x, a.y, a.w, a.h);
       page.drawRectangle({
@@ -289,7 +324,10 @@ export async function buildPdf(sources: Uint8Array[], pages: PageRef[], annots: 
   for (const s of sources) libSrc.push(s.length ? await PDFDocument.load(s, { ignoreEncryption: true, updateMetadata: false }) : null);
 
   const first = libSrc[0];
-  const inPlace = !!first && pages.length === first.getPageCount() && pages.every((p, i) => p.src === 0 && p.index === i);
+  const redacted = new Set(annots.filter((a) => a.type === 'redact').map((a) => a.pageId));
+  // Redactions always rebuild the document so no hidden copy of a redacted page is left behind.
+  const inPlace = !redacted.size && !!first && pages.length === first.getPageCount() && pages.every((p, i) => p.src === 0 && p.index === i);
+  const flat: Record<string, boolean> = {};
 
   let out: PDFDocument;
   const outPages: PDFPage[] = [];
@@ -306,12 +344,23 @@ export async function buildPdf(sources: Uint8Array[], pages: PageRef[], annots: 
       } catch {}
     }
     out = await PDFDocument.create();
-    if (first) {
+    // Redacting also drops the title/author unless Settings says to keep them.
+    if (first && !(redacted.size && setting('pdf.redactMetadata') !== false)) {
       out.setTitle(first.getTitle() || '');
       out.setAuthor(first.getAuthor() || '');
     }
     for (const p of pages) {
-      if (p.src < 0) {
+      if (redacted.has(p.id) && p.src >= 0) {
+        // Form values are part of the page image, so fill them first.
+        let srcBytes = sources[p.src];
+        if (p.src === 0 && first && Object.keys(formValues).length) srcBytes = await first.save();
+        const boxes = annots.filter((a): a is ShapeAnn => a.type === 'redact' && a.pageId === p.id).map((a) => ({ x: a.x, y: a.y, w: a.w, h: a.h, fill: a.fill || '#000000' }));
+        const img = await rasterizeRedacted(srcBytes, p.index, p.rotation, boxes);
+        const page = out.addPage([img.width, img.height]);
+        page.drawImage(await out.embedPng(img.png), { x: 0, y: 0, width: img.width, height: img.height });
+        flat[p.id] = true;
+        outPages.push(page);
+      } else if (p.src < 0) {
         outPages.push(out.addPage([p.width || 612, p.height || 792]));
       } else {
         const [copied] = await out.copyPages(libSrc[p.src]!, [p.index]);
@@ -326,7 +375,8 @@ export async function buildPdf(sources: Uint8Array[], pages: PageRef[], annots: 
     const ref = pages[i];
     const page = outPages[i];
     const base = (((page.getRotation().angle % 360) + 360) % 360) as number;
-    const eff = (((base + (ref.src < 0 ? 0 : ref.rotation)) % 360) + 360) % 360;
+    // Redacted pages are already drawn in their displayed orientation.
+    const eff = flat[ref.id] ? 0 : (((base + (ref.src < 0 ? 0 : ref.rotation)) % 360) + 360) % 360;
     if (eff !== base) page.setRotation(degrees(eff));
     const crop = page.getCropBox();
     const map = makeMapper(crop.x, crop.y, crop.width, crop.height, eff);
