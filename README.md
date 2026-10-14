@@ -1,109 +1,64 @@
-# Slate Office
+<p align="center">
+  <img src="build/icon.png" width="96" alt="Slate Office logo">
+</p>
 
-A clean, dark, fully offline office suite for Windows (and macOS). One tabbed window for PDFs,
-documents, spreadsheets, presentations, text/code files and images. Nothing is uploaded anywhere.
+<h1 align="center">Slate Office</h1>
 
-## Install / run
+<p align="center">
+  A free, private office suite for Windows. Documents, spreadsheets, presentations and PDFs in one clean window,<br>
+  with an AI assistant and voice typing that run on your own computer.
+</p>
 
-| What | Command |
-|---|---|
-| Build the Windows installer | `npm run dist` → `release/Slate Office Setup <version>.exe` |
-| Build **and publish** an update | `npm run release` |
-| Run from source (production build) | `npm start` |
-| Develop with hot reload | `npm run dev` |
-| Type-check | `npm run typecheck` |
+<p align="center">
+  <a href="https://github.com/kadenw213-svg/slate-office/releases/latest"><b>⬇ Download the latest version</b></a>
+</p>
 
-First time only: `npm install`.
+---
 
-## Updates
+## What it is
 
-Installed copies update themselves: click the **S** logo (top-left) → **Check for updates** →
-**Download** → **Restart and update**. A blue dot on the logo means a new version is waiting.
+Slate Office opens and edits the files you already use: Word, Excel, PowerPoint, PDF, plain text and images.
+Everything sits in tabs in one window. It's free and open source, and it works without the internet.
 
-To ship a new version:
+- **Documents** (.docx, .odt, .rtf): page layout, headers and footers, comments, tracked changes, citations
+  (MLA/APA/Chicago), table of contents, equations, and grammar checking.
+- **Spreadsheets** (.xlsx, .csv, .ods): 140+ formulas, charts, filters, dropdowns, conditional formatting and pivot summaries.
+- **Presentations** (.pptx): themes, transitions, speaker view, and presenting on a second screen.
+- **PDFs**: edit existing text, highlight, draw, sign, fill forms, redact, merge, compress, password-protect,
+  make scanned pages searchable (OCR), and convert to Word.
+- **AI assistant**: highlight anything and press **Ctrl+J** to explain, summarize, suggest edits (as comments,
+  tracked changes or direct edits), or make flashcards and practice quizzes. You can also just ask it anything.
+- **Voice typing** (**Ctrl+Alt+V**): talk, and Slate types for you anywhere.
+- **Read aloud**, **split view**, a **command palette** (**Ctrl+Shift+P**), **version history**, autosave and crash recovery.
 
-1. Bump `"version"` in `package.json` (e.g. `0.1.0` → `0.2.0`).
-2. Run `npm run release` (uses your `gh` login to publish to
-   [GitHub Releases](https://github.com/kadenw213-svg/slate-office/releases)).
+## How it works
 
-## What it does
+- **Everything stays on your PC.** Files are opened and saved directly on your computer, and there's no account to make.
+  Slate doesn't upload your documents anywhere.
+- **The AI runs locally.** The first time you open the AI sidebar, Slate downloads a language model (1–5 GB) picked for
+  your computer. After that it works offline. Voice typing works the same way, using a small speech model (40–250 MB).
+- **Optional internet features are opt-in and minimal.** The AI can check Wikipedia for up-to-date facts (only the search
+  words are sent, never your file), and the citation tool can look up a DOI or ISBN when you ask it to. Both can be
+  turned off in Settings.
+- **Cloud drives** like OneDrive, Google Drive and Dropbox show up on the Home screen through their own desktop sync apps.
+- **Every feature has settings.** The basics are on by default, and **Settings → Advanced** shows every option.
 
-**AI sidebar (runs on your computer)**
-- Highlight text, press **AI** or **Ctrl+J**: the text appears in the sidebar; ask questions about it,
-  or use **Explain**, **Summarize** or **Suggest edits** (one-click Apply, Ctrl+Z to undo)
-- Switch to **Whole document** to work with everything; long files are read in parts
-- Works in documents, PDFs, spreadsheets, presentations and code; answers can be inserted back
-- Fully offline after a one-time model download (1–4.7 GB). Picks a model for your PC automatically;
-  **AI settings** (S menu) has a speed ⟷ quality slider, GPU/threads/context options and a speed test
+## Download and install
 
-**PDF editor**
-- Fast viewer with thumbnails, zoom (Ctrl+wheel), search (Ctrl+F) and selectable text
-- **Edit existing text**: click any line, retype it (matches font size, colour and background)
-- Add text, highlight / underline / strikethrough (select text or drag), freehand draw,
-  rectangles, ellipses, lines, arrows, whiteout/redaction boxes, sticky-note comments, images
-- Signatures: draw, type or upload; remembered for next time
-- Pages: rotate, delete, duplicate, reorder by dragging, insert blank pages, insert PDFs or images,
-  extract pages to a new PDF
-- Fill PDF forms, combine PDFs, turn images into a PDF, print
-- "Dark pages" reading mode (view only)
+1. Go to the [**latest release**](https://github.com/kadenw213-svg/slate-office/releases/latest) and download
+   **`Slate-Office-Setup-x.y.z.exe`**.
+2. Run it. Windows may show "Windows protected your PC" because the app isn't code-signed yet: click **More info → Run anyway**.
+3. Pick where to install it, and you're done. Slate can open your files directly when you double-click them.
 
-**Presentations (.pptx)**
-- Opens PowerPoint files with their layouts, theme colours, backgrounds, placeholders, shapes,
-  pictures, bullets and speaker notes; saves back to .pptx
-- New decks with themes (Slate, Paper, Midnight, Ember, Mint) and layouts
-- Text boxes, shapes, lines, arrows, images; drag, resize, snap-to-centre guides, reorder slides
-- Full-screen presenting (F5), export to PDF, print
+**Updating:** click the **S** logo at the top left, then **Check for updates**. A dot on the logo means a new version is ready.
 
-**Documents (.docx, .doc, .odt, .rtf, .html)**
-- Word-style editor on a page: headings, fonts, sizes, colours, highlight, lists, checklists,
-  tables (merge/split, add/remove rows & columns), images, links, page breaks, find & replace
-- Opens and saves real Word files with formatting kept (own .docx reader/writer)
-- Consistent spacing: **Enter** = one new paragraph with a fixed small gap, **Shift+Enter** = line
-  break, **Ctrl+Enter** = page break. Blank lines are one line tall. Pasting from Word / Google
-  Docs / the web is cleaned up so stacks of empty lines collapse.
-- Export to PDF, HTML or plain text; print; dark or light page
+**Requirements:** Windows 10 or 11 (64-bit). 8 GB of RAM or more is recommended for the AI assistant, and 16 GB+ for the largest AI model.
 
-**Spreadsheets (.xlsx, .xls, .ods, .csv, .tsv)**
-- 80+ functions (SUM, IF, VLOOKUP, XLOOKUP, INDEX/MATCH, SUMIFS, TEXT, dates, …), cross-sheet refs
-- Formula autocomplete, click-to-reference while typing a formula, coloured reference outlines
-- Fill handle (copies formulas, extends number series), copy/paste with Excel & Google Sheets,
-  insert/delete rows & columns (formulas update), sort, freeze panes, merge cells, number formats,
-  fonts, colours, column resize / auto-fit, multiple sheets, find & replace
-- Saves .xlsx with formatting, plus CSV/TSV/ODS
+## Feedback
 
-**Text & code** – syntax highlighting, find/replace, word wrap; keeps CRLF/LF and BOM as found.
+Found a bug or have an idea? In Slate, open **Settings → Feedback**, or [open an issue](https://github.com/kadenw213-svg/slate-office/issues).
 
-**Images** – zoom, rotate, flip, convert between PNG/JPG/WebP, copy, print, turn into a PDF.
+---
 
-## Keyboard
-
-| Shortcut | Action |
-|---|---|
-| Ctrl+O / Ctrl+N | Open / new document |
-| Ctrl+S / Ctrl+Shift+S | Save / save as |
-| Ctrl+W, Ctrl+Tab | Close tab, next tab |
-| Ctrl+P | Print |
-| Ctrl+F | Find |
-| PDF tools | V select · E edit text · T add text · H highlight · D draw · R rectangle · W whiteout · N comment · I image · S sign |
-
-## Known limits
-
-- PDF edits are written into the page content when you save; they stay editable until you close the file.
-- Encrypted PDFs open for viewing but can't be saved yet.
-- Old `.doc` files open with all their text but simplified formatting; `.odt`/`.rtf`/`.doc` save as `.docx`.
-- Old binary `.ppt` and OpenDocument presentations (`.odp`) need converting to `.pptx` first.
-- PowerPoint charts, SmartArt and animations aren't shown yet; tables appear as text.
-- Spreadsheet charts, conditional formatting and cell borders aren't supported yet.
-
-## Project layout
-
-```
-electron/        main process (window, file access, printing) + preload bridge
-src/App.tsx      tabs, shortcuts, drag & drop
-src/editors/pdf  PDF viewer/editor (pdf.js render, pdf-lib save)
-src/editors/doc  document editor (TipTap) + docx import/export
-src/editors/sheet spreadsheet grid, formula engine, xlsx/csv io
-src/editors/slides presentation editor + pptx import/export
-src/editors/code text/code editor (CodeMirror)
-src/editors/image image viewer
-```
+Slate Office is open source under the [MIT licence](LICENSE). The AI models are Llama 3.2 (Llama 3.2 Community License)
+and Qwen2.5 (Apache 2.0), and voice typing uses OpenAI Whisper (MIT). Building from source: see [docs/DEVELOPING.md](docs/DEVELOPING.md).

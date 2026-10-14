@@ -3,3 +3,6 @@ dist/
 release/
 *.log
 public/tesseract/
+
+# Private future plans (see ideas/README.md)
+ideas/
