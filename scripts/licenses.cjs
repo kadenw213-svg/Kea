@@ -5,15 +5,26 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
-const tree = JSON.parse(execSync('npm ls --omit=dev --all --json', { cwd: root, maxBuffer: 64 << 20 }).toString());
+const pkgJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+// Shipped code = runtime dependencies + the libraries Vite bundles into the app (rendererDependencies).
+const shipped = new Set([...Object.keys(pkgJson.dependencies || {}), ...(pkgJson.rendererDependencies || [])]);
+let raw;
+try {
+  raw = execSync('npm ls --all --json', { cwd: root, maxBuffer: 64 << 20 }).toString();
+} catch (err) {
+  // npm ls exits non-zero for harmless peer-dependency warnings; its output is still usable.
+  raw = err.stdout.toString();
+}
+const tree = JSON.parse(raw);
 const seen = new Map();
-(function walk(deps) {
+(function walk(deps, top) {
   for (const [name, info] of Object.entries(deps || {})) {
+    if (top && !shipped.has(name)) continue;
     if (!info || !info.version || seen.has(name + '@' + info.version)) continue;
     seen.set(name + '@' + info.version, name);
-    walk(info.dependencies);
+    walk(info.dependencies, false);
   }
-})(tree.dependencies);
+})(tree.dependencies, true);
 
 const out = [
   'Slate Office includes the following open-source software. Thank you to everyone who made it.',

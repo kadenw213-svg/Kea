@@ -61,7 +61,9 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Ctrl+D', 'Duplicate selection'],
       ['Arrow keys', 'Nudge selection (Shift for bigger steps)'],
       ['Enter', 'Edit text in the selected box'],
-      ['Esc', 'Stop editing / exit presentation']
+      ['Esc', 'Stop editing / exit presentation'],
+      ['S', 'While presenting: switch between slides and speaker view'],
+      ['→ / ←', 'While presenting: next / previous slide']
     ]
   },
   {

@@ -37,11 +37,13 @@ import {
   X,
   Shapes,
   StickyNote,
-  RectangleHorizontal
+  RectangleHorizontal,
+  Clapperboard
 } from 'lucide-react';
+import { Presenter } from './Presenter';
 import type { Tab } from '../../store';
 import { editorRegistry, setDirty, toast } from '../../store';
-import { Deck, El, Slide, THEMES, Theme, layoutSlide, newDeck, cloneSlide, textEl } from './model';
+import { Deck, El, Slide, Transition, THEMES, Theme, layoutSlide, newDeck, cloneSlide, textEl } from './model';
 import { SlideView, SLIDE_CSS } from './SlideView';
 import { readPptx } from './pptxImport';
 import { writePptx } from './pptxExport';
@@ -773,6 +775,50 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
           </>
         )}
         <div className="tb-spacer" />
+        <MenuButton
+          title="Transition"
+          button={(open) => (
+            <button className={`icon-btn ${open || (slide.transition && slide.transition.type !== 'none') ? 'active' : ''}`} title="Transition">
+              <Clapperboard size={18} />
+            </button>
+          )}
+        >
+          {(close) => {
+            const cur = slide.transition || { type: 'none' as const, duration: 0.5 };
+            const setT = (t: Transition, all = false) => {
+              const d = h.get();
+              h.commit({ ...d, slides: d.slides.map((x, k) => (all || k === idx ? { ...x, transition: t.type === 'none' ? undefined : t } : x)) });
+              markDirty();
+            };
+            return (
+              <div style={{ minWidth: 220 }}>
+                <div className="menu-title">Transition into this slide</div>
+                {(['none', 'fade', 'push', 'wipe', 'cover', 'zoom'] as const).map((type) => (
+                  <button key={type} className="menu-item" onClick={() => setT({ ...cur, type })}>
+                    <span style={{ width: 14 }}>{cur.type === type ? '✓' : ''}</span> {type === 'none' ? 'None' : type[0].toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
+                <div className="menu-sep" />
+                <div className="menu-title">Speed</div>
+                {(
+                  [
+                    [0.3, 'Fast'],
+                    [0.5, 'Medium'],
+                    [0.9, 'Slow']
+                  ] as const
+                ).map(([d, label]) => (
+                  <button key={label} className="menu-item" disabled={cur.type === 'none'} onClick={() => setT({ ...cur, duration: d })}>
+                    <span style={{ width: 14 }}>{cur.type !== 'none' && Math.abs(cur.duration - d) < 0.05 ? '✓' : ''}</span> {label}
+                  </button>
+                ))}
+                <div className="menu-sep" />
+                <button className="menu-item" onClick={() => (setT(cur, true), close())}>
+                  Apply to all slides
+                </button>
+              </div>
+            );
+          }}
+        </MenuButton>
         <B on={notesOpen} title="Speaker notes" onClick={() => setNotesOpen((o) => !o)}>
           <StickyNote size={18} />
         </B>
@@ -907,65 +953,6 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
       </div>
 
       {presenting !== null && <Presenter deck={deck} start={presenting} onExit={(i) => (setPresenting(null), setIdx(i))} />}
-    </div>
-  );
-}
-
-function Presenter({ deck, start, onExit }: { deck: Deck; start: number; onExit(i: number): void }) {
-  const [i, setI] = useState(start);
-  const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
-  const ref = useRef<HTMLDivElement>(null);
-  const iRef = useRef(i);
-  iRef.current = i;
-  useEffect(() => {
-    ref.current?.requestFullscreen?.().catch(() => {});
-    const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight });
-    const onFs = () => {
-      if (!document.fullscreenElement) onExit(iRef.current);
-    };
-    window.addEventListener('resize', onResize);
-    document.addEventListener('fullscreenchange', onFs);
-    return () => {
-      window.removeEventListener('resize', onResize);
-      document.removeEventListener('fullscreenchange', onFs);
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    };
-  }, []);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (['ArrowRight', 'ArrowDown', ' ', 'PageDown', 'Enter', 'n'].includes(e.key)) setI((x) => Math.min(deck.slides.length - 1, x + 1));
-      else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace', 'p'].includes(e.key)) setI((x) => Math.max(0, x - 1));
-      else if (e.key === 'Home') setI(0);
-      else if (e.key === 'End') setI(deck.slides.length - 1);
-      else if (e.key === 'Escape') onExit(iRef.current);
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, []);
-  const s = Math.min(size.w / deck.w, size.h / deck.h);
-  return (
-    <div ref={ref} className="presenter" onClick={(e) => (e.clientX < size.w * 0.25 ? setI((x) => Math.max(0, x - 1)) : setI((x) => Math.min(deck.slides.length - 1, x + 1)))}>
-      <div key={i} className="present-slide" style={{ width: deck.w * s, height: deck.h * s }}>
-        <div style={{ transform: `scale(${s})`, transformOrigin: '0 0' }}>
-          <SlideView slide={deck.slides[i]} w={deck.w} h={deck.h} font={deck.font} />
-        </div>
-      </div>
-      <div className="present-bar" onClick={(e) => e.stopPropagation()}>
-        <button className="icon-btn sm" onClick={() => setI((x) => Math.max(0, x - 1))}>
-          <ChevronLeft size={16} />
-        </button>
-        <span>
-          {i + 1} / {deck.slides.length}
-        </span>
-        <button className="icon-btn sm" onClick={() => setI((x) => Math.min(deck.slides.length - 1, x + 1))}>
-          <ChevronRight size={16} />
-        </button>
-        <button className="icon-btn sm" onClick={() => onExit(iRef.current)} title="Exit (Esc)">
-          <X size={16} />
-        </button>
-      </div>
     </div>
   );
 }

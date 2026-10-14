@@ -32,6 +32,17 @@ contextBridge.exposeInMainWorld('api', {
     clear: () => ipcRenderer.invoke('history:clear'),
     openFolder: () => ipcRenderer.invoke('history:open-folder')
   },
+  present: {
+    screens: () => ipcRenderer.invoke('present:screens'),
+    open: (html, start) => ipcRenderer.invoke('present:open', html, start),
+    goto: (i, type, dur, dir) => ipcRenderer.invoke('present:goto', i, type, dur, dir),
+    close: () => ipcRenderer.invoke('present:close'),
+    onClosed: (cb) => {
+      const fn = () => cb();
+      ipcRenderer.on('present:closed', fn);
+      return () => ipcRenderer.removeListener('present:closed', fn);
+    }
+  },
   citeLookup: (q) => ipcRenderer.invoke('cite:lookup', q),
   google: {
     status: () => ipcRenderer.invoke('google:status'),

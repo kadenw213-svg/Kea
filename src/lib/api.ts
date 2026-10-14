@@ -92,6 +92,13 @@ export interface SlateApi {
     clear(): Promise<boolean>;
     openFolder(): Promise<string>;
   };
+  present: {
+    screens(): Promise<number>;
+    open(html: string, start: number): Promise<boolean>;
+    goto(i: number, type: string, duration: number, dir: number): Promise<boolean>;
+    close(): Promise<boolean>;
+    onClosed(cb: () => void): () => void;
+  };
   citeLookup(query: string): Promise<any>;
   google: {
     status(): Promise<{ configured: boolean; signedIn: boolean; email: string | null; name: string | null }>;

@@ -466,6 +466,23 @@ async function background(part: Part | null, ctx: Ctx): Promise<string | null> {
   return null;
 }
 
+/** Slide transition (PowerPoint writes a newer version plus a plain fallback; either works). */
+function readTransition(doc: Document): Slide['transition'] {
+  const all = Array.from(doc.getElementsByTagNameNS(P, 'transition'));
+  for (const t of all.reverse()) {
+    const kind = Array.from(t.children).map((c) => c.localName)[0];
+    const map: Record<string, NonNullable<Slide['transition']>['type']> = { fade: 'fade', push: 'push', wipe: 'wipe', cover: 'cover', pull: 'cover', zoom: 'zoom', split: 'wipe', dissolve: 'fade', randomBar: 'fade', strips: 'wipe' };
+    if (!kind) continue;
+    if (kind === 'cut') return undefined;
+    const type = map[kind] || 'fade';
+    const durMs = Number(t.getAttribute('p14:dur') || t.getAttributeNS('http://schemas.microsoft.com/office/powerpoint/2010/main', 'dur'));
+    const spd = t.getAttribute('spd');
+    const duration = durMs ? Math.min(3, durMs / 1000) : spd === 'fast' ? 0.3 : spd === 'slow' ? 0.9 : 0.5;
+    return { type, duration };
+  }
+  return undefined;
+}
+
 export async function readPptx(bytes: Uint8Array): Promise<Deck> {
   const zip = await JSZip.loadAsync(bytes);
   const ctx: Ctx = { zip, theme: {}, majorFont: 'Calibri Light', minorFont: 'Calibri', cache: new Map(), media: new Map() };
@@ -527,7 +544,7 @@ export async function readPptx(bytes: Uint8Array): Promise<Deck> {
       const body = Array.from(np?.doc.getElementsByTagNameNS(P, 'sp') || []).find((s) => phOf(s)?.type === 'body');
       if (body) notes = Array.from(body.getElementsByTagNameNS(A, 'p')).map((p) => Array.from(p.getElementsByTagNameNS(A, 't')).map((t) => t.textContent).join('')).join('\n').trim();
     }
-    slides.push({ id: uid(), bg, els, notes });
+    slides.push({ id: uid(), bg, els, notes, transition: readTransition(slide.doc) });
   }
   if (!slides.length) slides.push({ id: uid(), bg: '#ffffff', els: [], notes: '' });
   return { w, h, slides, font: ctx.minorFont };

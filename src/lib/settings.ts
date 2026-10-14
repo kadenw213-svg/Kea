@@ -303,6 +303,26 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'slides',
+    label: 'Presentations',
+    icon: 'Presentation',
+    fields: [
+      {
+        key: 'slides.presenterView',
+        label: 'When presenting on one screen, start in',
+        type: 'select',
+        default: 'audience',
+        options: [
+          { value: 'audience', label: 'Full-screen slides' },
+          { value: 'speaker', label: 'Speaker view (notes, next slide, timer)' }
+        ],
+        help: 'Press S while presenting to switch.'
+      },
+      { key: 'slides.useSecondScreen', label: 'With a second screen, show slides there and the speaker view here', type: 'toggle', default: true },
+      { key: 'slides.notesSize', label: 'Speaker notes text size', type: 'number', default: 20, min: 12, max: 48, unit: 'px', advanced: true }
+    ]
+  },
+  {
     id: 'code',
     label: 'Text & code',
     icon: 'FileCode2',

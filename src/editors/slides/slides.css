@@ -339,3 +339,134 @@
 .presenter:hover .present-bar {
   opacity: 1;
 }
+
+/* Stage that layers the outgoing and incoming slide during a transition */
+.present-stage,
+.spk-stage {
+  position: relative;
+  overflow: hidden;
+}
+.present-stage > .pv-slide,
+.spk-stage > .pv-slide {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.present-time {
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+}
+
+/* ---------- Speaker view ---------- */
+.presenter.speaker {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  place-items: stretch;
+  background: #111214;
+  color: #e3e3e3;
+  cursor: default;
+  padding: 20px 24px 12px;
+  gap: 14px;
+}
+.spk-main {
+  display: flex;
+  gap: 24px;
+  min-height: 0;
+}
+.spk-cur {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.spk-stage {
+  border-radius: 8px;
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+}
+.spk-side {
+  width: 32%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.spk-side > .pv-slide,
+.spk-end {
+  border-radius: 6px;
+  overflow: hidden;
+  opacity: 0.9;
+}
+.spk-end {
+  display: grid;
+  place-items: center;
+  background: #1e1f22;
+  color: #9aa0a6;
+  font-size: 14px;
+}
+.spk-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9aa0a6;
+  align-self: flex-start;
+}
+.spk-timer {
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #1b1c1f;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.spk-time {
+  font-size: 44px;
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.spk-timer-btns {
+  display: flex;
+  gap: 6px;
+}
+.spk-clock {
+  color: #9aa0a6;
+  font-size: 14px;
+}
+.spk-notes {
+  background: #1b1c1f;
+  border-radius: 14px;
+  padding: 10px 16px 14px;
+  height: 24vh;
+  display: flex;
+  flex-direction: column;
+}
+.spk-notes-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.spk-notes-head .spk-label {
+  flex: 1;
+}
+.spk-notes-text {
+  flex: 1;
+  overflow-y: auto;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  margin-top: 6px;
+}
+.spk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.spk-bar .muted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

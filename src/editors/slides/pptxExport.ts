@@ -1,4 +1,5 @@
 import PptxGenJS from 'pptxgenjs';
+import JSZip from 'jszip';
 import type { Deck, El } from './model';
 
 const hex = (c?: string | null) => {
@@ -128,5 +129,20 @@ export async function writePptx(deck: Deck): Promise<Uint8Array> {
     if (s.notes) slide.addNotes(s.notes);
   }
   const out = (await pptx.write({ outputType: 'arraybuffer' })) as ArrayBuffer;
-  return new Uint8Array(out);
+  if (!deck.slides.some((s) => s.transition && s.transition.type !== 'none')) return new Uint8Array(out);
+  // PptxGenJS can't write transitions, so add them to each slide's XML.
+  const zip = await JSZip.loadAsync(out);
+  for (let k = 0; k < deck.slides.length; k++) {
+    const t = deck.slides[k].transition;
+    if (!t || t.type === 'none') continue;
+    const path = `ppt/slides/slide${k + 1}.xml`;
+    const xml = await zip.file(path)?.async('string');
+    if (!xml || xml.includes('<p:transition')) continue;
+    const spd = t.duration <= 0.35 ? 'fast' : t.duration >= 0.8 ? 'slow' : 'med';
+    const el = t.type === 'cover' ? '<p:cover dir="l"/>' : t.type === 'push' ? '<p:push dir="l"/>' : t.type === 'wipe' ? '<p:wipe dir="r"/>' : t.type === 'zoom' ? '<p:zoom/>' : '<p:fade/>';
+    const tag = `<p:transition spd="${spd}">${el}</p:transition>`;
+    const next = xml.includes('</p:clrMapOvr>') ? xml.replace('</p:clrMapOvr>', `</p:clrMapOvr>${tag}`) : xml.replace('</p:cSld>', `</p:cSld>${tag}`);
+    zip.file(path, next);
+  }
+  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
 }

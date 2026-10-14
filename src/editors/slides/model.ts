@@ -30,11 +30,19 @@ export interface El {
   flipV?: boolean;
 }
 
+export type TransitionType = 'none' | 'fade' | 'push' | 'wipe' | 'zoom' | 'cover';
+export interface Transition {
+  type: TransitionType;
+  /** Seconds. */
+  duration: number;
+}
+
 export interface Slide {
   id: string;
   bg: string;
   els: El[];
   notes: string;
+  transition?: Transition;
 }
 
 export interface Deck {
