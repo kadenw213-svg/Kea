@@ -22,6 +22,8 @@ export interface EditorHandle {
   exportPdf?(): Promise<void>;
   /** Produce the file bytes without saving (used by automated checks). */
   debugBuild?(): Promise<Uint8Array>;
+  /** Produce the PDF export without asking where to save (used by automated checks). */
+  debugPdf?(): Promise<Uint8Array>;
   /** Hooks the AI sidebar uses to read and change the document. */
   ai?: AiHooks;
 }

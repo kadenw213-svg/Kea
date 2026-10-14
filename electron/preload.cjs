@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('api', {
     clear: () => ipcRenderer.invoke('history:clear'),
     openFolder: () => ipcRenderer.invoke('history:open-folder')
   },
+  citeLookup: (q) => ipcRenderer.invoke('cite:lookup', q),
   google: {
     status: () => ipcRenderer.invoke('google:status'),
     signIn: () => ipcRenderer.invoke('google:sign-in'),
@@ -68,7 +69,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('drives:progress', fn);
     return () => ipcRenderer.removeListener('drives:progress', fn);
   },
-  printHtml: (html) => ipcRenderer.invoke('print:html', html),
+  printHtml: (html, opts) => ipcRenderer.invoke('print:html', html, opts),
   pdfFromHtml: (html, opts) => ipcRenderer.invoke('export:pdf-from-html', html, opts),
   getPendingOpen: () => ipcRenderer.invoke('app:get-pending-open'),
   getPathForFile: (file) => {

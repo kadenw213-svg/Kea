@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { escapeHtml } from '../../lib/util';
+import { DocMeta, defaultMeta, HeaderFooter, emptyHF } from './docMeta';
 
 /**
  * Converts a .docx file to HTML that the editor understands. Covers paragraphs,
@@ -50,6 +51,28 @@ interface StyleDef {
   numId?: string;
   ilvl?: number;
   outline?: number;
+  after?: number; // pt
+  line?: number; // Word line multiple
+  firstLine?: number; // inches (negative = hanging)
+}
+
+const TW = 1440;
+/** Spacing and indentation from a w:pPr. */
+function parsePPrLayout(pPr: Element | null) {
+  const out: { after?: number; line?: number; firstLine?: number } = {};
+  if (!pPr) return out;
+  const sp = kid(pPr, 'spacing');
+  const after = attr(sp, 'after');
+  if (after != null) out.after = parseInt(after, 10) / 20;
+  const line = attr(sp, 'line');
+  const rule = attr(sp, 'lineRule');
+  if (line && (!rule || rule === 'auto')) out.line = Math.round((parseInt(line, 10) / 240) * 100) / 100;
+  const ind = kid(pPr, 'ind');
+  const fl = attr(ind, 'firstLine');
+  const hg = attr(ind, 'hanging');
+  if (hg != null && parseInt(hg, 10)) out.firstLine = -Math.round((parseInt(hg, 10) / TW) * 100) / 100;
+  else if (fl != null) out.firstLine = Math.round((parseInt(fl, 10) / TW) * 100) / 100;
+  return out;
 }
 
 const kids = (el: Element | null | undefined, local: string) =>
@@ -91,6 +114,12 @@ function parseRPr(rPr: Element | null): RunProps {
 }
 
 export async function docxToHtml(bytes: Uint8Array): Promise<string> {
+  return (await docxToDoc(bytes)).html;
+}
+
+/** Word document → editor HTML plus page setup, headers/footers, default formatting and Slate data. */
+export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta: DocMeta }> {
+  const meta = defaultMeta();
   const zip = await JSZip.loadAsync(bytes);
   const read = async (path: string) => {
     const f = zip.file(path);
@@ -100,6 +129,21 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
 
   const docXml = await read('word/document.xml');
   if (!docXml) throw new Error('This file is not a valid Word document.');
+
+  // Slate's own data (citations, comments, goal…), stored in a custom XML part.
+  let extra: any = null;
+  for (const name of Object.keys(zip.files).filter((n) => /^customXml\/[^/]+\.xml$/i.test(n))) {
+    const xml = await read(name);
+    if (!xml || !xml.includes('urn:slate-office:data')) continue;
+    try {
+      const b64 = (parse(xml).documentElement.textContent || '').trim();
+      extra = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    } catch (err) {
+      console.warn('slate data', err);
+    }
+  }
+  const citeRecords: { ids: string[]; page: string; text: string }[] = extra?.citations || [];
+  let citeIdx = 0;
   const doc = parse(docXml);
 
   // Relationships (links + images)
@@ -114,12 +158,15 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
   // Styles
   const styles: Record<string, StyleDef> = {};
   let defaultRun: RunProps = {};
+  let defaultLayout: ReturnType<typeof parsePPrLayout> = {};
   let defaultParaStyle = 'Normal';
   const stylesXml = await read('word/styles.xml');
   if (stylesXml) {
     const sd = parse(stylesXml);
     const rDef = sd.getElementsByTagNameNS(W, 'rPrDefault')[0];
     if (rDef) defaultRun = parseRPr(kid(rDef, 'rPr'));
+    const pDef = sd.getElementsByTagNameNS(W, 'pPrDefault')[0];
+    if (pDef) defaultLayout = parsePPrLayout(kid(pDef, 'pPr'));
     for (const st of Array.from(sd.getElementsByTagNameNS(W, 'style'))) {
       const id = attr(st, 'styleId')!;
       const pPr = kid(st, 'pPr');
@@ -132,7 +179,8 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
         jc: attr(kid(pPr, 'jc'), 'val') || undefined,
         numId: attr(kid(numPr, 'numId'), 'val') || undefined,
         ilvl: numPr ? parseInt(attr(kid(numPr, 'ilvl'), 'val') || '0', 10) : undefined,
-        outline: outline != null ? parseInt(outline, 10) : undefined
+        outline: outline != null ? parseInt(outline, 10) : undefined,
+        ...parsePPrLayout(pPr)
       };
       if (attr(st, 'type') === 'paragraph' && attr(st, 'default') === '1') defaultParaStyle = id;
     }
@@ -151,8 +199,26 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
       { name: '', rPr: {} } as StyleDef
     );
   };
-  const baseSize = defaultRun.size || resolveStyle(defaultParaStyle)?.rPr.size || 11;
-  const baseFont = defaultRun.font || resolveStyle(defaultParaStyle)?.rPr.font;
+  const normal = resolveStyle(defaultParaStyle);
+  const baseSize = normal?.rPr.size || defaultRun.size || 11;
+  const baseFont = normal?.rPr.font || defaultRun.font;
+  // Document defaults. Word's own fallback is single spacing with no space after.
+  const baseAfter = normal?.after ?? defaultLayout.after ?? 0;
+  const baseLine = normal?.line ?? defaultLayout.line ?? 1;
+  const baseFirst = normal?.firstLine ?? defaultLayout.firstLine ?? 0;
+  meta.defaults = { font: baseFont || 'Calibri', sizePt: baseSize, lineHeight: baseLine, spaceAfterPt: baseAfter, firstLineIn: baseFirst > 0 ? baseFirst : 0 };
+
+  // Footnotes (id → text)
+  const footnotes: Record<string, string> = {};
+  const fnXml = await read('word/footnotes.xml');
+  if (fnXml) {
+    for (const fn of Array.from(parse(fnXml).getElementsByTagNameNS(W, 'footnote'))) {
+      const id = attr(fn, 'id');
+      const type = attr(fn, 'type');
+      if (!id || type === 'separator' || type === 'continuationSeparator') continue;
+      footnotes[id] = Array.from(fn.getElementsByTagNameNS(W, 't')).map((t) => t.textContent || '').join('').trim();
+    }
+  }
 
   // Numbering: numId -> level -> ordered?
   const numFmt: Record<string, Record<number, string>> = {};
@@ -189,7 +255,17 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
   // ---------- Runs ----------
   const runHtml = async (r: Element, paraRun: RunProps): Promise<string> => {
     const rPr = kid(r, 'rPr');
-    const charStyle = resolveStyle(attr(kid(rPr, 'rStyle'), 'val'));
+    const rStyleId = attr(kid(rPr, 'rStyle'), 'val');
+    // A Slate citation: rebuild it from the saved record when the text still matches.
+    if (rStyleId === 'SlateCitation') {
+      const text = Array.from(r.getElementsByTagNameNS(W, 't')).map((t) => t.textContent || '').join('');
+      const rec = citeRecords[citeIdx];
+      if (rec && rec.text === text) {
+        citeIdx++;
+        return `<span data-cite="${escapeHtml(rec.ids.join(','))}"${rec.page ? ` data-page="${escapeHtml(rec.page)}"` : ''}>${escapeHtml(text)}</span>`;
+      }
+    }
+    const charStyle = resolveStyle(rStyleId);
     const p: RunProps = { ...paraRun, ...(charStyle?.rPr || {}), ...parseRPr(rPr) };
     let inner = '';
     for (const c of Array.from(r.children)) {
@@ -210,6 +286,11 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
         case 'noBreakHyphen':
           inner += '‑';
           break;
+        case 'footnoteReference': {
+          const id = attr(c, 'id');
+          if (id && id in footnotes) inner += `<sup data-footnote="${escapeHtml(footnotes[id])}"></sup>`;
+          break;
+        }
         case 'sym': {
           const ch = attr(c, 'char');
           if (ch) {
@@ -236,7 +317,7 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
     }
     if (!inner) return '';
     // Images are lifted out as blocks later, so keep them unformatted.
-    if (inner.includes('\u0000IMG') || inner.includes('PAGEBREAK')) return inner;
+    if (inner.includes('\u0000IMG') || inner.includes('PAGEBREAK') || inner.startsWith('<sup data-footnote')) return inner;
     const css: string[] = [];
     if (p.color && p.color !== '#000000') css.push(`color: ${p.color}`);
     if (p.size && Math.abs(p.size - baseSize) > 0.01) css.push(`font-size: ${p.size}pt`);
@@ -292,6 +373,13 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
   const paraBlocks = async (p: Element): Promise<Block[]> => {
     const pPr = kid(p, 'pPr');
     const styleId = attr(kid(pPr, 'pStyle'), 'val') || defaultParaStyle;
+    // Slate's bibliography and contents are rebuilt from live data, so their entries are skipped.
+    if (styleId === 'SlateBibliography' || styleId === 'SlateTOC') return [];
+    if (styleId === 'SlateBibliographyTitle') {
+      const title = Array.from(p.getElementsByTagNameNS(W, 't')).map((t) => t.textContent || '').join('');
+      return [{ kind: 'raw', html: `<div data-bibliography data-title="${escapeHtml(title || 'Works Cited')}"></div>` }];
+    }
+    if (styleId === 'SlateTOCTitle') return [{ kind: 'raw', html: '<div data-toc></div>' }];
     const st = resolveStyle(styleId);
     const name = st?.name || '';
     let tag = 'p';
@@ -306,13 +394,12 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
     const jc = attr(kid(pPr, 'jc'), 'val') || st?.jc;
     const align = jc === 'center' ? 'center' : jc === 'right' || jc === 'end' ? 'right' : jc === 'both' || jc === 'distribute' ? 'justify' : null;
     if (align) css.push(`text-align: ${align}`);
-    const spacing = kid(pPr, 'spacing');
-    const line = attr(spacing, 'line');
-    const rule = attr(spacing, 'lineRule');
-    if (line && (!rule || rule === 'auto')) {
-      const lh = Math.round((parseInt(line, 10) / 240) * 100) / 100;
-      if (lh >= 1.4) css.push(`line-height: ${lh >= 1.9 ? 2 : lh >= 1.65 ? 1.75 : 1.5}`);
-    }
+    // Line spacing and first-line/hanging indent, kept only where they differ from the document default.
+    const own = parsePPrLayout(pPr);
+    const lineMul = own.line ?? st?.line ?? baseLine;
+    if (Math.abs(lineMul - baseLine) > 0.01) css.push(`line-height: ${lineMul}`);
+    const fl = own.firstLine ?? st?.firstLine ?? baseFirst;
+    if (tag === 'p' && Math.abs(fl - (baseFirst > 0 ? baseFirst : 0)) > 0.01) attrs.push(`data-text-indent="${fl}"`);
     const ind = kid(pPr, 'ind');
     const left = parseInt(attr(ind, 'left') || attr(ind, 'start') || '0', 10);
 
@@ -476,5 +563,128 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
   };
   const blocks: Block[] = [];
   await collect(body, blocks);
-  return blocksToHtml(blocks) || '<p></p>';
+  const html = blocksToHtml(blocks) || '<p></p>';
+
+  // ---------- Page setup, headers and footers ----------
+  const sectPrs = body ? kids(body, 'sectPr') : [];
+  const sect = sectPrs[sectPrs.length - 1] || doc.getElementsByTagNameNS(W, 'sectPr')[0];
+  if (sect) {
+    const sz = kid(sect, 'pgSz');
+    const w = parseInt(attr(sz, 'w') || '0', 10) / TW;
+    const h = parseInt(attr(sz, 'h') || '0', 10) / TW;
+    if (w && h) {
+      const landscape = attr(sz, 'orient') === 'landscape' || w > h;
+      const pw = Math.min(w, h);
+      const ph = Math.max(w, h);
+      const near = (a: number, b: number) => Math.abs(a - b) < 0.05;
+      meta.page.size = near(pw, 8.5) && near(ph, 11) ? 'letter' : near(pw, 8.27) && near(ph, 11.69) ? 'a4' : near(pw, 8.5) && near(ph, 14) ? 'legal' : near(pw, 5.83) && near(ph, 8.27) ? 'a5' : 'custom';
+      meta.page.width = Math.round(pw * 100) / 100;
+      meta.page.height = Math.round(ph * 100) / 100;
+      meta.page.landscape = landscape;
+    }
+    const mg = kid(sect, 'pgMar');
+    if (mg) {
+      const v = (k: string, d: number) => {
+        const x = attr(mg, k);
+        return x != null ? Math.round((Math.abs(parseInt(x, 10)) / TW) * 100) / 100 : d;
+      };
+      meta.page.margins = { top: v('top', 1), right: v('right', 1), bottom: v('bottom', 1), left: v('left', 1) };
+      meta.page.headerDistance = v('header', 0.5);
+      meta.page.footerDistance = v('footer', 0.5);
+    }
+    const start = attr(kid(sect, 'pgNumType'), 'start');
+    if (start) meta.pageNumberStart = parseInt(start, 10) || 1;
+    const titlePg = kid(sect, 'titlePg') && onOff(kid(sect, 'titlePg'));
+
+    // Header/footer text, with page-number fields turned into {PAGE}/{PAGES}.
+    const hfText = async (ref: Element | undefined): Promise<HeaderFooter | null> => {
+      if (!ref) return null;
+      const rel = rels[ref.getAttributeNS(R, 'id') || ''];
+      if (!rel) return null;
+      const xml = await read('word/' + rel.target.replace(/^\.\//, ''));
+      if (!xml) return null;
+      const hf = emptyHF();
+      for (const p of Array.from(parse(xml).getElementsByTagNameNS(W, 'p'))) {
+        let text = '';
+        let inField = false;
+        let fieldCode = '';
+        let skipResult = false;
+        const fieldToken = (code: string) => (code === 'PAGE' ? '{PAGE}' : code === 'NUMPAGES' || code === 'SECTIONPAGES' ? '{PAGES}' : '');
+        const walk = (el: Element) => {
+          for (const c of Array.from(el.children)) {
+            if (c.localName === 'fldSimple') {
+              const code = (attr(c, 'instr') || '').trim().split(/\s+/)[0].toUpperCase();
+              text += fieldToken(code) || Array.from(c.getElementsByTagNameNS(W, 't')).map((t) => t.textContent).join('');
+              continue;
+            }
+            if (c.localName === 'fldChar') {
+              const t = attr(c, 'fldCharType');
+              if (t === 'begin') {
+                inField = true;
+                fieldCode = '';
+              } else if (t === 'separate') {
+                const tok = fieldToken(fieldCode.trim().split(/\s+/)[0].toUpperCase());
+                text += tok;
+                skipResult = !!tok;
+                inField = false;
+              } else if (t === 'end') {
+                inField = false;
+                skipResult = false;
+              }
+              continue;
+            }
+            if (c.localName === 'instrText') {
+              if (inField) fieldCode += c.textContent || '';
+              continue;
+            }
+            if (c.localName === 't') {
+              if (!inField && !skipResult) text += c.textContent || '';
+            } else if (c.localName === 'tab') text += '\t';
+            else if (c.children.length) walk(c);
+          }
+        };
+        walk(p);
+        if (!text.trim()) continue;
+        const jc = attr(kid(kid(p, 'pPr'), 'jc'), 'val');
+        const parts = text.split('\t').map((s) => s.trim());
+        if (parts.length >= 3) {
+          hf.left ||= parts[0];
+          hf.center ||= parts[1];
+          hf.right ||= parts.slice(2).filter(Boolean).join(' ');
+        } else if (parts.length === 2) {
+          hf.left ||= parts[0];
+          hf.right ||= parts[1];
+        } else if (jc === 'center') hf.center ||= parts[0];
+        else if (jc === 'right' || jc === 'end') hf.right ||= parts[0];
+        else hf.left ||= parts[0];
+      }
+      return hf;
+    };
+    const refs = (name: string, type: string) => kids(sect, name).find((r) => (attr(r, 'type') || 'default') === type);
+    meta.header = (await hfText(refs('headerReference', 'default'))) || emptyHF();
+    meta.footer = (await hfText(refs('footerReference', 'default'))) || emptyHF();
+    if (titlePg) {
+      meta.firstHeader = (await hfText(refs('headerReference', 'first'))) || emptyHF();
+      meta.firstFooter = (await hfText(refs('footerReference', 'first'))) || emptyHF();
+    }
+  }
+
+  // ---------- Slate's own data (citations, comments, goal…) ----------
+  if (extra) {
+    try {
+      if (extra.sources) meta.sources = extra.sources;
+      if (extra.comments) meta.comments = extra.comments;
+      if (extra.citationStyle) meta.citationStyle = extra.citationStyle;
+      if ('wordGoal' in extra) meta.wordGoal = extra.wordGoal;
+      if ('pageless' in extra) meta.pageless = extra.pageless;
+      // Slate's own header/footer text keeps fields like {TITLE} that Word can't store.
+      if (extra.header) meta.header = extra.header;
+      if (extra.footer) meta.footer = extra.footer;
+      if ('firstHeader' in extra) meta.firstHeader = extra.firstHeader;
+      if ('firstFooter' in extra) meta.firstFooter = extra.firstFooter;
+    } catch (err) {
+      console.warn('slate data', err);
+    }
+  }
+  return { html, meta };
 }

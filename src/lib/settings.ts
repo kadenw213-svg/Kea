@@ -65,6 +65,7 @@ export const SECTIONS: Section[] = [
           { value: 'code', label: 'Text file' }
         ]
       },
+      { key: 'user.name', label: 'Your name', type: 'text', default: '', help: 'Used for comments, MLA headers and the author of new files. Stays on this PC.' },
       { key: 'general.spellcheck', label: 'Check spelling as you type', type: 'toggle', default: true },
       {
         key: 'general.closeBehavior',
@@ -202,6 +203,58 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'docs',
+    label: 'Documents',
+    icon: 'FileText',
+    blurb: 'Defaults for new documents. Each document can change its own in Page setup.',
+    fields: [
+      {
+        key: 'doc.paper',
+        label: 'Page colour while editing',
+        type: 'select',
+        default: 'dark',
+        options: [
+          { value: 'dark', label: 'Dark grey (easy on the eyes)' },
+          { value: 'light', label: 'White (like paper)' }
+        ],
+        help: 'Printing and PDFs are always on white.'
+      },
+      { key: 'doc.font', label: 'Font', type: 'select', default: 'Arial', options: ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Segoe UI', 'Times New Roman', 'Trebuchet MS', 'Verdana'].map((f) => ({ value: f, label: f })) },
+      { key: 'doc.size', label: 'Font size', type: 'number', default: 11, min: 6, max: 72, step: 0.5, unit: 'pt' },
+      {
+        key: 'doc.lineHeight',
+        label: 'Line spacing',
+        type: 'select',
+        default: 1.15,
+        options: [
+          { value: 1, label: 'Single' },
+          { value: 1.15, label: '1.15' },
+          { value: 1.5, label: '1.5' },
+          { value: 2, label: 'Double' }
+        ]
+      },
+      { key: 'doc.spaceAfter', label: 'Space after paragraphs', type: 'number', default: 6, min: 0, max: 72, unit: 'pt', advanced: true },
+      { key: 'doc.firstLine', label: 'Indent the first line of paragraphs', type: 'number', default: 0, min: 0, max: 3, step: 0.25, unit: 'in', advanced: true },
+      {
+        key: 'doc.pageSize',
+        label: 'Paper size',
+        type: 'select',
+        default: 'letter',
+        options: [
+          { value: 'letter', label: 'Letter' },
+          { value: 'a4', label: 'A4' },
+          { value: 'legal', label: 'Legal' },
+          { value: 'a5', label: 'A5' }
+        ]
+      },
+      { key: 'doc.margin', label: 'Margins', type: 'number', default: 1, min: 0, max: 4, step: 0.25, unit: 'in', advanced: true },
+      { key: 'doc.pageless', label: 'Pageless (one long page, no page breaks)', type: 'toggle', default: false },
+      { key: 'doc.zoom', label: 'Zoom', type: 'select', default: 1, options: pct([0.75, 0.9, 1, 1.1, 1.25, 1.5]), advanced: true },
+      { key: 'doc.citationStyle', label: 'Citation style', type: 'select', default: 'mla', options: [{ value: 'mla', label: 'MLA 9' }, { value: 'apa', label: 'APA 7' }, { value: 'chicago', label: 'Chicago (author-date)' }] },
+      { key: 'doc.statusHints', label: 'Show keyboard hints in the status bar', type: 'toggle', default: true, advanced: true }
+    ]
+  },
+  {
     id: 'code',
     label: 'Text & code',
     icon: 'FileCode2',
@@ -260,6 +313,7 @@ export const SECTIONS: Section[] = [
     icon: 'Shield',
     blurb: 'Slate works offline. It only goes online to check GitHub for updates, to download AI models you choose, and to set up cloud drives you sign in to.',
     fields: [
+      { key: 'privacy.citeLookup', label: 'Allow citation look-ups', type: 'toggle', default: true, help: 'When you click "Look up" in Citations, Slate asks Crossref (DOIs), Open Library (ISBNs) or the web page itself for the details. Nothing is sent otherwise.' },
       { key: 'privacy.log', label: 'Keep a troubleshooting log', type: 'toggle', default: true, advanced: true, help: 'A small local file (slate.log) with errors and file names. Never sent anywhere.' }
     ]
   },

@@ -46,6 +46,7 @@
   overflow: auto;
   padding: 8px 24px 80px;
   cursor: text;
+  background: var(--bg);
 }
 .doc-page {
   --paper: #1e1f20;
@@ -53,10 +54,10 @@
   --ink-2: #c4c7c5;
   --rule: #444746;
   --tint: #2a2b2d;
-  width: 816px; /* 8.5in */
-  min-height: 1056px; /* 11in */
+  /* Width and margins come from the document's page setup (inline style). */
+  position: relative;
+  box-sizing: border-box;
   margin: 0 auto;
-  padding: 96px; /* 1in margins */
   background: var(--paper);
   color: var(--ink);
   border-radius: 4px;
@@ -73,10 +74,11 @@
 
 .doc-content {
   outline: none;
-  font-family: Arial, sans-serif;
-  font-size: 11pt;
-  line-height: 1.3;
-  min-height: 864px;
+  position: relative;
+  font-family: var(--doc-font, Arial, sans-serif);
+  font-size: var(--doc-size, 11pt);
+  line-height: var(--doc-lh, 1.3);
+  counter-reset: fn;
   user-select: text;
   word-wrap: break-word;
   tab-size: 4;
@@ -92,8 +94,22 @@
  * Enter = one new paragraph. Shift+Enter = line break inside a paragraph.
  */
 .doc-content p {
-  margin: 0 0 6pt;
-  min-height: 1.3em;
+  margin: 0 0 var(--doc-after, 6pt);
+  min-height: 1em;
+}
+/* Paragraph line spacing is stored as a Word multiple (--lh); Word's "single" ≈ 1.15 × font size. */
+.doc-content p[style*='--lh'],
+.doc-content h1[style*='--lh'],
+.doc-content h2[style*='--lh'],
+.doc-content h3[style*='--lh'],
+.doc-content h4[style*='--lh'] {
+  line-height: calc(var(--lh) * 1.15);
+}
+.doc-content > p {
+  text-indent: var(--doc-first, 0);
+}
+.pageless .doc-content {
+  min-height: 864px;
 }
 .doc-content h1,
 .doc-content h2,
@@ -271,6 +287,219 @@
 .doc-content .page-break.ProseMirror-selectednode {
   outline: 2px solid var(--accent);
 }
+/* With real pages, a manual page break is shown by the page gap itself. */
+.paged .doc-content .page-break {
+  height: 0;
+  margin: 0;
+  background: none;
+  overflow: visible;
+}
+.paged .doc-content .page-break::after {
+  content: '';
+}
+
+/* ---------- Pages ---------- */
+.pg-break {
+  position: relative;
+  user-select: none;
+  cursor: default;
+  text-indent: 0;
+}
+.pg-gap {
+  background: var(--bg);
+  box-shadow: inset 0 7px 6px -6px rgba(0, 0, 0, 0.55), inset 0 -7px 6px -6px rgba(0, 0, 0, 0.55);
+}
+.pg-header-area,
+.pg-footer-area {
+  position: relative;
+}
+.pg-hf {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  font-family: var(--doc-font);
+  font-size: var(--doc-size);
+  line-height: 1.2;
+  color: var(--ink);
+  white-space: pre;
+  cursor: pointer;
+  border-radius: 3px;
+  min-height: 1.2em;
+  user-select: none;
+  z-index: 1;
+}
+.pg-hf .hf-c {
+  text-align: center;
+}
+.pg-hf .hf-r {
+  text-align: right;
+}
+.pg-hf:hover {
+  outline: 1px dashed var(--rule);
+  outline-offset: 4px;
+}
+.pg-hf .hf-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-family: var(--font);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.pg-hf:hover .hf-empty {
+  opacity: 0.6;
+}
+.pg-notes {
+  font-family: var(--doc-font);
+  font-size: 10pt;
+  line-height: 1.25;
+  color: var(--ink);
+  padding-top: 6px;
+}
+.pg-notes-rule {
+  width: 2in;
+  border-top: 1px solid var(--ink-2);
+  margin-bottom: 4px;
+}
+.pg-note sup {
+  font-size: 0.75em;
+}
+.doc-content .fn-ref {
+  font-size: 0.75em;
+  line-height: 0;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0 1px;
+  text-indent: 0;
+}
+.paper-light .doc-content .fn-ref {
+  color: #1a73e8;
+}
+.doc-content .fn-ref::after {
+  counter-increment: fn;
+  content: counter(fn);
+}
+.doc-content .fn-ref.ProseMirror-selectednode {
+  outline: 1px solid var(--accent);
+  border-radius: 2px;
+}
+
+/* ---------- Page setup & header dialogs ---------- */
+.doc-dialog {
+  width: 600px;
+  max-width: 94vw;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.dd-grid {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 10px 14px;
+  align-items: center;
+  font-size: 13px;
+}
+.dd-grid > label {
+  color: var(--text-2);
+}
+.dd-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.dd-margins {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.dd-margins > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--text-3);
+}
+.dd-margins .input {
+  width: 70px !important;
+}
+.dd-section {
+  font-weight: 600;
+  margin: 18px 0 10px;
+}
+.seg {
+  display: inline-flex;
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 3px;
+  width: fit-content;
+}
+.seg button {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  padding: 5px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.seg button.on {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.hf-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 4px 0 14px;
+  font-size: 12.5px;
+}
+.chip-btn {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip-btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.hf-edit {
+  margin-bottom: 12px;
+}
+.hf-edit-label {
+  font-size: 12.5px;
+  color: var(--text-2);
+  margin-bottom: 5px;
+}
+.hf-slots {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+.hf-slots .input {
+  width: 100%;
+}
+.hf-fields {
+  display: flex;
+  gap: 5px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.hf-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  margin: 4px 0 12px;
+  cursor: pointer;
+}
 
 /* Tables */
 .doc-content table {
@@ -370,4 +599,231 @@
 }
 .zoom-pct:hover {
   color: var(--text);
+}
+
+/* ---------- Citations, bibliography, contents ---------- */
+.doc-content .cite {
+  border-bottom: 1px dotted var(--ink-2);
+  cursor: pointer;
+  border-radius: 2px;
+}
+.doc-content .cite:hover {
+  background: var(--tint);
+}
+.doc-content .cite.ProseMirror-selectednode {
+  outline: 1px solid var(--accent);
+}
+.doc-content .bibliography,
+.doc-content .toc {
+  text-indent: 0;
+  border-radius: 4px;
+  cursor: default;
+  margin: 0 0 var(--doc-after);
+}
+.doc-content .bibliography:hover,
+.doc-content .toc:hover {
+  box-shadow: 0 0 0 1px var(--rule);
+}
+.doc-content .bibliography.ProseMirror-selectednode,
+.doc-content .toc.ProseMirror-selectednode {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.doc-content .bib-title {
+  text-align: center;
+  margin: 0;
+}
+.doc-content .bib-entry {
+  padding-left: 0.5in;
+  text-indent: -0.5in;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.doc-content .bib-empty,
+.doc-content .toc-empty {
+  color: var(--ink-2);
+  font-style: italic;
+  margin: 0;
+}
+.doc-content .toc-title {
+  font-weight: 700;
+  margin: 0 0 6pt;
+}
+.doc-content .toc-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin: 0 0 2pt;
+}
+.doc-content .toc-dots {
+  flex: 1;
+  border-bottom: 1px dotted var(--ink-2);
+  transform: translateY(-3px);
+}
+
+/* ---------- Status bar extras ---------- */
+.sb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.sb-btn:hover {
+  background: var(--hover);
+}
+.goal-bar {
+  display: inline-block;
+  width: 60px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-4);
+  margin-left: 8px;
+  overflow: hidden;
+}
+.goal-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+
+/* ---------- Focus mode ---------- */
+.doc-editor.focus-mode .toolbar,
+.doc-editor.focus-mode .context-bar {
+  display: none;
+}
+.doc-editor.focus-mode .statusbar {
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+.doc-editor.focus-mode .statusbar:hover {
+  opacity: 1;
+}
+.doc-editor.focus-mode .doc-scroll {
+  padding-top: 40px;
+}
+
+/* ---------- Citations dialog ---------- */
+.cite-dialog {
+  width: 960px;
+  max-width: 96vw;
+  height: 720px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+.cite-dialog .ai-settings-head {
+  gap: 10px;
+}
+.cite-dialog .ai-settings-head h2 {
+  flex: 1;
+}
+.cite-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 16px;
+  margin-top: 8px;
+}
+.cite-list {
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  padding-right: 12px;
+}
+.cite-src {
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  margin-bottom: 4px;
+}
+.cite-src:hover {
+  background: var(--surface-3);
+}
+.cite-src.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.cite-ref {
+  font-family: 'Times New Roman', Georgia, serif;
+  font-size: 13.5px;
+  line-height: 1.4;
+  padding-left: 1.6em;
+  text-indent: -1.6em;
+  overflow-wrap: anywhere;
+}
+.cite-src-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.cite-form {
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.cite-lookup {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.cite-lookup .input {
+  flex: 1;
+}
+.cf {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.cf > span:first-child {
+  color: var(--text-2);
+}
+.cf .input,
+.cf .select {
+  width: 100%;
+}
+.cf-row {
+  display: flex;
+  gap: 6px;
+}
+.cf-authors {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.cf-author {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+  width: 100%;
+}
+.cite-preview {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.cf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.cite-insert {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }

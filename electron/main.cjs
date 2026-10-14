@@ -199,6 +199,7 @@ app.whenReady().then(() => {
   settings.register();
   require('./history.cjs').register({ log });
   require('./google.cjs').register({ log });
+  require('./cite.cjs').register({ log });
   const applySpell = () => session.defaultSession.setSpellCheckerEnabled(settings.get('general.spellcheck', true) !== false);
   applySpell();
   settings.onChange(applySpell);
@@ -374,12 +375,13 @@ function withHiddenWindow(html, fn) {
   });
 }
 
-ipcMain.handle('print:html', (_e, html) =>
+ipcMain.handle('print:html', (_e, html, opts = {}) =>
   withHiddenWindow(
     html,
     (win) =>
       new Promise((resolve) => {
-        win.webContents.print({ silent: false, printBackground: true }, (ok) => resolve(ok));
+        // Documents lay out their own pages (with headers and footers), so they print edge to edge.
+        win.webContents.print({ silent: false, printBackground: true, ...(opts.noMargins ? { margins: { marginType: 'none' } } : {}) }, (ok) => resolve(ok));
       })
   )
 );
@@ -389,7 +391,8 @@ ipcMain.handle('export:pdf-from-html', (_e, html, opts = {}) =>
     const buf = await win.webContents.printToPDF({
       printBackground: true,
       pageSize: opts.pageSize || 'Letter',
-      preferCSSPageSize: true
+      preferCSSPageSize: true,
+      ...(opts.noMargins ? { margins: { top: 0, bottom: 0, left: 0, right: 0 } } : {})
     });
     return new Uint8Array(buf);
   })

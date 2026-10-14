@@ -92,6 +92,7 @@ export interface SlateApi {
     clear(): Promise<boolean>;
     openFolder(): Promise<string>;
   };
+  citeLookup(query: string): Promise<any>;
   google: {
     status(): Promise<{ configured: boolean; signedIn: boolean; email: string | null; name: string | null }>;
     signIn(): Promise<{ email?: string; name?: string }>;
@@ -135,8 +136,8 @@ export interface SlateApi {
   detectDrives(): Promise<DriveInfo[]>;
   connectDrive(id: DriveId): Promise<{ action: 'launched' | 'installing' | 'web' }>;
   onDriveProgress(cb: (m: DriveProgress) => void): () => void;
-  printHtml(html: string): Promise<boolean>;
-  pdfFromHtml(html: string, opts?: { pageSize?: string }): Promise<Uint8Array>;
+  printHtml(html: string, opts?: { noMargins?: boolean }): Promise<boolean>;
+  pdfFromHtml(html: string, opts?: { pageSize?: string; noMargins?: boolean }): Promise<Uint8Array>;
   getPendingOpen(): Promise<string[]>;
   getPathForFile(file: File): string;
   onOpenPaths(cb: (paths: string[]) => void): () => void;

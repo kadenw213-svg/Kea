@@ -17,18 +17,23 @@ import {
   Tab,
   LevelFormat,
   convertInchesToTwip,
+  Header,
+  Footer,
+  PageNumber,
+  PageOrientation,
+  TabStopType,
+  FootnoteReferenceRun,
+  LeaderType,
   type IRunOptions,
   type ParagraphChild
 } from 'docx';
+import JSZip from 'jszip';
 import { dataUrlToBytes } from '../../lib/util';
+import { DocMeta, defaultMeta, HeaderFooter, metaExtras, expandFields } from './docMeta';
 
-/** The editor's look, mirrored in Word so a round trip keeps the same spacing. */
-export const DOC_DEFAULTS = {
-  font: 'Arial',
-  sizePt: 11,
-  spaceAfterPt: 6,
-  lineHeight: 1.3
-};
+/** Default look when a document has no settings of its own. */
+export const DOC_DEFAULTS = defaultMeta().defaults;
+const IN = 1440; // twips per inch
 
 type JSONNode = { type: string; attrs?: any; content?: JSONNode[]; marks?: { type: string; attrs?: any }[]; text?: string };
 
@@ -70,9 +75,21 @@ async function imageSize(src: string): Promise<{ w: number; h: number }> {
   }
 }
 
-function runsFrom(nodes: JSONNode[] | undefined): ParagraphChild[] {
+function runsFrom(nodes: JSONNode[] | undefined, ctx?: Ctx): ParagraphChild[] {
   const out: ParagraphChild[] = [];
   for (const n of nodes || []) {
+    if (n.type === 'citation') {
+      const text = String(n.attrs?.text || '');
+      ctx?.citeOrder.push({ ids: n.attrs?.ids || [], page: n.attrs?.page || '', text });
+      out.push(new TextRun({ text, style: 'SlateCitation' }));
+      continue;
+    }
+    if (n.type === 'footnote' && ctx) {
+      const id = ++ctx.footnoteId;
+      ctx.footnotes[id] = { children: [new Paragraph({ children: [new TextRun(String(n.attrs?.text || ''))] })] };
+      out.push(new FootnoteReferenceRun(id));
+      continue;
+    }
     if (n.type === 'hardBreak') {
       out.push(new TextRun({ text: '', break: 1 }));
       continue;
@@ -136,29 +153,64 @@ function runsFrom(nodes: JSONNode[] | undefined): ParagraphChild[] {
 
 interface Ctx {
   listInstance: number;
+  footnoteId: number;
+  footnotes: Record<number, { children: Paragraph[] }>;
+  meta: DocMeta;
+  citeOrder: { ids: string[]; page: string; text: string }[];
 }
 
-async function blocksFrom(nodes: JSONNode[] | undefined, ctx: Ctx, opts: { indent?: number; list?: { ref: string; level: number; instance: number } } = {}): Promise<(Paragraph | Table)[]> {
+/** Simple inline HTML (<i>, <b>) from a bibliography entry → Word runs. */
+function htmlRuns(html: string): TextRun[] {
+  const out: TextRun[] = [];
+  let italic = false;
+  let bold = false;
+  for (const part of html.split(/(<\/?[ib]>)/i)) {
+    const tag = part.toLowerCase();
+    if (tag === '<i>') italic = true;
+    else if (tag === '</i>') italic = false;
+    else if (tag === '<b>') bold = true;
+    else if (tag === '</b>') bold = false;
+    else if (part) {
+      const text = part.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      if (text) out.push(new TextRun({ text, italics: italic, bold }));
+    }
+  }
+  return out;
+}
+
+async function blocksFrom(nodes: JSONNode[] | undefined, ctx: Ctx, opts: { indent?: number; inCell?: boolean; list?: { ref: string; level: number; instance: number } } = {}): Promise<(Paragraph | Table)[]> {
   const out: (Paragraph | Table)[] = [];
   for (const n of nodes || []) {
     const a = n.attrs || {};
-    const paraBase = () => ({
-      alignment: a.textAlign && a.textAlign !== 'left' ? ALIGN[a.textAlign] : undefined,
-      spacing: a.lineHeight ? { line: Math.round(parseFloat(a.lineHeight) * 240), after: DOC_DEFAULTS.spaceAfterPt * 20 } : undefined,
-      indent: (a.indent || opts.indent) && !opts.list ? { left: ((a.indent || 0) + (opts.indent || 0)) * 720 } : undefined
-    });
+    const paraBase = () => {
+      const ti = a.textIndent == null ? null : Number(a.textIndent);
+      const left = (a.indent || opts.indent) && !opts.list ? ((a.indent || 0) + (opts.indent || 0)) * 720 : 0;
+      const indent: any = {};
+      if (left) indent.left = left;
+      if (ti != null && !opts.list) {
+        if (ti < 0) {
+          indent.left = (indent.left || 0) + Math.round(-ti * IN);
+          indent.hanging = Math.round(-ti * IN);
+        } else indent.firstLine = Math.round(ti * IN);
+      } else if (opts.inCell && ctx.meta.defaults.firstLineIn) indent.firstLine = 0;
+      return {
+        alignment: a.textAlign && a.textAlign !== 'left' ? ALIGN[a.textAlign] : undefined,
+        spacing: a.lineHeight ? { line: Math.round(parseFloat(a.lineHeight) * 240) } : undefined,
+        indent: Object.keys(indent).length ? indent : undefined
+      };
+    };
     switch (n.type) {
       case 'paragraph':
         out.push(
           new Paragraph({
             ...paraBase(),
-            children: runsFrom(n.content),
+            children: runsFrom(n.content, ctx),
             ...(opts.list ? { numbering: { reference: opts.list.ref, level: opts.list.level, instance: opts.list.instance } } : {})
           })
         );
         break;
       case 'heading':
-        out.push(new Paragraph({ ...paraBase(), heading: HEADING[a.level || 1], children: runsFrom(n.content) }));
+        out.push(new Paragraph({ ...paraBase(), heading: HEADING[a.level || 1], children: runsFrom(n.content, ctx) }));
         break;
       case 'blockquote': {
         const inner = await blocksFrom(n.content, ctx, { indent: (opts.indent || 0) + 1 });
@@ -205,7 +257,7 @@ async function blocksFrom(nodes: JSONNode[] | undefined, ctx: Ctx, opts: { inden
           out.push(
             new Paragraph({
               indent: opts.indent ? { left: opts.indent * 720 } : undefined,
-              children: [new TextRun({ text: checked ? '☑ ' : '☐ ', font: 'Segoe UI Symbol' }), ...runsFrom(firstPara?.content)]
+              children: [new TextRun({ text: checked ? '☑ ' : '☐ ', font: 'Segoe UI Symbol' }), ...runsFrom(firstPara?.content, ctx)]
             })
           );
           out.push(...(await blocksFrom(rest, ctx, { indent: (opts.indent || 0) + 1 })));
@@ -217,6 +269,27 @@ async function blocksFrom(nodes: JSONNode[] | undefined, ctx: Ctx, opts: { inden
       case 'pageBreak':
         out.push(new Paragraph({ children: [new PageBreak()] }));
         break;
+      case 'bibliography': {
+        const title = String(a.title || 'Works Cited');
+        out.push(new Paragraph({ style: 'SlateBibliographyTitle', alignment: AlignmentType.CENTER, children: [new TextRun({ text: title, bold: ctx.meta.citationStyle === 'apa' })] }));
+        for (const e of (a.entries || []) as string[]) out.push(new Paragraph({ style: 'SlateBibliography', children: htmlRuns(e) }));
+        break;
+      }
+      case 'toc': {
+        const contentTwips = ((ctx.meta.page.landscape ? ctx.meta.page.height : ctx.meta.page.width) - ctx.meta.page.margins.left - ctx.meta.page.margins.right) * IN;
+        out.push(new Paragraph({ style: 'SlateTOCTitle', children: [new TextRun({ text: String(a.title || 'Contents'), bold: true })] }));
+        for (const e of (a.entries || []) as { level: number; text: string; page: number }[]) {
+          out.push(
+            new Paragraph({
+              style: 'SlateTOC',
+              indent: { left: Math.round((e.level - 1) * 0.3 * IN), firstLine: 0 },
+              tabStops: [{ type: TabStopType.RIGHT, position: Math.round(contentTwips), leader: LeaderType.DOT }],
+              children: [new TextRun(e.text), new TextRun({ children: [new Tab(), String(e.page)] })]
+            })
+          );
+        }
+        break;
+      }
       case 'image': {
         if (!a.src || !String(a.src).startsWith('data:')) break;
         const mime = String(a.src).slice(5, String(a.src).indexOf(';'));
@@ -242,7 +315,7 @@ async function blocksFrom(nodes: JSONNode[] | undefined, ctx: Ctx, opts: { inden
           for (const cell of row.content || []) {
             const isHeader = cell.type === 'tableHeader';
             header = header || isHeader;
-            const children = (await blocksFrom(cell.content, ctx)).filter((x) => x instanceof Paragraph || x instanceof Table) as Paragraph[];
+            const children = (await blocksFrom(cell.content, ctx, { inCell: true })).filter((x) => x instanceof Paragraph || x instanceof Table) as Paragraph[];
             cells.push(
               new TableCell({
                 children: children.length ? children : [new Paragraph('')],
@@ -264,8 +337,57 @@ async function blocksFrom(nodes: JSONNode[] | undefined, ctx: Ctx, opts: { inden
   return out;
 }
 
-export async function jsonToDocx(json: JSONNode): Promise<Uint8Array> {
-  const ctx: Ctx = { listInstance: 0 };
+/** A header/footer as one paragraph: left text, centred text and right text on tab stops. */
+function hfParagraph(hf: HeaderFooter, contentTwips: number, title: string): Paragraph {
+  const runs = (text: string): ParagraphChild[] => {
+    const out: ParagraphChild[] = [];
+    // Page fields become live Word fields; the others ({TITLE}, {DATE}) are filled in now.
+    for (const part of text.split(/(\{PAGES?\})/i)) {
+      if (!part) continue;
+      if (/^\{PAGE\}$/i.test(part)) out.push(new TextRun({ children: [PageNumber.CURRENT] }));
+      else if (/^\{PAGES\}$/i.test(part)) out.push(new TextRun({ children: [PageNumber.TOTAL_PAGES] }));
+      else out.push(new TextRun(expandFields(part, { page: 0, pages: 0, title })));
+    }
+    return out;
+  };
+  const used = [hf.left, hf.center, hf.right].filter(Boolean).length;
+  if (used === 1 && hf.right) return new Paragraph({ alignment: AlignmentType.RIGHT, children: runs(hf.right), indent: { firstLine: 0 } });
+  if (used === 1 && hf.center) return new Paragraph({ alignment: AlignmentType.CENTER, children: runs(hf.center), indent: { firstLine: 0 } });
+  return new Paragraph({
+    indent: { firstLine: 0 },
+    tabStops: [
+      { type: TabStopType.CENTER, position: Math.round(contentTwips / 2) },
+      { type: TabStopType.RIGHT, position: Math.round(contentTwips) }
+    ],
+    children: [...runs(hf.left), new TextRun({ children: [new Tab()] }), ...runs(hf.center), new TextRun({ children: [new Tab()] }), ...runs(hf.right)]
+  });
+}
+
+const hasText = (hf?: HeaderFooter | null) => !!hf && !!(hf.left || hf.center || hf.right);
+
+/** Store Slate-only settings (citations, comments, goal…) in a custom XML part, which Word preserves. */
+async function addSlatePart(bytes: Uint8Array, meta: DocMeta, extra: Record<string, any> = {}): Promise<Uint8Array> {
+  const zip = await JSZip.loadAsync(bytes);
+  const json = JSON.stringify({ ...metaExtras(meta), ...extra });
+  const b64 = btoa(unescape(encodeURIComponent(json)));
+  zip.file('customXml/slateData.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><slate xmlns="urn:slate-office:data">${b64}</slate>`);
+  const relPath = 'word/_rels/document.xml.rels';
+  const rels = (await zip.file(relPath)?.async('string')) || '';
+  if (rels && !rels.includes('slateData.xml')) {
+    zip.file(relPath, rels.replace('</Relationships>', '<Relationship Id="rIdSlateData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/slateData.xml"/></Relationships>'));
+  }
+  const ctPath = '[Content_Types].xml';
+  const ct = (await zip.file(ctPath)?.async('string')) || '';
+  if (ct && !ct.includes('/customXml/slateData.xml')) {
+    zip.file(ctPath, ct.replace('</Types>', '<Override PartName="/customXml/slateData.xml" ContentType="application/xml"/></Types>'));
+  }
+  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+}
+
+export async function jsonToDocx(json: JSONNode, metaIn?: DocMeta | null, title = ''): Promise<Uint8Array> {
+  const meta = metaIn || defaultMeta();
+  const D = meta.defaults;
+  const ctx: Ctx = { listInstance: 0, footnoteId: 0, footnotes: {}, meta, citeOrder: [] };
   const children = await blocksFrom(json.content, ctx);
   const bulletChars = ['●', '○', '■'];
   const numberFormats = [LevelFormat.DECIMAL, LevelFormat.LOWER_LETTER, LevelFormat.LOWER_ROMAN];
@@ -278,20 +400,38 @@ export async function jsonToDocx(json: JSONNode): Promise<Uint8Array> {
       style: { paragraph: { indent: { left: convertInchesToTwip(0.375 * (i + 1)), hanging: convertInchesToTwip(0.25) } } }
     }));
 
+  const pg = meta.page;
+  const mg = pg.margins;
+  const contentTwips = ((pg.landscape ? pg.height : pg.width) - mg.left - mg.right) * IN;
+  const noIndent = D.firstLineIn ? { indent: { firstLine: 0 } } : {};
+  const firstDiffers = hasText(meta.firstHeader) || hasText(meta.firstFooter) || !!meta.firstHeader || !!meta.firstFooter;
+  const header = (hf?: HeaderFooter | null) => new Header({ children: [hasText(hf) ? hfParagraph(hf!, contentTwips, title) : new Paragraph('')] });
+  const footer = (hf?: HeaderFooter | null) => new Footer({ children: [hasText(hf) ? hfParagraph(hf!, contentTwips, title) : new Paragraph('')] });
+
   const doc = new Document({
     creator: 'Slate Office',
+    title: title || undefined,
+    footnotes: ctx.footnotes,
     styles: {
       default: {
         document: {
-          run: { font: DOC_DEFAULTS.font, size: DOC_DEFAULTS.sizePt * 2 },
-          paragraph: { spacing: { after: DOC_DEFAULTS.spaceAfterPt * 20, line: Math.round(DOC_DEFAULTS.lineHeight * 240) } }
+          run: { font: D.font, size: Math.round(D.sizePt * 2) },
+          paragraph: { spacing: { after: Math.round(D.spaceAfterPt * 20), line: Math.round(D.lineHeight * 240) }, ...(D.firstLineIn ? { indent: { firstLine: Math.round(D.firstLineIn * IN) } } : {}) }
         },
-        heading1: { run: { font: DOC_DEFAULTS.font, size: 40, bold: false, color: '202124' }, paragraph: { spacing: { before: 360, after: 120 } } },
-        heading2: { run: { font: DOC_DEFAULTS.font, size: 32, bold: false, color: '202124' }, paragraph: { spacing: { before: 320, after: 120 } } },
-        heading3: { run: { font: DOC_DEFAULTS.font, size: 28, bold: false, color: '434343' }, paragraph: { spacing: { before: 280, after: 80 } } },
-        heading4: { run: { font: DOC_DEFAULTS.font, size: 24, bold: true, color: '434343' }, paragraph: { spacing: { before: 240, after: 80 } } },
+        heading1: { run: { font: D.font, size: 40, bold: false, color: '202124' }, paragraph: { spacing: { before: 360, after: 120 }, ...noIndent } },
+        heading2: { run: { font: D.font, size: 32, bold: false, color: '202124' }, paragraph: { spacing: { before: 320, after: 120 }, ...noIndent } },
+        heading3: { run: { font: D.font, size: 28, bold: false, color: '434343' }, paragraph: { spacing: { before: 280, after: 80 }, ...noIndent } },
+        heading4: { run: { font: D.font, size: 24, bold: true, color: '434343' }, paragraph: { spacing: { before: 240, after: 80 }, ...noIndent } },
         hyperlink: { run: { color: '1155CC', underline: {} } }
-      }
+      },
+      // Named styles let Slate recognise its citations, bibliography and contents when the file is reopened.
+      paragraphStyles: [
+        { id: 'SlateBibliographyTitle', name: 'Bibliography Title', basedOn: 'Normal', next: 'SlateBibliography', paragraph: { alignment: AlignmentType.CENTER, indent: { firstLine: 0 } } },
+        { id: 'SlateBibliography', name: 'Bibliography Entry', basedOn: 'Normal', paragraph: { indent: { left: 720, hanging: 720 } } },
+        { id: 'SlateTOCTitle', name: 'Contents Title', basedOn: 'Normal', paragraph: { indent: { firstLine: 0 }, spacing: { after: 120 } } },
+        { id: 'SlateTOC', name: 'Contents Entry', basedOn: 'Normal', paragraph: { indent: { firstLine: 0 } } }
+      ],
+      characterStyles: [{ id: 'SlateCitation', name: 'Citation', basedOn: 'DefaultParagraphFont', run: {} }]
     },
     numbering: {
       config: [
@@ -301,11 +441,27 @@ export async function jsonToDocx(json: JSONNode): Promise<Uint8Array> {
     },
     sections: [
       {
-        properties: { page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } },
+        properties: {
+          titlePage: firstDiffers,
+          page: {
+            size: { width: Math.round(pg.width * IN), height: Math.round(pg.height * IN), orientation: pg.landscape ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT },
+            margin: {
+              top: Math.round(mg.top * IN),
+              bottom: Math.round(mg.bottom * IN),
+              left: Math.round(mg.left * IN),
+              right: Math.round(mg.right * IN),
+              header: Math.round(pg.headerDistance * IN),
+              footer: Math.round(pg.footerDistance * IN)
+            },
+            pageNumbers: meta.pageNumberStart && meta.pageNumberStart !== 1 ? { start: meta.pageNumberStart } : undefined
+          }
+        },
+        headers: { default: header(meta.header), ...(firstDiffers ? { first: header(meta.firstHeader) } : {}) },
+        footers: { default: footer(meta.footer), ...(firstDiffers ? { first: footer(meta.firstFooter) } : {}) },
         children: children.length ? children : [new Paragraph('')]
       }
     ]
   });
   const blob = await Packer.toBlob(doc);
-  return new Uint8Array(await blob.arrayBuffer());
+  return addSlatePart(new Uint8Array(await blob.arrayBuffer()), meta, { citations: ctx.citeOrder });
 }

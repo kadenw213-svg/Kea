@@ -41,6 +41,8 @@ import { kindFor, extOf } from '../lib/fileTypes';
 import { Preview } from './home/Preview';
 import { ConnectDrives } from './home/ConnectDrives';
 import { DriveLogo } from './home/DriveLogo';
+import { TemplateGallery } from './home/Templates';
+import { LayoutTemplate } from 'lucide-react';
 import { useSetting } from '../lib/settings';
 
 function greeting() {
@@ -100,6 +102,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   const [searchHits, setSearchHits] = useState<Item[] | null>(null);
   const [filter, setFilter] = useState<FilterId>('all');
   const [showDrives, setShowDrives] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   const loadSeq = useRef(0);
   const showStart = useSetting<boolean>('home.showStart');
   const showTools = useSetting<boolean>('home.showTools');
@@ -392,6 +395,12 @@ export function HomeScreen({ visible }: { visible: boolean }) {
               </div>
               <span>Edit a PDF</span>
             </button>
+            <button className="start-card" onClick={() => setShowTemplates(true)}>
+              <div className="start-thumb tpl">
+                <LayoutTemplate size={28} />
+              </div>
+              <span>Templates</span>
+            </button>
           </div>
           )}
           {showTools && (
@@ -622,6 +631,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
           </div>
         </section>
       </div>
+      {showTemplates && <TemplateGallery onClose={() => setShowTemplates(false)} />}
       {showDrives && <ConnectDrives drives={drives} onClose={() => (setShowDrives(false), refreshDrives())} onChange={setDrives} />}
     </div>
   );

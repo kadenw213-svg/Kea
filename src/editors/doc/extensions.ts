@@ -12,6 +12,7 @@ declare module '@tiptap/core' {
     };
     lineHeight: {
       setLineHeight: (lh: string | null) => ReturnType;
+      setTextIndent: (inches: number | null) => ReturnType;
     };
     indent: {
       indent: () => ReturnType;
@@ -83,7 +84,22 @@ export const ParagraphFormat = Extension.create({
               const lh = el.style.lineHeight;
               return lh && /^[\d.]+$/.test(lh) ? lh : null;
             },
-            renderHTML: (a) => (a.lineHeight ? { style: `line-height: ${a.lineHeight}` } : {})
+            // Stored as a Word line multiple; CSS scales it (Word's "single" is ~1.15× the font size).
+            renderHTML: (a) => (a.lineHeight ? { style: `--lh: ${a.lineHeight}` } : {})
+          },
+          textIndent: {
+            default: null,
+            parseHTML: (el) => {
+              const v = el.getAttribute('data-text-indent');
+              return v != null && v !== '' && !isNaN(Number(v)) ? Number(v) : null;
+            },
+            renderHTML: (a) => {
+              if (a.textIndent == null) return {};
+              const v = Number(a.textIndent);
+              return v < 0
+                ? { 'data-text-indent': v, style: `text-indent: ${v}in; padding-left: ${-v}in` }
+                : { 'data-text-indent': v, style: `text-indent: ${v}in` };
+            }
           },
           indent: {
             default: 0,
@@ -124,6 +140,10 @@ export const ParagraphFormat = Extension.create({
         (lh) =>
         ({ commands }) =>
           BLOCKS.map((t) => commands.updateAttributes(t, { lineHeight: lh })).some(Boolean),
+      setTextIndent:
+        (inches) =>
+        ({ commands }) =>
+          commands.updateAttributes('paragraph', { textIndent: inches }),
       indent: () => change(1),
       outdent: () => change(-1)
     };
