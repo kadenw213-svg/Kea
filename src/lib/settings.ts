@@ -281,6 +281,28 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'sheets',
+    label: 'Spreadsheets',
+    icon: 'Sheet',
+    fields: [
+      { key: 'sheet.gridlines', label: 'Show gridlines', type: 'toggle', default: true },
+      {
+        key: 'sheet.enterMoves',
+        label: 'After pressing Enter, move',
+        type: 'select',
+        default: 'down',
+        options: [
+          { value: 'down', label: 'Down' },
+          { value: 'right', label: 'Right' },
+          { value: 'none', label: "Don't move" }
+        ]
+      },
+      { key: 'sheet.fontSize', label: 'Cell text size on screen', type: 'number', default: 13, min: 9, max: 24, unit: 'px', advanced: true, help: 'Only changes how the grid looks here, not the file.' },
+      { key: 'sheet.autocomplete', label: 'Suggest function names while typing a formula', type: 'toggle', default: true, advanced: true },
+      { key: 'sheet.stats', label: 'Show sum, average and count of the selection', type: 'toggle', default: true, advanced: true }
+    ]
+  },
+  {
     id: 'code',
     label: 'Text & code',
     icon: 'FileCode2',

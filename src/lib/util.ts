@@ -69,3 +69,13 @@ export function isMac() {
 export function modKey(e: KeyboardEvent | React.KeyboardEvent) {
   return isMac() ? e.metaKey : e.ctrlKey;
 }
+
+/** Load an image and wait until it can be drawn (load event; more reliable than img.decode() for SVGs). */
+export function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Image could not be loaded'));
+    img.src = src;
+  });
+}

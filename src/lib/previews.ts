@@ -1,6 +1,6 @@
 import { api, FilePreview } from './api';
 import { extOf, kindFor } from './fileTypes';
-import { bytesToText } from './util';
+import { bytesToText, loadImage } from './util';
 import { setting } from './settings';
 
 /**
@@ -113,12 +113,6 @@ async function pdfPreview(data: Uint8Array): Promise<FilePreview> {
   }
 }
 
-async function loadImage(src: string): Promise<HTMLImageElement> {
-  const img = new Image();
-  img.src = src;
-  await img.decode();
-  return img;
-}
 
 async function shrinkImage(src: string, maxW: number): Promise<HTMLCanvasElement> {
   const img = await loadImage(src);

@@ -51,6 +51,7 @@ import { chartData, chartSvg } from './chart';
 import { conditionalFormats, CfResult, currentRegion, filteredRows, validationAt, listItems, invalidReason } from './features';
 import { ChartDialog, CondFormatDialog, ValidationDialog, FilterMenu, PivotDialog } from './SheetDialogs';
 import { uid } from '../../lib/util';
+import { useSetting } from '../../lib/settings';
 import type { Tab } from '../../store';
 import { editorRegistry, setDirty, toast, ask, prompt } from '../../store';
 import {
@@ -203,6 +204,15 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
   const [dlg, setDlg] = useState<null | 'cf' | 'validation' | 'pivot'>(null);
   const [filterMenu, setFilterMenu] = useState<{ col: number; x: number; y: number } | null>(null);
   const [dropdown, setDropdown] = useState<{ r: number; c: number; x: number; y: number } | null>(null);
+  const showGrid = useSetting<boolean>('sheet.gridlines');
+  const enterMoves = useSetting<string>('sheet.enterMoves');
+  const gridFont = Number(useSetting('sheet.fontSize')) || 13;
+  const autocomplete = useSetting<boolean>('sheet.autocomplete');
+  const showStats = useSetting<boolean>('sheet.stats');
+  const enterStep = (back: boolean) => {
+    const s = back ? -1 : 1;
+    return enterMoves === 'right' ? { dr: 0, dc: s } : enterMoves === 'none' ? { dr: 0, dc: 0 } : { dr: s, dc: 0 };
+  };
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLInputElement>(null);
@@ -452,7 +462,7 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
 
   // Function-name suggestions while typing a formula.
   const suggestions = useMemo(() => {
-    if (!editing || !editing.text.startsWith('=')) return [];
+    if (!autocomplete || !editing || !editing.text.startsWith('=')) return [];
     const m = editing.text.match(/([A-Za-z][A-Za-z0-9.]*)$/);
     if (!m || m[1].length < 1) return [];
     const pre = m[1].toUpperCase();
@@ -1147,7 +1157,8 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
     if (k === 'Enter') {
       e.preventDefault();
       if (e.altKey || mod) return startEdit();
-      return select({ r: cur.r + (e.shiftKey ? -1 : 1), c: cur.c });
+      const st = enterStep(e.shiftKey);
+      return select({ r: cur.r + st.dr, c: cur.c + st.dc });
     }
     if (k === 'PageDown' || k === 'PageUp') {
       e.preventDefault();
@@ -1227,7 +1238,7 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      commitEdit({ dr: e.shiftKey ? -1 : 1, dc: 0 });
+      commitEdit(enterStep(e.shiftKey));
     } else if (e.key === 'Tab') {
       e.preventDefault();
       commitEdit({ dr: 0, dc: e.shiftKey ? -1 : 1 });
@@ -1474,7 +1485,7 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
   const nameBox = sel.r1 === sel.r2 && sel.c1 === sel.c2 ? addr(cur.r, cur.c) : `${addr(sel.r1, sel.c1)}:${addr(Math.min(sel.r2, rows - 1), Math.min(sel.c2, cols - 1))}`;
 
   return (
-    <div className="sheet-editor">
+    <div className={`sheet-editor ${!showGrid || sheet.gridlines === false ? 'no-grid' : ''}`} style={{ ['--grid-font' as any]: `${gridFont}px` }}>
       <SheetToolbar
         style={activeStyle}
         canUndo={h.canUndo()}
@@ -1823,7 +1834,7 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
           )}
         </div>
         <div className="grow" />
-        {stats && (
+        {showStats && stats && (
           <div className="sheet-stats">
             {stats.nums > 0 && <span>Sum: {formatValue(stats.sum)}</span>}
             {stats.nums > 0 && <span>Average: {formatValue(Math.round(stats.avg * 1e6) / 1e6)}</span>}

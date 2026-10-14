@@ -34,10 +34,13 @@ export function chartData(chart: Chart, sheet: Sheet, calc: Calc): ChartData {
   const body = (s: unknown[]) => s.slice(header ? 1 : 0);
   const catSrc = labels ? body(m[0]) : null;
   const categories = catSrc ? catSrc.map(cellText) : body(m[labels ? 1 : 0] || []).map((_, i) => String(i + 1));
-  const series = m.slice(labels ? 1 : 0).map((s, i) => ({
+  const all = m.slice(labels ? 1 : 0).map((s, i) => ({
     name: header ? cellText(s[0]) || `Series ${i + 1}` : `Series ${i + 1}`,
     values: body(s).map((v) => (typeof v === 'number' ? v : null))
   }));
+  // Text-only columns (like a "Group" column) aren't data to plot.
+  const numeric = all.filter((s) => s.values.some((v) => v !== null));
+  const series = numeric.length ? numeric : all;
   const xs = chart.type === 'scatter' && catSrc ? catSrc.map((v) => (typeof v === 'number' ? v : NaN)) : null;
   return { categories, xs, series };
 }
@@ -298,9 +301,13 @@ export function chartSvg(chart: Chart, data: ChartData, w: number, h: number, th
 
 /** PNG of a chart (light theme), for Excel files and printing. */
 export async function chartPng(svg: string, w: number, h: number, scale = 2): Promise<Uint8Array> {
+  // Wait for the load event rather than img.decode(): decode() can fail on SVGs while other work is running.
   const img = new Image();
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-  await img.decode();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('Chart image could not be drawn'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
   const canvas = document.createElement('canvas');
   canvas.width = w * scale;
   canvas.height = h * scale;

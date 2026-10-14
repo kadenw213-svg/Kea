@@ -1,4 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core';
+import { loadImage } from '../../lib/util';
 
 /**
  * Equations written in LaTeX, drawn with MathJax as SVG (offline). Rendered SVGs are cached so print,
@@ -66,9 +67,7 @@ export async function texToPng(tex: string, display: boolean, fontPx: number): P
   const h = Math.max(1, Math.round(hEx * ex));
   const scale = 3;
   const sized = svg.replace(/width="[\d.]+ex"/, `width="${w * scale}"`).replace(/height="[\d.]+ex"/, `height="${h * scale}"`).replace(/currentColor/g, '#000');
-  const img = new Image();
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(sized.includes('xmlns=') ? sized : sized.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'));
-  await img.decode();
+  const img = await loadImage('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(sized.includes('xmlns=') ? sized : sized.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"')));
   const canvas = document.createElement('canvas');
   canvas.width = w * scale;
   canvas.height = h * scale;
