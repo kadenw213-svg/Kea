@@ -43,6 +43,12 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('present:closed', fn);
     }
   },
+  tts: {
+    voices: () => ipcRenderer.invoke('tts:voices'),
+    speak: (text, voice, rate) => ipcRenderer.invoke('tts:speak', text, voice, rate),
+    stop: () => ipcRenderer.invoke('tts:stop')
+  },
+  searchContent: (q, roots) => ipcRenderer.invoke('search:content', q, roots),
   citeLookup: (q) => ipcRenderer.invoke('cite:lookup', q),
   google: {
     status: () => ipcRenderer.invoke('google:status'),

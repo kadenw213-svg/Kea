@@ -201,6 +201,8 @@ app.whenReady().then(() => {
   require('./google.cjs').register({ log });
   require('./cite.cjs').register({ log });
   require('./present.cjs').register({ log, getWindow: () => mainWindow });
+  require('./search.cjs').register();
+  require('./tts.cjs').register();
   const applySpell = () => session.defaultSession.setSpellCheckerEnabled(settings.get('general.spellcheck', true) !== false);
   applySpell();
   settings.onChange(applySpell);
@@ -239,6 +241,8 @@ app.on('open-file', (e, filePath) => {
 // Anything that quits the app (updates, shutdown) must not be blocked by the unsaved-work prompt.
 app.on('before-quit', () => {
   allowClose = true;
+  // Don't leave a voice talking after Slate closes.
+  require('./tts.cjs').stop();
 });
 
 app.on('window-all-closed', () => {

@@ -11,6 +11,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Ctrl+P', 'Print'],
       ['Ctrl+Tab / Ctrl+Shift+Tab', 'Next / previous tab'],
       ['Ctrl+,', 'Settings'],
+      ['Ctrl+Shift+P / Alt+/', 'Command palette: run anything, find files, search inside files'],
       ['Ctrl+Shift+H', 'Version history'],
       ['Ctrl+J', 'Show or hide the AI sidebar']
     ]
@@ -34,6 +35,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Ctrl+Alt+F', 'Insert footnote'],
       ['Ctrl+Alt+M', 'Comment on the selection'],
       ['Alt+=', 'Insert equation'],
+      ['Ctrl+Alt+R', 'Read aloud (selection, or from the cursor)'],
       ['Ctrl+Enter', 'Page break'],
       ['Ctrl+= / Ctrl+-', 'Zoom in / out'],
       ['Ctrl+0', 'Reset zoom'],

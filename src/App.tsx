@@ -8,6 +8,7 @@ import { SettingsDialog } from './components/settings/SettingsDialog';
 import { VersionHistoryDialog, openHistory } from './components/settings/VersionHistory';
 import { openSettings, setting } from './lib/settings';
 import { initAutosave, restoreOnStart } from './lib/autosave';
+import { CommandPalette, openPalette } from './components/CommandPalette';
 import { toggleAi } from './components/ai/aiStore';
 import { useTabs, editorRegistry, Tab } from './store';
 import { api } from './lib/api';
@@ -64,6 +65,13 @@ export function App() {
   // Global shortcuts. Capture phase so they work inside editors too.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Command palette: Ctrl+Shift+P or Alt+/
+      if ((modKey(e) && e.shiftKey && e.key.toLowerCase() === 'p') || (e.altKey && !e.ctrlKey && e.key === '/')) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPalette();
+        return;
+      }
       if (!modKey(e)) return;
       const k = e.key.toLowerCase();
       if (k === ',') {
@@ -192,6 +200,7 @@ export function App() {
       )}
       <UpdateDialog />
       <SettingsDialog />
+      <CommandPalette />
       <VersionHistoryDialog />
       <Overlays />
     </div>

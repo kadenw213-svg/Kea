@@ -10,6 +10,8 @@ import { isMac } from '../lib/util';
 import { useUpdates, openUpdates } from './Updates';
 import { RefreshCw, Info, Github, Sparkles } from 'lucide-react';
 import { openSettings } from '../lib/settings';
+import { openPalette } from './CommandPalette';
+import { Search } from 'lucide-react';
 import { openHistory } from './settings/VersionHistory';
 import { Settings as SettingsIcon, History } from 'lucide-react';
 
@@ -37,6 +39,9 @@ export function TitleBar() {
               <button className="menu-item" onClick={() => (openUpdates(), close())}>
                 <RefreshCw size={16} /> {hasUpdate ? 'Update available' : 'Check for updates'}
                 {hasUpdate && <span className="kbd" style={{ color: 'var(--accent)' }}>●</span>}
+              </button>
+              <button className="menu-item" onClick={() => (openPalette(), close())}>
+                <Search size={16} /> Search everything <span className="kbd">Ctrl+Shift+P</span>
               </button>
               <button className="menu-item" onClick={() => (openSettings(), close())}>
                 <SettingsIcon size={16} /> Settings <span className="kbd">Ctrl+,</span>

@@ -99,6 +99,12 @@ export interface SlateApi {
     close(): Promise<boolean>;
     onClosed(cb: () => void): () => void;
   };
+  tts: {
+    voices(): Promise<string[]>;
+    speak(text: string, voice: string, rate: number): Promise<boolean>;
+    stop(): Promise<boolean>;
+  };
+  searchContent(query: string, roots?: string[]): Promise<{ path: string; name: string; snippet: string; nameHit: boolean }[]>;
   citeLookup(query: string): Promise<any>;
   google: {
     status(): Promise<{ configured: boolean; signedIn: boolean; email: string | null; name: string | null }>;

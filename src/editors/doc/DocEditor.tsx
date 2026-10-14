@@ -81,7 +81,8 @@ import {
   MessageSquarePlus,
   PenLine,
   FilePenLine,
-  Sigma
+  Sigma,
+  Volume2
 } from 'lucide-react';
 import type { Tab } from '../../store';
 import { editorRegistry, setDirty, toast, prompt, useTabs } from '../../store';
@@ -101,6 +102,7 @@ import { ReviewRail } from './ReviewRail';
 import { Grammar, GrammarIssue, applyFix, ignoreIssue, recheckGrammar } from './grammar';
 import { MathNode, renderAllMath, inlineMathSvgs } from './math';
 import { MathDialog } from './MathDialog';
+import { ReadAloudBar } from './ReadAloud';
 
 import { odtToHtml, rtfToHtml, docToHtml } from './otherFormats';
 import { jsonToDocx } from './docxExport';
@@ -228,6 +230,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   const [showResolved, setShowResolved] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const [grIssue, setGrIssue] = useState<{ issue: GrammarIssue; rect: DOMRect } | null>(null);
+  const [reading, setReading] = useState(false);
   const [mathEdit, setMathEdit] = useState<{ pos: number | null; latex: string; display: boolean } | null>(null);
   const showHints = useSetting<boolean>('doc.statusHints');
   const userName = useSetting<string>('user.name');
@@ -494,6 +497,11 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
         setDialog('cite');
         return;
       }
+      if (k === 'r' && e.altKey) {
+        e.preventDefault();
+        setReading((r) => !r);
+        return;
+      }
       if (k === 'm' && e.altKey) {
         e.preventDefault();
         addComment();
@@ -616,6 +624,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
         }}
         onToc={() => editor.chain().focus().insertToc().run()}
         onMath={() => setMathEdit({ pos: null, latex: '', display: false })}
+        onReadAloud={() => setReading(true)}
         mode={mode}
         onMode={switchMode}
         onComment={addComment}
@@ -693,6 +702,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
         />
       )}
       <ContextBar editor={editor} />
+      {reading && <ReadAloudBar editor={editor} onClose={() => setReading(false)} />}
       {findOpen && <FindBar editor={editor} mode={findOpen} onClose={() => (setFindOpen(false), editor.commands.setSearch(''), editor.commands.focus())} />}
       <div
         className="doc-scroll"
@@ -810,6 +820,7 @@ function Toolbar(p: {
   onBibliography(): void;
   onToc(): void;
   onMath(): void;
+  onReadAloud(): void;
   onFocusMode(): void;
   mode: 'edit' | 'suggest';
   onMode(m: 'edit' | 'suggest'): void;
@@ -1151,6 +1162,9 @@ function Toolbar(p: {
             </button>
             <button className="menu-item" onClick={() => (p.onFocusMode(), close())}>
               <Maximize2 size={16} /> Focus mode
+            </button>
+            <button className="menu-item" onClick={() => (p.onReadAloud(), close())}>
+              <Volume2 size={16} /> Read aloud <span className="kbd">Ctrl+Alt+R</span>
             </button>
             <button className="menu-item" onClick={() => (p.setPaper(p.paper === 'dark' ? 'light' : 'dark'), close())}>
               {p.paper === 'dark' ? <Sun size={16} /> : <Moon size={16} />} {p.paper === 'dark' ? 'White page' : 'Dark page'}

@@ -569,3 +569,13 @@
 .sig-saved-item:hover .icon-btn {
   display: grid;
 }
+
+.busy-chip {
+  color: var(--accent);
+  animation: busy-pulse 1.2s ease-in-out infinite;
+}
+@keyframes busy-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}

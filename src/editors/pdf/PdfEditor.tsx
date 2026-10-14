@@ -56,6 +56,10 @@ import { PageView, ToolStyle, measureTextAnn } from './PageView';
 import { Thumbnails } from './Thumbnails';
 import { SignatureModal } from './SignatureModal';
 import { buildPdf, readFormFields, isEncrypted, FormFieldInfo, FormValues } from './save';
+import { decryptPdf, encryptPdf, compressPdf, ocrPdf, pdfToDocHtml, Protection } from '../../lib/pdfSecurity';
+import { PasswordDialog } from './PasswordDialog';
+import { Lock, Minimize2, ScanText, FileType } from 'lucide-react';
+import { formatBytes } from '../../lib/util';
 import { annBox, rotateAnn, translateAnn, BASELINE_EM } from './geometry';
 import { uid, clamp, bytesToDataUrl, modKey, escapeHtml } from '../../lib/util';
 import { saveTabFile, exportFile, isSilentSave } from '../../lib/save';
@@ -188,6 +192,9 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState('');
   const [encrypted, setEncrypted] = useState(false);
+  const [protection, setProtection] = useState<Protection | null>(null);
+  const [pwDialog, setPwDialog] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   const [tool, setToolState] = useState<Tool>('select');
   const [styles, setStyles] = useState(INITIAL_STYLES);
@@ -256,7 +263,19 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
         if (cancelled) return;
         const info = await loadSourceInfo(pdf, 0);
         if (cancelled) return;
-        setSources([{ bytes: tab.data, doc: pdf }]);
+        let srcBytes = tab.data;
+        let enc = password !== undefined || (await isEncrypted(tab.data));
+        if (enc) {
+          // Work on an unlocked copy; saving puts the same password back.
+          try {
+            srcBytes = await decryptPdf(tab.data, password);
+            setProtection({ userPassword: password || '', allowPrint: true, allowCopy: true, allowEdit: true });
+            enc = false;
+          } catch (err) {
+            console.warn('could not unlock for editing', err);
+          }
+        }
+        setSources([{ bytes: srcBytes, doc: pdf }]);
         setInfos(info);
         history.reset({
           pages: Array.from({ length: pdf.numPages }, (_, i) => ({ id: uid(), src: 0, index: i, rotation: 0 })),
@@ -267,10 +286,9 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
         const avail = (scrollRef.current?.clientWidth || 1000) - 64;
         if (first) setZoom(clamp(avail / (first.width * CSS_UNITS), 0.5, 1.25));
         setStatus('ready');
-        const enc = password !== undefined || (await isEncrypted(tab.data));
         setEncrypted(enc);
         if (!enc) {
-          const fields = await readFormFields(tab.data);
+          const fields = await readFormFields(srcBytes);
           setFormFields(fields.filter((f) => f.type !== 'other'));
         }
       } catch (err: any) {
@@ -960,25 +978,69 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   const NO_RECTS = useMemo(() => [], []);
 
   // ---------- Save / print ----------
-  const build = () => {
+  const build = async () => {
     const s = history.get();
-    return buildPdf(
+    const bytes = await buildPdf(
       sources.map((x) => x.bytes),
       s.pages,
       s.annots.filter((a) => !(a.type === 'text' && !a.text.trim())),
       formValues
     );
+    // Password-protected files stay protected (an empty password means it only had permissions).
+    return protection && protection.userPassword ? encryptPdf(bytes, protection) : bytes;
   };
+  const unprotectedBuild = () => {
+    const s = history.get();
+    return buildPdf(sources.map((x) => x.bytes), s.pages, s.annots.filter((a) => !(a.type === 'text' && !a.text.trim())), formValues);
+  };
+  /** Replace this tab's PDF with new bytes (used by OCR), keeping it unsaved until the user saves. */
+  const replaceWith = (bytes: Uint8Array) => {
+    const t = useTabs.getState().tabs.find((x) => x.id === tab.id);
+    if (!t) return;
+    useTabs.getState().updateTab(tab.id, { data: bytes, version: t.version + 1 });
+    setTimeout(() => setDirty(tab.id, true), 800);
+  };
+  const runTool = async (label: string, fn: () => Promise<void>) => {
+    setBusy(label);
+    try {
+      await fn();
+    } catch (err: any) {
+      toast(`${label} failed: ${err?.message || err}`, 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const doCompress = (level: 'light' | 'strong') =>
+    runTool('Compressing', async () => {
+      const before = await unprotectedBuild();
+      const after = await compressPdf(before, level, (m) => setBusy(m));
+      const saved = before.length - after.length;
+      if (saved < before.length * 0.02) return toast(`This PDF is already compact (${formatBytes(before.length)}).`);
+      const final = protection?.userPassword ? await encryptPdf(after, protection) : after;
+      useTabs.getState().addTab({ kind: 'pdf', name: `${baseName(tab.name)} (compressed).pdf`, path: null, data: final });
+      toast(`Compressed ${formatBytes(before.length)} → ${formatBytes(after.length)} (${Math.round((saved / before.length) * 100)}% smaller). Opened in a new tab.`, 'success');
+    });
+  const doOcr = () =>
+    runTool('Text recognition', async () => {
+      const before = await unprotectedBuild();
+      const { bytes, words } = await ocrPdf(before, (m) => setBusy(m));
+      if (!words) return toast('No text was recognised. OCR works on scanned pages with readable text.');
+      replaceWith(bytes);
+      toast(`Recognised ${words.toLocaleString()} words. The text can now be searched, selected and copied. Save to keep it.`, 'success');
+    });
+  const doToWord = () =>
+    runTool('Converting', async () => {
+      const html = await pdfToDocHtml(await unprotectedBuild());
+      const data = new TextEncoder().encode(`<!doctype html><html><body>${html}</body></html>`);
+      useTabs.getState().addTab({ kind: 'doc', name: `${baseName(tab.name)}.docx`, path: null, data });
+      toast('Converted to a document. Check the layout, then save it as Word.', 'success');
+    });
 
   const save = async (saveAs: boolean) => {
     // Autosave never interrupts typing in a text box, and never shows dialogs.
     if (isSilentSave() && (encrypted || editingId)) return false;
     if (encrypted) {
-      await ask(
-        'This PDF is encrypted',
-        "Slate can view and annotate this PDF, but it can't write encrypted files yet. Remove the password in the app that created it, then edit it here.",
-        [{ id: 'ok', label: 'OK', primary: true }]
-      );
+      await ask('This PDF is locked', "Slate couldn't unlock this PDF for editing, so it can only be viewed. If you know its password, close it and open it again.", [{ id: 'ok', label: 'OK', primary: true }]);
       return false;
     }
     setEditingId(null);
@@ -1344,6 +1406,23 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
               <button className="menu-item" onClick={() => (extractPages(), close())}>
                 <FileOutput size={16} /> Extract selected pages
               </button>
+              <div className="menu-sep" />
+              <div className="menu-title">Tools</div>
+              <button className="menu-item" onClick={() => (setPwDialog(true), close())} disabled={encrypted}>
+                <Lock size={16} /> {protection?.userPassword ? 'Change or remove password…' : 'Protect with a password…'}
+              </button>
+              <button className="menu-item" onClick={() => (doCompress('light'), close())}>
+                <Minimize2 size={16} /> Compress (keep quality)
+              </button>
+              <button className="menu-item" onClick={() => (doCompress('strong'), close())}>
+                <Minimize2 size={16} /> Compress (smallest file)
+              </button>
+              <button className="menu-item" onClick={() => (doOcr(), close())}>
+                <ScanText size={16} /> Make scanned text searchable (OCR)
+              </button>
+              <button className="menu-item" onClick={() => (doToWord(), close())}>
+                <FileType size={16} /> Convert to Word document
+              </button>
             </>
           )}
         </MenuButton>
@@ -1557,7 +1636,13 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
         </span>
         {selectedPages.size > 1 && <span>{selectedPages.size} pages selected</span>}
         <span className="grow" />
-        {encrypted && <span style={{ color: 'var(--warning)' }}>Encrypted · view only</span>}
+        {encrypted && <span style={{ color: 'var(--warning)' }}>Locked · view only</span>}
+        {!encrypted && protection?.userPassword && (
+          <span title="Saved with a password">
+            <Lock size={12} style={{ verticalAlign: -1 }} /> Password protected
+          </span>
+        )}
+        {busy && <span className="busy-chip">{busy}</span>}
         <span>{toolHint(tool)}</span>
       </div>
 
@@ -1607,6 +1692,14 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
         </>
       )}
 
+      {pwDialog && (
+        <PasswordDialog
+          current={protection?.userPassword ? protection : null}
+          onClose={() => setPwDialog(false)}
+          onSave={(p) => (setProtection(p), markDirty(), toast('The password will be added when you save.', 'success'))}
+          onRemove={() => (setProtection(null), markDirty(), toast('The password will be removed when you save.'))}
+        />
+      )}
       {sigOpen && (
         <SignatureModal
           onCancel={() => setSigOpen(false)}

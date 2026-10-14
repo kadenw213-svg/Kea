@@ -18,6 +18,7 @@ if (!token) {
 
 console.log(`\nReleasing Slate Office v${pkg.version}\n`);
 run('node scripts/licenses.cjs');
+run('node scripts/assets.cjs');
 run('npx vite build');
 run('npx electron-builder --win --x64 --publish always', { GH_TOKEN: token });
 console.log(`\nPublished v${pkg.version}: https://github.com/kadenw213-svg/slate-office/releases/tag/v${pkg.version}\n`);

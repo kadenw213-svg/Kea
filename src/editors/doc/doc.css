@@ -1046,6 +1046,25 @@
   margin-top: 44px;
 }
 
+/* ---------- Read aloud ---------- */
+.read-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px 6px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+.read-title {
+  font-weight: 600;
+  margin-right: 6px;
+}
+.read-bar .select {
+  max-width: 180px;
+}
+
 /* ---------- Grammar ---------- */
 .doc-content .gr-err {
   text-decoration: underline wavy #7cacf8;
