@@ -489,35 +489,162 @@ const LEVEL: Record<Difficulty, string> = {
   hard: 'application and analysis: compare ideas, apply them to new cases, spot misconceptions'
 };
 
+// ---------- Variety & coverage for flashcards and quizzes ----------
+/** Previously asked items per source (kept on this PC), so new sets ask about different things. */
+const studyKey = (kind: string, ctx: TaskContext) => {
+  let h = 0;
+  const s = `${ctx.docName}|${ctx.text.length}|${ctx.text.slice(0, 400)}`;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return `slate.studied.${kind}.${h}`;
+};
+function recall(key: string): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(key) || '[]');
+  } catch {
+    return [];
+  }
+}
+function remember(key: string, items: string[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify([...recall(key), ...items].slice(-80)));
+  } catch {
+    /* storage unavailable: variety still comes from the part plan */
+  }
+}
+const tokens = (s: string) => new Set(words(s));
+/** Two questions are "the same" when most of their meaningful words overlap. */
+function similar(a: string, b: string) {
+  const x = tokens(a),
+    y = tokens(b);
+  if (!x.size || !y.size) return false;
+  let both = 0;
+  x.forEach((w) => y.has(w) && both++);
+  return both / Math.min(x.size, y.size) >= 0.7;
+}
+function shuffled<T>(a: T[]): T[] {
+  const b = [...a];
+  for (let i = b.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [b[i], b[j]] = [b[j], b[i]];
+  }
+  return b;
+}
+/**
+ * Split the material into labelled parts and decide how many items come from each, so a set covers the whole
+ * document (not just its start). Extra items go to randomly chosen parts, so repeated requests differ.
+ */
+function coveragePlan(text: string, count: number, noun: string) {
+  const k = Math.max(1, Math.min(count, 6, Math.round(text.length / 700) || 1));
+  const parts = k === 1 ? [text] : chunkText(text, Math.ceil(text.length / k) + 200).slice(0, k);
+  const n = parts.length;
+  const per = new Array(n).fill(Math.floor(count / n));
+  shuffled([...Array(n).keys()])
+    .slice(0, count - per.reduce((a, b) => a + b, 0))
+    .forEach((i) => per[i]++);
+  const block = n === 1 ? quote(parts[0]) : parts.map((p, i) => `[Part ${i + 1}]\n${p}`).join('\n\n');
+  const plan = n === 1 ? '' : `\nCover the whole text: take ${per.map((c, i) => `${c} from Part ${i + 1}`).join(', ')}. Each item must test a different fact or idea.`;
+  return { block, plan, parts: n };
+}
+/**
+ * Choose the sentences each new item should be about: spread evenly over the whole text (one per stretch of it),
+ * preferring sentences not used for earlier sets, then shuffled. The model writes one item per chosen sentence, so
+ * sets cover every part of the document and differ from one request to the next. When every sentence has been
+ * used, it starts over.
+ */
+function focusPlan(text: string, count: number, usedKey: string) {
+  const sentences = (text.replace(/\s+/g, ' ').match(/[^.!?]+[.!?]+/g) || [])
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 35 && s.length <= 450 && /[a-z]{4}/i.test(s));
+  if (sentences.length < 2) return null;
+  const hash = (s: string) => {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return String(h);
+  };
+  let used = new Set(recall(usedKey));
+  if (sentences.every((s) => used.has(hash(s)))) {
+    used = new Set();
+    try {
+      localStorage.removeItem(usedKey);
+    } catch {}
+  }
+  const n = Math.min(count, sentences.length);
+  const picks: string[] = [];
+  for (let b = 0; b < n; b++) {
+    // The b-th stretch of the text; prefer an unused sentence in it, else any sentence in it.
+    const lo = Math.floor((b * sentences.length) / n);
+    const hi = Math.max(lo + 1, Math.floor(((b + 1) * sentences.length) / n));
+    const bucket = sentences.slice(lo, hi).filter((s) => !picks.includes(s));
+    const fresh = bucket.filter((s) => !used.has(hash(s)));
+    const pool = fresh.length ? fresh : bucket;
+    if (pool.length) picks.push(pool[Math.floor(Math.random() * pool.length)]);
+  }
+  remember(usedKey, picks.map(hash));
+  // Only the chosen sentences go to the model (with their neighbours for context), so it can't drift back to the
+  // most obvious facts of the whole text.
+  const block = picks
+    .map((s, i) => {
+      const at = sentences.indexOf(s);
+      const before = sentences[at - 1] ? `(context: ${sentences[at - 1]}) ` : '';
+      const after = sentences[at + 1] ? ` (context: ${sentences[at + 1]})` : '';
+      return `${i + 1}. FACT: "${s}"\n   ${before}${after}`.trimEnd();
+    })
+    .join('\n');
+  return {
+    picks,
+    block,
+    instruction: `\nWrite exactly ${picks.length} items: item 1 tests FACT 1, item 2 tests FACT 2, and so on. Each item must be about its own FACT, not about other parts of the text.`
+  };
+}
+
+function avoidList(prev: string[], noun: string) {
+  if (!prev.length) return '';
+  const recent = prev.slice(-25).map((p) => `- ${p.slice(0, 100)}`);
+  return `\n\nThese ${noun} were already used in earlier sets. Do NOT repeat or reword them; test other facts and ideas, or the same idea from a clearly different angle (cause, application, comparison):\n${recent.join('\n')}`;
+}
+
 /** Flashcards (term/question → answer) from the text. */
 export async function runFlashcards(ctx: TaskContext, cb: TaskCallbacks, count: number, difficulty: Difficulty): Promise<Flashcard[]> {
   const outTokens = Math.min(Math.floor(ctx.contextSize * 0.55), 120 * count + 200);
   const work = await condense({ ...ctx, maxTokens: outTokens }, 'Note the key facts, definitions, names, dates, formulas and concepts worth memorising.', cb);
   cb.onStatus('Making flashcards…');
+  const key = studyKey('cards', ctx);
+  const prev = recall(key);
+  const focus = focusPlan(work, count, studyKey('cards-used', ctx));
+  const cov = focus ? { block: focus.block, plan: focus.instruction } : coveragePlan(work, count, 'cards');
+  if (focus) count = focus.picks.length;
   const r = await stream(
     {
       system: systemPrompt(),
       prompt: `Make ${count} study flashcards from ${ctx.scopeLabel} of "${ctx.docName}". Level: ${LEVEL[difficulty]}.
-"front" = a short question or term; "back" = a concise, correct answer (one or two sentences). Use only information in the text. No duplicates.
+"front" = a short question or term; "back" = a concise, correct answer (one or two sentences). Use only information in the text. No duplicates.${cov.plan}${focus ? '' : avoidList(prev, 'cards')}
 
-TEXT:
-${quote(work)}`,
+${focus ? 'FACTS' : 'TEXT'}:
+${cov.block}`,
       jsonSchema: {
         type: 'object',
         properties: {
           cards: { type: 'array', minItems: count, maxItems: count, items: { type: 'object', properties: { front: { type: 'string', maxLength: 200 }, back: { type: 'string', maxLength: 400 } } } }
         }
       },
-      temperature: 0.3,
+      temperature: 0.6,
       maxTokens: outTokens
     },
     { ...cb, onToken: (full) => cb.onStatus(`Making flashcards… ${(full.match(/"back"/g) || []).length} of ${count}`) }
   );
   const j = parseJson(r.text) || {};
-  const seen = new Set<string>();
-  return (j.cards || [])
-    .map((c: any) => ({ front: String(c?.front || '').trim(), back: String(c?.back || '').trim() }))
-    .filter((c: Flashcard) => c.front && c.back && !seen.has(c.front.toLowerCase()) && seen.add(c.front.toLowerCase()));
+  const kept: Flashcard[] = [];
+  for (const c of (j.cards || []).map((c: any) => ({ front: String(c?.front || '').trim(), back: String(c?.back || '').trim() }))) {
+    if (!c.front || !c.back) continue;
+    // Drop near-duplicates within this set and of cards made before.
+    if (kept.some((k) => similar(k.front, c.front)) || prev.some((p) => similar(p, c.front))) continue;
+    kept.push(c);
+  }
+  const fresh = (j.cards || []).map((c: any) => ({ front: String(c?.front || '').trim(), back: String(c?.back || '').trim() }));
+  for (const c of fresh) if (kept.length < Math.ceil(fresh.length / 2) && c.front && c.back && !kept.some((k) => similar(k.front, c.front)) && !prev.some((p) => similar(p, c.front))) kept.push(c);
+  if (!kept.length) kept.push(...fresh.filter((c: Flashcard) => c.front && c.back).slice(0, Math.max(1, Math.ceil(fresh.length / 2))));
+  remember(key, kept.map((c) => c.front));
+  return shuffled(kept);
 }
 
 /** Multiple-choice practice quiz from the text. */
@@ -525,14 +652,19 @@ export async function runQuiz(ctx: TaskContext, cb: TaskCallbacks, count: number
   const outTokens = Math.min(Math.floor(ctx.contextSize * 0.55), 220 * count + 200);
   const work = await condense({ ...ctx, maxTokens: outTokens }, 'Note the key facts, ideas and relationships a test might ask about.', cb);
   cb.onStatus('Writing questions…');
+  const key = studyKey('quiz', ctx);
+  const prev = recall(key);
+  const focus = focusPlan(work, count, studyKey('quiz-used', ctx));
+  const cov = focus ? { block: focus.block, plan: focus.instruction } : coveragePlan(work, count, 'questions');
+  if (focus) count = focus.picks.length;
   const r = await stream(
     {
       system: systemPrompt(),
       prompt: `Write a ${count}-question multiple-choice practice quiz (keep each answer short, under 20 words) on ${ctx.scopeLabel} of "${ctx.docName}". Level: ${LEVEL[difficulty]}.
-For each question: "correct" = the right answer; "wrong" = 3 believable but clearly incorrect answers; "explanation" = one sentence on why the right answer is right, based on the text.
+For each question: "correct" = the right answer; "wrong" = 3 believable but clearly incorrect answers; "explanation" = one sentence on why the right answer is right, based on the text. Every question must ask about a different fact or idea.${cov.plan}${focus ? '' : avoidList(prev, 'questions')}
 
-TEXT:
-${quote(work)}`,
+${focus ? 'FACTS' : 'TEXT'}:
+${cov.block}`,
       jsonSchema: {
         type: 'object',
         properties: {
@@ -552,13 +684,13 @@ ${quote(work)}`,
           }
         }
       },
-      temperature: 0.4,
+      temperature: 0.7,
       maxTokens: outTokens
     },
     { ...cb, onToken: (full) => cb.onStatus(`Writing questions… ${(full.match(/"explanation"/g) || []).length} of ${count}`) }
   );
   const j = parseJson(r.text) || {};
-  return (j.questions || [])
+  const all: QuizQuestion[] = (j.questions || [])
     .map((q: any) => {
       // The model names the right answer itself (small models often mix up answer letters); Slate shuffles.
       const correct = String(q?.correct || '').trim();
@@ -571,6 +703,14 @@ ${quote(work)}`,
       return { question: String(q?.question || '').trim(), choices, answer: correct ? choices.indexOf(correct) : -1, explanation: String(q?.explanation || '').trim() };
     })
     .filter((q: QuizQuestion) => q.question && q.choices.length >= 2 && Number.isInteger(q.answer) && q.answer >= 0 && q.answer < q.choices.length);
+  // Drop near-duplicates within this quiz and of questions asked before; mix the order.
+  const kept: QuizQuestion[] = [];
+  for (const q of all) if (!kept.some((k) => similar(k.question, q.question)) && !prev.some((p) => similar(p, q.question))) kept.push(q);
+  // A short text may have run out of new facts: top up so a quiz is never (nearly) empty.
+  for (const q of all) if (kept.length < Math.ceil(all.length / 2) && !kept.includes(q) && !kept.some((k) => similar(k.question, q.question)) && !prev.some((p) => similar(p, q.question))) kept.push(q);
+  if (!kept.length) kept.push(...all.slice(0, Math.max(1, Math.ceil(all.length / 2))));
+  remember(key, kept.map((q) => q.question));
+  return shuffled(kept);
 }
 
 function parseJson(t: string): any {

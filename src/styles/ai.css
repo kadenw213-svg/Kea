@@ -1125,3 +1125,50 @@
   border-top: 1px solid var(--border);
   margin: 10px 0;
 }
+
+/* Quiz: one question at a time */
+.quiz-one:focus {
+  outline: none;
+}
+.quiz-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.quiz-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s;
+}
+.quiz-feedback {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.quiz-feedback.ok {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+.quiz-feedback.bad {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.quiz-nav {
+  justify-content: space-between;
+  margin-top: 10px;
+}
+.quiz-missed {
+  text-align: left;
+  margin: 10px 0;
+  display: grid;
+  gap: 8px;
+}
+.quiz-missed-item {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
