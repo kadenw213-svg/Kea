@@ -10,6 +10,7 @@ import { SHORTCUTS } from './shortcuts';
 import { GooglePanel } from './GooglePanel';
 import { useUpdates } from '../Updates';
 import { VoiceSettingsExtras } from '../VoiceTyping';
+import { FeedbackPanel } from './FeedbackPanel';
 
 function FieldControl({ f, value, onChange }: { f: Field; value: any; onChange: (v: any) => void }) {
   switch (f.type) {
@@ -296,6 +297,7 @@ export function SettingsDialog() {
     if (cur.id === 'ai') return <AiSettingsPanel />;
     if (cur.id === 'shortcuts') return <ShortcutsPanel q="" />;
     if (cur.id === 'about') return <AboutPanel />;
+    if (cur.id === 'feedback') return <FeedbackPanel />;
     return (
       <>
         {cur.blurb && <p className="sblurb">{cur.blurb}</p>}

@@ -148,6 +148,7 @@ export interface SlateApi {
   clearPreviews(): Promise<boolean>;
   clearMeta(): Promise<Record<string, FileMeta>>;
   openDataFolder(): Promise<string>;
+  sysinfo(): Promise<{ version: string; os: string; cpu: string; ramGb: number; electron: string; logTail: string }>;
   setPreview(p: string, preview: FilePreview): Promise<boolean>;
   getMeta(): Promise<Record<string, FileMeta>>;
   setMeta(p: string, patch: FileMeta): Promise<Record<string, FileMeta>>;

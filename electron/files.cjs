@@ -403,6 +403,22 @@ function register({ log, getWindow }) {
     return {};
   });
   ipcMain.handle('app:open-data-folder', () => shell.openPath(app.getPath('userData')));
+  // For bug reports: basic facts about this PC and the end of the local troubleshooting log.
+  ipcMain.handle('app:sysinfo', () => {
+    const os = require('os');
+    let logTail = '';
+    try {
+      logTail = fs.readFileSync(path.join(app.getPath('userData'), 'slate.log'), 'utf8').split('\n').slice(-40).join('\n');
+    } catch {}
+    return {
+      version: app.getVersion(),
+      os: `${os.type()} ${os.release()} (${os.arch()})`,
+      cpu: os.cpus()[0]?.model?.trim() || '',
+      ramGb: Math.round(os.totalmem() / 2 ** 30),
+      electron: process.versions.electron,
+      logTail
+    };
+  });
   ipcMain.handle('preview:set', (_e, p, preview) => setPreview(p, preview));
 
   ipcMain.handle('meta:all', () => readJson(userFile('file-meta.json'), {}));

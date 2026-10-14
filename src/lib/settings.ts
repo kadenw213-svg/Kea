@@ -429,6 +429,7 @@ export const SECTIONS: Section[] = [
     ]
   },
   { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'Keyboard', fields: [] },
+  { id: 'feedback', label: 'Feedback', icon: 'MessageSquarePlus', fields: [] },
   { id: 'about', label: 'About & licenses', icon: 'Info', fields: [] }
 ];
 

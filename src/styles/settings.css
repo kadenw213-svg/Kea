@@ -557,3 +557,68 @@
   font-size: 11.5px;
   color: var(--text-3);
 }
+
+/* ---------- Feedback ---------- */
+.feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 640px;
+}
+.fb-kinds {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.fb-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.fb-kind:hover:not(.on) {
+  background: var(--hover);
+}
+.fb-kind.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.fb-kind svg {
+  color: var(--accent);
+}
+.fb-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+.fb-text {
+  resize: vertical;
+  min-height: 120px;
+  font: inherit;
+  line-height: 1.45;
+  padding: 10px 12px;
+}
+.fb-check {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.fb-check .muted {
+  font-size: 12px;
+}
+.fb-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}

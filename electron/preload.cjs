@@ -84,6 +84,7 @@ contextBridge.exposeInMainWorld('api', {
   clearPreviews: () => ipcRenderer.invoke('preview:clear'),
   clearMeta: () => ipcRenderer.invoke('meta:clear'),
   openDataFolder: () => ipcRenderer.invoke('app:open-data-folder'),
+  sysinfo: () => ipcRenderer.invoke('app:sysinfo'),
   getPreview: (p) => ipcRenderer.invoke('preview:get', p),
   setPreview: (p, preview) => ipcRenderer.invoke('preview:set', p, preview),
   getMeta: () => ipcRenderer.invoke('meta:all'),

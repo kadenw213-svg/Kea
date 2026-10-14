@@ -88,6 +88,7 @@ export function CommandPalette() {
       ...tabs
         .filter((t) => t.id !== useTabs.getState().activeId)
         .map((t) => ({ id: 'beside-' + t.id, group: 'Open tabs', label: `Open beside: ${t.name}`, hint: 'Split view', icon: <Columns2 size={16} />, run: act(() => (useTabs.getState().closeSplit(), useTabs.getState().openSplit(t.id))) })),
+      { id: 'feedback', group: 'Tools', label: 'Send feedback: report a bug or request a feature', icon: <Settings size={16} />, run: act(() => openSettings('feedback')) },
       { id: 'voice', group: 'Tools', label: 'Voice typing', hint: 'Ctrl+Alt+V', icon: <Mic size={16} />, run: act(() => toggleVoice()) },
       { id: 'updates', group: 'Tools', label: 'Check for updates', icon: <RefreshCw size={16} />, run: act(() => openUpdates()) },
       ...SECTIONS.map((s) => ({ id: 'set-' + s.id, group: 'Settings', label: `Settings: ${s.label}`, icon: <Settings size={16} />, run: act(() => openSettings(s.id)) })),
