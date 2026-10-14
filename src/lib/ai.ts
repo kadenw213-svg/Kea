@@ -1,4 +1,4 @@
-import { api, AiGenerateRequest } from './api';
+import { api, AiGenerateRequest, WikiArticle } from './api';
 import { setting } from './settings';
 
 /**
@@ -79,6 +79,38 @@ const KNOWLEDGE = (depth: Depth) =>
   depth === 'deep' || depth === 'expert'
     ? '\nYou may add general background knowledge beyond the text to explain fully, but make clear which points come from the text and which are background.'
     : '';
+
+// ---------- Check Wikipedia ----------
+/** Characters of article text to give the model, by depth (bounded by what fits in its memory). */
+export function wikiChars(depth: Depth, contextSize: number) {
+  const want = Number(setting('ai.wikiChars')) || (depth === 'brief' ? 1500 : depth === 'standard' ? 3000 : 6000);
+  return Math.max(800, Math.min(want, Math.floor(contextSize * CHARS_PER_TOKEN * 0.35)));
+}
+
+/** Words to search Wikipedia for: short highlights as-is, otherwise ask the model for the topic. */
+export async function wikiQuery(text: string, question: string | null, cancelled: () => boolean): Promise<string> {
+  const short = (s: string) => s.trim().split(/\s+/).length <= 8;
+  if (!question && short(text)) return text.trim();
+  const out = await complete(
+    {
+      system: 'You name encyclopedia topics. Reply with only a Wikipedia article title (1-6 words), nothing else.',
+      prompt: `${question ? `Question: ${question}\n` : ''}Text:\n${text.slice(0, 1500)}\n\nWhich Wikipedia article would best help ${question ? 'answer the question' : 'explain this text'}?`,
+      maxTokens: 24,
+      temperature: 0
+    },
+    cancelled
+  );
+  return out.replace(/["*_`]/g, '').split('\n')[0].trim().slice(0, 120) || (question || text).slice(0, 120);
+}
+
+function refsBlock(refs?: WikiArticle[]) {
+  if (!refs?.length) return '';
+  const today = new Date().toISOString().slice(0, 10);
+  return (
+    `\n\nREFERENCE from Wikipedia (retrieved ${today}). It is more up to date than your own memory: prefer it when they differ, and say so if it disagrees with the text.\n` +
+    refs.map((r) => `[${r.title}]\n${r.text}`).join('\n\n')
+  );
+}
 
 // ---------- Streaming generation ----------
 export interface Running {
@@ -181,6 +213,8 @@ export function topChunks(chunks: string[], query: string, maxChars: number): st
 
 // ---------- Tasks ----------
 export interface TaskContext {
+  /** Wikipedia articles fetched for this request ("Check Wikipedia"), if any. */
+  refs?: WikiArticle[];
   text: string;
   scopeLabel: string; // "the selected text" | "the whole document"
   docName: string;
@@ -225,14 +259,15 @@ async function condense(ctx: TaskContext, focus: string, cb: TaskCallbacks): Pro
 }
 
 export async function runExplain(ctx: TaskContext, cb: TaskCallbacks, depth: Depth = currentDepth()) {
-  const maxTokens = depthTokens(depth, ctx);
+  const refChars = (ctx.refs || []).reduce((a, r) => a + r.text.length + 40, 0);
+  const maxTokens = depthTokens(depth, ctx) + Math.ceil(refChars / CHARS_PER_TOKEN);
   const text = await condense({ ...ctx, maxTokens }, 'Note the key ideas, processes and any terms a reader might not know.', cb);
   cb.onStatus('');
   return stream(
     {
       system: systemPrompt(),
-      prompt: `Explain ${ctx.scopeLabel} from "${ctx.docName}".\n${EXPLAIN_STYLE[depth]}${KNOWLEDGE(depth)}\n\n${quote(text)}`,
-      maxTokens
+      prompt: `Explain ${ctx.scopeLabel} from "${ctx.docName}".\n${EXPLAIN_STYLE[depth]}${KNOWLEDGE(depth)}\n\n${quote(text)}${refsBlock(ctx.refs)}`,
+      maxTokens: depthTokens(depth, ctx)
     },
     cb
   );
@@ -257,7 +292,8 @@ export async function runSummarize(ctx: TaskContext, cb: TaskCallbacks, depth: D
 export async function runAsk(question: string, history: { role: 'user' | 'assistant'; text: string }[], ctx: TaskContext, cb: TaskCallbacks, depth: Depth = currentDepth()) {
   const maxTokens = depthTokens(depth, ctx);
   ctx = { ...ctx, maxTokens };
-  const budget = budgetChars(ctx.contextSize, ctx.maxTokens, 900 + history.reduce((a, h) => a + h.text.length / CHARS_PER_TOKEN, 0));
+  const refTokens = Math.ceil((ctx.refs || []).reduce((a, r) => a + r.text.length + 40, 0) / CHARS_PER_TOKEN);
+  const budget = budgetChars(ctx.contextSize, ctx.maxTokens, 900 + refTokens + history.reduce((a, h) => a + h.text.length / CHARS_PER_TOKEN, 0));
   let text = ctx.text;
   let note = '';
   if (text.length > budget) {
@@ -268,7 +304,7 @@ export async function runAsk(question: string, history: { role: 'user' | 'assist
     {
       system: systemPrompt(),
       history,
-      prompt: `Here is ${ctx.scopeLabel} from "${ctx.docName}"${note}:\n${quote(text)}\n\nRequest: ${question}${ANSWER_STYLE[depth] ? `\n\n(${ANSWER_STYLE[depth]}${KNOWLEDGE(depth)})` : ''}`,
+      prompt: `Here is ${ctx.scopeLabel} from "${ctx.docName}"${note}:\n${quote(text)}${refsBlock(ctx.refs)}\n\nRequest: ${question}${ANSWER_STYLE[depth] ? `\n\n(${ANSWER_STYLE[depth]}${KNOWLEDGE(depth)})` : ''}`,
       maxTokens
     },
     cb

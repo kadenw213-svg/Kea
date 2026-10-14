@@ -16,6 +16,9 @@ export interface AiMessage {
   /** Suggestions already put into the document (indexes), and how. */
   applied?: number[];
   appliedHow?: 'direct' | 'track';
+  /** Wikipedia articles this answer was checked against, or why the check didn't happen. */
+  wiki?: { title: string; url: string; edited: string | null }[];
+  wikiNote?: string;
   /** The answer replaced the highlighted text automatically. */
   replaced?: 'direct' | 'track';
 }

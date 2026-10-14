@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('present:closed', fn);
     }
   },
+  wikiLookup: (query, opts) => ipcRenderer.invoke('wiki:lookup', query, opts),
   speech: {
     state: () => ipcRenderer.invoke('speech:state'),
     download: (id) => ipcRenderer.invoke('speech:download', id),

@@ -20,8 +20,10 @@ import {
   GraduationCap,
   Layers,
   ListChecks,
-  ScrollText
+  ScrollText,
+  Globe
 } from 'lucide-react';
+import { wikiQuery, wikiChars } from '../../lib/ai';
 import { FlashcardsView, QuizView } from './Study';
 import { MenuButton } from '../Popover';
 import { openSettings, useSettings } from '../../lib/settings';
@@ -80,6 +82,7 @@ export function AiSidebar() {
   const depth = useSettings((s) => (s.values['ai.depth'] as Depth) || 'standard');
   const instructions = useSettings((s) => String(s.values['ai.instructions'] || ''));
   const [showInstr, setShowInstr] = useState(false);
+  const wikiOn = useSettings((s) => !!s.values['ai.wikipedia']);
 
   // Load model state when first opened.
   useEffect(() => {
@@ -132,7 +135,7 @@ export function AiSidebar() {
   const patch = (id: string, p: Partial<AiMessage>) => useAi.getState().set({ messages: useAi.getState().messages.map((m) => (m.id === id ? { ...m, ...p } : m)) });
 
   /** Shared runner: adds the user + assistant bubbles, streams, handles errors and stop. */
-  const run = async (label: string, userText: string, task: (ctx: TaskContext, cb: TaskCallbacks) => Promise<any>, kind: AiMessage['kind'] = 'text', opts: { autoReplace?: boolean } = {}) => {
+  const run = async (label: string, userText: string, task: (ctx: TaskContext, cb: TaskCallbacks) => Promise<any>, kind: AiMessage['kind'] = 'text', opts: { autoReplace?: boolean; wiki?: boolean } = {}) => {
     if (ai.busy) return;
     if (!ready) {
       toast('Download an AI model first (it only takes a minute).');
@@ -150,6 +153,24 @@ export function AiSidebar() {
     useAi.getState().set({ busy: aid });
     setStatus(kind === 'text' ? '' : 'Starting…');
     try {
+      // "Check Wikipedia": look the topic up first so the local model can use current facts.
+      if (opts.wiki && useSettings.getState().values['ai.wikipedia']) {
+        setStatus('Checking Wikipedia…');
+        try {
+          const q = await wikiQuery(scope === 'selection' && selection ? selection : ctx.text.slice(0, 1500), label === 'ask' ? userText : null, () => flag.cancelled);
+          const refs = await api.wikiLookup(q, {
+            lang: String(useSettings.getState().values['ai.wikiLang'] || 'en'),
+            max: Number(useSettings.getState().values['ai.wikiArticles']) || 1,
+            chars: wikiChars(depth, ctx.contextSize)
+          });
+          ctx.refs = refs;
+          patch(aid, refs.length ? { wiki: refs.map((r) => ({ title: r.title, url: r.url, edited: r.edited })) } : { wikiNote: `No Wikipedia article found for “${q}”. Answered from the AI’s own knowledge.` });
+        } catch (err: any) {
+          if (err?.message === 'CANCELLED') throw err;
+          patch(aid, { wikiNote: "Couldn't reach Wikipedia (offline?). Answered from the AI’s own knowledge." });
+        }
+        setStatus('');
+      }
       const result = await task(ctx, {
         onToken: (full) => patch(aid, { text: full }),
         onStatus: (s) => setStatus(s),
@@ -197,7 +218,7 @@ export function AiSidebar() {
     if (m?.requestId) api.ai.stop(m.requestId);
   };
 
-  const explain = () => run('explain', 'Explain this', runExplain);
+  const explain = () => run('explain', 'Explain this', runExplain, 'text', { wiki: true });
   const summarize = () => run('summarize', 'Summarize this', runSummarize);
   const suggest = () => run('suggest', 'Suggest edits', runSuggest, 'suggestions');
   const studyCount = (k: string, d: number) => Math.max(1, Math.min(30, Number(useSettings.getState().values[k]) || d));
@@ -221,7 +242,7 @@ export function AiSidebar() {
       .map((m) => ({ role: m.role, text: m.role === 'user' ? m.text : m.text.slice(0, 2000) }));
     // With a live highlight, "make this formal" etc. edits the text itself (unless edits are set to Suggest).
     const autoReplace = scope === 'selection' && !!selection && !ai.pinned && EDIT_REQUEST.test(q);
-    run('ask', q, (ctx, cb) => runAsk(q, history, ctx, cb), 'text', { autoReplace });
+    run('ask', q, (ctx, cb) => runAsk(q, history, ctx, cb), 'text', { autoReplace, wiki: !autoReplace });
   };
 
   // Keyboard: Alt+1/2/3 quick actions, Ctrl+F searches the conversation when focus is in the sidebar.
@@ -373,6 +394,15 @@ export function AiSidebar() {
         </div>
         <div className="ai-editmode">
           <span className="muted">Depth</span>
+          <button
+            className={`ai-wiki ${wikiOn ? 'on' : ''}`}
+            role="switch"
+            aria-checked={wikiOn}
+            title={wikiOn ? 'Checking Wikipedia for up-to-date facts (Explain and questions). Only the topic words are sent.' : 'Off: answers come only from your file and the AI on this PC. Turn on to check Wikipedia for up-to-date facts.'}
+            onClick={() => useSettings.getState().set({ 'ai.wikipedia': !wikiOn })}
+          >
+            <Globe size={13} /> Wikipedia
+          </button>
           <div className="seg small" role="radiogroup" aria-label="How detailed answers are">
             {DEPTHS.map((d) => (
               <button key={d.id} role="radio" aria-checked={depth === d.id} className={depth === d.id ? 'on' : ''} title={d.help} onClick={() => useSettings.getState().set({ 'ai.depth': d.id })}>
@@ -475,6 +505,26 @@ function MessageView({ m, hooks, highlight }: { m: AiMessage; hooks: any; highli
       ) : (
         <div className="ai-md" dangerouslySetInnerHTML={{ __html: marked + (m.streaming ? '<span class="ai-caret"></span>' : '') }} />
       )}
+      {!m.streaming && (m.wiki?.length || m.wikiNote) ? (
+        <div className="ai-wiki-src">
+          <Globe size={13} />
+          {m.wiki?.length ? (
+            <span>
+              Checked on Wikipedia:{' '}
+              {m.wiki.map((w, i) => (
+                <span key={w.url}>
+                  {i > 0 && ', '}
+                  <a href={w.url} target="_blank" rel="noreferrer" title={w.edited ? `Last edited ${w.edited.slice(0, 10)}` : undefined}>
+                    {w.title}
+                  </a>
+                </span>
+              ))}
+            </span>
+          ) : (
+            <span className="muted">{m.wikiNote}</span>
+          )}
+        </div>
+      ) : null}
       {m.replaced && (
         <div className="ai-applied">
           <Check size={13} /> {m.replaced === 'track' ? 'Added to the document as a suggestion to accept or reject.' : 'Replaced the highlighted text. Ctrl+Z to undo.'}

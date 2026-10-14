@@ -99,6 +99,7 @@ export interface SlateApi {
     close(): Promise<boolean>;
     onClosed(cb: () => void): () => void;
   };
+  wikiLookup(query: string, opts?: { lang?: string; max?: number; chars?: number }): Promise<WikiArticle[]>;
   speech: {
     state(): Promise<SpeechModel[]>;
     download(id: string): Promise<boolean>;
@@ -253,6 +254,13 @@ declare global {
   interface Window {
     api: SlateApi;
   }
+}
+
+export interface WikiArticle {
+  title: string;
+  url: string;
+  text: string;
+  edited: string | null;
 }
 
 export interface SpeechModel {

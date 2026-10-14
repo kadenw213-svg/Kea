@@ -200,6 +200,7 @@ app.whenReady().then(() => {
   require('./history.cjs').register({ log });
   require('./google.cjs').register({ log });
   require('./cite.cjs').register({ log });
+  require('./wiki.cjs').register();
   require('./present.cjs').register({ log, getWindow: () => mainWindow });
   require('./search.cjs').register();
   require('./tts.cjs').register();

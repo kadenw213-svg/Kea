@@ -84,6 +84,7 @@ export function AiSettingsPanel() {
           <div style={{ marginTop: 12 }}>
             <InstructionsBox />
           </div>
+          <WikiSettings />
         </div>
 
         <div className="set-section">
@@ -249,6 +250,52 @@ function DepthPicker() {
           </span>
         </label>
       ))}
+    </div>
+  );
+}
+
+/** Settings for "Check Wikipedia": off by default; only the topic words leave this PC. */
+function WikiSettings() {
+  const v = useSettings((s) => s.values);
+  const set = (k: string, val: any) => useSettings.getState().set({ [k]: val });
+  const on = !!v['ai.wikipedia'];
+  return (
+    <div className="wiki-settings">
+      <label className="depth-opt">
+        <input type="checkbox" checked={on} onChange={(e) => set('ai.wikipedia', e.target.checked)} />
+        <span>
+          <b>Check Wikipedia for up-to-date facts</b>
+          <span className="muted">
+            {' '}
+            · Explain and questions look the topic up on Wikipedia and give the article to the AI on this PC, with a link under the answer. Only the search words are sent, never your file. Also a switch in the AI sidebar.
+          </span>
+        </span>
+      </label>
+      {on && (
+        <div className="wiki-grid">
+          <label>Wikipedia language</label>
+          <select className="select" value={v['ai.wikiLang'] || 'en'} onChange={(e) => set('ai.wikiLang', e.target.value)}>
+            {[['en', 'English'], ['simple', 'Simple English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['pl', 'Polish'], ['ru', 'Russian'], ['ja', 'Japanese'], ['zh', 'Chinese'], ['ar', 'Arabic']].map(([c, l]) => (
+              <option key={c} value={c}>
+                {l}
+              </option>
+            ))}
+          </select>
+          <label>Articles to read</label>
+          <select className="select" value={v['ai.wikiArticles'] || 1} onChange={(e) => set('ai.wikiArticles', Number(e.target.value))}>
+            <option value={1}>1 (fastest)</option>
+            <option value={2}>2</option>
+            <option value={3}>3 (broadest)</option>
+          </select>
+          <label>Article text to use</label>
+          <select className="select" value={v['ai.wikiChars'] || 0} onChange={(e) => set('ai.wikiChars', Number(e.target.value))}>
+            <option value={0}>Automatic (more for Deep and Expert)</option>
+            <option value={1500}>Short (the introduction)</option>
+            <option value={4000}>Medium</option>
+            <option value={8000}>Long (slower)</option>
+          </select>
+        </div>
+      )}
     </div>
   );
 }
