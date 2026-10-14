@@ -34,6 +34,9 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ]);
 
+// Developer aid: SLATE_USERDATA runs a separate profile (and lock), so tests don't touch a running copy.
+if (process.env.SLATE_USERDATA) app.setPath('userData', process.env.SLATE_USERDATA);
+
 // Single instance: opening a file from Explorer while the app runs sends it to the existing window.
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
@@ -188,6 +191,7 @@ function createWindow() {
 app.whenReady().then(() => {
   log('start', app.getVersion(), process.argv.slice(1));
   require('./ai.cjs').register({ log, getWindow: () => mainWindow });
+  require('./files.cjs').register({ log, getWindow: () => mainWindow });
   protocol.handle('app', async (request) => {
     const url = new URL(request.url);
     let rel = decodeURIComponent(url.pathname);

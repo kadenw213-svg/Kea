@@ -14,6 +14,52 @@ export interface FileFilter {
   extensions: string[];
 }
 
+export interface DirEntry {
+  path: string;
+  name: string;
+  dir: boolean;
+  size: number;
+  mtime: number;
+  /** Cloud file that isn't downloaded to this PC yet. */
+  online?: boolean;
+}
+export interface KnownFolder {
+  id: string;
+  label: string;
+  path: string;
+}
+export type DriveId = 'onedrive' | 'gdrive' | 'dropbox' | 'icloud';
+export interface DriveInfo {
+  id: DriveId;
+  label: string;
+  installed: boolean;
+  accounts: { label: string; path: string }[];
+}
+export interface DriveProgress {
+  id: DriveId;
+  status: 'downloading' | 'verifying' | 'installing' | 'error';
+  received?: number;
+  total?: number;
+  error?: string;
+}
+export type FilePreview =
+  | { type: 'image'; src: string; w: number; h: number }
+  | { type: 'doc'; html: string }
+  | { type: 'text'; text: string }
+  | { type: 'grid'; rows: string[][] }
+  | { type: 'slide'; slide: any; w: number; h: number; font: string }
+  | { type: 'none' };
+export interface FileMeta {
+  description?: string;
+}
+export interface HomeSettings {
+  view?: 'grid' | 'list';
+  sort?: 'recent' | 'modified' | 'name';
+  tone?: 'dark' | 'light';
+  folders?: string[];
+  source?: string;
+}
+
 export interface SlateApi {
   platform: string;
   openDialog(opts?: { title?: string; multi?: boolean; filters?: FileFilter[] }): Promise<FileEntry[]>;
@@ -26,6 +72,22 @@ export interface SlateApi {
   addRecent(p: string): Promise<RecentEntry[]>;
   removeRecent(p: string): Promise<RecentEntry[]>;
   clearRecent(): Promise<RecentEntry[]>;
+  listDir(dir: string, opts?: { cloud?: boolean; allOnline?: boolean }): Promise<DirEntry[]>;
+  searchDir(dir: string, query: string): Promise<DirEntry[]>;
+  statMany(paths: string[]): Promise<{ path: string; exists: boolean; size?: number; mtime?: number }[]>;
+  knownFolders(): Promise<KnownFolder[]>;
+  openFolderDialog(): Promise<string | null>;
+  isDir(p: string): Promise<boolean>;
+  openPath(p: string): Promise<string>;
+  getPreview(p: string): Promise<FilePreview | null>;
+  setPreview(p: string, preview: FilePreview): Promise<boolean>;
+  getMeta(): Promise<Record<string, FileMeta>>;
+  setMeta(p: string, patch: FileMeta): Promise<Record<string, FileMeta>>;
+  homeSettings(): Promise<HomeSettings>;
+  setHomeSettings(patch: HomeSettings): Promise<HomeSettings>;
+  detectDrives(): Promise<DriveInfo[]>;
+  connectDrive(id: DriveId): Promise<{ action: 'launched' | 'installing' | 'web' }>;
+  onDriveProgress(cb: (m: DriveProgress) => void): () => void;
   printHtml(html: string): Promise<boolean>;
   pdfFromHtml(html: string, opts?: { pageSize?: string }): Promise<Uint8Array>;
   getPendingOpen(): Promise<string[]>;

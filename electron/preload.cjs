@@ -12,6 +12,26 @@ contextBridge.exposeInMainWorld('api', {
   addRecent: (p) => ipcRenderer.invoke('recent:add', p),
   removeRecent: (p) => ipcRenderer.invoke('recent:remove', p),
   clearRecent: () => ipcRenderer.invoke('recent:clear'),
+  listDir: (dir, opts) => ipcRenderer.invoke('fs:list', dir, opts),
+  searchDir: (dir, q) => ipcRenderer.invoke('fs:search', dir, q),
+  statMany: (paths) => ipcRenderer.invoke('fs:stat-many', paths),
+  knownFolders: () => ipcRenderer.invoke('fs:known-folders'),
+  openFolderDialog: () => ipcRenderer.invoke('dialog:open-folder'),
+  isDir: (p) => ipcRenderer.invoke('fs:is-dir', p),
+  openPath: (p) => ipcRenderer.invoke('shell:open-path', p),
+  getPreview: (p) => ipcRenderer.invoke('preview:get', p),
+  setPreview: (p, preview) => ipcRenderer.invoke('preview:set', p, preview),
+  getMeta: () => ipcRenderer.invoke('meta:all'),
+  setMeta: (p, patch) => ipcRenderer.invoke('meta:set', p, patch),
+  homeSettings: () => ipcRenderer.invoke('home:settings'),
+  setHomeSettings: (patch) => ipcRenderer.invoke('home:set-settings', patch),
+  detectDrives: () => ipcRenderer.invoke('drives:detect'),
+  connectDrive: (id) => ipcRenderer.invoke('drives:connect', id),
+  onDriveProgress: (cb) => {
+    const fn = (_e, m) => cb(m);
+    ipcRenderer.on('drives:progress', fn);
+    return () => ipcRenderer.removeListener('drives:progress', fn);
+  },
   printHtml: (html) => ipcRenderer.invoke('print:html', html),
   pdfFromHtml: (html, opts) => ipcRenderer.invoke('export:pdf-from-html', html, opts),
   getPendingOpen: () => ipcRenderer.invoke('app:get-pending-open'),
