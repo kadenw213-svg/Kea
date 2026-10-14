@@ -10,6 +10,8 @@ export interface Tab {
   path: string | null;
   data: Uint8Array | null;
   dirty: boolean;
+  /** A Google Docs/Sheets/Slides file edited in Slate and saved back to Google Drive. */
+  remote?: { provider: 'google'; id: string; ext: string; localPath: string; canEdit: boolean };
   /** Bumped when the file is reloaded from disk so the editor remounts. */
   version: number;
 }
@@ -66,7 +68,7 @@ export function proxyAi(ref: { current: AiHooks }): AiHooks {
 interface TabState {
   tabs: Tab[];
   activeId: string;
-  addTab(t: Omit<Tab, 'id' | 'dirty' | 'version'>): string;
+  addTab(t: Omit<Tab, 'id' | 'dirty' | 'version' | 'remote'> & { remote?: Tab['remote'] }): string;
   closeTab(id: string): void;
   setActive(id: string): void;
   updateTab(id: string, patch: Partial<Tab>): void;

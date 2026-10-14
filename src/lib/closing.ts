@@ -8,7 +8,7 @@ export async function requestCloseTab(id: string): Promise<boolean> {
   const tab = useTabs.getState().tabs.find((t) => t.id === id);
   if (!tab || tab.kind === 'home') return true;
   // Files with a location are saved quietly (unless Settings says to always ask).
-  if (tab.dirty && tab.path && setting('general.closeBehavior') !== 'ask') await autosaveNow(id);
+  if (tab.dirty && (tab.path || tab.remote) && setting('general.closeBehavior') !== 'ask') await autosaveNow(id);
   const fresh = useTabs.getState().tabs.find((t) => t.id === id);
   if (fresh?.dirty) {
     useTabs.getState().setActive(id);

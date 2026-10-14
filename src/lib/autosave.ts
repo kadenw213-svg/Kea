@@ -25,7 +25,7 @@ let recoveryTimer: any = null;
 export async function autosaveNow(tabId: string): Promise<boolean> {
   const tab = useTabs.getState().tabs.find((t) => t.id === tabId);
   const handle = editorRegistry.get(tabId);
-  if (!tab || !tab.dirty || !tab.path || !handle) return false;
+  if (!tab || !tab.dirty || (!tab.path && !tab.remote) || !handle) return false;
   try {
     return await silently(() => handle.save(false));
   } catch {
@@ -44,7 +44,7 @@ function scheduleAutosave(tabId: string) {
       const ok = await autosaveNow(tabId);
       // Couldn't save right now (e.g. mid-edit in a cell): try again shortly.
       const tab = useTabs.getState().tabs.find((t) => t.id === tabId);
-      if (!ok && tab?.dirty && tab.path) setTimeout(() => scheduleAutosave(tabId), 4000);
+      if (!ok && tab?.dirty && (tab.path || tab.remote)) setTimeout(() => scheduleAutosave(tabId), 4000);
     }, delay)
   );
 }

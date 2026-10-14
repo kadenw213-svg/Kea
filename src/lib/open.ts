@@ -2,6 +2,7 @@ import { api, FileEntry } from './api';
 import { kindFor, extOf, UNSUPPORTED_HINT, OPEN_FILTERS } from './fileTypes';
 import { useTabs, toast, ask } from '../store';
 import type { EditorKind } from './fileTypes';
+import { isGoogleShortcut, openGoogleShortcut } from './google';
 
 export async function openEntry(entry: FileEntry) {
   const { tabs, setActive, addTab } = useTabs.getState();
@@ -34,6 +35,10 @@ export async function openEntry(entry: FileEntry) {
 
 export async function openPaths(paths: string[]) {
   for (const p of paths) {
+    if (isGoogleShortcut(p)) {
+      await openGoogleShortcut(p);
+      continue;
+    }
     try {
       await openEntry(await api.readFile(p));
     } catch (err: any) {

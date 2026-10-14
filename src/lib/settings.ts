@@ -223,6 +223,26 @@ export const SECTIONS: Section[] = [
       { key: 'pdf.redactDpi', label: 'Quality of redacted pages', type: 'select', default: 200, advanced: true, options: [{ value: 150, label: '150 dpi (smaller file)' }, { value: 200, label: '200 dpi' }, { value: 300, label: '300 dpi (sharper)' }, { value: 600, label: '600 dpi (print quality)' }], help: 'Redacted pages are saved as images so nothing underneath can be recovered.' }
     ]
   },
+  {
+    id: 'google',
+    label: 'Google account',
+    icon: 'Cloud',
+    fields: [
+      {
+        key: 'google.openWith',
+        label: 'Open Google Docs, Sheets and Slides',
+        type: 'select',
+        default: 'slate',
+        options: [
+          { value: 'slate', label: 'In Slate' },
+          { value: 'browser', label: 'In the web browser' }
+        ]
+      },
+      { key: 'google.autosave', label: 'Save changes back to Google Drive automatically', type: 'toggle', default: true },
+      { key: 'google.clientId', label: 'OAuth client ID', type: 'text', default: '', advanced: true, help: 'From your own Google Cloud project (see the setup steps above).' },
+      { key: 'google.clientSecret', label: 'OAuth client secret', type: 'text', default: '', advanced: true }
+    ]
+  },
   { id: 'ai', label: 'AI', icon: 'Sparkles', fields: [] },
   {
     id: 'updates',

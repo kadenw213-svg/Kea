@@ -7,6 +7,7 @@ import { AiSettingsPanel } from '../ai/AiSettings';
 import { toast, ask, useTabs } from '../../store';
 import { formatBytes } from '../../lib/util';
 import { SHORTCUTS } from './shortcuts';
+import { GooglePanel } from './GooglePanel';
 import { useUpdates } from '../Updates';
 
 function FieldControl({ f, value, onChange }: { f: Field; value: any; onChange: (v: any) => void }) {
@@ -297,6 +298,7 @@ export function SettingsDialog() {
     return (
       <>
         {cur.blurb && <p className="sblurb">{cur.blurb}</p>}
+        {cur.id === 'google' && <GooglePanel />}
         {visibleFields(cur.fields).map((f) => (
           <Row key={f.key} f={f} />
         ))}

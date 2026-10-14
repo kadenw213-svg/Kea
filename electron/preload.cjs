@@ -32,6 +32,13 @@ contextBridge.exposeInMainWorld('api', {
     clear: () => ipcRenderer.invoke('history:clear'),
     openFolder: () => ipcRenderer.invoke('history:open-folder')
   },
+  google: {
+    status: () => ipcRenderer.invoke('google:status'),
+    signIn: () => ipcRenderer.invoke('google:sign-in'),
+    signOut: () => ipcRenderer.invoke('google:sign-out'),
+    open: (p) => ipcRenderer.invoke('google:open', p),
+    save: (id, ext, data) => ipcRenderer.invoke('google:save', id, ext, data)
+  },
   recovery: {
     put: (meta, data) => ipcRenderer.invoke('recovery:put', meta, data),
     drop: (tabId) => ipcRenderer.invoke('recovery:drop', tabId),

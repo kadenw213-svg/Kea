@@ -217,10 +217,6 @@ export function HomeScreen({ visible }: { visible: boolean }) {
       setQuery('');
       return;
     }
-    if (GOOGLE_EXT[extOf(it.name)]) {
-      api.openPath(it.path).then((err) => err && toast(`Couldn't open in the browser: ${err}`, 'error'));
-      return;
-    }
     openPaths([it.path]);
   };
 
@@ -293,8 +289,13 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   const fileMenu = (it: Item) => (close: () => void) => (
     <>
       <button className="menu-item" onClick={() => (open(it), close())}>
-        {GOOGLE_EXT[extOf(it.name)] ? <ExternalLink size={16} /> : <FolderOpen size={16} />} {GOOGLE_EXT[extOf(it.name)] ? 'Open in browser' : 'Open'}
+        <FolderOpen size={16} /> Open in Slate
       </button>
+      {GOOGLE_EXT[extOf(it.name)] && (
+        <button className="menu-item" onClick={() => (api.openPath(it.path), close())}>
+          <ExternalLink size={16} /> Open in browser
+        </button>
+      )}
       <button className="menu-item" onClick={() => (close(), editDescription(it))}>
         <Pencil size={16} /> {meta[it.path.toLowerCase()]?.description ? 'Edit description' : 'Add description'}
       </button>

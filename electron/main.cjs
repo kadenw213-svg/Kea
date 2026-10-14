@@ -198,6 +198,7 @@ app.whenReady().then(() => {
   require('./files.cjs').register({ log, getWindow: () => mainWindow });
   settings.register();
   require('./history.cjs').register({ log });
+  require('./google.cjs').register({ log });
   const applySpell = () => session.defaultSession.setSpellCheckerEnabled(settings.get('general.spellcheck', true) !== false);
   applySpell();
   settings.onChange(applySpell);
