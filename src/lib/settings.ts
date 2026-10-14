@@ -340,6 +340,32 @@ export const SECTIONS: Section[] = [
     label: 'PDFs',
     icon: 'FileType2',
     fields: [
+      {
+        key: 'pdf.zoom',
+        label: 'Zoom when opening a PDF',
+        type: 'select',
+        default: 'auto',
+        options: [
+          { value: 'auto', label: 'Fit width (up to 125%)' },
+          { value: 'width', label: 'Fit width' },
+          { value: 'page', label: 'Whole page' },
+          ...pct([0.5, 0.75, 1, 1.25, 1.5, 2])
+        ]
+      },
+      { key: 'pdf.sidebar', label: 'Show page thumbnails', type: 'toggle', default: true },
+      { key: 'pdf.darkPages', label: 'Dark pages (easier on the eyes; view only)', type: 'toggle', default: false },
+      { key: 'pdf.highlightColor', label: 'Highlighter colour', type: 'color', default: '#ffd400' },
+      { key: 'pdf.inkColor', label: 'Pen colour', type: 'color', default: '#1a73e8', advanced: true },
+      { key: 'pdf.inkWidth', label: 'Pen thickness', type: 'range', default: 2.5, min: 0.5, max: 12, step: 0.5, advanced: true },
+      { key: 'pdf.highlightOpacity', label: 'Highlighter strength', type: 'range', default: 0.4, min: 0.1, max: 1, step: 0.05, advanced: true },
+      { key: 'pdf.textSize', label: 'Size of added text', type: 'number', default: 14, min: 6, max: 96, unit: 'pt', advanced: true },
+      { key: 'pdf.textColor', label: 'Colour of added text', type: 'color', default: '#000000', advanced: true },
+      { key: 'pdf.ocrConfidence', label: 'OCR: skip words recognised with less than', type: 'number', default: 30, min: 0, max: 95, unit: '% confidence', advanced: true, help: 'Higher leaves out more guesses (cleaner, but may miss words).' },
+      { key: 'pdf.ocrDpi', label: 'OCR: scan resolution', type: 'select', default: 225, advanced: true, options: [{ value: 150, label: 'Fast (150 dpi)' }, { value: 225, label: 'Standard (225 dpi)' }, { value: 300, label: 'Small print (300 dpi)' }, { value: 400, label: 'Tiny print (400 dpi, slow)' }] },
+      { key: 'pdf.compressLightQuality', label: 'Compress (keep quality): photo quality', type: 'range', default: 78, min: 30, max: 95, step: 1, advanced: true },
+      { key: 'pdf.compressLightSize', label: 'Compress (keep quality): longest side of photos', type: 'number', default: 2000, min: 400, max: 8000, unit: 'px', advanced: true },
+      { key: 'pdf.compressStrongQuality', label: 'Compress (smallest): photo quality', type: 'range', default: 60, min: 20, max: 95, step: 1, advanced: true },
+      { key: 'pdf.compressStrongSize', label: 'Compress (smallest): longest side of photos', type: 'number', default: 1200, min: 300, max: 8000, unit: 'px', advanced: true },
       { key: 'pdf.redactMetadata', label: 'Remove title and author when redacting', type: 'toggle', default: true, help: 'Hidden document details can reveal what was redacted.' },
       { key: 'pdf.redactDpi', label: 'Quality of redacted pages', type: 'select', default: 200, advanced: true, options: [{ value: 150, label: '150 dpi (smaller file)' }, { value: 200, label: '200 dpi' }, { value: 300, label: '300 dpi (sharper)' }, { value: 600, label: '600 dpi (print quality)' }], help: 'Redacted pages are saved as images so nothing underneath can be recovered.' }
     ]

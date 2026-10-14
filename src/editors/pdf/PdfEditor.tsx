@@ -52,6 +52,7 @@ import { editorRegistry, setDirty, toast, prompt, useTabs, ask } from '../../sto
 import { loadPdf, PasswordError, getTextRects, PDFDocumentProxy, TextItemRect } from './pdfjs';
 import type { Annotation, Box, DocState, PageInfo, PageRef, TextAnn, Tool, ImageAnn } from './types';
 import { DEFAULTS } from './types';
+import { setting } from '../../lib/settings';
 import { PageView, ToolStyle, measureTextAnn } from './PageView';
 import { Thumbnails } from './Thumbnails';
 import { SignatureModal } from './SignatureModal';
@@ -197,12 +198,20 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   const [busy, setBusy] = useState<string | null>(null);
 
   const [tool, setToolState] = useState<Tool>('select');
-  const [styles, setStyles] = useState(INITIAL_STYLES);
+  const [styles, setStyles] = useState(() => {
+    // Start from the defaults in Settings → PDF.
+    const s = { ...INITIAL_STYLES };
+    const num = (k: string, d: number) => (Number.isFinite(Number(setting(k))) ? Number(setting(k)) : d);
+    s.highlight = { ...s.highlight, color: setting('pdf.highlightColor') || s.highlight.color, opacity: num('pdf.highlightOpacity', 0.4) };
+    s.ink = { ...s.ink, color: setting('pdf.inkColor') || s.ink.color, strokeWidth: num('pdf.inkWidth', 2.5) };
+    s.text = { ...s.text, color: setting('pdf.textColor') || s.text.color, fontSize: num('pdf.textSize', s.text.fontSize) };
+    return s;
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [darkPages, setDarkPages] = useState(false);
-  const [sidebar, setSidebar] = useState(true);
+  const [darkPages, setDarkPages] = useState(() => !!setting('pdf.darkPages'));
+  const [sidebar, setSidebar] = useState(() => setting('pdf.sidebar') !== false);
   const [selectedPages, setSelectedPages] = useState<Set<string>>(new Set());
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sigOpen, setSigOpen] = useState(false);
@@ -281,10 +290,18 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
           pages: Array.from({ length: pdf.numPages }, (_, i) => ({ id: uid(), src: 0, index: i, rotation: 0 })),
           annots: []
         });
-        // Fit width by default, capped so small pages don't blow up.
+        // Opening zoom from Settings → PDF (default: fit width, capped so small pages don't blow up).
         const first = info['0:0'];
-        const avail = (scrollRef.current?.clientWidth || 1000) - 64;
-        if (first) setZoom(clamp(avail / (first.width * CSS_UNITS), 0.5, 1.25));
+        const availW = (scrollRef.current?.clientWidth || 1000) - 64;
+        const availH = (scrollRef.current?.clientHeight || 700) - 32;
+        const zpref = setting('pdf.zoom') ?? 'auto';
+        if (first) {
+          const fw = availW / (first.width * CSS_UNITS);
+          if (zpref === 'width') setZoom(clamp(fw, 0.1, 5));
+          else if (zpref === 'page') setZoom(clamp(Math.min(fw, availH / (first.height * CSS_UNITS)), 0.1, 5));
+          else if (typeof zpref === 'number') setZoom(zpref);
+          else setZoom(clamp(fw, 0.5, 1.25));
+        }
         setStatus('ready');
         setEncrypted(enc);
         if (!enc) {
@@ -1001,6 +1018,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
     setTimeout(() => setDirty(tab.id, true), 800);
   };
   const runTool = async (label: string, fn: () => Promise<void>) => {
+    if (busy || !history.get().pages.length) return;
     setBusy(label);
     try {
       await fn();
@@ -1408,19 +1426,19 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
               </button>
               <div className="menu-sep" />
               <div className="menu-title">Tools</div>
-              <button className="menu-item" onClick={() => (setPwDialog(true), close())} disabled={encrypted}>
+              <button className="menu-item" onClick={() => (setPwDialog(true), close())} disabled={encrypted || !pageCount}>
                 <Lock size={16} /> {protection?.userPassword ? 'Change or remove password…' : 'Protect with a password…'}
               </button>
-              <button className="menu-item" onClick={() => (doCompress('light'), close())}>
+              <button className="menu-item" onClick={() => (doCompress('light'), close())} disabled={!pageCount || !!busy}>
                 <Minimize2 size={16} /> Compress (keep quality)
               </button>
-              <button className="menu-item" onClick={() => (doCompress('strong'), close())}>
+              <button className="menu-item" onClick={() => (doCompress('strong'), close())} disabled={!pageCount || !!busy}>
                 <Minimize2 size={16} /> Compress (smallest file)
               </button>
-              <button className="menu-item" onClick={() => (doOcr(), close())}>
+              <button className="menu-item" onClick={() => (doOcr(), close())} disabled={!pageCount || !!busy}>
                 <ScanText size={16} /> Make scanned text searchable (OCR)
               </button>
-              <button className="menu-item" onClick={() => (doToWord(), close())}>
+              <button className="menu-item" onClick={() => (doToWord(), close())} disabled={!pageCount || !!busy}>
                 <FileType size={16} /> Convert to Word document
               </button>
             </>

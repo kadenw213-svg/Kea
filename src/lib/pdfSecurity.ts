@@ -3,6 +3,7 @@
  * Passwords use @cantoo/pdf-lib (a pdf-lib fork that can read and write encrypted files, AES-256).
  */
 import { loadImage } from './util';
+import { setting } from './settings';
 
 export interface Protection {
   userPassword: string;
@@ -46,8 +47,9 @@ export async function encryptPdf(bytes: Uint8Array, p: Protection): Promise<Uint
 export async function compressPdf(bytes: Uint8Array, level: 'light' | 'strong', onProgress?: (msg: string) => void): Promise<Uint8Array> {
   const { PDFDocument, PDFName, PDFRawStream, PDFNumber } = await import('pdf-lib');
   const doc = await PDFDocument.load(bytes, { updateMetadata: false });
-  const maxSide = level === 'strong' ? 1200 : 2000;
-  const quality = level === 'strong' ? 0.6 : 0.78;
+  const strong = level === 'strong';
+  const maxSide = Number(setting(strong ? 'pdf.compressStrongSize' : 'pdf.compressLightSize')) || (strong ? 1200 : 2000);
+  const quality = (Number(setting(strong ? 'pdf.compressStrongQuality' : 'pdf.compressLightQuality')) || (strong ? 60 : 78)) / 100;
   const objects = doc.context.enumerateIndirectObjects();
   let done = 0;
   for (const [ref, obj] of objects) {
@@ -133,13 +135,16 @@ export async function ocrPdf(bytes: Uint8Array, onProgress?: (msg: string) => vo
   const out = await PDFDocument.load(bytes, { updateMetadata: false });
   const font = await out.embedFont(StandardFonts.Helvetica);
   let total = 0;
+  const minConf = Number(setting('pdf.ocrConfidence') ?? 30);
   try {
     for (let i = 1; i <= src.numPages; i++) {
       onProgress?.(`Reading page ${i} of ${src.numPages}…`);
       const page = await src.getPage(i);
       const base = page.getViewport({ scale: 1 });
-      // ~300 dpi on a letter page, capped for very large pages.
-      const scale = Math.min(4, 2500 / Math.max(base.width, base.height));
+      // Scan resolution from Settings → PDF, capped for very large pages.
+      const dpi = Number(setting('pdf.ocrDpi')) || 225;
+      // Pages bigger than letter are scanned as if they were 11 inches tall, to keep memory in check.
+      const scale = Math.min(dpi / 72, (dpi * 11) / Math.max(base.width, base.height));
       const vp = page.getViewport({ scale });
       const canvas = document.createElement('canvas');
       canvas.width = Math.round(vp.width);
@@ -155,7 +160,7 @@ export async function ocrPdf(bytes: Uint8Array, onProgress?: (msg: string) => vo
       const words: any[] = (data.blocks || []).flatMap((b: any) => b.paragraphs.flatMap((p: any) => p.lines.flatMap((l: any) => l.words)));
       for (const w of words) {
         const text = String(w.text || '').trim();
-        if (!text || w.confidence < 30) continue;
+        if (!text || w.confidence < minConf) continue;
         // Canvas pixels → PDF points (y up). Only unrotated pages get positioned text.
         if (rot !== 0) continue;
         const x = crop.x + w.bbox.x0 / scale;

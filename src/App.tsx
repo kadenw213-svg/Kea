@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import { TitleBar } from './components/TitleBar';
 import { HomeScreen } from './components/Home';
 import { Overlays } from './components/Overlays';
@@ -45,7 +46,28 @@ function EditorFor({ tab, active }: { tab: Tab; active: boolean }) {
 export function App() {
   const tabs = useTabs((s) => s.tabs);
   const activeId = useTabs((s) => s.activeId);
+  const split = useTabs((s) => s.split);
   const [dragging, setDragging] = useState(false);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const startDivider = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const box = workspaceRef.current!.getBoundingClientRect();
+    document.body.classList.add('col-resizing');
+    const move = (ev: PointerEvent) => useTabs.getState().setSplitRatio((ev.clientX - box.left) / box.width);
+    const up = () => {
+      document.body.classList.remove('col-resizing');
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  const paneStyle = (id: string): React.CSSProperties | undefined => {
+    if (!split) return undefined;
+    if (id === split.left) return { right: `calc(${(1 - split.ratio) * 100}% + 3px)` };
+    if (id === split.right) return { left: `calc(${split.ratio * 100}% + 3px)` };
+    return undefined;
+  };
 
   useEffect(() => {
     initAutosave();
@@ -101,6 +123,11 @@ export function App() {
       } else if (k === 'j' && !e.shiftKey) {
         e.preventDefault();
         toggleAi();
+      } else if (k === '\\') {
+        e.preventDefault();
+        const st = useTabs.getState();
+        if (st.split) st.closeSplit();
+        else st.openSplit();
       } else if (k === 'p') {
         e.preventDefault();
         handle?.print?.();
@@ -172,11 +199,17 @@ export function App() {
     <div className="app">
       <TitleBar />
       <div className="workspace-row">
-      <div className="workspace">
+      <div className={`workspace ${split ? 'is-split' : ''}`} ref={workspaceRef}>
         {tabs.map((t) => (
-          <div key={`${t.id}:${t.version}`} className="pane" hidden={t.id !== activeId}>
+          <div
+            key={`${t.id}:${t.version}`}
+            className={`pane ${split && t.id === activeId ? 'focused' : ''}`}
+            hidden={t.id !== activeId && !(split && (t.id === split.left || t.id === split.right))}
+            style={paneStyle(t.id)}
+            onPointerDownCapture={() => split && t.id !== activeId && useTabs.getState().setActive(t.id)}
+          >
             {t.kind === 'home' ? (
-              <HomeScreen visible={t.id === activeId} />
+              <HomeScreen visible={t.id === activeId || !!(split && (t.id === split.left || t.id === split.right))} />
             ) : (
               <Suspense
                 fallback={
@@ -190,6 +223,13 @@ export function App() {
             )}
           </div>
         ))}
+        {split && (
+          <div className="split-divider" style={{ left: `calc(${split.ratio * 100}% - 3px)` }} onPointerDown={startDivider} onDoubleClick={() => useTabs.getState().setSplitRatio(0.5)} title="Drag to resize · double-click to even out">
+            <button className="split-close" title="Close split view (Ctrl+\)" onPointerDown={(e) => e.stopPropagation()} onClick={() => useTabs.getState().closeSplit()}>
+              <X size={12} />
+            </button>
+          </div>
+        )}
       </div>
       <AiSidebar />
       </div>

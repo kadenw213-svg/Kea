@@ -46,6 +46,8 @@ export interface AiHooks {
   reveal?(quote: string): boolean;
   /** Find a quote and replace it (used by "Apply" on suggestions). */
   replaceQuote?(quote: string, replacement: string): boolean;
+  /** Run edits so they show up as tracked suggestions (accept / reject) instead of changing the text. */
+  track?<T>(fn: () => T): T;
   insertLabel?: string;
 }
 
@@ -63,13 +65,27 @@ export function proxyAi(ref: { current: AiHooks }): AiHooks {
     ...(c.replaceSelection ? { replaceSelection: (t: string) => ref.current.replaceSelection?.(t) ?? false } : {}),
     ...(c.insertText ? { insertText: (t: string) => ref.current.insertText?.(t) ?? false } : {}),
     ...(c.reveal ? { reveal: (q: string) => ref.current.reveal?.(q) ?? false } : {}),
-    ...(c.replaceQuote ? { replaceQuote: (q: string, r: string) => ref.current.replaceQuote?.(q, r) ?? false } : {})
+    ...(c.replaceQuote ? { replaceQuote: (q: string, r: string) => ref.current.replaceQuote?.(q, r) ?? false } : {}),
+    ...(c.track ? { track: <T,>(fn: () => T) => (ref.current.track ? ref.current.track(fn) : fn()) } : {})
   };
+}
+
+/** Two tabs side by side. The active tab (keyboard focus) is one of them. */
+export interface Split {
+  left: string;
+  right: string;
+  /** Share of the width the left side gets (0.15–0.85). */
+  ratio: number;
 }
 
 interface TabState {
   tabs: Tab[];
   activeId: string;
+  split: Split | null;
+  /** Show `id` beside the active tab (or the next tab if `id` is the active one). */
+  openSplit(id?: string): void;
+  closeSplit(): void;
+  setSplitRatio(r: number): void;
   addTab(t: Omit<Tab, 'id' | 'dirty' | 'version' | 'remote'> & { remote?: Tab['remote'] }): string;
   closeTab(id: string): void;
   setActive(id: string): void;
@@ -82,6 +98,29 @@ const HOME: Tab = { id: 'home', kind: 'home', name: 'Home', path: null, data: nu
 export const useTabs = create<TabState>((set, get) => ({
   tabs: [HOME],
   activeId: 'home',
+  split: null,
+  openSplit(id) {
+    const { tabs, activeId, split } = get();
+    const cur = activeId;
+    let other = id && id !== cur ? id : undefined;
+    if (!other) {
+      // Pick a neighbour: the next tab, else the previous one, else Home.
+      const i = tabs.findIndex((t) => t.id === cur);
+      other = (tabs[i + 1] || tabs[i - 1] || HOME).id;
+    }
+    if (other === cur) return;
+    // Keep the same left-to-right order as the tab bar.
+    const idx = (x: string) => tabs.findIndex((t) => t.id === x);
+    const [left, right] = idx(other) < idx(cur) ? [other, cur] : [cur, other];
+    set({ split: { left, right, ratio: split?.ratio ?? 0.5 }, activeId: other });
+  },
+  closeSplit() {
+    set({ split: null });
+  },
+  setSplitRatio(r) {
+    const s = get().split;
+    if (s) set({ split: { ...s, ratio: Math.min(0.85, Math.max(0.15, r)) } });
+  },
   addTab(t) {
     const id = uid();
     set((s) => ({ tabs: [...s.tabs, { ...t, id, dirty: false, version: 0 }], activeId: id }));
@@ -98,9 +137,21 @@ export const useTabs = create<TabState>((set, get) => ({
       nextActive = (pref === 'home' ? HOME : pref === 'left' ? next[idx - 1] || next[idx] || HOME : next[idx] || next[idx - 1] || HOME).id;
     }
     editorRegistry.delete(id);
-    set({ tabs: next, activeId: nextActive });
+    let split = get().split;
+    if (split && (split.left === id || split.right === id)) {
+      // Closing one side of a split leaves the other side on its own.
+      nextActive = split.left === id ? split.right : split.left;
+      split = null;
+    }
+    set({ tabs: next, activeId: nextActive, split });
   },
   setActive(id) {
+    const { split, activeId } = get();
+    if (split && id !== split.left && id !== split.right) {
+      // Picking another tab while split replaces the side that has focus.
+      const side = activeId === split.left ? 'left' : 'right';
+      return set({ activeId: id, split: { ...split, [side]: id } });
+    }
     set({ activeId: id });
   },
   updateTab(id, patch) {

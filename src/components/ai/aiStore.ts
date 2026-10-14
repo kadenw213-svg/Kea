@@ -5,7 +5,7 @@ export interface AiMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
-  kind?: 'text' | 'suggestions';
+  kind?: 'text' | 'suggestions' | 'flashcards' | 'quiz';
   data?: any;
   context?: string; // short label of what the request was about
   streaming?: boolean;
@@ -13,6 +13,11 @@ export interface AiMessage {
   requestId?: string;
   retry?: () => void;
   speed?: number;
+  /** Suggestions already put into the document (indexes), and how. */
+  applied?: number[];
+  appliedHow?: 'direct' | 'track';
+  /** The answer replaced the highlighted text automatically. */
+  replaced?: 'direct' | 'track';
 }
 
 interface AiStore {

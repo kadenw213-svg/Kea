@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { Search, FileText, Sheet, Presentation, FileCode2, FolderOpen, Settings, History, RefreshCw, Sparkles, Home, LayoutTemplate, FileSearch, Loader2, AppWindow } from 'lucide-react';
+import { Search, FileText, Sheet, Presentation, FileCode2, FolderOpen, Settings, History, RefreshCw, Sparkles, Home, LayoutTemplate, FileSearch, Loader2, AppWindow, Columns2 } from 'lucide-react';
 import { useTabs } from '../store';
 import { api, RecentEntry } from '../lib/api';
 import { newFile, openWithDialog, openPaths } from '../lib/open';
@@ -81,6 +81,12 @@ export function CommandPalette() {
       { id: 'home', group: 'Files', label: 'Go to Home', icon: <Home size={16} />, run: act(() => useTabs.getState().setActive('home')) },
       { id: 'history', group: 'Files', label: 'Version history of this file', hint: 'Ctrl+Shift+H', icon: <History size={16} />, run: act(() => openHistory()) },
       { id: 'ai', group: 'Tools', label: 'Show or hide the AI sidebar', hint: 'Ctrl+J', icon: <Sparkles size={16} />, run: act(() => toggleAi()) },
+      useTabs.getState().split
+        ? { id: 'split-close', group: 'Tools', label: 'Close split view', hint: 'Ctrl+\\', icon: <Columns2 size={16} />, run: act(() => useTabs.getState().closeSplit()) }
+        : { id: 'split', group: 'Tools', label: 'Split view: two tabs side by side', hint: 'Ctrl+\\', icon: <Columns2 size={16} />, run: act(() => useTabs.getState().openSplit()) },
+      ...tabs
+        .filter((t) => t.id !== useTabs.getState().activeId)
+        .map((t) => ({ id: 'beside-' + t.id, group: 'Open tabs', label: `Open beside: ${t.name}`, hint: 'Split view', icon: <Columns2 size={16} />, run: act(() => (useTabs.getState().closeSplit(), useTabs.getState().openSplit(t.id))) })),
       { id: 'updates', group: 'Tools', label: 'Check for updates', icon: <RefreshCw size={16} />, run: act(() => openUpdates()) },
       ...SECTIONS.map((s) => ({ id: 'set-' + s.id, group: 'Settings', label: `Settings: ${s.label}`, icon: <Settings size={16} />, run: act(() => openSettings(s.id)) })),
       ...SECTIONS.flatMap((s) => s.fields.map((f) => ({ id: 'opt-' + f.key, group: 'Settings', label: f.label, hint: s.label, icon: <Settings size={16} />, run: act(() => openSettings(s.id)) }))),

@@ -579,3 +579,150 @@
 .ai-toolbar-btn.on {
   border-color: rgba(168, 199, 250, 0.5);
 }
+
+/* How AI edits are applied: Suggest · Ask first · Edit directly */
+.ai-editmode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 14px 10px;
+  font-size: 12px;
+}
+.ai-editmode .seg button {
+  font-size: 12px;
+}
+.ai-applied {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 6px 0;
+  font-size: 12.5px;
+  color: var(--success);
+}
+.ai-applied svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ---------- Study: flashcards & quizzes ---------- */
+.study-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.flashcard {
+  width: 100%;
+  min-height: 150px;
+  border-radius: 14px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  text-align: center;
+  font: inherit;
+  transition: background 0.15s, transform 0.2s;
+}
+.flashcard:hover {
+  background: var(--surface-3);
+}
+.flashcard.flipped {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.fc-side {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+.fc-text {
+  font-size: 15px;
+  line-height: 1.45;
+}
+.fc-hint {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.study-nav {
+  justify-content: center;
+}
+.study-done {
+  text-align: center;
+  padding: 10px 0;
+}
+.study-done .ai-actions {
+  justify-content: center;
+}
+.study-score {
+  font-size: 16px;
+  font-weight: 600;
+}
+.quiz-q {
+  margin: 10px 0 14px;
+}
+.quiz-text {
+  font-weight: 600;
+  font-size: 13.5px;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+.quiz-choice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  margin: 4px 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.quiz-choice:hover:not(:disabled) {
+  background: var(--hover);
+}
+.quiz-choice:disabled {
+  cursor: default;
+}
+.quiz-choice.right {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+}
+.quiz-choice.wrong {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+}
+.quiz-letter {
+  font-weight: 700;
+  color: var(--text-3);
+}
+.quiz-why {
+  font-size: 12.5px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+.study-opts {
+  display: grid;
+  gap: 6px;
+  padding: 4px 12px 8px;
+  font-size: 12.5px;
+}
+.study-opts label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}

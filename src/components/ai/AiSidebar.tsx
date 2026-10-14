@@ -16,18 +16,48 @@ import {
   CornerDownLeft,
   Plus,
   Search,
-  Check
+  Check,
+  GraduationCap,
+  Layers,
+  ListChecks
 } from 'lucide-react';
-import { openSettings } from '../../lib/settings';
+import { FlashcardsView, QuizView } from './Study';
+import { MenuButton } from '../Popover';
+import { openSettings, useSettings } from '../../lib/settings';
+import type { AiHooks } from '../../store';
 import { useAi, setAiOpen, AiMessage } from './aiStore';
 import { useTabs, editorRegistry, toast, prompt as askText } from '../../store';
 import { api } from '../../lib/api';
-import { runExplain, runSummarize, runAsk, runSuggest, TaskContext, TaskCallbacks, wordCount, markdownToHtml, markdownToPlain, Suggestion } from '../../lib/ai';
+import { runExplain, runSummarize, runAsk, runSuggest, runFlashcards, runQuiz, Difficulty, TaskContext, TaskCallbacks, wordCount, markdownToHtml, markdownToPlain, Suggestion } from '../../lib/ai';
 import { uid } from '../../lib/util';
 import { ModelSetup } from './ModelSetup';
 import '../../styles/ai.css';
 
 let cancelFlag = { cancelled: false };
+
+export type EditMode = 'suggest' | 'track' | 'direct';
+const EDIT_MODES: { id: EditMode; label: string; help: string }[] = [
+  { id: 'suggest', label: 'Suggest', help: 'AI edits wait in this sidebar until you click Apply or Replace.' },
+  { id: 'track', label: 'Ask first', help: 'AI edits go into the document as suggestions from "Slate AI" that you accept or reject (documents only; elsewhere this works like Suggest).' },
+  { id: 'direct', label: 'Edit directly', help: 'AI edits change the text right away. Ctrl+Z undoes them.' }
+];
+/** Asking to change highlighted text ("make this formal", "fix the grammar"…) rather than asking about it. */
+const EDIT_REQUEST = /^\s*(please\s+)?(make|rewrite|re-write|rephrase|reword|turn|convert|fix|correct|shorten|lengthen|expand|simplify|translate|change|improve|edit|proofread|paraphrase|polish|tighten|condense|clean up|format|capitali[sz]e|put)\b/i;
+
+/** Wrap the editor's edit hooks so they follow the chosen edit mode. */
+function withMode(h: AiHooks | undefined, mode: EditMode): AiHooks | undefined {
+  if (!h || mode !== 'track' || !h.track) return h;
+  const t = h.track.bind(h);
+  return {
+    ...h,
+    noun: h.noun,
+    insertLabel: h.insertLabel,
+    getDocument: () => h.getDocument(),
+    ...(h.replaceSelection ? { replaceSelection: (s: string) => t(() => h.replaceSelection!(s)) } : {}),
+    ...(h.insertText ? { insertText: (s: string) => t(() => h.insertText!(s)) } : {}),
+    ...(h.replaceQuote ? { replaceQuote: (q: string, r: string) => t(() => h.replaceQuote!(q, r)) } : {})
+  };
+}
 
 export function AiSidebar() {
   const ai = useAi();
@@ -39,7 +69,12 @@ export function AiSidebar() {
   const [find, setFind] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const hooks = editorRegistry.get(activeId)?.ai;
+  const rawHooks = editorRegistry.get(activeId)?.ai;
+  const editMode = useSettings((s) => (s.values['ai.editMode'] as EditMode) || 'suggest');
+  // "Ask first" only exists where the editor can track changes; elsewhere it behaves like Suggest.
+  const effMode: EditMode = editMode === 'track' && !rawHooks?.track ? 'suggest' : editMode;
+  const hooks = withMode(rawHooks, effMode);
+  const canEdit = !!(rawHooks?.replaceQuote || rawHooks?.replaceSelection);
 
   // Load model state when first opened.
   useEffect(() => {
@@ -92,7 +127,7 @@ export function AiSidebar() {
   const patch = (id: string, p: Partial<AiMessage>) => useAi.getState().set({ messages: useAi.getState().messages.map((m) => (m.id === id ? { ...m, ...p } : m)) });
 
   /** Shared runner: adds the user + assistant bubbles, streams, handles errors and stop. */
-  const run = async (label: string, userText: string, task: (ctx: TaskContext, cb: TaskCallbacks) => Promise<any>, kind: AiMessage['kind'] = 'text') => {
+  const run = async (label: string, userText: string, task: (ctx: TaskContext, cb: TaskCallbacks) => Promise<any>, kind: AiMessage['kind'] = 'text', opts: { autoReplace?: boolean } = {}) => {
     if (ai.busy) return;
     if (!ready) {
       toast('Download an AI model first (it only takes a minute).');
@@ -103,7 +138,7 @@ export function AiSidebar() {
     const ctxLabel = scope === 'selection' && selection ? `${wordCount(selection)} selected words` : `Whole ${noun}`;
     push({ id: uid(), role: 'user', text: userText, context: ctxLabel });
     const aid = uid();
-    const retry = () => run(label, userText, task, kind);
+    const retry = () => run(label, userText, task, kind, opts);
     push({ id: aid, role: 'assistant', text: '', kind, streaming: true, retry });
     cancelFlag = { cancelled: false };
     const flag = cancelFlag;
@@ -116,10 +151,31 @@ export function AiSidebar() {
         onRequest: (id) => patch(aid, { requestId: id }),
         cancelled: () => flag.cancelled
       });
-      if (kind === 'suggestions') {
+      if (kind === 'flashcards' || kind === 'quiz') {
         if (result.length) patch(aid, { data: result, streaming: false, text: '' });
-        else patch(aid, { kind: 'text', streaming: false, text: 'This reads well already. I have no specific edits to suggest.' });
-      } else patch(aid, { streaming: false, text: result.text, speed: result.tokensPerSecond });
+        else patch(aid, { kind: 'text', streaming: false, error: true, text: `I couldn't make ${kind === 'quiz' ? 'a quiz' : 'flashcards'} from this. Try a longer passage, or Try again.` });
+      } else if (kind === 'suggestions') {
+        if (!result.length) patch(aid, { kind: 'text', streaming: false, text: 'This reads well already. I have no specific edits to suggest.' });
+        else if (effMode !== 'suggest' && hooks?.replaceQuote && !flag.cancelled) {
+          // Ask first / Edit directly: put the edits into the document straight away.
+          const applied: number[] = [];
+          (result as Suggestion[]).forEach((s, i) => hooks.replaceQuote!(s.quote, s.suggestion) && applied.push(i));
+          patch(aid, { data: result, streaming: false, text: '', applied, appliedHow: effMode as 'direct' | 'track' });
+          if (applied.length)
+            toast(
+              effMode === 'track'
+                ? `Added ${applied.length} suggested edit${applied.length > 1 ? 's' : ''} to the document. Accept or reject them there.`
+                : `Made ${applied.length} edit${applied.length > 1 ? 's' : ''}. Ctrl+Z undoes them.`,
+              'success'
+            );
+        } else patch(aid, { data: result, streaming: false, text: '' });
+      } else {
+        let replaced: AiMessage['replaced'];
+        if (opts.autoReplace && effMode !== 'suggest' && hooks?.replaceSelection && !flag.cancelled && result.text.trim()) {
+          if (hooks.replaceSelection(markdownToPlain(result.text))) replaced = effMode as 'direct' | 'track';
+        }
+        patch(aid, { streaming: false, text: result.text, speed: result.tokensPerSecond, replaced });
+      }
     } catch (err: any) {
       if (err?.message === 'CANCELLED' || flag.cancelled) patch(aid, { streaming: false, text: (useAi.getState().messages.find((m) => m.id === aid)?.text || '') + '\n\n_Stopped._' });
       else if (err?.message?.includes('NO_MODEL')) patch(aid, { streaming: false, error: true, text: 'The selected model is not downloaded yet. Open AI settings to download it.' });
@@ -139,6 +195,16 @@ export function AiSidebar() {
   const explain = () => run('explain', 'Explain this', runExplain);
   const summarize = () => run('summarize', 'Summarize this', runSummarize);
   const suggest = () => run('suggest', 'Suggest edits', runSuggest, 'suggestions');
+  const studyCount = (k: string, d: number) => Math.max(1, Math.min(30, Number(useSettings.getState().values[k]) || d));
+  const studyLevel = () => ((useSettings.getState().values['ai.studyDifficulty'] as Difficulty) || 'medium');
+  const flashcards = () => {
+    const n = studyCount('ai.flashcardCount', 10);
+    run('flashcards', `Make ${n} flashcards`, (ctx, cb) => runFlashcards(ctx, cb, n, studyLevel()), 'flashcards');
+  };
+  const quiz = () => {
+    const n = studyCount('ai.quizCount', 5);
+    run('quiz', `Quiz me (${n} questions)`, (ctx, cb) => runQuiz(ctx, cb, n, studyLevel()), 'quiz');
+  };
   const send = () => {
     const q = input.trim();
     if (!q) return;
@@ -148,7 +214,9 @@ export function AiSidebar() {
       .messages.filter((m) => !m.error && !m.streaming && (m.kind || 'text') === 'text' && m.text)
       .slice(-6)
       .map((m) => ({ role: m.role, text: m.role === 'user' ? m.text : m.text.slice(0, 2000) }));
-    run('ask', q, (ctx, cb) => runAsk(q, history, ctx, cb));
+    // With a live highlight, "make this formal" etc. edits the text itself (unless edits are set to Suggest).
+    const autoReplace = scope === 'selection' && !!selection && !ai.pinned && EDIT_REQUEST.test(q);
+    run('ask', q, (ctx, cb) => runAsk(q, history, ctx, cb), 'text', { autoReplace });
   };
 
   // Keyboard: Alt+1/2/3 quick actions, Ctrl+F searches the conversation when focus is in the sidebar.
@@ -281,7 +349,36 @@ export function AiSidebar() {
           <button className="ai-chip" onClick={suggest} disabled={!!ai.busy} title="Alt+3">
             <Wand2 size={15} /> Suggest edits
           </button>
+          <MenuButton
+            title="Study: flashcards and practice quizzes"
+            button={(open) => (
+              <button className={`ai-chip ${open ? 'on' : ''}`} disabled={!!ai.busy}>
+                <GraduationCap size={15} /> Study
+              </button>
+            )}
+          >
+            {(close) => <StudyMenu close={close} onCards={flashcards} onQuiz={quiz} />}
+          </MenuButton>
         </div>
+        {canEdit && (
+          <div className="ai-editmode">
+            <span className="muted">AI edits</span>
+            <div className="seg small" role="radiogroup" aria-label="How AI edits are applied">
+              {EDIT_MODES.map((m) => (
+                <button
+                  key={m.id}
+                  role="radio"
+                  aria-checked={editMode === m.id}
+                  className={editMode === m.id ? 'on' : ''}
+                  title={m.help}
+                  onClick={() => useSettings.getState().set({ 'ai.editMode': m.id })}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Conversation */}
         <div className="ai-list" ref={listRef}>
@@ -343,7 +440,9 @@ function MessageView({ m, hooks, highlight }: { m: AiMessage; hooks: any; highli
       </div>
     );
   }
-  if (m.kind === 'suggestions' && m.data) return <SuggestionsReport list={m.data} hooks={hooks} />;
+  if (m.kind === 'flashcards' && m.data) return <FlashcardsView cards={m.data} title={(useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)?.name || 'Study').replace(/\.[^.]+$/, '')} hooks={hooks} />;
+  if (m.kind === 'quiz' && m.data) return <QuizView questions={m.data} hooks={hooks} />;
+  if (m.kind === 'suggestions' && m.data) return <SuggestionsReport list={m.data} hooks={hooks} initial={m.applied} how={m.appliedHow} />;
   const html = markdownToHtml(m.text || '');
   const marked = highlight ? html.replace(new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?![^<]*>)`, 'gi'), '<mark>$1</mark>') : html;
   return (
@@ -355,9 +454,14 @@ function MessageView({ m, hooks, highlight }: { m: AiMessage; hooks: any; highli
       ) : (
         <div className="ai-md" dangerouslySetInnerHTML={{ __html: marked + (m.streaming ? '<span class="ai-caret"></span>' : '') }} />
       )}
+      {m.replaced && (
+        <div className="ai-applied">
+          <Check size={13} /> {m.replaced === 'track' ? 'Added to the document as a suggestion to accept or reject.' : 'Replaced the highlighted text. Ctrl+Z to undo.'}
+        </div>
+      )}
       {!m.streaming && !m.error && m.text && (
         <div className="ai-actions">
-          {hooks?.replaceSelection && (
+          {hooks?.replaceSelection && !m.replaced && (
             <button className="btn sm tonal" title="Replace the highlighted text" onClick={() => (hooks.replaceSelection(markdownToPlain(m.text)) ? toast('Replaced. Ctrl+Z to undo.', 'success') : toast('Highlight the text to replace first.'))}>
               <Replace size={13} /> Replace
             </button>
@@ -389,10 +493,62 @@ function MessageView({ m, hooks, highlight }: { m: AiMessage; hooks: any; highli
   );
 }
 
-function SuggestionsReport({ list, hooks }: { list: Suggestion[]; hooks: any }) {
-  const [applied, setApplied] = useState<Set<number>>(new Set());
+/** Study menu: what to make, plus how many and how hard (remembered in settings). */
+function StudyMenu({ close, onCards, onQuiz }: { close(): void; onCards(): void; onQuiz(): void }) {
+  const v = useSettings((s) => s.values);
+  const set = (k: string, val: any) => useSettings.getState().set({ [k]: val });
+  return (
+    <div className="study-menu">
+      <button className="menu-item" onClick={() => (close(), onCards())}>
+        <Layers size={16} /> Flashcards
+      </button>
+      <button className="menu-item" onClick={() => (close(), onQuiz())}>
+        <ListChecks size={16} /> Practice quiz
+      </button>
+      <div className="menu-sep" />
+      <div className="study-opts">
+        <label>
+          Cards
+          <select className="select sm" value={v['ai.flashcardCount'] ?? 10} onChange={(e) => set('ai.flashcardCount', Number(e.target.value))}>
+            {[5, 10, 15, 20, 30].map((n) => (
+              <option key={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Questions
+          <select className="select sm" value={v['ai.quizCount'] ?? 5} onChange={(e) => set('ai.quizCount', Number(e.target.value))}>
+            {[3, 5, 10, 15, 20].map((n) => (
+              <option key={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Level
+          <select className="select sm" value={v['ai.studyDifficulty'] ?? 'medium'} onChange={(e) => set('ai.studyDifficulty', e.target.value)}>
+            <option value="easy">Easy (recall)</option>
+            <option value="medium">Medium (understand)</option>
+            <option value="hard">Hard (apply)</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function SuggestionsReport({ list, hooks, initial, how }: { list: Suggestion[]; hooks: any; initial?: number[]; how?: 'direct' | 'track' }) {
+  const [applied, setApplied] = useState<Set<number>>(() => new Set(initial || []));
   return (
     <div className="ai-msg assistant">
+      {how && initial && (
+        <div className="ai-applied">
+          <Check size={13} />
+          {how === 'track'
+            ? ` ${initial.length} of ${list.length} edits added to the document as suggestions.`
+            : ` Made ${initial.length} of ${list.length} edits. Ctrl+Z undoes them.`}
+          {initial.length < list.length && ' The rest couldn’t be matched to the text; apply them below.'}
+        </div>
+      )}
       <div className="grade">
         {list.map((s, i) => (
           <div key={i} className={`sugg ${applied.has(i) ? 'done' : ''}`}>

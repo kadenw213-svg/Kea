@@ -1,4 +1,6 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
+import { Popover } from './Popover';
+import { Columns2, PanelRightClose, XSquare } from 'lucide-react';
 import { Home, Plus, X } from 'lucide-react';
 import { useTabs } from '../store';
 import { FileIcon } from './FileIcon';
@@ -16,8 +18,12 @@ import { openHistory } from './settings/VersionHistory';
 import { Settings as SettingsIcon, History } from 'lucide-react';
 
 export function TitleBar() {
-  const { tabs, activeId, setActive, moveTab } = useTabs();
+  const { tabs, activeId, setActive, moveTab, split } = useTabs();
   const dragFrom = useRef<number | null>(null);
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const [tabMenuAnchor, setTabMenuAnchor] = useState<HTMLDivElement | null>(null);
+  const closeTabMenu = () => (setTabMenu(null), setTabMenuAnchor(null));
+  const inSplit = (id: string) => !!split && (split.left === id || split.right === id);
   const upd = useUpdates();
   const hasUpdate = ['available', 'downloading', 'ready'].includes(upd.state.status);
 
@@ -80,7 +86,11 @@ export function TitleBar() {
         {tabs.map((t, i) => (
           <div
             key={t.id}
-            className={`tab ${t.id === activeId ? 'active' : ''}`}
+            className={`tab ${t.id === activeId ? 'active' : ''} ${inSplit(t.id) && t.id !== activeId ? 'split-other' : ''}`}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setTabMenu({ x: e.clientX, y: e.clientY, id: t.id });
+            }}
             onMouseDown={(e) => {
               if (e.button === 1) {
                 e.preventDefault();
@@ -151,6 +161,50 @@ export function TitleBar() {
           )}
         </MenuButton>
       </div>
+      {tabMenu && (
+        <>
+          <div ref={setTabMenuAnchor} style={{ position: 'fixed', left: tabMenu.x, top: tabMenu.y, width: 1, height: 1 }} />
+          <Popover anchor={tabMenuAnchor} open={!!tabMenuAnchor} onClose={closeTabMenu}>
+            {inSplit(tabMenu.id) ? (
+              <button className="menu-item" onClick={() => (useTabs.getState().closeSplit(), closeTabMenu())}>
+                <PanelRightClose size={16} /> Close split view
+              </button>
+            ) : (
+              tabMenu.id !== activeId && (
+                <button className="menu-item" onClick={() => (useTabs.getState().closeSplit(), useTabs.getState().openSplit(tabMenu.id), closeTabMenu())}>
+                  <Columns2 size={16} /> Open beside {tabs.find((x) => x.id === activeId)?.kind === 'home' ? 'Home' : 'this tab'}
+                  <span className="kbd">Ctrl+\</span>
+                </button>
+              )
+            )}
+            {tabMenu.id === activeId && !split && tabs.length > 1 && (
+              <button className="menu-item" onClick={() => (useTabs.getState().openSplit(), closeTabMenu())}>
+                <Columns2 size={16} /> Split view with the next tab
+                <span className="kbd">Ctrl+\</span>
+              </button>
+            )}
+            {tabMenu.id !== 'home' && (
+              <>
+                <div className="menu-sep" />
+                <button className="menu-item" onClick={() => (requestCloseTab(tabMenu.id), closeTabMenu())}>
+                  <X size={16} /> Close
+                  <span className="kbd">Ctrl+W</span>
+                </button>
+                <button
+                  className="menu-item"
+                  onClick={async () => {
+                    const keep = tabMenu.id;
+                    closeTabMenu();
+                    for (const t of useTabs.getState().tabs) if (t.id !== keep && t.id !== 'home') await requestCloseTab(t.id);
+                  }}
+                >
+                  <XSquare size={16} /> Close other tabs
+                </button>
+              </>
+            )}
+          </Popover>
+        </>
+      )}
     </div>
   );
 }

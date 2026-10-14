@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/react';
 import type { AiHooks, DocSection } from '../../store';
 import { markdownToHtml } from '../../lib/ai';
+import { reviewKey } from './review';
 
 const norm = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -76,6 +77,22 @@ export function docAiHooks(get: () => Editor | null): AiHooks {
       if (!r) return false;
       ed.chain().focus().setTextSelection(r).scrollIntoView().run();
       return true;
+    },
+    track(fn) {
+      const ed = get();
+      if (!ed) return fn();
+      // Turn on Suggesting just for these edits, credited to "Slate AI", then put things back.
+      const store = (ed.storage as any).review as { author: () => string };
+      const prevAuthor = store.author;
+      const was = !!reviewKey.getState(ed.state)?.suggesting;
+      store.author = () => 'Slate AI';
+      ed.commands.setSuggesting(true);
+      try {
+        return fn();
+      } finally {
+        ed.commands.setSuggesting(was);
+        store.author = prevAuthor;
+      }
     },
     replaceQuote(quote, replacement) {
       const ed = get();

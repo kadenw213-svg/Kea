@@ -250,6 +250,106 @@ ${quote(work)}`,
     .map((x: any) => ({ quote: String(x.quote).trim(), issue: String(x.issue || '').trim(), suggestion: String(x.suggestion).trim() }));
 }
 
+// ---------- Study tools ----------
+export interface Flashcard {
+  front: string;
+  back: string;
+}
+export interface QuizQuestion {
+  question: string;
+  choices: string[];
+  answer: number;
+  explanation: string;
+}
+export type Difficulty = 'easy' | 'medium' | 'hard';
+const LEVEL: Record<Difficulty, string> = {
+  easy: 'basic recall of the most important facts and definitions',
+  medium: 'understanding: why and how, not just what',
+  hard: 'application and analysis: compare ideas, apply them to new cases, spot misconceptions'
+};
+
+/** Flashcards (term/question → answer) from the text. */
+export async function runFlashcards(ctx: TaskContext, cb: TaskCallbacks, count: number, difficulty: Difficulty): Promise<Flashcard[]> {
+  const work = await condense(ctx, 'Note the key facts, definitions, names, dates, formulas and concepts worth memorising.', cb);
+  cb.onStatus('Making flashcards…');
+  const r = await stream(
+    {
+      system: SYSTEM,
+      prompt: `Make ${count} study flashcards from ${ctx.scopeLabel} of "${ctx.docName}". Level: ${LEVEL[difficulty]}.
+"front" = a short question or term; "back" = a concise, correct answer (one or two sentences). Use only information in the text. No duplicates.
+
+TEXT:
+${quote(work)}`,
+      jsonSchema: {
+        type: 'object',
+        properties: {
+          cards: { type: 'array', minItems: count, maxItems: count, items: { type: 'object', properties: { front: { type: 'string', maxLength: 200 }, back: { type: 'string', maxLength: 400 } } } }
+        }
+      },
+      temperature: 0.3,
+      maxTokens: Math.min(4000, 120 * count + 200)
+    },
+    { ...cb, onToken: (full) => cb.onStatus(`Making flashcards… ${(full.match(/"back"/g) || []).length} of ${count}`) }
+  );
+  const j = parseJson(r.text) || {};
+  const seen = new Set<string>();
+  return (j.cards || [])
+    .map((c: any) => ({ front: String(c?.front || '').trim(), back: String(c?.back || '').trim() }))
+    .filter((c: Flashcard) => c.front && c.back && !seen.has(c.front.toLowerCase()) && seen.add(c.front.toLowerCase()));
+}
+
+/** Multiple-choice practice quiz from the text. */
+export async function runQuiz(ctx: TaskContext, cb: TaskCallbacks, count: number, difficulty: Difficulty): Promise<QuizQuestion[]> {
+  const work = await condense(ctx, 'Note the key facts, ideas and relationships a test might ask about.', cb);
+  cb.onStatus('Writing questions…');
+  const r = await stream(
+    {
+      system: SYSTEM,
+      prompt: `Write a ${count}-question multiple-choice practice quiz (keep each answer short, under 20 words) on ${ctx.scopeLabel} of "${ctx.docName}". Level: ${LEVEL[difficulty]}.
+For each question: "correct" = the right answer; "wrong" = 3 believable but clearly incorrect answers; "explanation" = one sentence on why the right answer is right, based on the text.
+
+TEXT:
+${quote(work)}`,
+      jsonSchema: {
+        type: 'object',
+        properties: {
+          questions: {
+            type: 'array',
+            minItems: count,
+            maxItems: count,
+            items: {
+              type: 'object',
+              properties: {
+                question: { type: 'string', maxLength: 300 },
+                correct: { type: 'string', maxLength: 260 },
+                wrong: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string', maxLength: 260 } },
+                explanation: { type: 'string', maxLength: 300 }
+              }
+            }
+          }
+        }
+      },
+      temperature: 0.4,
+      maxTokens: Math.min(4000, 220 * count + 200)
+    },
+    { ...cb, onToken: (full) => cb.onStatus(`Writing questions… ${(full.match(/"explanation"/g) || []).length} of ${count}`) }
+  );
+  const j = parseJson(r.text) || {};
+  return (j.questions || [])
+    .map((q: any) => {
+      // The model names the right answer itself (small models often mix up answer letters); Slate shuffles.
+      const correct = String(q?.correct || '').trim();
+      const wrong: string[] = (Array.isArray(q?.wrong) ? q.wrong : []).map((c: any) => String(c).trim()).filter((c: string) => c && c.toLowerCase() !== correct.toLowerCase());
+      const choices = [correct, ...wrong.slice(0, 3)];
+      for (let i = choices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [choices[i], choices[j]] = [choices[j], choices[i]];
+      }
+      return { question: String(q?.question || '').trim(), choices, answer: correct ? choices.indexOf(correct) : -1, explanation: String(q?.explanation || '').trim() };
+    })
+    .filter((q: QuizQuestion) => q.question && q.choices.length >= 2 && Number.isInteger(q.answer) && q.answer >= 0 && q.answer < q.choices.length);
+}
+
 function parseJson(t: string): any {
   try {
     return JSON.parse(t);
