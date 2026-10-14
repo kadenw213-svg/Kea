@@ -51,7 +51,8 @@ const EDIT_MODES: { id: EditMode; label: string; help: string }[] = [
   { id: 'direct', label: 'Edit directly', help: 'AI edits change the text right away. Ctrl+Z undoes them.' }
 ];
 /** Asking to change highlighted text ("make this formal", "fix the grammar"…) rather than asking about it. */
-const EDIT_REQUEST = /^\s*(please\s+)?(make|rewrite|re-write|rephrase|reword|turn|convert|fix|correct|shorten|lengthen|expand|simplify|translate|change|improve|edit|proofread|paraphrase|polish|tighten|condense|clean up|format|capitali[sz]e|put)\b/i;
+// Only clear rewrites of the highlight count; "make a list of…", "turn this into flashcards" etc. are questions.
+const EDIT_REQUEST = /^\s*(please\s+)?(?:(rewrite|re-write|rephrase|reword|paraphrase|proofread|fix|correct|shorten|lengthen|simplify|condense|tighten|polish|improve|edit|clean up|capitali[sz]e)\b(?!.*\b(list|summary|flashcards?|quiz|questions|outline|notes|table)\b)|(make|turn|convert|change|put|format|translate|expand)\s+(this|it|that|the (text|paragraph|sentence|selection|highlight))\b(?!.*\b(into|as)\s+(a |an )?(list|summary|flashcards?|quiz|questions|outline|notes|table|bullets?)\b))/i;
 
 /** Wrap the editor's edit hooks so they follow the chosen edit mode. */
 function withMode(h: AiHooks | undefined, mode: EditMode): AiHooks | undefined {
@@ -106,7 +107,9 @@ export function AiSidebar() {
   // Context text: pinned, the live selection for this tab, or the whole document.
   const selection = ai.pinned ? ai.pinnedText : ai.selections[activeId] || null;
   const scope: 'selection' | 'document' = !selection ? 'document' : ai.scope;
-  const docName = tab?.name || 'this file';
+  // A pinned highlight may come from another tab: name that file, not the one in front.
+  const pinnedTabName = useTabs((s) => (ai.pinned && ai.pinnedTab ? s.tabs.find((t) => t.id === ai.pinnedTab)?.name : undefined));
+  const docName = pinnedTabName || tab?.name || 'this file';
   const noun = hooks?.noun || 'document';
 
   useEffect(() => {
@@ -135,6 +138,7 @@ export function AiSidebar() {
     }
     return {
       text,
+      isSelection: scope === 'selection' && !!selection,
       scopeLabel: scope === 'selection' && selection ? 'the selected text' : `the whole ${noun}`,
       docName,
       noun,
@@ -172,8 +176,16 @@ export function AiSidebar() {
       if (sv['ai.wikipedia'] !== false && wikiFor && navigator.onLine) {
         setStatus('Checking Wikipedia…');
         try {
-          const q = await wikiQuery(scope === 'selection' && selection ? selection : ctx.text.slice(0, 1500), label === 'ask' ? userText : null, () => flag.cancelled);
-          const refs = q ? await api.wikiLookup(q, { lang: String(sv['ai.wikiLang'] || 'en'), max: Number(sv['ai.wikiArticles']) || 1, chars: wikiChars(depth, ctx.contextSize), intro: wikiChars(depth, ctx.contextSize) <= 2000 }) : [];
+          const topics = await wikiQuery(scope === 'selection' && selection ? selection : ctx.text.slice(0, 1500), label === 'ask' ? userText : null, () => flag.cancelled, !!ctx.isSelection);
+          // One lookup per topic, in parallel; the depth's reading budget is shared between them.
+          const total = wikiChars(depth, ctx.contextSize);
+          const per = Math.max(1200, Math.floor(total / Math.max(1, topics.length)));
+          const perTopic = topics.length > 1 ? 1 : Number(sv['ai.wikiArticles']) || 1;
+          const lists = await Promise.all(
+            topics.map((t) => api.wikiLookup(t, { lang: String(sv['ai.wikiLang'] || 'en'), max: perTopic, chars: per, intro: per <= 2000 }).catch(() => []))
+          );
+          const seen = new Set<string>();
+          const refs = lists.flat().filter((r) => !seen.has(r.title) && seen.add(r.title));
           ctx.refs = refs;
           if (refs.length) patch(aid, { wiki: refs.map((r) => ({ title: r.title, url: r.url, edited: r.edited })) });
         } catch (err: any) {

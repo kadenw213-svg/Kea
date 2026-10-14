@@ -22,12 +22,14 @@ async function lookup(query, opts = {}) {
   const q = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 200);
   if (!q) return [];
   const search = await getJson(`${api}&action=query&list=search&srlimit=${Math.max(6, max)}&srprop=&srsearch=${encodeURIComponent(q)}`);
-  // Prefer articles whose title is made only of the searched words ("Industrial Revolution" over
-  // "Second Industrial Revolution" for "when did the industrial revolution start"); longest such title first.
+  // Rank: 1) the exact topic ("Archaea", ignoring "(biology)"-style suffixes), 2) titles made only of the searched
+  // words ("Industrial Revolution" over "Second Industrial Revolution"), 3) the rest; Wikipedia's order within each.
+  const norm = (t) => t.toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
   const words = new Set(q.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
-  const fits = (t) => (t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).every((w) => words.has(w));
-  const found = (search.query?.search || []).map((s, i) => ({ title: s.title, i, fit: fits(s.title), len: s.title.length }));
-  found.sort((a, b) => (a.fit !== b.fit ? (a.fit ? -1 : 1) : a.fit ? b.len - a.len : a.i - b.i));
+  const fits = (t) => (norm(t).match(/[\p{L}\p{N}]+/gu) || []).every((w) => words.has(w));
+  const rank = (t) => (norm(t) === q.toLowerCase() ? 0 : fits(t) ? 1 : 2);
+  const found = (search.query?.search || []).map((s, i) => ({ title: s.title, i, r: rank(s.title) }));
+  found.sort((a, b) => a.r - b.r || a.i - b.i);
   const titles = found.slice(0, max).map((f) => f.title);
   const out = [];
   for (const title of titles) {

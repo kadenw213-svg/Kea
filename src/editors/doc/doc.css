@@ -1197,3 +1197,21 @@
   min-width: 34px;
   font-size: 13px;
 }
+
+/* ---------- Slate AI comments and suggestions: dark grey, with the app logo ---------- */
+.doc-content,
+.rv-cards {
+  --cmt-ai: rgba(154, 160, 166, 0.22);
+  --cmt-ai-line: #80868b;
+}
+.rv-card.ai {
+  background: #26292e;
+  border-left: 3px solid #5f6368;
+}
+.rv-card.change.ai {
+  border-left: 3px solid #5f6368;
+}
+.rv-avatar.ai {
+  border-radius: 8px;
+  overflow: hidden;
+}

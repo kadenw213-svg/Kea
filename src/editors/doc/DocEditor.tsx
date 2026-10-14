@@ -599,6 +599,11 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     meta.comments
       .filter((t) => t.resolved)
       .map((t) => `.doc-content [data-comment="${t.id}"] { background: none !important; border-bottom: none !important; }`)
+      .join('') +
+    // Slate AI's comments are grey in the text, so they stand apart from people's (yellow) comments.
+    meta.comments
+      .filter((t) => !t.resolved && t.author === 'Slate AI' && t.id !== activeComment)
+      .map((t) => `.doc-content [data-comment="${t.id}"] { background: var(--cmt-ai) !important; border-bottom-color: var(--cmt-ai-line) !important; }`)
       .join('');
   const insertFootnote = () => {
     const pos = editor.state.selection.to;

@@ -5,10 +5,14 @@ import type { CommentThread, DocMeta } from './docMeta';
 import { commentAnchors, listChanges, resolveChanges, Change } from './review';
 import { MenuButton } from '../../components/Popover';
 import { uid, timeAgo } from '../../lib/util';
+import { Logo } from '../../components/Logo';
 
+/** Comments and suggestions made by Slate's AI get the app's logo and a quiet grey look. */
+export const AI_AUTHOR = 'Slate AI';
 const initial = (name: string) => (name.trim()[0] || '?').toUpperCase();
 const hue = (name: string) => [...name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
 function Avatar({ name }: { name: string }) {
+  if (name === AI_AUTHOR) return <Logo size={26} className="rv-avatar ai" />;
   return (
     <span className="rv-avatar" style={{ background: `hsl(${hue(name)} 45% 42%)` }}>
       {initial(name)}
@@ -148,7 +152,7 @@ export function ReviewRail({
             const del = c.kind === 'deletion' ? c : it.pair?.kind === 'deletion' ? it.pair : null;
             const ins = c.kind === 'insertion' ? c : it.pair?.kind === 'insertion' ? it.pair : null;
             return (
-              <div key={key} ref={(el) => (el ? cardRefs.current.set(key, el) : cardRefs.current.delete(key))} className={`rv-card change ${isActive ? 'active' : ''}`} style={{ top: tops[key] ?? 0 }} onMouseDown={() => setActive(it.id)}>
+              <div key={key} ref={(el) => (el ? cardRefs.current.set(key, el) : cardRefs.current.delete(key))} className={`rv-card change ${c.author === AI_AUTHOR ? 'ai' : ''} ${isActive ? 'active' : ''}`} style={{ top: tops[key] ?? 0 }} onMouseDown={() => setActive(it.id)}>
                 <div className="rv-who">
                   <Avatar name={c.author || 'Someone'} />
                   <div className="rv-meta">
@@ -186,7 +190,7 @@ export function ReviewRail({
             <div
               key={key}
               ref={(el) => (el ? cardRefs.current.set(key, el) : cardRefs.current.delete(key))}
-              className={`rv-card ${isActive || isDraft ? 'active' : ''} ${t.resolved ? 'resolved' : ''}`}
+              className={`rv-card ${t.author === AI_AUTHOR ? 'ai' : ''} ${isActive || isDraft ? 'active' : ''} ${t.resolved ? 'resolved' : ''}`}
               style={{ top: tops[key] ?? 0 }}
               onMouseDown={() => setActive(it.id)}
             >

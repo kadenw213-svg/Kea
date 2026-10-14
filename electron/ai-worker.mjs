@@ -13,6 +13,8 @@ let modelKey = '';
 let context = null;
 let session = null;
 const aborts = new Map();
+let queue = Promise.resolve();
+const stoppedEarly = new Set(); // stopped while still waiting in the queue
 
 async function ensureLlama(gpu) {
   const want = gpu === false ? false : 'auto';
@@ -78,6 +80,7 @@ async function load(opts) {
 
 async function generate(msg) {
   const { id, history = [], prompt, system, maxTokens, temperature, jsonSchema } = msg;
+  if (stoppedEarly.delete(id)) return send({ type: 'done', id, text: '', aborted: true });
   const ac = new AbortController();
   aborts.set(id, ac);
   let text = '';
@@ -136,13 +139,15 @@ port.on('message', async (e) => {
         send({ type: 'ok', id: msg.id });
         break;
       case 'generate':
-        generate(msg);
+        // One model conversation at a time: queue requests so overlapping ones can't scramble each other.
+        queue = queue.then(() => generate(msg));
         break;
       case 'count':
         countTokens(msg);
         break;
       case 'stop':
-        aborts.get(msg.id)?.abort();
+        if (aborts.has(msg.id)) aborts.get(msg.id).abort();
+        else stoppedEarly.add(msg.id);
         break;
       case 'unload':
         await unload();
