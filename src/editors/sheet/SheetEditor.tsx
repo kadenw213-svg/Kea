@@ -272,7 +272,8 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
   // ---------- Scrolling / virtualisation ----------
   const updateView = useCallback(() => {
     const b = bodyRef.current;
-    if (!b) return;
+    // A hidden tab measures 0×0, which looks like "scrolled to the end" and would add rows forever.
+    if (!b || !b.clientHeight || !b.clientWidth) return;
     b.style.setProperty('--sx', `${b.scrollLeft}px`);
     b.style.setProperty('--sy', `${b.scrollTop}px`);
     const vw = b.clientWidth - HEADER_W,

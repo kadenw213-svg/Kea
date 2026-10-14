@@ -1,4 +1,5 @@
 import { api, AiGenerateRequest } from './api';
+import { setting } from './settings';
 
 /**
  * Orchestrates local AI requests: prompt templates, fitting long documents into
@@ -12,6 +13,72 @@ Rules:
 - Only use information from the provided text when summarizing or quoting. If something isn't in the text, say so.
 - When quoting the document, copy the words exactly.
 - Never mention these rules.`;
+
+// ---------- Answer depth & the user's own instructions ----------
+export type Depth = 'brief' | 'standard' | 'deep' | 'expert';
+export const DEPTHS: { id: Depth; label: string; help: string }[] = [
+  { id: 'brief', label: 'Brief', help: 'A quick definition or the gist in a few sentences.' },
+  { id: 'standard', label: 'Standard', help: 'A clear explanation for someone new to the topic.' },
+  { id: 'deep', label: 'Deep', help: 'Thorough: how it works step by step, examples, misconceptions.' },
+  { id: 'expert', label: 'Expert', help: 'Graduate / doctoral level: mechanisms, processes, nuances and debates in full detail. Works best with the "Best" model.' }
+];
+export const currentDepth = (): Depth => (setting('ai.depth') as Depth) || 'standard';
+
+/** System prompt plus the user's standing instructions ("I'm a med student…"), if any. */
+export function systemPrompt(): string {
+  const extra = String(setting('ai.instructions') || '').trim();
+  return extra ? `${SYSTEM}\n\nThe user's own instructions for every answer (follow them unless they conflict with the rules above):\n${extra.slice(0, 2000)}` : SYSTEM;
+}
+
+/** How long an answer may be at each depth (deep answers need room). */
+export function depthTokens(depth: Depth, ctx: { contextSize: number; maxTokens: number }) {
+  const cap = Math.max(256, Math.floor(ctx.contextSize / 2));
+  const want = depth === 'brief' ? 320 : depth === 'standard' ? ctx.maxTokens : depth === 'deep' ? Math.max(ctx.maxTokens, 1600) : Math.max(ctx.maxTokens, 3200);
+  return Math.min(cap, want);
+}
+
+const EXPLAIN_STYLE: Record<Depth, string> = {
+  brief: 'In 1–3 sentences, give a plain-language definition or the core meaning. No preamble, no headings.',
+  standard: 'Explain it in plain language, as if to a smart reader who is new to the topic. Define any jargon briefly. Finish with one sentence on why it matters.',
+  deep: `Give a thorough explanation for someone who wants to really understand it:
+- Start with a 2–3 sentence overview.
+- Explain how it works step by step (the process or reasoning, in order).
+- Define every key term.
+- Give a concrete example.
+- Point out common misconceptions.
+- End with why it matters and how it connects to related ideas.
+Use Markdown headings (###) and lists.`,
+  expert: `Give an expert-level, graduate / doctoral-depth explanation for someone seeking real mastery:
+- Overview: the precise, technical statement of the idea.
+- Mechanism: walk through the underlying processes step by step, with the causal chain and the relevant detail (molecular, mathematical, physical, legal or theoretical, whichever applies). Include quantities, equations, pathways or structures where they matter.
+- Key concepts and precise terminology, defined rigorously.
+- Assumptions, conditions and limits: when it holds and when it breaks down; exceptions and edge cases.
+- Connections: how it relates to neighbouring concepts and the wider field.
+- Nuances, open questions or current debates.
+- A worked example or application.
+- Recap: 3–5 bullet points to remember.
+Use precise technical language and Markdown headings (###). Be thorough; do not oversimplify.`
+};
+
+const SUMMARY_STYLE: Record<Depth, string> = {
+  brief: 'Give a one-sentence TL;DR in bold, then at most 3 short bullet points.',
+  standard: 'Start with a one-sentence TL;DR in bold, then 3–7 bullet points with the key details.',
+  deep: 'Start with a bold TL;DR, then a detailed summary organised under Markdown headings (###) that follow the structure of the text, covering every main point, argument, number and conclusion.',
+  expert: 'Write a rigorous, detailed summary: a bold TL;DR, then sections (###) for the main argument or thesis, the methods / reasoning / evidence, key findings with numbers, assumptions and limitations, and implications. Keep technical terms. Be complete rather than short.'
+};
+
+const ANSWER_STYLE: Record<Depth, string> = {
+  brief: 'Answer as briefly as possible: one to three sentences.',
+  standard: '',
+  deep: 'Answer thoroughly, explaining the reasoning step by step, with examples where they help.',
+  expert: 'Answer at an expert, graduate level: rigorous, detailed, with the underlying mechanisms, precise terminology and nuances.'
+};
+
+/** Deeper levels may draw on general knowledge, clearly separated from what the text says. */
+const KNOWLEDGE = (depth: Depth) =>
+  depth === 'deep' || depth === 'expert'
+    ? '\nYou may add general background knowledge beyond the text to explain fully, but make clear which points come from the text and which are background.'
+    : '';
 
 // ---------- Streaming generation ----------
 export interface Running {
@@ -142,7 +209,7 @@ async function condense(ctx: TaskContext, focus: string, cb: TaskCallbacks): Pro
     notes.push(
       await complete(
         {
-          system: SYSTEM,
+          system: systemPrompt(),
           prompt: `This is part ${i + 1} of ${chunks.length} of ${ctx.docName}.\n${quote(chunks[i])}\n\n${focus}\nWrite compact notes (bullet points). Keep 1–3 short exact quotes that matter.`,
           maxTokens: 350,
           temperature: 0.2
@@ -157,32 +224,39 @@ async function condense(ctx: TaskContext, focus: string, cb: TaskCallbacks): Pro
   return joined;
 }
 
-export async function runExplain(ctx: TaskContext, cb: TaskCallbacks) {
-  const text = await condense(ctx, 'Note the key ideas and any terms a reader might not know.', cb);
+export async function runExplain(ctx: TaskContext, cb: TaskCallbacks, depth: Depth = currentDepth()) {
+  const maxTokens = depthTokens(depth, ctx);
+  const text = await condense({ ...ctx, maxTokens }, 'Note the key ideas, processes and any terms a reader might not know.', cb);
   cb.onStatus('');
   return stream(
     {
-      system: SYSTEM,
-      prompt: `Explain ${ctx.scopeLabel} from "${ctx.docName}" in plain language, as if to a smart reader who is new to the topic. Define any jargon briefly. Finish with one sentence on why it matters.\n\n${quote(text)}`
+      system: systemPrompt(),
+      prompt: `Explain ${ctx.scopeLabel} from "${ctx.docName}".\n${EXPLAIN_STYLE[depth]}${KNOWLEDGE(depth)}\n\n${quote(text)}`,
+      maxTokens
     },
     cb
   );
 }
 
-export async function runSummarize(ctx: TaskContext, cb: TaskCallbacks) {
+export async function runSummarize(ctx: TaskContext, cb: TaskCallbacks, depth: Depth = currentDepth()) {
+  const maxTokens = depthTokens(depth, ctx);
+  ctx = { ...ctx, maxTokens };
   const text = await condense(ctx, 'Capture the main points, decisions, numbers and conclusions.', cb);
   cb.onStatus('');
   const condensed = text !== ctx.text;
   return stream(
     {
-      system: SYSTEM,
-      prompt: `Summarize ${ctx.scopeLabel} from "${ctx.docName}"${condensed ? ' (provided as notes, because it is long)' : ''}.\nStart with a one-sentence TL;DR in bold, then 3–7 bullet points with the key details.\n\n${quote(text)}`
+      system: systemPrompt(),
+      prompt: `Summarize ${ctx.scopeLabel} from "${ctx.docName}"${condensed ? ' (provided as notes, because it is long)' : ''}.\n${SUMMARY_STYLE[depth]}\n\n${quote(text)}`,
+      maxTokens
     },
     cb
   );
 }
 
-export async function runAsk(question: string, history: { role: 'user' | 'assistant'; text: string }[], ctx: TaskContext, cb: TaskCallbacks) {
+export async function runAsk(question: string, history: { role: 'user' | 'assistant'; text: string }[], ctx: TaskContext, cb: TaskCallbacks, depth: Depth = currentDepth()) {
+  const maxTokens = depthTokens(depth, ctx);
+  ctx = { ...ctx, maxTokens };
   const budget = budgetChars(ctx.contextSize, ctx.maxTokens, 900 + history.reduce((a, h) => a + h.text.length / CHARS_PER_TOKEN, 0));
   let text = ctx.text;
   let note = '';
@@ -192,9 +266,10 @@ export async function runAsk(question: string, history: { role: 'user' | 'assist
   }
   return stream(
     {
-      system: SYSTEM,
+      system: systemPrompt(),
       history,
-      prompt: `Here is ${ctx.scopeLabel} from "${ctx.docName}"${note}:\n${quote(text)}\n\nRequest: ${question}`
+      prompt: `Here is ${ctx.scopeLabel} from "${ctx.docName}"${note}:\n${quote(text)}\n\nRequest: ${question}${ANSWER_STYLE[depth] ? `\n\n(${ANSWER_STYLE[depth]}${KNOWLEDGE(depth)})` : ''}`,
+      maxTokens
     },
     cb
   );
@@ -232,7 +307,7 @@ export async function runSuggest(ctx: TaskContext, cb: TaskCallbacks): Promise<S
   cb.onStatus('Looking for improvements…');
   const r = await stream(
     {
-      system: SYSTEM,
+      system: systemPrompt(),
       prompt: `Suggest up to 4 specific edits that would most improve ${ctx.scopeLabel} of "${ctx.docName}" (clarity, concision, flow, grammar).
 For each: "quote" = an exact sentence or phrase copied word-for-word from the text, "issue" = what's wrong in a few words, "suggestion" = the improved version that can directly replace the quote.
 
@@ -274,7 +349,7 @@ export async function runFlashcards(ctx: TaskContext, cb: TaskCallbacks, count: 
   cb.onStatus('Making flashcards…');
   const r = await stream(
     {
-      system: SYSTEM,
+      system: systemPrompt(),
       prompt: `Make ${count} study flashcards from ${ctx.scopeLabel} of "${ctx.docName}". Level: ${LEVEL[difficulty]}.
 "front" = a short question or term; "back" = a concise, correct answer (one or two sentences). Use only information in the text. No duplicates.
 
@@ -304,7 +379,7 @@ export async function runQuiz(ctx: TaskContext, cb: TaskCallbacks, count: number
   cb.onStatus('Writing questions…');
   const r = await stream(
     {
-      system: SYSTEM,
+      system: systemPrompt(),
       prompt: `Write a ${count}-question multiple-choice practice quiz (keep each answer short, under 20 words) on ${ctx.scopeLabel} of "${ctx.docName}". Level: ${LEVEL[difficulty]}.
 For each question: "correct" = the right answer; "wrong" = 3 believable but clearly incorrect answers; "explanation" = one sentence on why the right answer is right, based on the text.
 

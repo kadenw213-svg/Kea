@@ -1,7 +1,7 @@
 {
   "name": "slate-office",
   "productName": "Slate Office",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "description": "A clean, dark, offline office suite: PDF editor, documents, spreadsheets, text and images.",
   "author": "kadenw213-svg",
   "license": "MIT",

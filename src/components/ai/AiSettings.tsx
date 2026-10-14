@@ -1,3 +1,5 @@
+import { InstructionsBox } from './AiSidebar';
+import { DEPTHS, Depth } from '../../lib/ai';
 import { useEffect, useState } from 'react';
 import { Download, Trash2, CheckCircle2, Gauge, RotateCcw, Cpu, MonitorSmartphone } from 'lucide-react';
 import { useAi } from './aiStore';
@@ -72,6 +74,15 @@ export function AiSettingsPanel() {
           <div className="muted" style={{ marginTop: 6 }}>
             Higher quality uses a bigger model and reads more of long documents at once, but answers take longer.
             {s.custom && ' (Custom settings in use.)'}
+          </div>
+        </div>
+
+        <div className="set-section">
+          <div className="set-label">How answers are written</div>
+          <div className="muted" style={{ marginBottom: 8 }}>Default depth for Explain, Summarize and questions (also switchable in the AI sidebar).</div>
+          <DepthPicker />
+          <div style={{ marginTop: 12 }}>
+            <InstructionsBox />
           </div>
         </div>
 
@@ -221,6 +232,23 @@ export function AiSettingsPanel() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function DepthPicker() {
+  const depth = useSettings((s) => (s.values['ai.depth'] as Depth) || 'standard');
+  return (
+    <div className="depth-list">
+      {DEPTHS.map((d) => (
+        <label key={d.id} className={`depth-opt ${depth === d.id ? 'on' : ''}`}>
+          <input type="radio" name="ai-depth" checked={depth === d.id} onChange={() => useSettings.getState().set({ 'ai.depth': d.id })} />
+          <span>
+            <b>{d.label}</b>
+            <span className="muted"> · {d.help}</span>
+          </span>
+        </label>
+      ))}
     </div>
   );
 }

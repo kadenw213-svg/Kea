@@ -19,7 +19,8 @@ import {
   Check,
   GraduationCap,
   Layers,
-  ListChecks
+  ListChecks,
+  ScrollText
 } from 'lucide-react';
 import { FlashcardsView, QuizView } from './Study';
 import { MenuButton } from '../Popover';
@@ -28,6 +29,7 @@ import type { AiHooks } from '../../store';
 import { useAi, setAiOpen, AiMessage } from './aiStore';
 import { useTabs, editorRegistry, toast, prompt as askText } from '../../store';
 import { api } from '../../lib/api';
+import { DEPTHS, Depth } from '../../lib/ai';
 import { runExplain, runSummarize, runAsk, runSuggest, runFlashcards, runQuiz, Difficulty, TaskContext, TaskCallbacks, wordCount, markdownToHtml, markdownToPlain, Suggestion } from '../../lib/ai';
 import { uid } from '../../lib/util';
 import { ModelSetup } from './ModelSetup';
@@ -75,6 +77,9 @@ export function AiSidebar() {
   const effMode: EditMode = editMode === 'track' && !rawHooks?.track ? 'suggest' : editMode;
   const hooks = withMode(rawHooks, effMode);
   const canEdit = !!(rawHooks?.replaceQuote || rawHooks?.replaceSelection);
+  const depth = useSettings((s) => (s.values['ai.depth'] as Depth) || 'standard');
+  const instructions = useSettings((s) => String(s.values['ai.instructions'] || ''));
+  const [showInstr, setShowInstr] = useState(false);
 
   // Load model state when first opened.
   useEffect(() => {
@@ -262,6 +267,10 @@ export function AiSidebar() {
                 <Plus size={16} />
               </button>
             )}
+            <button className={`icon-btn sm ${showInstr ? 'active' : ''}`} title={instructions.trim() ? 'Your instructions (in use)' : 'Add your own instructions for every answer'} onClick={() => setShowInstr((o) => !o)} style={{ position: 'relative' }}>
+              <ScrollText size={15} />
+              {instructions.trim() && <span className="ai-dot" />}
+            </button>
             <button className="icon-btn sm" title="AI settings" onClick={() => openSettings('ai')}>
               <Settings2 size={15} />
             </button>
@@ -280,6 +289,8 @@ export function AiSidebar() {
             </button>
           </div>
         )}
+
+        {showInstr && <InstructionsBox onClose={() => setShowInstr(false)} />}
 
         {/* Context box */}
         <div className="ai-context">
@@ -359,6 +370,16 @@ export function AiSidebar() {
           >
             {(close) => <StudyMenu close={close} onCards={flashcards} onQuiz={quiz} />}
           </MenuButton>
+        </div>
+        <div className="ai-editmode">
+          <span className="muted">Depth</span>
+          <div className="seg small" role="radiogroup" aria-label="How detailed answers are">
+            {DEPTHS.map((d) => (
+              <button key={d.id} role="radio" aria-checked={depth === d.id} className={depth === d.id ? 'on' : ''} title={d.help} onClick={() => useSettings.getState().set({ 'ai.depth': d.id })}>
+                {d.label}
+              </button>
+            ))}
+          </div>
         </div>
         {canEdit && (
           <div className="ai-editmode">
@@ -489,6 +510,47 @@ function MessageView({ m, hooks, highlight }: { m: AiMessage; hooks: any; highli
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** The user's standing instructions, added to every request (saved in settings). */
+export function InstructionsBox({ onClose }: { onClose?: () => void }) {
+  const saved = useSettings((s) => String(s.values['ai.instructions'] || ''));
+  const [text, setText] = useState(saved);
+  useEffect(() => setText(saved), [saved]);
+  const save = (v: string) => useSettings.getState().set({ 'ai.instructions': v });
+  return (
+    <div className="ai-instr">
+      <div className="ai-instr-head">
+        <span>Your instructions for every answer</span>
+        {onClose && (
+          <button className="icon-btn sm" title="Close" onClick={onClose}>
+            <X size={14} />
+          </button>
+        )}
+      </div>
+      <textarea
+        rows={4}
+        value={text}
+        maxLength={2000}
+        placeholder={'e.g. "I\u2019m a medical student: use clinical terminology and explain physiological mechanisms in detail." or "Answer in Spanish." or "Use British spelling."'}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => text !== saved && save(text)}
+      />
+      <div className="ai-instr-foot">
+        <span className="muted">{text.trim() ? 'Used for every request until you clear it.' : 'Nothing set.'}</span>
+        <span style={{ display: 'flex', gap: 6 }}>
+          {text && (
+            <button className="btn sm" onClick={() => (setText(''), save(''))}>
+              Clear
+            </button>
+          )}
+          <button className="btn sm tonal" disabled={text === saved} onClick={() => (save(text), toast('Instructions saved', 'success'))}>
+            Save
+          </button>
+        </span>
+      </div>
     </div>
   );
 }
