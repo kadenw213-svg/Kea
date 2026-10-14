@@ -1,4 +1,4 @@
-import { evaluate, FormulaError, Scalar, formatGeneral, formatWithPattern, serialToDate, dateToSerial, addr } from './formula';
+import { evaluateRaw, FormulaError, Scalar, formatGeneral, formatWithPattern, serialToDate, dateToSerial, addr } from './formula';
 
 export type NumFmt = 'general' | 'number' | 'currency' | 'percent' | 'date' | 'datetime' | 'text';
 
@@ -18,6 +18,82 @@ export interface CellStyle {
   numFmt?: string;
   size?: number;
   font?: string;
+  /** Borders: top, bottom, left, right. */
+  bt?: Border;
+  bb?: Border;
+  bl?: Border;
+  br?: Border;
+}
+
+export interface Border {
+  style: 'thin' | 'medium' | 'thick' | 'dashed' | 'dotted' | 'double';
+  color?: string;
+}
+
+export interface Range {
+  r1: number;
+  c1: number;
+  r2: number;
+  c2: number;
+}
+
+export type ChartType = 'column' | 'bar' | 'line' | 'area' | 'pie' | 'doughnut' | 'scatter';
+export interface Chart {
+  id: string;
+  type: ChartType;
+  range: Range;
+  title?: string;
+  /** Position and size in pixels over the grid. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  legend?: 'right' | 'bottom' | 'top' | 'none';
+  /** First row holds series names / first column holds category labels. */
+  headerRow?: boolean;
+  labelCol?: boolean;
+  seriesBy?: 'cols' | 'rows';
+  stacked?: boolean;
+  showValues?: boolean;
+  xTitle?: string;
+  yTitle?: string;
+  colors?: string[];
+  smooth?: boolean;
+}
+
+export interface Validation {
+  id: string;
+  range: Range;
+  type: 'list' | 'checkbox' | 'number' | 'date' | 'textLength';
+  /** List items, or a range like "Sheet2!A1:A10" to take items from. */
+  values?: string[];
+  source?: string;
+  min?: number | null;
+  max?: number | null;
+  /** Reject invalid input (otherwise just warn). */
+  strict?: boolean;
+  help?: string;
+}
+
+export type CondType = 'gt' | 'lt' | 'gte' | 'lte' | 'between' | 'eq' | 'neq' | 'contains' | 'notContains' | 'startsWith' | 'empty' | 'notEmpty' | 'dup' | 'unique' | 'top' | 'bottom' | 'aboveAvg' | 'belowAvg' | 'scale' | 'bars' | 'formula';
+export interface CondRule {
+  id: string;
+  range: Range;
+  type: CondType;
+  a?: string;
+  b?: string;
+  n?: number;
+  /** Formatting applied when the rule matches. */
+  style?: { bg?: string; color?: string; b?: boolean; i?: boolean; s?: boolean };
+  /** Colour scale (2 or 3 colours, low → high) or data-bar colour. */
+  colors?: string[];
+}
+
+export interface FilterState {
+  /** The filtered table, including its header row. */
+  range: Range;
+  /** Per column (absolute index): values hidden, or a condition. */
+  cols: Record<number, { hide?: string[]; cond?: { type: CondType; a?: string; b?: string } }>;
 }
 
 export interface Cell {
@@ -34,6 +110,14 @@ export interface Sheet {
   rowH: Record<number, number>;
   freeze: { rows: number; cols: number };
   merges?: { r1: number; c1: number; r2: number; c2: number }[];
+  charts?: Chart[];
+  validations?: Validation[];
+  condRules?: CondRule[];
+  filter?: FilterState | null;
+  /** Rows hidden by the filter or by hand. */
+  hiddenRows?: Record<number, true>;
+  hiddenCols?: Record<number, true>;
+  gridlines?: boolean;
 }
 
 export interface Workbook {
@@ -173,22 +257,44 @@ export class Calc {
   private stack = new Set<string>();
   private byName = new Map<string, Sheet>();
   private used = new Map<string, number>();
+  /** Spilled array results: "sheetId|r,c" → value, for cells filled by a formula above/left of them. */
+  private spills = new Map<string, Scalar>();
+  private spillPrepared = new Set<string>();
+  /** Anchor cell → size of its spill, so the grid can outline it. */
+  readonly spillAreas = new Map<string, { rows: number; cols: number }>();
 
   constructor(private wb: Workbook) {
     for (const s of wb.sheets) this.byName.set(s.name.toLowerCase(), s);
+  }
+
+  /** Evaluate array formulas first so the cells they spill into have values. */
+  private prepareSpills(sheet: Sheet) {
+    if (this.spillPrepared.has(sheet.id)) return;
+    this.spillPrepared.add(sheet.id);
+    for (const k in sheet.cells) {
+      const cell = sheet.cells[k];
+      if (cell.f && SPILL_FN.test(cell.f)) {
+        const { r, c } = parseKey(k);
+        this.value(sheet, r, c);
+      }
+    }
   }
 
   value(sheet: Sheet, r: number, c: number): Scalar {
     const k = `${sheet.id}|${r},${c}`;
     const hit = this.cache.get(k);
     if (hit !== undefined) return hit;
+    this.prepareSpills(sheet);
     const cell = sheet.cells[`${r},${c}`];
-    if (!cell || (cell.f === undefined && (cell.v === undefined || cell.v === null))) return null;
+    if (!cell || (cell.f === undefined && (cell.v === undefined || cell.v === null))) {
+      const sp = this.spills.get(k);
+      return sp === undefined ? null : sp;
+    }
     if (cell.f === undefined) return cell.v as Scalar;
     if (this.stack.has(k)) return new FormulaError('#CIRC!');
     this.stack.add(k);
     const self = this;
-    const v = evaluate(cell.f, {
+    const raw = evaluateRaw(cell.f, {
       cell(sheetName, rr, cc) {
         const target = sheetName ? self.byName.get(sheetName.toLowerCase()) : sheet;
         if (!target) return new FormulaError('#REF!');
@@ -206,10 +312,38 @@ export class Calc {
       },
       sheetExists: (name) => self.byName.has(name.toLowerCase())
     });
+    let v: Scalar;
+    if (Array.isArray(raw)) {
+      v = raw[0]?.[0] ?? null;
+      const h = raw.length;
+      const w = Math.max(0, ...raw.map((row) => row.length));
+      if (h > 1 || w > 1) {
+        // Spill into the neighbouring cells unless something is in the way.
+        let blocked = false;
+        for (let i = 0; i < h && !blocked; i++)
+          for (let j = 0; j < w; j++) {
+            if (!i && !j) continue;
+            const nb = sheet.cells[`${r + i},${c + j}`];
+            if (nb && (nb.f !== undefined || (nb.v !== undefined && nb.v !== null && nb.v !== ''))) {
+              blocked = true;
+              break;
+            }
+          }
+        if (blocked) v = new FormulaError('#SPILL!');
+        else {
+          for (let i = 0; i < h; i++) for (let j = 0; j < w; j++) if (i || j) this.spills.set(`${sheet.id}|${r + i},${c + j}`, raw[i]?.[j] ?? null);
+          this.spillAreas.set(`${sheet.id}|${r},${c}`, { rows: h, cols: w });
+        }
+      }
+    } else v = raw;
+    if (v === null) v = 0;
+    if (typeof v === 'number' && !isFinite(v)) v = new FormulaError('#NUM!');
     this.stack.delete(k);
     this.cache.set(k, v);
     return v;
   }
 }
+
+const SPILL_FN = /\b(FILTER|SORT|SORTBY|UNIQUE|SEQUENCE|TRANSPOSE|RANDARRAY)\s*\(/i;
 
 export { addr };

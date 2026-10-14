@@ -35,8 +35,22 @@ import {
   X,
   ChevronUp,
   ChevronDown,
-  Pencil
+  Pencil,
+  Grid3x3,
+  BarChart3,
+  Filter as FilterIcon,
+  Database,
+  ListChecks,
+  Paintbrush,
+  CopyMinus,
+  TableProperties,
+  ChevronDown as Caret
 } from 'lucide-react';
+import type { Chart, Border, Validation, CondRule, FilterState } from './model';
+import { chartData, chartSvg } from './chart';
+import { conditionalFormats, CfResult, currentRegion, filteredRows, validationAt, listItems, invalidReason } from './features';
+import { ChartDialog, CondFormatDialog, ValidationDialog, FilterMenu, PivotDialog } from './SheetDialogs';
+import { uid } from '../../lib/util';
 import type { Tab } from '../../store';
 import { editorRegistry, setDirty, toast, ask, prompt } from '../../store';
 import {
@@ -184,6 +198,11 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
   const [renaming, setRenaming] = useState<number | null>(null);
   const [fillPreview, setFillPreview] = useState<Range | null>(null);
   const [suggestIdx, setSuggestIdx] = useState(0);
+  const [chartEdit, setChartEdit] = useState<{ chart: Chart; isNew: boolean } | null>(null);
+  const [selChart, setSelChart] = useState<string | null>(null);
+  const [dlg, setDlg] = useState<null | 'cf' | 'validation' | 'pivot'>(null);
+  const [filterMenu, setFilterMenu] = useState<{ col: number; x: number; y: number } | null>(null);
+  const [dropdown, setDropdown] = useState<{ r: number; c: number; x: number; y: number } | null>(null);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLInputElement>(null);
@@ -192,6 +211,11 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
   const drag = useRef<any>(null);
 
   const used = useMemo(() => usedRange(sheet), [sheet.cells]);
+  const cf = useMemo(() => conditionalFormats(sheet, calc), [sheet, calc]);
+  const checkboxAt = useMemo(() => {
+    const ranges = (sheet.validations || []).filter((v) => v.type === 'checkbox').map((v) => v.range);
+    return (r: number, c: number) => ranges.some((g) => r >= g.r1 && r <= g.r2 && c >= g.c1 && c <= g.c2);
+  }, [sheet.validations]);
   const rows = Math.max(MIN_ROWS, used.rows + 100) + extraRows;
   const cols = Math.max(MIN_COLS, used.cols + 5) + extraCols;
 
@@ -200,7 +224,8 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
     const colStart = new Float64Array(cols + 1);
     for (let c = 0; c < cols; c++) colStart[c + 1] = colStart[c] + (sheet.colW[c] ?? DEFAULT_COL_W);
     const rowStart = new Float64Array(rows + 1);
-    for (let r = 0; r < rows; r++) rowStart[r + 1] = rowStart[r] + (sheet.rowH[r] ?? DEFAULT_ROW_H);
+    const hiddenR = sheet.hiddenRows || {};
+    for (let r = 0; r < rows; r++) rowStart[r + 1] = rowStart[r] + (hiddenR[r] ? 0 : sheet.rowH[r] ?? DEFAULT_ROW_H);
     const find = (arr: Float64Array, v: number, n: number) => {
       let lo = 0,
         hi = n - 1;
@@ -221,7 +246,7 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
       totalW: colStart[cols],
       totalH: rowStart[rows]
     };
-  }, [sheet.colW, sheet.rowH, rows, cols]);
+  }, [sheet.colW, sheet.rowH, sheet.hiddenRows, rows, cols]);
 
   const fz = sheet.freeze;
   const frozenW = geo.colStart[fz.cols];
@@ -398,6 +423,13 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
       const open = (text.match(/\(/g) || []).length - (text.match(/\)/g) || []).length;
       if (open > 0) text += ')'.repeat(open);
     }
+    const rule = validationAt(sheet, editing.r, editing.c);
+    const problem = rule && !text.startsWith('=') ? invalidReason(rule, text.trim(), wb, calc, sheet) : null;
+    if (problem && rule!.strict) {
+      toast(problem, 'error');
+      return;
+    }
+    if (problem) toast(problem);
     if (text !== editText(sheet.cells[key(editing.r, editing.c)])) setInput(editing.r, editing.c, text);
     setEditing(null);
     bodyRef.current?.focus();
@@ -465,7 +497,17 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
   // ---------- Mouse ----------
   const onMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest('.cell-editor') || target.closest('.suggest')) return;
+    if (target.closest('.cell-editor') || target.closest('.suggest') || target.closest('.chart-box') || target.closest('.flt-btn') || target.closest('.dd-btn')) return;
+    setSelChart(null);
+    const cbEl = target.closest('[data-cb]') as HTMLElement | null;
+    if (cbEl && e.button === 0) {
+      const [r, c] = cbEl.dataset.cb!.split(',').map(Number);
+      const v = calc.value(sheet, r, c);
+      setInput(r, c, v === true ? 'FALSE' : 'TRUE');
+      select({ r, c });
+      e.preventDefault();
+      return;
+    }
     const hh = hit(e.clientX, e.clientY);
     if (e.button === 2) {
       if (hh.area === 'cell' && !inRange(hh.r, hh.c, sel)) select({ r: hh.r, c: hh.c });
@@ -1231,7 +1273,7 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
   // ---------- Render ----------
   const rowsToRender: number[] = [];
   for (let r = 0; r < fz.rows; r++) rowsToRender.push(r);
-  for (let r = view.r0; r <= view.r1; r++) rowsToRender.push(r);
+  for (let r = view.r0; r <= view.r1; r++) if (!sheet.hiddenRows?.[r]) rowsToRender.push(r);
   const colsToRender: number[] = [];
   for (let c = 0; c < fz.cols; c++) colsToRender.push(c);
   for (let c = view.c0; c <= view.c1; c++) colsToRender.push(c);
@@ -1245,6 +1287,184 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
       fc = g.c2 < fz.cols;
     return { left, top, width, height, cls: `${fr ? 'fr' : ''} ${fc ? 'fc' : ''}` };
   };
+  // ---------- Borders, charts, filters, validation, summaries ----------
+  const applyBorders = (kind: 'all' | 'outer' | 'inner' | 'top' | 'bottom' | 'left' | 'right' | 'none', b: Border) => {
+    const g = { ...sel, r2: Math.min(sel.r2, rows - 1), c2: Math.min(sel.c2, cols - 1) };
+    if ((g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1) > 200000) return toast('Select a smaller range for borders.');
+    commitSheet((s) => {
+      for (let r = g.r1; r <= g.r2; r++)
+        for (let c = g.c1; c <= g.c2; c++) {
+          const k = key(r, c);
+          const st: CellStyle = { ...(s.cells[k]?.s || {}) };
+          const set = (side: 'bt' | 'bb' | 'bl' | 'br', on: boolean) => {
+            if (on) st[side] = b;
+          };
+          if (kind === 'none') delete st.bt, delete st.bb, delete st.bl, delete st.br;
+          set('bt', kind === 'all' || kind === 'top' ? r === g.r1 || kind === 'all' : (kind === 'outer' && r === g.r1) || (kind === 'inner' && r > g.r1));
+          set('bb', kind === 'all' || (kind === 'bottom' && r === g.r2) || (kind === 'outer' && r === g.r2) || (kind === 'inner' && r < g.r2));
+          set('bl', kind === 'all' || (kind === 'left' && c === g.c1) || (kind === 'outer' && c === g.c1) || (kind === 'inner' && c > g.c1));
+          set('br', kind === 'all' || (kind === 'right' && c === g.c2) || (kind === 'outer' && c === g.c2) || (kind === 'inner' && c < g.c2));
+          if (kind === 'top' && r !== g.r1) delete st.bt;
+          s.cells[k] = { ...(s.cells[k] || {}), s: st };
+        }
+    });
+  };
+
+  const dataRange = () => (sel.r1 !== sel.r2 || sel.c1 !== sel.c2 ? { ...sel, r2: Math.min(sel.r2, used.rows - 1), c2: Math.min(sel.c2, used.cols - 1) } : currentRegion(sheet, cur.r, cur.c));
+  const newChart = () => {
+    const range = dataRange();
+    const x = geo.colStart[Math.min(range.c2 + 1, cols - 1)] + 24;
+    const y = geo.rowStart[range.r1];
+    setChartEdit({ chart: { id: uid(), type: 'column', range, x, y, w: 480, h: 300, headerRow: true, labelCol: true }, isNew: true });
+  };
+  const saveChart = (c: Chart) =>
+    commitSheet((s) => {
+      const list = s.charts || [];
+      s.charts = list.some((x) => x.id === c.id) ? list.map((x) => (x.id === c.id ? c : x)) : [...list, c];
+    });
+  const removeChart = (id: string) => commitSheet((s) => void (s.charts = (s.charts || []).filter((x) => x.id !== id)));
+
+  const toggleFilter = () => {
+    if (sheet.filter) {
+      commitSheet((s) => {
+        s.filter = null;
+        s.hiddenRows = undefined;
+      });
+      return;
+    }
+    const range = dataRange();
+    if (range.r2 <= range.r1) return toast('Select a table with a header row to filter.');
+    commitSheet((s) => {
+      s.filter = { range, cols: {} };
+    });
+  };
+  const setFilterCol = (col: number, crit: FilterState['cols'][number] | null) =>
+    commitSheet((s) => {
+      const f: FilterState = { ...s.filter!, cols: { ...s.filter!.cols } };
+      if (crit) f.cols[col] = crit;
+      else delete f.cols[col];
+      s.filter = f;
+      s.hiddenRows = filteredRows(s, calc, f);
+    });
+  const sortFilter = (col: number, desc: boolean) => {
+    const f = sheet.filter!;
+    const g = { ...f.range, r1: f.range.r1 + 1 };
+    const rowsData: { r: number; cells: (Cell | undefined)[]; keyV: any }[] = [];
+    for (let r = g.r1; r <= g.r2; r++) {
+      const cells: (Cell | undefined)[] = [];
+      for (let c = g.c1; c <= g.c2; c++) cells.push(sheet.cells[key(r, c)]);
+      rowsData.push({ r, cells, keyV: calc.value(sheet, r, col) });
+    }
+    rowsData.sort((a, b) => {
+      const ae = a.keyV === null || a.keyV === '',
+        be = b.keyV === null || b.keyV === '';
+      if (ae !== be) return ae ? 1 : -1;
+      const c = compare(a.keyV, b.keyV);
+      return desc ? -c : c;
+    });
+    commitSheet((s) => {
+      rowsData.forEach((row, i) => {
+        const tr = g.r1 + i;
+        row.cells.forEach((cell, j) => {
+          const k = key(tr, g.c1 + j);
+          if (!cell) delete s.cells[k];
+          else s.cells[k] = cell.f !== undefined ? { ...cell, f: shiftFormula(cell.f, tr - row.r, 0) } : cell;
+        });
+      });
+    });
+  };
+
+  const removeDuplicates = () => {
+    const g = dataRange();
+    const header = hasHeaderRow() && g.r1 === 0 ? 1 : 0;
+    const seen = new Set<string>();
+    const keep: (Cell | undefined)[][] = [];
+    let removed = 0;
+    for (let r = g.r1 + header; r <= g.r2; r++) {
+      const row: (Cell | undefined)[] = [];
+      const sig: string[] = [];
+      for (let c = g.c1; c <= g.c2; c++) {
+        row.push(sheet.cells[key(r, c)]);
+        sig.push(formatValue(calc.value(sheet, r, c)).toLowerCase());
+      }
+      const k = sig.join('\u0001');
+      if (seen.has(k)) removed++;
+      else {
+        seen.add(k);
+        keep.push(row);
+      }
+    }
+    if (!removed) return toast('No duplicate rows found.');
+    commitSheet((s) => {
+      for (let r = g.r1 + header; r <= g.r2; r++) for (let c = g.c1; c <= g.c2; c++) delete s.cells[key(r, c)];
+      keep.forEach((row, i) => row.forEach((cell, j) => cell && (s.cells[key(g.r1 + header + i, g.c1 + j)] = cell)));
+    });
+    toast(`Removed ${removed} duplicate row${removed > 1 ? 's' : ''}`, 'success');
+  };
+
+  const pivotSource = () => {
+    const g = dataRange();
+    const headers: string[] = [];
+    for (let c = g.c1; c <= g.c2; c++) headers.push(formatValue(calc.value(sheet, g.r1, c)));
+    return { g, headers };
+  };
+  const createPivot = (o: { group: number; group2: number | null; value: number | null; agg: 'sum' | 'count' | 'average' | 'min' | 'max' }) => {
+    const { g, headers } = pivotSource();
+    const rowKeys: string[] = [];
+    const colKeys: string[] = [];
+    const cellsAgg = new Map<string, number[]>();
+    for (let r = g.r1 + 1; r <= g.r2; r++) {
+      const rk = formatValue(calc.value(sheet, r, g.c1 + o.group)) || '(blank)';
+      const ck = o.group2 === null ? '' : formatValue(calc.value(sheet, r, g.c1 + o.group2)) || '(blank)';
+      if (!rowKeys.includes(rk)) rowKeys.push(rk);
+      if (!colKeys.includes(ck)) colKeys.push(ck);
+      const v = o.value === null ? 1 : calc.value(sheet, r, g.c1 + o.value);
+      const list = cellsAgg.get(rk + '\u0001' + ck) || [];
+      if (o.agg === 'count') list.push(v === null || v === '' ? 0 : 1);
+      else if (typeof v === 'number') list.push(v);
+      cellsAgg.set(rk + '\u0001' + ck, list);
+    }
+    const aggOf = (l: number[] | undefined) => {
+      if (!l || !l.length) return null;
+      switch (o.agg) {
+        case 'average':
+          return l.reduce((a, b) => a + b, 0) / l.length;
+        case 'min':
+          return Math.min(...l);
+        case 'max':
+          return Math.max(...l);
+        default:
+          return l.reduce((a, b) => a + b, 0);
+      }
+    };
+    rowKeys.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    colKeys.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const out = newSheet(`Summary of ${headers[o.group] || 'data'}`.slice(0, 31));
+    const label = `${o.agg[0].toUpperCase() + o.agg.slice(1)} of ${o.value === null ? 'rows' : headers[o.value]}`;
+    out.cells[key(0, 0)] = { v: headers[o.group] || 'Group', s: { b: true, bg: '#e8f0fe' } };
+    colKeys.forEach((ck, j) => (out.cells[key(0, j + 1)] = { v: o.group2 === null ? label : ck, s: { b: true, bg: '#e8f0fe', align: 'right' } }));
+    out.cells[key(0, colKeys.length + 1)] = { v: 'Total', s: { b: true, bg: '#e8f0fe', align: 'right' } };
+    rowKeys.forEach((rk, i) => {
+      out.cells[key(i + 1, 0)] = { v: rk };
+      let all: number[] = [];
+      colKeys.forEach((ck, j) => {
+        const l = cellsAgg.get(rk + '\u0001' + ck);
+        const v = aggOf(l);
+        if (v !== null) out.cells[key(i + 1, j + 1)] = { v };
+        all = all.concat(l || []);
+      });
+      const t = aggOf(all);
+      if (t !== null) out.cells[key(i + 1, colKeys.length + 1)] = { v: t, s: { b: true } };
+    });
+    out.colW[0] = 160;
+    const w = h.get();
+    h.commit({ sheets: [...w.sheets, out] });
+    markDirty();
+    setSi(w.sheets.length);
+    toast('Summary created on a new sheet', 'success');
+  };
+
+  const activeValidation = validationAt(sheet, cur.r, cur.c);
   const selBox = boxFor(sel);
   const activeMerge = mergeAt.get(key(cur.r, cur.c));
   const curBox = boxFor(activeMerge || { r1: cur.r, c1: cur.c, r2: cur.r, c2: cur.c });
@@ -1287,7 +1507,68 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
         onExportPdf={exportPdf}
         onExportCsv={() => exportFile(`${baseName(tab.name)} - ${sheet.name}.csv`, { name: 'CSV', ext: 'csv', build: async () => writeCsv(h.get(), si) })}
         onInsertFunction={(name) => startEdit(`=${name}(`)}
+        onBorders={applyBorders}
+        onChart={newChart}
+        filterOn={!!sheet.filter}
+        onFilter={toggleFilter}
+        onValidation={() => setDlg('validation')}
+        onCondFormat={() => setDlg('cf')}
+        onDedupe={removeDuplicates}
+        onPivot={() => setDlg('pivot')}
       />
+      {chartEdit && (
+        <ChartDialog
+          chart={chartEdit.chart}
+          sheet={sheet}
+          calc={calc}
+          onClose={() => setChartEdit(null)}
+          onSave={(c) => (saveChart(c), setChartEdit(null), setSelChart(c.id))}
+          onDelete={chartEdit.isNew ? undefined : () => (removeChart(chartEdit.chart.id), setChartEdit(null))}
+        />
+      )}
+      {dlg === 'cf' && <CondFormatDialog rules={sheet.condRules || []} selection={dataRange()} onClose={() => setDlg(null)} onSave={(rules) => commitSheet((s) => void (s.condRules = rules))} />}
+      {dlg === 'validation' && (
+        <ValidationDialog
+          existing={activeValidation}
+          selection={sel}
+          onClose={() => setDlg(null)}
+          onRemove={activeValidation ? () => commitSheet((s) => void (s.validations = (s.validations || []).filter((v) => v.id !== activeValidation.id))) : undefined}
+          onSave={(v) =>
+            commitSheet((s) => {
+              const list = s.validations || [];
+              s.validations = list.some((x) => x.id === v.id) ? list.map((x) => (x.id === v.id ? v : x)) : [...list, v];
+            })
+          }
+        />
+      )}
+      {dlg === 'pivot' && <PivotDialog headers={pivotSource().headers} onClose={() => setDlg(null)} onCreate={createPivot} />}
+      {filterMenu && sheet.filter && (
+        <div className="fm-scrim" onMouseDown={() => setFilterMenu(null)}>
+          <div style={{ position: 'fixed', left: Math.min(filterMenu.x, window.innerWidth - 290), top: Math.min(filterMenu.y, window.innerHeight - 480) }} onMouseDown={(e) => e.stopPropagation()}>
+            <FilterMenu sheet={sheet} calc={calc} filter={sheet.filter} col={filterMenu.col} onClose={() => setFilterMenu(null)} onApply={(crit) => setFilterCol(filterMenu.col, crit)} onSort={(desc) => sortFilter(filterMenu.col, desc)} />
+          </div>
+        </div>
+      )}
+      {dropdown && activeValidation?.type === 'list' && (
+        <div className="fm-scrim" onMouseDown={() => setDropdown(null)}>
+          <div className="dd-list" style={{ left: dropdown.x, top: dropdown.y }} onMouseDown={(e) => e.stopPropagation()}>
+            {listItems(activeValidation, wb, calc, sheet).map((item) => (
+              <button
+                key={item}
+                className="menu-item"
+                onClick={() => {
+                  setInput(dropdown.r, dropdown.c, item);
+                  setDropdown(null);
+                  bodyRef.current?.focus();
+                }}
+              >
+                {item}
+              </button>
+            ))}
+            {!listItems(activeValidation, wb, calc, sheet).length && <div className="muted" style={{ padding: 8 }}>No items</div>}
+          </div>
+        </div>
+      )}
 
       <div className="formula-bar">
         <div className="name-box" title="Go to a cell (e.g. B12)">
@@ -1354,7 +1635,65 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
         }}
       >
         <div className="sheet-content" style={{ width: HEADER_W + geo.totalW, height: HEADER_H + geo.totalH }}>
-          <CellsLayer sheet={sheet} calc={calc} geo={geo} rows={rowsToRender} cols={colsToRender} fz={fz} mergeAt={mergeAt} editingKey={editing ? key(editing.r, editing.c) : ''} />
+          <CellsLayer sheet={sheet} calc={calc} geo={geo} rows={rowsToRender} cols={colsToRender} fz={fz} mergeAt={mergeAt} editingKey={editing ? key(editing.r, editing.c) : ''} cf={cf} checkboxAt={checkboxAt} />
+
+          {/* Filter buttons in the header row */}
+          {sheet.filter &&
+            Array.from({ length: sheet.filter.range.c2 - sheet.filter.range.c1 + 1 }, (_, i) => sheet.filter!.range.c1 + i).map((c) => {
+              const r = sheet.filter!.range.r1;
+              const on = !!sheet.filter!.cols[c];
+              return (
+                <button
+                  key={`flt${c}`}
+                  className={`flt-btn ${on ? 'on' : ''} ${r < fz.rows ? 'fr' : ''} ${c < fz.cols ? 'fc' : ''}`}
+                  style={{ left: HEADER_W + geo.colStart[c + 1] - 21, top: HEADER_H + geo.rowStart[r] + Math.max(0, (geo.rh(r) - 18) / 2) }}
+                  title="Filter and sort"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setFilterMenu({ col: c, x: e.clientX - 10, y: e.clientY + 12 });
+                  }}
+                >
+                  <FilterIcon size={11} />
+                </button>
+              );
+            })}
+
+          {/* Dropdown arrow in a list cell */}
+          {!editing && activeValidation?.type === 'list' && (
+            <button
+              className={`dd-btn ${curBox.cls}`}
+              style={{ left: curBox.left + curBox.width - 20, top: curBox.top + Math.max(0, (curBox.height - 18) / 2) }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                setDropdown({ r: cur.r, c: cur.c, x: r.right - 200, y: r.bottom + 4 });
+              }}
+            >
+              <Caret size={13} />
+            </button>
+          )}
+          {!editing && activeValidation?.help && (
+            <div className={`dv-help ${curBox.cls}`} style={{ left: curBox.left, top: curBox.top + curBox.height + 6 }}>
+              {activeValidation.help}
+            </div>
+          )}
+
+          {/* Charts float over the grid */}
+          {(sheet.charts || []).map((ch) => (
+            <ChartBox
+              key={ch.id}
+              chart={ch}
+              sheet={sheet}
+              calc={calc}
+              selected={selChart === ch.id}
+              onSelect={() => setSelChart(ch.id)}
+              onEdit={() => setChartEdit({ chart: ch, isNew: false })}
+              onChange={(c) => saveChart(c)}
+              onDelete={() => removeChart(ch.id)}
+            />
+          ))}
 
           {editRefs.map((g, i) => {
             const b = boxFor(g);
@@ -1596,6 +1935,79 @@ measureCtx.font = '13px Inter, Segoe UI, sans-serif';
 const measure = (s: string) => measureCtx.measureText(s).width;
 
 // ---------- Cells ----------
+const BORDER_W: Record<string, number> = { thin: 1, medium: 2, thick: 3, dashed: 1, dotted: 1, double: 3 };
+/** Cell borders drawn as inset shadows, so they never change the cell's size. */
+function borderShadow(s?: CellStyle): string | undefined {
+  if (!s || (!s.bt && !s.bb && !s.bl && !s.br)) return undefined;
+  const out: string[] = [];
+  const col = (b: Border) => b.color || '#000';
+  if (s.bt) out.push(`inset 0 ${BORDER_W[s.bt.style] || 1}px 0 ${col(s.bt)}`);
+  if (s.bb) out.push(`inset 0 -${BORDER_W[s.bb.style] || 1}px 0 ${col(s.bb)}`);
+  if (s.bl) out.push(`inset ${BORDER_W[s.bl.style] || 1}px 0 0 ${col(s.bl)}`);
+  if (s.br) out.push(`inset -${BORDER_W[s.br.style] || 1}px 0 0 ${col(s.br)}`);
+  return out.join(', ');
+}
+
+/** A chart floating over the grid: drag to move, corner to resize, double-click to edit. */
+function ChartBox({ chart, sheet, calc, selected, onSelect, onEdit, onChange, onDelete }: { chart: Chart; sheet: Sheet; calc: Calc; selected: boolean; onSelect(): void; onEdit(): void; onChange(c: Chart): void; onDelete(): void }) {
+  const [live, setLive] = useState<Chart | null>(null);
+  const c = live || chart;
+  const svg = useMemo(() => chartSvg(c, chartData(c, sheet, calc), c.w, c.h, 'dark'), [c.type, c.range, c.title, c.w, c.h, c.legend, c.stacked, c.smooth, c.showValues, c.headerRow, c.labelCol, c.seriesBy, c.xTitle, c.yTitle, sheet, calc]);
+  const start = (e: React.MouseEvent, mode: 'move' | 'resize') => {
+    e.preventDefault();
+    e.stopPropagation();
+    onSelect();
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const base = { ...chart };
+    let latest = base;
+    const move = (ev: MouseEvent) => {
+      const dx = ev.clientX - x0;
+      const dy = ev.clientY - y0;
+      latest = mode === 'move' ? { ...base, x: Math.max(0, base.x + dx), y: Math.max(0, base.y + dy) } : { ...base, w: Math.max(200, base.w + dx), h: Math.max(140, base.h + dy) };
+      setLive(latest);
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      setLive(null);
+      if (latest !== base) onChange(latest);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+  return (
+    <div
+      className={`chart-box ${selected ? 'on' : ''}`}
+      style={{ left: HEADER_W + c.x, top: HEADER_H + c.y, width: c.w, height: c.h }}
+      onMouseDown={(e) => start(e, 'move')}
+      onDoubleClick={(e) => (e.stopPropagation(), onEdit())}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.stopPropagation();
+          onDelete();
+        }
+      }}
+    >
+      <div className="chart-svg" dangerouslySetInnerHTML={{ __html: svg }} />
+      {selected && (
+        <>
+          <div className="chart-tools" onMouseDown={(e) => e.stopPropagation()}>
+            <button className="btn sm tonal" onClick={onEdit}>
+              <Pencil size={13} /> Edit
+            </button>
+            <button className="icon-btn sm" title="Delete chart" onClick={onDelete}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+          <div className="chart-resize" onMouseDown={(e) => start(e, 'resize')} />
+        </>
+      )}
+    </div>
+  );
+}
+
 const CellsLayer = memo(function CellsLayer({
   sheet,
   calc,
@@ -1604,7 +2016,9 @@ const CellsLayer = memo(function CellsLayer({
   cols,
   fz,
   mergeAt,
-  editingKey
+  editingKey,
+  cf,
+  checkboxAt
 }: {
   sheet: Sheet;
   calc: Calc;
@@ -1614,6 +2028,8 @@ const CellsLayer = memo(function CellsLayer({
   fz: { rows: number; cols: number };
   mergeAt: Map<string, Range>;
   editingKey: string;
+  cf: (r: number, c: number) => CfResult | null;
+  checkboxAt: (r: number, c: number) => boolean;
 }) {
   const out: JSX.Element[] = [];
   const lastCol = cols[cols.length - 1];
@@ -1631,13 +2047,28 @@ const CellsLayer = memo(function CellsLayer({
       const width = m ? geo.colStart[m.c2 + 1] - geo.colStart[c] : geo.cw(c);
       const height = m ? geo.rowStart[m.r2 + 1] - geo.rowStart[r] : geo.rh(r);
       const cls = `cell${fr ? ' fr' : ''}${fc ? ' fc' : ''}${m ? ' merged' : ''}`;
-      if (!cell || k === editingKey) {
-        out.push(<div key={k} className={cls} style={{ left, top, width, height, background: cell?.s?.bg }} />);
+      const cfr = cf(r, c);
+      const shadow = borderShadow(cell?.s);
+      const isCb = checkboxAt(r, c);
+      const spilled = !cell ? calc.value(sheet, r, c) : null;
+      if ((!cell && (spilled === null || spilled === undefined) && !isCb) || k === editingKey) {
+        out.push(<div key={k} className={cls} style={{ left, top, width, height, background: cfr?.bg ?? cell?.s?.bg, boxShadow: shadow }} />);
         continue;
       }
-      const v = calc.value(sheet, r, c);
-      const s = cell.s || {};
-      const text = formatValue(v, s);
+      const v = cell ? calc.value(sheet, r, c) : spilled;
+      const s = cell?.s || {};
+      if (isCb) {
+        const on = v === true || v === 1 || (typeof v === 'string' && v.toUpperCase() === 'TRUE');
+        out.push(
+          <div key={k} className={cls} style={{ left, top, width, height, background: cfr?.bg ?? s.bg, boxShadow: shadow, justifyContent: 'center', alignItems: 'center' }}>
+            <span className={`cb ${on ? 'on' : ''}`} data-cb={`${r},${c}`}>
+              {on ? '✓' : ''}
+            </span>
+          </div>
+        );
+        continue;
+      }
+      const text = formatValue(v ?? null, s);
       const isNum = typeof v === 'number';
       const isErr = v instanceof FormulaError;
       const align = s.align || (isErr || typeof v === 'boolean' ? 'center' : isNum ? 'right' : 'left');
@@ -1655,11 +2086,14 @@ const CellsLayer = memo(function CellsLayer({
         top,
         width,
         height,
-        background: s.bg,
-        color: isErr ? 'var(--danger)' : s.color,
-        fontWeight: s.b ? 600 : undefined,
-        fontStyle: s.i ? 'italic' : undefined,
-        textDecoration: [s.u ? 'underline' : '', s.s ? 'line-through' : ''].filter(Boolean).join(' ') || undefined,
+        background: cfr?.bar
+          ? `linear-gradient(90deg, ${cfr.bar.color}cc ${cfr.bar.pct}%, transparent ${cfr.bar.pct}%)${cfr.bg ?? s.bg ? `, ${cfr.bg ?? s.bg}` : ''}`
+          : cfr?.bg ?? s.bg,
+        boxShadow: shadow,
+        color: isErr ? 'var(--danger)' : cfr?.color ?? s.color,
+        fontWeight: s.b || cfr?.b ? 600 : undefined,
+        fontStyle: s.i || cfr?.i ? 'italic' : undefined,
+        textDecoration: [s.u ? 'underline' : '', s.s || cfr?.s ? 'line-through' : ''].filter(Boolean).join(' ') || undefined,
         fontSize: s.size ? `${s.size}pt` : undefined,
         fontFamily: s.font || undefined,
         justifyContent: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
@@ -1667,7 +2101,7 @@ const CellsLayer = memo(function CellsLayer({
         zIndex: spill > width ? 1 : undefined
       };
       out.push(
-        <div key={k} className={cls + (s.wrap ? ' wrap' : '')} style={style}>
+        <div key={k} className={cls + (s.wrap ? ' wrap' : '') + (!cell ? ' spill' : '')} style={style}>
           <span className="ct" style={spill > width ? { width: spill, maxWidth: spill } : undefined}>
             {text}
           </span>
@@ -1699,7 +2133,17 @@ function SheetToolbar(p: {
   onExportPdf(): void;
   onExportCsv(): void;
   onInsertFunction(name: string): void;
+  onBorders(kind: 'all' | 'outer' | 'inner' | 'top' | 'bottom' | 'left' | 'right' | 'none', b: Border): void;
+  onChart(): void;
+  filterOn: boolean;
+  onFilter(): void;
+  onValidation(): void;
+  onCondFormat(): void;
+  onDedupe(): void;
+  onPivot(): void;
 }) {
+  const [bStyle, setBStyle] = useState<Border['style']>('thin');
+  const [bColor, setBColor] = useState('#000000');
   const s = p.style;
   const B = ({ on, title, onClick, children, disabled }: any) => (
     <button className={`icon-btn ${on ? 'active' : ''}`} title={title} onMouseDown={(e) => e.preventDefault()} onClick={onClick} disabled={disabled}>
@@ -1786,6 +2230,41 @@ function SheetToolbar(p: {
       <B on={p.merged} title="Merge cells" onClick={p.onMerge}>
         <TableCellsMerge size={18} />
       </B>
+      <MenuButton title="Borders" button={(open) => <button className={`icon-btn ${open ? 'active' : ''}`}><Grid3x3 size={18} /></button>}>
+        {(close) => (
+          <div style={{ minWidth: 220 }}>
+            <div className="menu-title">Borders</div>
+            {(
+              [
+                ['all', 'All borders'],
+                ['outer', 'Outside borders'],
+                ['inner', 'Inside borders'],
+                ['top', 'Top'],
+                ['bottom', 'Bottom'],
+                ['left', 'Left'],
+                ['right', 'Right'],
+                ['none', 'No borders']
+              ] as const
+            ).map(([k, label]) => (
+              <button key={k} className="menu-item" onClick={() => (p.onBorders(k, { style: bStyle, color: bColor }), close())}>
+                {label}
+              </button>
+            ))}
+            <div className="menu-sep" />
+            <div className="dd-row" style={{ padding: '4px 10px 6px' }}>
+              <select className="select" value={bStyle} onChange={(e) => setBStyle(e.target.value as Border['style'])}>
+                <option value="thin">Thin</option>
+                <option value="medium">Medium</option>
+                <option value="thick">Thick</option>
+                <option value="dashed">Dashed</option>
+                <option value="dotted">Dotted</option>
+                <option value="double">Double</option>
+              </select>
+              <input type="color" className="color-field" value={bColor} onChange={(e) => setBColor(e.target.value)} title="Border colour" />
+            </div>
+          </div>
+        )}
+      </MenuButton>
       <div className="tb-sep" />
       <B title="Sort A → Z by this column" onClick={() => p.onSort(false)}>
         <ArrowDownAZ size={18} />
@@ -1793,6 +2272,31 @@ function SheetToolbar(p: {
       <B title="Sort Z → A by this column" onClick={() => p.onSort(true)}>
         <ArrowUpAZ size={18} />
       </B>
+      <B on={p.filterOn} title={p.filterOn ? 'Remove filter' : 'Filter'} onClick={p.onFilter}>
+        <FilterIcon size={18} />
+      </B>
+      <B title="Insert chart" onClick={p.onChart}>
+        <BarChart3 size={18} />
+      </B>
+      <MenuButton title="Data" button={(open) => <button className={`icon-btn ${open ? 'active' : ''}`}><Database size={18} /></button>}>
+        {(close) => (
+          <>
+            <div className="menu-title">Data</div>
+            <button className="menu-item" onClick={() => (p.onValidation(), close())}>
+              <ListChecks size={16} /> Dropdowns &amp; validation…
+            </button>
+            <button className="menu-item" onClick={() => (p.onCondFormat(), close())}>
+              <Paintbrush size={16} /> Conditional formatting…
+            </button>
+            <button className="menu-item" onClick={() => (p.onPivot(), close())}>
+              <TableProperties size={16} /> Summarize (pivot table)…
+            </button>
+            <button className="menu-item" onClick={() => (p.onDedupe(), close())}>
+              <CopyMinus size={16} /> Remove duplicate rows
+            </button>
+          </>
+        )}
+      </MenuButton>
       <MenuButton title="Freeze rows / columns" button={(open) => <button className={`icon-btn ${open || p.freeze.rows || p.freeze.cols ? 'active' : ''}`}><Snowflake size={18} /></button>}>
         {(close) => (
           <>

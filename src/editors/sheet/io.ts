@@ -1,7 +1,15 @@
 import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
-import { Workbook, Sheet, Cell, CellStyle, NumFmt, newSheet, key, parseKey, parseInput, Calc, formatValue, usedRange, DEFAULT_COL_W } from './model';
-import { FormulaError, colIndex, parseAddr } from './formula';
+import { Workbook, Sheet, Cell, CellStyle, NumFmt, newSheet, key, parseKey, parseInput, Calc, formatValue, usedRange, DEFAULT_COL_W, DEFAULT_ROW_H, Border, Range, CondRule } from './model';
+import { FormulaError, colIndex, parseAddr, addr } from './formula';
+import { chartData, chartSvg, chartPng } from './chart';
+
+/** Slate-only sheet features (live charts, rule details) live in a very hidden sheet with this name. */
+const DATA_SHEET = '_slate_data';
+const rangeRef = (g: Range) => `${addr(g.r1, g.c1)}:${addr(g.r2, g.c2)}`;
+const BORDER_STYLES = ['thin', 'medium', 'thick', 'dashed', 'dotted', 'double'];
+const readBorder = (b: any): Border | undefined => (b?.style ? { style: (BORDER_STYLES.includes(b.style) ? b.style : 'thin') as Border['style'], color: argbToHex(b.color?.argb) } : undefined);
+const writeBorder = (b?: Border) => (b ? { style: b.style as any, color: b.color ? { argb: hexToArgb(b.color) } : undefined } : undefined);
 import { extOf } from '../../lib/fileTypes';
 import { bytesToText, textToBytes } from '../../lib/util';
 
@@ -66,8 +74,23 @@ async function readXlsx(bytes: Uint8Array): Promise<Workbook> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
   const sheets: Sheet[] = [];
+  // Slate's own data for each sheet, if the file was saved by Slate.
+  let extra: Record<string, any> = {};
+  const dataWs = wb.getWorksheet(DATA_SHEET);
+  if (dataWs) {
+    let json = '';
+    dataWs.eachRow((row) => (json += String(row.getCell(1).value ?? '')));
+    try {
+      extra = JSON.parse(json).sheets || {};
+    } catch {}
+  }
   wb.eachSheet((ws) => {
+    if (ws.name === DATA_SHEET) return;
     const sheet = newSheet(ws.name);
+    const validations: NonNullable<Sheet['validations']> = [];
+    ws.eachRow({ includeEmpty: true }, (row, rn) => {
+      if ((row as any).hidden) (sheet.hiddenRows ||= {})[rn - 1] = true;
+    });
     ws.eachRow({ includeEmpty: false }, (row, rn) => {
       if (row.height && Math.abs(row.height - 15) > 0.5) sheet.rowH[rn - 1] = Math.round((row.height * 4) / 3);
       row.eachCell({ includeEmpty: false }, (cell, cn) => {
@@ -130,6 +153,27 @@ async function readXlsx(bytes: Uint8Array): Promise<Workbook> {
         if (al?.wrapText) s.wrap = true;
         Object.assign(s, fmtFromCode(cell.numFmt));
         if (cell.type === ExcelJS.ValueType.Date && !s.fmt) s.fmt = 'date';
+        const bd: any = cell.border;
+        if (bd) {
+          const t = readBorder(bd.top),
+            b = readBorder(bd.bottom),
+            l = readBorder(bd.left),
+            r = readBorder(bd.right);
+          if (t) s.bt = t;
+          if (b) s.bb = b;
+          if (l) s.bl = l;
+          if (r) s.br = r;
+        }
+        // Dropdown lists from Excel (one rule per cell; merged with neighbours below).
+        const dv: any = (cell as any).dataValidation;
+        if (dv?.type === 'list' && dv.formulae?.[0]) {
+          const f = String(dv.formulae[0]);
+          const values = f.startsWith('"') ? f.replace(/^"|"$/g, '').split(',').map((x: string) => x.trim()) : undefined;
+          const last = validations[validations.length - 1];
+          const same = last && JSON.stringify(last.values) === JSON.stringify(values) && last.source === (values ? undefined : f) && last.range.c1 === cn - 1 && last.range.r2 === rn - 2;
+          if (same) last.range.r2 = rn - 1;
+          else validations.push({ id: `x${rn}_${cn}`, range: { r1: rn - 1, c1: cn - 1, r2: rn - 1, c2: cn - 1 }, type: 'list', values, source: values ? undefined : f.replace(/\$/g, ''), strict: dv.errorStyle !== 'warning' && dv.errorStyle !== 'information' });
+        }
         if (Object.keys(s).length) c.s = s;
         if (c.v !== undefined || c.f !== undefined || c.s) sheet.cells[key(rn - 1, cn - 1)] = c;
       });
@@ -139,6 +183,45 @@ async function readXlsx(bytes: Uint8Array): Promise<Workbook> {
     });
     const view: any = ws.views?.[0];
     if (view?.state === 'frozen') sheet.freeze = { rows: view.ySplit || 0, cols: view.xSplit || 0 };
+    if (view?.showGridLines === false) sheet.gridlines = false;
+    if (validations.length) sheet.validations = validations;
+    const af: any = (ws as any).autoFilter;
+    const afRef = typeof af === 'string' ? af : af?.from && af?.to ? `${typeof af.from === 'string' ? af.from : addr(af.from.row - 1, af.from.column - 1)}:${typeof af.to === 'string' ? af.to : addr(af.to.row - 1, af.to.column - 1)}` : null;
+    if (afRef) {
+      const [a, b] = afRef.replace(/\$/g, '').split(':').map(parseAddr);
+      if (a && b) sheet.filter = { range: { r1: a.r, c1: a.c, r2: b.r, c2: b.c }, cols: {} };
+    }
+    // Conditional formatting written by Excel (the common rule types).
+    const cfs: any[] = (ws as any).conditionalFormattings || [];
+    const rules: CondRule[] = [];
+    for (const cfm of cfs) {
+      const [a, b] = String(cfm.ref || '').split(' ')[0].replace(/\$/g, '').split(':').map(parseAddr);
+      if (!a) continue;
+      const range = { r1: a.r, c1: a.c, r2: (b || a).r, c2: (b || a).c };
+      for (const r of cfm.rules || []) {
+        const style = { bg: argbToHex(r.style?.fill?.bgColor?.argb || r.style?.fill?.fgColor?.argb), color: argbToHex(r.style?.font?.color?.argb), b: r.style?.font?.bold || undefined };
+        const id = `x${rules.length}`;
+        if (r.type === 'cellIs') {
+          const op: Record<string, CondRule['type']> = { greaterThan: 'gt', lessThan: 'lt', greaterThanOrEqual: 'gte', lessThanOrEqual: 'lte', equal: 'eq', notEqual: 'neq', between: 'between' };
+          if (op[r.operator]) rules.push({ id, range, type: op[r.operator], a: String(r.formulae?.[0] ?? '').replace(/^"|"$/g, ''), b: r.formulae?.[1] !== undefined ? String(r.formulae[1]) : undefined, style });
+        } else if (r.type === 'colorScale') rules.push({ id, range, type: 'scale', colors: (r.color || []).map((c: any) => argbToHex(c.argb) || '#ffffff') });
+        else if (r.type === 'dataBar') rules.push({ id, range, type: 'bars', colors: [argbToHex(r.color?.argb) || '#638ec6'] });
+        else if (r.type === 'expression' && r.formulae?.[0]) rules.push({ id, range, type: 'formula', a: String(r.formulae[0]), style });
+        else if (r.type === 'top10') rules.push({ id, range, type: r.bottom ? 'bottom' : 'top', n: r.rank || 10, style });
+        else if (r.type === 'aboveAverage') rules.push({ id, range, type: r.aboveAverage === false ? 'belowAvg' : 'aboveAvg', style });
+        else if (r.type === 'containsText' && r.text) rules.push({ id, range, type: r.operator === 'notContains' ? 'notContains' : 'contains', a: r.text, style });
+      }
+    }
+    if (rules.length) sheet.condRules = rules;
+    // Slate's own copy wins: it has live charts and the exact rule settings.
+    const x = extra[ws.name];
+    if (x) {
+      if (x.charts) sheet.charts = x.charts;
+      if (x.validations) sheet.validations = x.validations;
+      if (x.condRules) sheet.condRules = x.condRules;
+      if ('filter' in x) sheet.filter = x.filter;
+      if (x.gridlines === false) sheet.gridlines = false;
+    }
     const merges: string[] = (ws as any).model?.merges || [];
     if (merges.length) {
       sheet.merges = merges
@@ -248,9 +331,11 @@ export async function writeXlsx(wb: Workbook): Promise<Uint8Array> {
   const out = new ExcelJS.Workbook();
   out.creator = 'Slate Office';
   out.created = new Date();
+  const extra: Record<string, any> = {};
   for (const sheet of wb.sheets) {
+    const frozen = sheet.freeze.rows || sheet.freeze.cols;
     const ws = out.addWorksheet(sheet.name.slice(0, 31), {
-      views: sheet.freeze.rows || sheet.freeze.cols ? [{ state: 'frozen', xSplit: sheet.freeze.cols, ySplit: sheet.freeze.rows }] : undefined
+      views: frozen ? [{ state: 'frozen', xSplit: sheet.freeze.cols, ySplit: sheet.freeze.rows, showGridLines: sheet.gridlines !== false }] : sheet.gridlines === false ? [{ showGridLines: false } as any] : undefined
     });
     for (const k in sheet.cells) {
       const { r, c } = parseKey(k);
@@ -279,6 +364,82 @@ export async function writeXlsx(wb: Workbook): Promise<Uint8Array> {
       if (s.align || s.wrap || s.valign) cell.alignment = { horizontal: s.align, vertical: s.valign, wrapText: s.wrap || undefined };
       const code = codeFromFmt(s);
       if (code) cell.numFmt = code;
+      if (s.bt || s.bb || s.bl || s.br) cell.border = { top: writeBorder(s.bt), bottom: writeBorder(s.bb), left: writeBorder(s.bl), right: writeBorder(s.br) } as any;
+    }
+    // Hidden rows (filters), the filter range itself, and dropdowns.
+    for (const r in sheet.hiddenRows || {}) ws.getRow(+r + 1).hidden = true;
+    if (sheet.filter) ws.autoFilter = rangeRef(sheet.filter.range);
+    for (const v of sheet.validations || []) {
+      const cells = (v.range.r2 - v.range.r1 + 1) * (v.range.c2 - v.range.c1 + 1);
+      if (cells > 20000) continue;
+      const list = v.type === 'checkbox' ? ['TRUE', 'FALSE'] : v.values;
+      const dv: any =
+        v.type === 'list' || v.type === 'checkbox'
+          ? { type: 'list', allowBlank: true, formulae: [list?.length ? `"${list.join(',').replace(/"/g, '""')}"` : (v.source || '').replace(/([A-Z]+)(\d+)/g, '$$$1$$$2')] }
+          : v.type === 'number'
+            ? { type: 'decimal', allowBlank: true, operator: v.min != null && v.max != null ? 'between' : v.min != null ? 'greaterThanOrEqual' : 'lessThanOrEqual', formulae: [v.min ?? v.max, ...(v.min != null && v.max != null ? [v.max] : [])] }
+            : v.type === 'textLength'
+              ? { type: 'textLength', allowBlank: true, operator: 'between', formulae: [v.min ?? 0, v.max ?? 32767] }
+              : null;
+      if (!dv) continue;
+      Object.assign(dv, { showErrorMessage: true, errorStyle: v.strict ? 'stop' : 'warning', showInputMessage: !!v.help, prompt: v.help || undefined });
+      for (let r = v.range.r1; r <= v.range.r2; r++) for (let c = v.range.c1; c <= v.range.c2; c++) ws.getCell(r + 1, c + 1).dataValidation = dv;
+    }
+    // Conditional formatting in Excel's own terms.
+    for (const rule of sheet.condRules || []) {
+      const ref = rangeRef(rule.range);
+      const first = addr(rule.range.r1, rule.range.c1);
+      const style = { fill: rule.style?.bg ? { type: 'pattern', pattern: 'solid', bgColor: { argb: hexToArgb(rule.style.bg) } } : undefined, font: rule.style?.color || rule.style?.b ? { color: rule.style?.color ? { argb: hexToArgb(rule.style.color) } : undefined, bold: rule.style?.b || undefined } : undefined };
+      const q = (s?: string) => (s === undefined || s === '' || isNaN(Number(s)) ? `"${String(s ?? '').replace(/"/g, '""')}"` : s);
+      const op: Record<string, string> = { gt: 'greaterThan', lt: 'lessThan', gte: 'greaterThanOrEqual', lte: 'lessThanOrEqual', eq: 'equal', neq: 'notEqual', between: 'between' };
+      let r: any = null;
+      if (op[rule.type]) r = { type: 'cellIs', operator: op[rule.type], formulae: rule.type === 'between' ? [q(rule.a), q(rule.b)] : [q(rule.a)], style };
+      else if (rule.type === 'scale') {
+        const cols = rule.colors?.length ? rule.colors : ['#f8696b', '#ffeb84', '#63be7b'];
+        r = { type: 'colorScale', cfvo: cols.length >= 3 ? [{ type: 'min' }, { type: 'percentile', value: 50 }, { type: 'max' }] : [{ type: 'min' }, { type: 'max' }], color: cols.map((c) => ({ argb: hexToArgb(c) })) };
+      } else if (rule.type === 'bars') r = { type: 'dataBar', cfvo: [{ type: 'min' }, { type: 'max' }], color: { argb: hexToArgb(rule.colors?.[0] || '#638ec6') } };
+      else if (rule.type === 'top' || rule.type === 'bottom') r = { type: 'top10', rank: rule.n || 10, bottom: rule.type === 'bottom', style };
+      else if (rule.type === 'aboveAvg' || rule.type === 'belowAvg') r = { type: 'aboveAverage', aboveAverage: rule.type === 'aboveAvg', style };
+      else {
+        const abs = `$${ref.replace(':', ':$').replace(/([A-Z]+)(\d+)/g, '$1$$$2')}`;
+        const expr: Record<string, string> = {
+          contains: `ISNUMBER(SEARCH(${q(rule.a)},${first}))`,
+          notContains: `NOT(ISNUMBER(SEARCH(${q(rule.a)},${first})))`,
+          startsWith: `LEFT(${first},LEN(${q(rule.a)}))=${q(rule.a)}`,
+          empty: `LEN(TRIM(${first}))=0`,
+          notEmpty: `LEN(TRIM(${first}))>0`,
+          dup: `COUNTIF(${abs},${first})>1`,
+          unique: `COUNTIF(${abs},${first})=1`,
+          formula: rule.a || 'FALSE'
+        };
+        if (expr[rule.type]) r = { type: 'expression', formulae: [expr[rule.type]], style };
+      }
+      if (r) {
+        try {
+          ws.addConditionalFormatting({ ref, rules: [{ priority: 1, ...r }] } as any);
+        } catch {}
+      }
+    }
+    // Charts: a picture Excel can show, plus the live chart in Slate's data.
+    for (const ch of sheet.charts || []) {
+      try {
+        const svg = chartSvg(ch, chartData(ch, sheet, calc), ch.w, ch.h, 'light');
+        const png = await chartPng(svg, ch.w, ch.h);
+        const id = out.addImage({ buffer: png as any, extension: 'png' });
+        let col = 0,
+          x = 0;
+        while (x + (sheet.colW[col] ?? DEFAULT_COL_W) <= ch.x) x += sheet.colW[col++] ?? DEFAULT_COL_W;
+        let row = 0,
+          y = 0;
+        const rh = (r: number) => (sheet.hiddenRows?.[r] ? 0 : sheet.rowH[r] ?? DEFAULT_ROW_H);
+        while (row < 1048575 && y + rh(row) <= ch.y) y += rh(row++);
+        ws.addImage(id, { tl: { col: col + (ch.x - x) / (sheet.colW[col] ?? DEFAULT_COL_W), row: row + (ch.y - y) / (sheet.rowH[row] ?? DEFAULT_ROW_H) } as any, ext: { width: ch.w, height: ch.h } });
+      } catch (err) {
+        console.warn('chart image', (err as any)?.name, (err as any)?.message, err);
+      }
+    }
+    if (sheet.charts?.length || sheet.validations?.length || sheet.condRules?.length || sheet.filter || sheet.gridlines === false) {
+      extra[sheet.name.slice(0, 31)] = { charts: sheet.charts, validations: sheet.validations, condRules: sheet.condRules, filter: sheet.filter ?? null, gridlines: sheet.gridlines };
     }
     for (const c in sheet.colW) ws.getColumn(+c + 1).width = Math.max(1, (sheet.colW[c] - 5) / 7);
     for (const r in sheet.rowH) ws.getRow(+r + 1).height = (sheet.rowH[r] * 3) / 4;
@@ -287,6 +448,13 @@ export async function writeXlsx(wb: Workbook): Promise<Uint8Array> {
         ws.mergeCells(m.r1 + 1, m.c1 + 1, m.r2 + 1, m.c2 + 1);
       } catch {}
     }
+  }
+  if (Object.keys(extra).length) {
+    const ds = out.addWorksheet(DATA_SHEET);
+    ds.state = 'veryHidden';
+    const json = JSON.stringify({ v: 1, sheets: extra });
+    // Cells hold at most 32,767 characters, so long data is split across rows.
+    for (let i = 0, row = 1; i < json.length; i += 30000, row++) ds.getCell(row, 1).value = json.slice(i, i + 30000);
   }
   const buf = await out.xlsx.writeBuffer();
   return new Uint8Array(buf as ArrayBuffer);
