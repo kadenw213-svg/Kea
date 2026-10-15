@@ -50,15 +50,63 @@ async function titles(list, lang) {
     .map((p) => ({ title: p.title, description: p.description || '', intro: (p.extract || '').trim(), disambiguation: false, rank: 0, phrase: String(back.get(p.title) || p.title).toLowerCase() }));
 }
 
+// Wikipedia's HTML → plain text that keeps what the plain-text format loses: superscripts and subscripts
+// ("10²³ mol⁻¹", "H₃O⁺") and each equation's LaTeX (turned into readable text in the panel).
+const SUP = Object.fromEntries([...'0123456789+-−=()ni'].map((c, k) => [c, '⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁻⁼⁽⁾ⁿⁱ'[k]]));
+const SUB = Object.fromEntries([...'0123456789+-−=()aeoxhklmnpst'].map((c, k) => [c, '₀₁₂₃₄₅₆₇₈₉₊₋₋₌₍₎ₐₑₒₓₕₖₗₘₙₚₛₜ'[k]]));
+const decode = (s) =>
+  s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+// A tag, even when an attribute holds a ">" (Wikipedia's data-mw JSON can).
+const TAG = /<(?:[^>"']|"[^"]*"|'[^']*')*>/g;
+const strip = (s) => decode(s.replace(TAG, ''));
+function htmlToText(html) {
+  return decode(
+    html
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      // Attributes aren't needed (and can hide ">"): reduce every tag to its name.
+      .replace(/<(\/?)([a-z0-9]+)(?:[^>"']|"[^"]*"|'[^']*')*?(\/?)>/gi, (m, close, name, self) => (name.toLowerCase() === 'math' || name.toLowerCase() === 'annotation' ? m : `<${close}${name}${self}>`))
+      // Chemistry formulas stack an empty superscript over the subscript with a line break: H₂O, not "H\n₂O".
+      .replace(/<sup>\s*<\/sup>\s*<br\/?>\s*/gi, '')
+      .replace(/<\/sup>\s*<br\/?>\s*<sub>/gi, '</sup><sub>')
+      // Equations with a label under each part: "CO₂ (carbon dioxide) + 2H₂A (electron donor) → …".
+      .replace(/<span><span><span>((?:(?!<span)[\s\S])*?)<\/span><span><span>((?:(?!<span)[\s\S])*?)<\/span><\/span><\/span><\/span>/gi, (_, part, label) => `${part} (${label.replace(/<br\/?>/gi, ' ')})`)
+      // Equations: keep only their LaTeX source.
+      .replace(/<math[\s\S]*?<annotation[^>]*>([\s\S]*?)<\/annotation>[\s\S]*?<\/math>/gi, (_, tex) => decode(tex.replace(/<[^>]+>/g, '')))
+      .replace(/<math[^>]*alttext="([^"]*)"[\s\S]*?<\/math>/gi, (_, tex) => decode(tex))
+      .replace(/<sup[^>]*>([\s\S]*?)<\/sup>/gi, (_, x) => {
+        const t = strip(x);
+        return [...t].every((c) => SUP[c]) ? [...t].map((c) => SUP[c]).join('') : t;
+      })
+      .replace(/<sub[^>]*>([\s\S]*?)<\/sub>/gi, (_, x) => {
+        const t = strip(x);
+        return [...t].every((c) => SUB[c]) ? [...t].map((c) => SUB[c]).join('') : t;
+      })
+      .replace(/<h([2-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, n, x) => `\n${'='.repeat(+n)} ${strip(x).trim()} ${'='.repeat(+n)}\n`)
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|li|dd|dt|tr|div|blockquote|ul|ol|dl|table)>/gi, '\n')
+      .replace(TAG, '')
+  )
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 /** One article as plain text: its lead (the definition and overview) and its sections, without reference sections. */
 async function article(title, lang) {
   const api = apiBase(lang);
-  const j = await getJson(`${api}&action=query&prop=extracts|info|revisions|description&explaintext=1&exsectionformat=wiki&inprop=url&rvprop=timestamp&redirects=1&titles=${encodeURIComponent(String(title).slice(0, 300))}`);
+  const j = await getJson(`${api}&action=query&prop=extracts|info|revisions|description&inprop=url&rvprop=timestamp&redirects=1&titles=${encodeURIComponent(String(title).slice(0, 300))}`);
   const p = j.query?.pages?.[0];
   if (!p || p.missing || !p.extract) return null;
   const sections = [];
   let cur = { title: '', level: 1, text: '' };
-  for (const line of p.extract.split('\n')) {
+  for (const line of htmlToText(p.extract).split('\n')) {
     const h = line.match(/^(={2,6})\s*(.*?)\s*\1\s*$/);
     if (h) {
       sections.push(cur);

@@ -45,8 +45,10 @@ const bare = (t: string) => t.toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim
 
 /** Wikipedia's plain text keeps some markup leftovers (maths, empty brackets); tidy them without changing words. */
 export function tidy(text: string) {
-  let t = text;
-  // {\displaystyle …} maths blocks (balanced braces).
+  // Invisible word joiners Wikipedia puts around inline maths.
+  let t = text.replace(/\u2060/g, '');
+  // Equations: Wikipedia's plain text spells each symbol out on its own indented line, followed by the LaTeX source
+  // ({\displaystyle …}). Replace the whole block with one readable line made from the LaTeX, inside its sentence.
   for (let i = t.indexOf('{\\displaystyle'); i >= 0; i = t.indexOf('{\\displaystyle')) {
     let depth = 0;
     let j = i;
@@ -54,15 +56,133 @@ export function tidy(text: string) {
       if (t[j] === '{') depth++;
       else if (t[j] === '}' && --depth === 0) break;
     }
-    t = t.slice(0, i) + t.slice(j + 1);
+    const latex = t.slice(i + '{\\displaystyle'.length, j);
+    // Back over the spelled-out symbol lines (indented or blank) to the end of the sentence before it…
+    let start = i;
+    for (let p = t.lastIndexOf('\n', start - 1); p >= 0; p = t.lastIndexOf('\n', start - 1)) {
+      const line = t.slice(p + 1, start);
+      if (line.trim() && !/^\s/.test(line)) break;
+      start = p;
+    }
+    // …and forward over blank lines to where the text goes on.
+    let end = j + 1;
+    for (let m = t.indexOf('\n', end); m >= 0 && !t.slice(end, m).trim(); m = t.indexOf('\n', end)) end = m + 1;
+    // No space where the formula touches a bracket, hyphen or apostrophe ("(x)", "x-axis", "x's").
+    const before = /[(\[\s]$/.test(t.slice(0, start)) ? '' : ' ';
+    const after = /^[-–)\]'’,.;:]/.test(t.slice(end)) ? '' : ' ';
+    t = `${t.slice(0, start)}${before}${latexToText(latex)}${after}${t.slice(end)}`;
   }
   return t
     .replace(/\(\s*[;,]?\s*\)/g, '')
     .replace(/\(\s*;\s*/g, '(')
+    .replace(/\([ \t]+/g, '(')
+    .replace(/[ \t]+\)/g, ')')
     .replace(/[ \t]+([,.;:])/g, '$1')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
+// ---------- Equations: LaTeX → readable text ("E=mc^{2}" → "E = mc²", "\frac{n}{V}" → "n/V") ----------
+const GREEK: Record<string, string> = {
+  alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', varepsilon: 'ε', zeta: 'ζ', eta: 'η', theta: 'θ', vartheta: 'θ', iota: 'ι', kappa: 'κ', lambda: 'λ', mu: 'μ', nu: 'ν',
+  xi: 'ξ', pi: 'π', rho: 'ρ', sigma: 'σ', tau: 'τ', upsilon: 'υ', phi: 'φ', varphi: 'φ', chi: 'χ', psi: 'ψ', omega: 'ω', Gamma: 'Γ', Delta: 'Δ', Theta: 'Θ', Lambda: 'Λ', Xi: 'Ξ',
+  Pi: 'Π', Sigma: 'Σ', Phi: 'Φ', Psi: 'Ψ', Omega: 'Ω'
+};
+const SYMBOLS: Record<string, string> = {
+  cdot: '·', times: '×', div: '÷', pm: '±', mp: '∓', leq: '≤', le: '≤', geq: '≥', ge: '≥', neq: '≠', ne: '≠', approx: '≈', sim: '∼', simeq: '≃', equiv: '≡', propto: '∝', to: '→',
+  rightarrow: '→', longrightarrow: '→', leftarrow: '←', Rightarrow: '⇒', leftrightarrow: '↔', rightleftharpoons: '⇌', infty: '∞', sum: 'Σ', prod: '∏', int: '∫', oint: '∮',
+  partial: '∂', nabla: '∇', circ: '°', degree: '°', ldots: '…', cdots: '⋯', dots: '…', in: '∈', notin: '∉', subset: '⊂', cup: '∪', cap: '∩', forall: '∀', exists: '∃', hbar: 'ħ',
+  ell: 'ℓ', angle: '∠', perp: '⊥', parallel: '∥', prime: '′', langle: '⟨', rangle: '⟩', vert: '|', lvert: '|', rvert: '|', mid: '|', thickapprox: '≈', thicksim: '∼', cong: '≅', ll: '≪', gg: '≫', iff: '⇔', implies: '⇒', mapsto: '↦', uparrow: '↑', downarrow: '↓', star: '⋆', ast: '∗', bullet: '•', emptyset: '∅', varnothing: '∅', triangle: '△', square: '□',
+  lfloor: '⌊', rfloor: '⌋', lceil: '⌈', rceil: '⌉', percent: '%'
+};
+const SUP: Record<string, string> = Object.fromEntries([...'0123456789+-=()ni'].map((c, k) => [c, '⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱ'[k]]));
+const SUB: Record<string, string> = Object.fromEntries([...'0123456789+-=()aeoxhklmnpst'].map((c, k) => [c, '₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₒₓₕₖₗₘₙₚₛₜ'[k]]));
+const KEEP_CONTENT = new Set(['text', 'textrm', 'textit', 'textbf', 'mathrm', 'mathbf', 'mathit', 'mathsf', 'mathcal', 'mathbb', 'boldsymbol', 'operatorname', 'mbox', 'ce', 'rm', 'vec', 'hat', 'bar', 'overline', 'underline', 'tilde', 'dot']);
+const FUNCTIONS = new Set(['log', 'ln', 'lg', 'sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'exp', 'lim', 'max', 'min', 'det', 'sup', 'inf', 'arg', 'deg', 'gcd', 'Pr']);
+const DROP = new Set(['left', 'right', 'big', 'Big', 'bigg', 'Bigg', 'bigl', 'bigr', 'Bigl', 'Bigr', 'displaystyle', 'textstyle', 'scriptstyle', 'limits', 'nolimits']);
+
+export function latexToText(src: string): string {
+  let i = 0;
+  const wrap = (raw: string, a = raw.trim()) => (/^[\p{L}\p{N}.′·_⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿⁱ₀₁₂₃₄₅₆₇₈₉ₐₑₒₓₕₖₗₘₙₚₛₜ]+$/u.test(a) ? a : `(${a})`);
+  const script = (g: string, sup: boolean) => {
+    const map = sup ? SUP : SUB;
+    // No Unicode version (like a subscript B): "_B", with a thin space so "k_B N_A" doesn't run together.
+    return [...g].every((c) => map[c]) ? [...g].map((c) => map[c]).join('') : `${sup ? '^' : '_'}${wrap(g)} `;
+  };
+  const arg = (): string => {
+    while (src[i] === ' ') i++;
+    if (src[i] === '{') {
+      i++;
+      const out = seq('}');
+      i++;
+      return out;
+    }
+    if (src[i] === '\\') return command();
+    return src[i++] ?? '';
+  };
+  const command = (): string => {
+    i++;
+    let name = '';
+    if (/[a-zA-Z]/.test(src[i] || '')) {
+      while (i < src.length && /[a-zA-Z]/.test(src[i])) name += src[i++];
+      // LaTeX ignores spaces after a command word ("\Delta G" is ΔG).
+      while (src[i] === ' ') i++;
+    } else name = src[i++] ?? '';
+    if (name === '\\') return '; ';
+    if ([',', ';', ':', ' ', 'quad', 'qquad'].includes(name)) return ' ';
+    if (name === '!') return '';
+    if (name === 'frac' || name === 'dfrac' || name === 'tfrac') {
+      const a = arg();
+      const b = arg();
+      return `${wrap(a)}/${wrap(b)}`;
+    }
+    if (name === 'sqrt') {
+      let n = '';
+      if (src[i] === '[') {
+        const close = src.indexOf(']', i);
+        n = src.slice(i + 1, close);
+        i = close + 1;
+      }
+      return `${n ? script(n, true) : ''}√${wrap(arg())}`;
+    }
+    if (name === 'begin' || name === 'end') {
+      arg();
+      return '';
+    }
+    if (KEEP_CONTENT.has(name)) return arg();
+    if (DROP.has(name)) {
+      if (src[i] === '.') i++;
+      return '';
+    }
+    // Function names keep a space before their argument ("sin x", "log x"), but not before a sub/superscript.
+    if (FUNCTIONS.has(name)) return name + (src[i] === '_' || src[i] === '^' || src[i] === '(' ? '' : ' ');
+    return GREEK[name] ?? SYMBOLS[name] ?? name;
+  };
+  const seq = (end?: string): string => {
+    let out = '';
+    while (i < src.length && src[i] !== end) {
+      const c = src[i];
+      if (c === '^' || c === '_') {
+        i++;
+        out += script(arg(), c === '^');
+      } else if (c === '{') {
+        i++;
+        out += seq('}');
+        i++;
+      } else if (c === '\\') out += command();
+      else if (c === '&') i++;
+      else if (c === '~') (i++, (out += ' '));
+      else (i++, (out += c));
+    }
+    return out;
+  };
+  return seq()
+    .replace(/\s*([=<>≤≥≈≠→⇌⇒±≡∝])\s*/g, ' $1 ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.;)])/g, '$1')
+    .replace(/\(\s+/g, '(')
+    .trim();
+}
+
 const paragraphs = (t: string) => tidy(t).split(/\n+/).map((p) => p.trim()).filter(Boolean);
 
 /** The words around the highlight in the document, so the right meaning can be picked ("cell" in biology). */
