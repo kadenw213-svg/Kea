@@ -29,6 +29,8 @@ import {
 } from 'lucide-react';
 import { wikiQuery, wikiChars } from '../../lib/ai';
 import { FlashcardsView, QuizView } from './Study';
+import { QuizSession, QuizSessionData } from './QuizSession';
+import { ensureRecord, conceptsIn, planQuiz, writeQuestion, contextFor, loadRecord, missedCount } from '../../lib/study';
 import { MenuButton } from '../Popover';
 import { openSettings, useSettings } from '../../lib/settings';
 import type { AiHooks } from '../../store';
@@ -200,7 +202,7 @@ export function AiSidebar() {
         cancelled: () => flag.cancelled
       });
       if (kind === 'flashcards' || kind === 'quiz') {
-        if (result.length) patch(aid, { data: result, streaming: false, text: '' });
+        if (result && (result.length || result.plan?.length)) patch(aid, { data: result, streaming: false, text: '' });
         else patch(aid, { kind: 'text', streaming: false, error: true, text: `I couldn't make ${kind === 'quiz' ? 'a quiz' : 'flashcards'} from this. Try a longer passage, or Try again.` });
       } else if (kind === 'suggestions') {
         if (!result.length) patch(aid, { kind: 'text', streaming: false, text: 'This reads well already. I have no specific edits to suggest.' });
@@ -255,9 +257,37 @@ export function AiSidebar() {
     const n = studyCount('ai.flashcardCount', 10);
     run('flashcards', `Make ${n} flashcards`, (ctx, cb) => runFlashcards(ctx, cb, n, studyLevel()), 'flashcards');
   };
-  const quiz = () => {
+  /** Key for this file's quiz progress: its path (or name for unsaved files). */
+  const docKey = () => tab?.path || tab?.name || 'untitled';
+  /**
+   * Practice quiz on the loaded reading: find its concepts (once per file), plan a mixed set across all sections
+   * (missed concepts first), write the first question; the quiz card writes the rest while you answer.
+   */
+  const quiz = (onlyMissed = false) => {
     const n = studyCount('ai.quizCount', 5);
-    run('quiz', `Quiz me (${n} questions)`, (ctx, cb) => runQuiz(ctx, cb, n, studyLevel()), 'quiz');
+    const key = docKey();
+    run(
+      'quiz',
+      onlyMissed ? 'Quiz me on what I missed' : `Quiz me (${n} questions)`,
+      async (ctx, cb): Promise<QuizSessionData | null> => {
+        const full = hooks ? (await hooks.getDocument()).full : ctx.text;
+        const rec = await ensureRecord(key, full, ctx.docName, ctx.contextSize, cb.cancelled, cb.onStatus);
+        if (!rec.concepts.length) return null;
+        const scoped = ctx.isSelection ? conceptsIn(rec, ctx.text) : [];
+        const pool = scoped.length ? scoped : rec.concepts;
+        const plan = planQuiz(rec, n, pool, studyLevel(), onlyMissed);
+        // Start with a fill-in when there is one: it comes straight from the reading, so the quiz starts at once.
+        const fi = plan.findIndex((p) => p.format === 'fill');
+        if (fi > 0 && !onlyMissed) [plan[0], plan[fi]] = [plan[fi], plan[0]];
+        cb.onStatus('Writing the first question…');
+        let first: Awaited<ReturnType<typeof writeQuestion>> = null;
+        while (plan.length && !(first = await writeQuestion(plan[0], rec, contextFor(full, plan[0].concept, plan[0].partner), cb.cancelled))) plan.shift();
+        if (!plan.length) return null;
+        const sections = [...new Set(pool.map((c) => c.section))];
+        return { docKey: key, text: full, rec, plan, first, pool: pool.map((c) => c.id), covering: sections.length > 3 ? `${sections[0]} → ${sections[sections.length - 1]} (${sections.length} sections)` : sections.join(', ') };
+      },
+      'quiz'
+    );
   };
   const send = () => {
     const q = input.trim();
@@ -450,7 +480,7 @@ export function AiSidebar() {
               </button>
             )}
           >
-            {(close) => <StudyMenu close={close} onCards={flashcards} onQuiz={quiz} />}
+            {(close) => <StudyMenu close={close} onCards={flashcards} onQuiz={() => quiz()} onMissed={() => quiz(true)} docKey={hooks ? docKey() : null} />}
           </MenuButton>
         </div>}
 
@@ -528,6 +558,7 @@ function MessageView({ m, hooks, highlight }: { m: AiMessage; hooks: any; highli
     );
   }
   if (m.kind === 'flashcards' && m.data) return <FlashcardsView cards={m.data} title={(useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)?.name || 'Study').replace(/\.[^.]+$/, '')} hooks={hooks} />;
+  if (m.kind === 'quiz' && m.data?.plan) return <QuizSession data={m.data} hooks={hooks} />;
   if (m.kind === 'quiz' && m.data) return <QuizView questions={m.data} hooks={hooks} />;
   if (m.kind === 'suggestions' && m.data) return <SuggestionsReport list={m.data} hooks={hooks} initial={m.applied} how={m.appliedHow} />;
   const html = markdownToHtml(m.text || '');
@@ -678,16 +709,26 @@ export function InstructionsBox({ onClose }: { onClose?: () => void }) {
 }
 
 /** Study menu: what to make, plus how many and how hard (remembered in settings). */
-function StudyMenu({ close, onCards, onQuiz }: { close(): void; onCards(): void; onQuiz(): void }) {
+function StudyMenu({ close, onCards, onQuiz, onMissed, docKey }: { close(): void; onCards(): void; onQuiz(): void; onMissed(): void; docKey: string | null }) {
   const v = useSettings((s) => s.values);
   const set = (k: string, val: any) => useSettings.getState().set({ [k]: val });
+  // How many concepts in this file were missed in earlier quizzes.
+  const [missed, setMissed] = useState(0);
+  useEffect(() => {
+    if (docKey) loadRecord(docKey).then((r) => setMissed(missedCount(r)));
+  }, [docKey]);
   return (
     <div className="study-menu">
-      <button className="menu-item" onClick={() => (close(), onCards())}>
-        <Layers size={16} /> Flashcards
-      </button>
       <button className="menu-item" onClick={() => (close(), onQuiz())}>
         <ListChecks size={16} /> Practice quiz
+      </button>
+      {missed > 0 && (
+        <button className="menu-item" onClick={() => (close(), onMissed())}>
+          <RotateCcw size={16} /> Review missed <span className="kbd">{missed}</span>
+        </button>
+      )}
+      <button className="menu-item" onClick={() => (close(), onCards())}>
+        <Layers size={16} /> Flashcards
       </button>
       <div className="menu-sep" />
       <div className="study-opts">

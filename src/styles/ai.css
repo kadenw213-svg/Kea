@@ -1172,3 +1172,63 @@
   background: var(--surface-2);
   font-size: 12.5px;
 }
+
+/* Quiz card (v0.14) */
+.quiz-covering {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin: -4px 0 8px;
+}
+.quiz-wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  padding: 14px 2px;
+}
+.quiz-tags {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.quiz-tag {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.quiz-tag.again {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.quiz-choice.chosen {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.quiz-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px 0;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.quiz-answer {
+  margin: 4px 0;
+  font-weight: 600;
+}
+.quiz-feedback .quiz-why {
+  margin-top: 4px;
+}
+.quiz-src {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+}
