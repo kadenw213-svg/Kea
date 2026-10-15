@@ -240,11 +240,20 @@
 .ai-md li {
   margin-bottom: 3px;
 }
+/* Headings match the answer text: same size, just bold. */
+.ai-md h1,
+.ai-md h2,
 .ai-md h3,
 .ai-md h4,
-.ai-md h5 {
-  margin: 10px 0 6px;
-  font-size: 13.5px;
+.ai-md h5,
+.ai-md h6 {
+  margin: 12px 0 4px;
+  font-size: 1em;
+  font-weight: 700;
+  line-height: inherit;
+}
+.ai-md > :first-child {
+  margin-top: 0;
 }
 .ai-md code {
   background: var(--surface-3);
