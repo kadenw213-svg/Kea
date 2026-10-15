@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { toggleVoice } from './VoiceTyping';
-import { Search, FileText, Sheet, Presentation, FileCode2, FolderOpen, Settings, History, RefreshCw, Sparkles, Home, LayoutTemplate, FileSearch, Loader2, AppWindow, Columns2, Mic } from 'lucide-react';
+import { Search, FileText, Sheet, Presentation, FileCode2, FolderOpen, Settings, History, RefreshCw, BookOpen, Home, LayoutTemplate, FileSearch, Loader2, AppWindow, Columns2, Mic } from 'lucide-react';
 import { useTabs } from '../store';
 import { api, RecentEntry } from '../lib/api';
 import { newFile, openWithDialog, openPaths } from '../lib/open';
 import { openSettings, SECTIONS } from '../lib/settings';
 import { openHistory } from './settings/VersionHistory';
 import { openUpdates } from './Updates';
-import { toggleAi } from './ai/aiStore';
+import { toggleLookup } from './lookup/lookupStore';
 import { TEMPLATES } from '../editors/doc/templates';
 import { openTemplate } from './home/Templates';
 import { FileIcon } from './FileIcon';
@@ -81,7 +81,7 @@ export function CommandPalette() {
       { id: 'open', group: 'Files', label: 'Open a file…', hint: 'Ctrl+O', icon: <FolderOpen size={16} />, run: act(() => openWithDialog()) },
       { id: 'home', group: 'Files', label: 'Go to Home', icon: <Home size={16} />, run: act(() => useTabs.getState().setActive('home')) },
       { id: 'history', group: 'Files', label: 'Version history of this file', hint: 'Ctrl+Shift+H', icon: <History size={16} />, run: act(() => openHistory()) },
-      { id: 'ai', group: 'Tools', label: 'Show or hide the AI sidebar', hint: 'Ctrl+J', icon: <Sparkles size={16} />, run: act(() => toggleAi()) },
+      { id: 'lookup', group: 'Tools', label: 'Look up: explain or define a word', hint: 'Ctrl+J', icon: <BookOpen size={16} />, run: act(() => toggleLookup()) },
       useTabs.getState().split
         ? { id: 'split-close', group: 'Tools', label: 'Close split view', hint: 'Ctrl+\\', icon: <Columns2 size={16} />, run: act(() => useTabs.getState().closeSplit()) }
         : { id: 'split', group: 'Tools', label: 'Split view: two tabs side by side', hint: 'Ctrl+\\', icon: <Columns2 size={16} />, run: act(() => useTabs.getState().openSplit()) },

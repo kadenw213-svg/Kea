@@ -6,7 +6,7 @@
 
 <p align="center">
   A free, private office suite for Windows. Documents, spreadsheets, presentations and PDFs in one clean window,<br>
-  with an AI assistant and voice typing that run on your own computer.
+  with a Look up panel for studying and voice typing that runs on your own computer.
 </p>
 
 <p align="center">
@@ -26,9 +26,10 @@ Everything sits in tabs in one window. It's free and open source, and it works w
 - **Presentations** (.pptx): themes, transitions, speaker view, and presenting on a second screen.
 - **PDFs**: edit existing text, highlight, draw, sign, fill forms, redact, merge, compress, password-protect,
   make scanned pages searchable (OCR), and convert to Word.
-- **AI assistant**: highlight anything and press **Ctrl+J** to explain or summarize it, or just ask anything; it can
-  check Wikipedia for facts. Ask it to edit in plain words ("comment on places where I use passive voice", "fix the
-  grammar directly") and it leaves comments, tracked changes or direct edits. It can also make flashcards.
+- **Look up** (**Ctrl+J**): highlight a word or idea you don't know. **Explain** shows Wikipedia's own explanation
+  (the article that fits what you're reading, its definition and the most useful sections, with a link), and
+  **Dictionary** gives definitions, examples, synonyms and opposites, even offline. Nothing is written by AI.
+- **Spelling and grammar checks** as you type, offline.
 - **Voice typing** (**Ctrl+Alt+V**): talk, and Slate types for you anywhere.
 - **Read aloud**, **split view**, a **command palette** (**Ctrl+Shift+P**), **version history**, autosave and crash recovery.
 
@@ -36,11 +37,11 @@ Everything sits in tabs in one window. It's free and open source, and it works w
 
 - **Everything stays on your PC.** Files are opened and saved directly on your computer, and there's no account to make.
   Slate doesn't upload your documents anywhere.
-- **The AI runs locally.** The first time you open the AI sidebar, Slate downloads a language model (1–5 GB) picked for
-  your computer. After that it works offline. Voice typing works the same way, using a small speech model (40–250 MB).
-- **Optional internet features are opt-in and minimal.** The AI can check Wikipedia for up-to-date facts (only the search
-  words are sent, never your file), and the citation tool can look up a DOI or ISBN when you ask it to. Both can be
-  turned off in Settings.
+- **Look up uses real sources.** Explanations are Wikipedia's text, word for word, and only the search words are sent
+  (never your file). The dictionary (WordNet) is built in and works offline. An optional small model on your PC can
+  help pick the right article when a word has several meanings; it only chooses and never writes.
+- **Voice typing runs locally**, using a small speech model (40–250 MB) downloaded the first time.
+- **The citation tool** can look up a DOI or ISBN when you ask it to.
 - **Cloud drives** like OneDrive, Google Drive and Dropbox show up on the Home screen through their own desktop sync apps.
 - **Every feature has settings.** The basics are on by default, and **Settings → Advanced** shows every option.
 
@@ -53,7 +54,7 @@ Everything sits in tabs in one window. It's free and open source, and it works w
 
 **Updating:** click the **S** logo at the top left, then **Check for updates**. A dot on the logo means a new version is ready.
 
-**Requirements:** Windows 10 or 11 (64-bit). 8 GB of RAM or more is recommended for the AI assistant, and 16 GB+ for the largest AI model.
+**Requirements:** Windows 10 or 11 (64-bit), 8 GB of RAM or more.
 
 ## Feedback
 
@@ -61,5 +62,6 @@ Found a bug or have an idea? In Slate, open **Settings → Feedback**, or [open 
 
 ---
 
-Slate Office is open source under the [MIT licence](LICENSE). The AI models are Llama 3.2 (Llama 3.2 Community License)
-and Qwen2.5 (Apache 2.0), and voice typing uses OpenAI Whisper (MIT). Building from source: see [docs/DEVELOPING.md](docs/DEVELOPING.md).
+Slate Office is open source under the [MIT licence](LICENSE). Explanations come from Wikipedia (CC BY-SA), the dictionary
+is WordNet 3.1 (Princeton University), the optional picking models are Llama 3.2 (Llama 3.2 Community License) and
+Qwen2.5 (Apache 2.0), and voice typing uses OpenAI Whisper (MIT). Building from source: see [docs/DEVELOPING.md](docs/DEVELOPING.md).

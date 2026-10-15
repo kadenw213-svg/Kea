@@ -135,8 +135,8 @@ export const SECTIONS: Section[] = [
       { key: 'appearance.toolbarSize', label: 'Toolbar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }, { value: 1.3, label: 'Extra large' }] },
       { key: 'appearance.tabSize', label: 'Tab bar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }] },
       { key: 'appearance.menuFont', label: 'Menu text size', type: 'number', default: 13.5, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true },
-      { key: 'ai.sidebarWidth', label: 'AI sidebar width', type: 'number', default: 380, min: 300, max: 640, step: 10, unit: 'px', advanced: true, help: 'You can also drag the sidebar\u2019s left edge.' },
-      { key: 'appearance.aiFont', label: 'AI answer text size', type: 'number', default: 13, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true }
+      { key: 'ai.sidebarWidth', label: 'Look up panel width', type: 'number', default: 380, min: 300, max: 640, step: 10, unit: 'px', advanced: true, help: 'You can also drag the panel\u2019s left edge.' },
+      { key: 'appearance.aiFont', label: 'Look up text size', type: 'number', default: 13, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true }
     ]
   },
   {
@@ -412,7 +412,24 @@ export const SECTIONS: Section[] = [
       { key: 'google.clientSecret', label: 'OAuth client secret', type: 'text', default: '', advanced: true }
     ]
   },
-  { id: 'ai', label: 'AI', icon: 'Sparkles', fields: [] },
+  {
+    id: 'lookup',
+    label: 'Look up',
+    icon: 'BookOpen',
+    blurb: 'Highlight a word or idea and press Ctrl+J. Explain shows Wikipedia’s own words, with a link to the article; Dictionary works offline.',
+    fields: [
+      {
+        key: 'lookup.lang',
+        label: 'Wikipedia language',
+        type: 'select',
+        default: 'en',
+        options: [['en', 'English'], ['simple', 'Simple English (easier words)'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['pl', 'Polish'], ['ru', 'Russian'], ['ja', 'Japanese'], ['zh', 'Chinese'], ['ar', 'Arabic']].map(([value, label]) => ({ value, label }))
+      },
+      { key: 'lookup.useModel', label: 'Let the local model pick the right article and sections', type: 'toggle', default: true, help: 'Only when a model is downloaded (below). It chooses among Wikipedia’s options and never writes text.' },
+      { key: 'lookup.sections', label: 'Article sections to show under the definition', type: 'number', default: 2, min: 0, max: 6, advanced: true },
+      { key: 'lookup.dictSenses', label: 'Dictionary meanings per part of speech', type: 'number', default: 5, min: 1, max: 20, advanced: true }
+    ]
+  },
   {
     id: 'updates',
     label: 'Updates',
@@ -427,7 +444,7 @@ export const SECTIONS: Section[] = [
     id: 'privacy',
     label: 'Privacy & data',
     icon: 'Shield',
-    blurb: 'Slate works offline. It only goes online to check GitHub for updates, to download AI models you choose, and to set up cloud drives you sign in to.',
+    blurb: 'Slate works offline. It only goes online to check GitHub for updates, to read Wikipedia when you use Explain, to download models you choose, and to set up cloud drives you sign in to.',
     fields: [
       { key: 'privacy.citeLookup', label: 'Allow citation look-ups', type: 'toggle', default: true, help: 'When you click "Look up" in Citations, Slate asks Crossref (DOIs), Open Library (ISBNs) or the web page itself for the details. Nothing is sent otherwise.' },
       { key: 'privacy.log', label: 'Keep a troubleshooting log', type: 'toggle', default: true, advanced: true, help: 'A small local file (slate.log) with errors and file names. Never sent anywhere.' }

@@ -11,7 +11,7 @@ import { FileText, Sheet, FileCode2, FolderOpen, Presentation } from 'lucide-rea
 import { requestCloseTab } from '../lib/closing';
 import { isMac } from '../lib/util';
 import { useUpdates, openUpdates } from './Updates';
-import { RefreshCw, Info, Github, Sparkles } from 'lucide-react';
+import { RefreshCw, Info, Github, BookOpen } from 'lucide-react';
 import { openSettings } from '../lib/settings';
 import { openPalette } from './CommandPalette';
 import { Search } from 'lucide-react';
@@ -56,8 +56,8 @@ export function TitleBar() {
               <button className="menu-item" onClick={() => (openHistory(), close())}>
                 <History size={16} /> Version history <span className="kbd">Ctrl+Shift+H</span>
               </button>
-              <button className="menu-item" onClick={() => (openSettings('ai'), close())}>
-                <Sparkles size={16} /> AI settings
+              <button className="menu-item" onClick={() => (openSettings('lookup'), close())}>
+                <BookOpen size={16} /> Look up settings
               </button>
               <div className="menu-sep" />
               <button className="menu-item" onClick={() => (newFile('doc'), close())}>

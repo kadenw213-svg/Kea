@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/react';
 import type { AiHooks, DocSection } from '../../store';
-import { markdownToHtml } from '../../lib/ai';
+import { markdownToHtml } from '../../lib/markdown';
 import { reviewKey, newCommentId } from './review';
 import type { CommentThread } from './docMeta';
 

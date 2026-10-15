@@ -99,7 +99,12 @@ export interface SlateApi {
     close(): Promise<boolean>;
     onClosed(cb: () => void): () => void;
   };
-  wikiLookup(query: string, opts?: { lang?: string; max?: number; chars?: number; intro?: boolean }): Promise<WikiArticle[]>;
+  lookup: {
+    search(query: string, lang?: string): Promise<WikiCandidate[]>;
+    article(title: string, lang?: string): Promise<WikiPage | null>;
+    titles(list: string[], lang?: string): Promise<WikiCandidate[]>;
+    define(word: string, maxSenses?: number): Promise<DictEntry | null>;
+  };
   speech: {
     state(): Promise<SpeechModel[]>;
     download(id: string): Promise<boolean>;
@@ -256,11 +261,31 @@ declare global {
   }
 }
 
-export interface WikiArticle {
+/** A Wikipedia search result: title, short description, first two sentences. */
+export interface WikiCandidate {
+  title: string;
+  description: string;
+  intro: string;
+  disambiguation: boolean;
+  rank: number;
+  /** For articles found from a phrase in the reading: that phrase. */
+  phrase?: string;
+}
+/** A Wikipedia article as plain text, split into its lead and sections (reference sections removed). */
+export interface WikiPage {
   title: string;
   url: string;
-  text: string;
+  description: string;
   edited: string | null;
+  lead: string;
+  sections: { title: string; level: number; text: string }[];
+}
+/** An offline dictionary entry (WordNet). */
+export interface DictEntry {
+  word: string;
+  entries: { pos: string; lemma: string; senses: { def: string; examples: string[]; synonyms: string[]; antonyms: string[] }[] }[];
+  synonyms: string[];
+  antonyms: string[];
 }
 
 export interface SpeechModel {

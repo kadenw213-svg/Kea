@@ -55,8 +55,8 @@ import { mimeFor } from '../../lib/pdfTools';
 import { MenuButton } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
 import './slides.css';
-import { AiButton } from '../../components/ai/AiButton';
-import { publishSelection } from '../../components/ai/aiStore';
+import { LookupButton } from '../../components/lookup/LookupButton';
+import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
 
 function useHistory<T>(initial: T) {
@@ -826,7 +826,7 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
         <button className="btn tonal sm" onClick={() => (finishEditing(), setPresenting(idx))} title="Present from this slide (Shift+F5) — F5 from start">
           <Play size={15} /> Present
         </button>
-        <AiButton />
+        <LookupButton />
         <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => save(false)} title="Save (Ctrl+S)">
           <Save size={16} /> Save
         </button>

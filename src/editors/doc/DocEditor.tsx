@@ -117,8 +117,8 @@ import { ColorPicker } from '../../components/ColorPicker';
 import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
 import { docAiHooks } from './aiHooks';
-import { AiButton } from '../../components/ai/AiButton';
-import { publishSelection } from '../../components/ai/aiStore';
+import { LookupButton } from '../../components/lookup/LookupButton';
+import { publishSelection } from '../../components/lookup/lookupStore';
 
 const FONTS = ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Segoe UI', 'Times New Roman', 'Trebuchet MS', 'Verdana', 'Courier New', 'Consolas', 'Comic Sans MS'];
 const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72];
@@ -1136,7 +1136,7 @@ function Toolbar(p: {
       </B>
       <div className="tb-sep" />
       <div className="tb-end">
-      <AiButton />
+      <LookupButton />
       <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => p.onSave(false)} title="Save (Ctrl+S)">
         <Save size={16} /> Save
       </button>

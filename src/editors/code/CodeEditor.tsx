@@ -24,8 +24,8 @@ import { extOf, baseName } from '../../lib/fileTypes';
 import { api } from '../../lib/api';
 import { MenuButton } from '../../components/Popover';
 import './code.css';
-import { AiButton } from '../../components/ai/AiButton';
-import { publishSelection } from '../../components/ai/aiStore';
+import { LookupButton } from '../../components/lookup/LookupButton';
+import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
 
 const LANGS: Record<string, { name: string; ext: () => any }> = {
@@ -294,7 +294,7 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
         </button>
         <div className="tb-spacer" />
         <div className="tb-end">
-        <AiButton />
+        <LookupButton />
         <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => save(false)} title="Save (Ctrl+S)">
           <Save size={16} /> Save
         </button>

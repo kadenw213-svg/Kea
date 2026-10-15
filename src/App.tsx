@@ -4,13 +4,13 @@ import { TitleBar } from './components/TitleBar';
 import { HomeScreen } from './components/Home';
 import { Overlays } from './components/Overlays';
 import { UpdateDialog, initUpdates } from './components/Updates';
-import { AiSidebar } from './components/ai/AiSidebar';
+import { LookupPanel } from './components/lookup/LookupPanel';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { VersionHistoryDialog, openHistory } from './components/settings/VersionHistory';
 import { openSettings, setting } from './lib/settings';
 import { initAutosave, restoreOnStart } from './lib/autosave';
 import { CommandPalette, openPalette } from './components/CommandPalette';
-import { toggleAi } from './components/ai/aiStore';
+import { toggleLookup } from './components/lookup/lookupStore';
 import { useTabs, editorRegistry, Tab } from './store';
 import { api } from './lib/api';
 import { openEntry, openPaths, openWithDialog, newFile } from './lib/open';
@@ -129,7 +129,7 @@ export function App() {
         requestCloseTab(activeId);
       } else if (k === 'j' && !e.shiftKey) {
         e.preventDefault();
-        toggleAi();
+        toggleLookup();
       } else if (k === '\\') {
         e.preventDefault();
         const st = useTabs.getState();
@@ -238,7 +238,7 @@ export function App() {
           </div>
         )}
       </div>
-      <AiSidebar />
+      <LookupPanel />
       </div>
       {dragging && (
         <div className="drop-overlay">

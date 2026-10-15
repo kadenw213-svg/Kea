@@ -1,7 +1,7 @@
 {
   "name": "slate-office",
   "productName": "Slate Office",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "A clean, dark, offline office suite: PDF editor, documents, spreadsheets, text and images.",
   "author": "kadenw213-svg",
   "license": "MIT",
@@ -18,7 +18,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.3.9",
-    "node-llama-cpp": "^3.21.1"
+    "node-llama-cpp": "^3.21.1",
+    "wordnet-db": "3.1.14"
   },
   "devDependencies": {
     "@cantoo/pdf-lib": "2.11.1",
@@ -104,7 +105,9 @@
       "!node_modules/@node-llama-cpp/mac-*/**",
       "!node_modules/node-llama-cpp/llama/gitRelease.bundle",
       "!node_modules/node-llama-cpp/llama/llama.cpp/**",
-      "!node_modules/node-llama-cpp/templates/**"
+      "!node_modules/node-llama-cpp/templates/**",
+      "!node_modules/wordnet-db/dict/index.sense",
+      "!node_modules/wordnet-db/test.js"
     ],
     "fileAssociations": [
       {

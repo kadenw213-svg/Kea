@@ -43,7 +43,12 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('present:closed', fn);
     }
   },
-  wikiLookup: (query, opts) => ipcRenderer.invoke('wiki:lookup', query, opts),
+  lookup: {
+    search: (query, lang) => ipcRenderer.invoke('lookup:search', query, lang),
+    article: (title, lang) => ipcRenderer.invoke('lookup:article', title, lang),
+    titles: (list, lang) => ipcRenderer.invoke('lookup:titles', list, lang),
+    define: (word, maxSenses) => ipcRenderer.invoke('lookup:define', word, maxSenses)
+  },
   speech: {
     state: () => ipcRenderer.invoke('speech:state'),
     download: (id) => ipcRenderer.invoke('speech:download', id),

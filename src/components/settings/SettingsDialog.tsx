@@ -4,7 +4,7 @@ import * as Icons from 'lucide-react';
 import { X, Search, RotateCcw, FolderOpen, ExternalLink } from 'lucide-react';
 import { SECTIONS, Field, useSettings, DEFAULTS } from '../../lib/settings';
 import { api } from '../../lib/api';
-import { AiSettingsPanel } from '../ai/AiSettings';
+import { ModelSettings } from '../lookup/ModelSettings';
 import { toast, ask, useTabs } from '../../store';
 import { formatBytes } from '../../lib/util';
 import { SHORTCUTS } from './shortcuts';
@@ -216,7 +216,7 @@ function AboutPanel() {
       <div className="about-card">
         <div className="about-title">Built with Llama</div>
         <p>
-          The "Balanced" AI model is Llama 3.2. Llama 3.2 is licensed under the Llama 3.2 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved. The "Light" and "Best" models
+          The "Balanced" picking model is Llama 3.2. Llama 3.2 is licensed under the Llama 3.2 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved. The "Light" and "Best" models
           are Qwen2.5 by Alibaba Cloud, under the Apache License 2.0. Voice typing uses OpenAI Whisper (MIT licence) with Transformers.js and ONNX Runtime. Models run entirely on this computer.
         </p>
         <div className="about-links">
@@ -295,7 +295,6 @@ export function SettingsDialog() {
           No settings match “{q}”.
         </div>
       );
-    if (cur.id === 'ai') return <AiSettingsPanel />;
     if (cur.id === 'shortcuts') return <ShortcutsPanel q="" />;
     if (cur.id === 'about') return <AboutPanel />;
     if (cur.id === 'feedback') return <FeedbackPanel />;
@@ -314,6 +313,7 @@ export function SettingsDialog() {
         {cur.id === 'files' && <FilesExtras />}
         {cur.id === 'voice' && <VoiceSettingsExtras />}
         {cur.id === 'privacy' && <PrivacyExtras />}
+        {cur.id === 'lookup' && <ModelSettings />}
       </>
     );
   };

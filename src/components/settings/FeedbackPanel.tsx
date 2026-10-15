@@ -68,7 +68,7 @@ export function FeedbackPanel() {
         ))}
       </div>
       <label className="fb-label">Summary</label>
-      <input className="input" value={summary} maxLength={120} placeholder={kind === 'bug' ? 'e.g. AI edit buttons can’t be clicked in spreadsheets' : 'One line'} onChange={(e) => setSummary(e.target.value)} />
+      <input className="input" value={summary} maxLength={120} placeholder={kind === 'bug' ? 'e.g. The Insert button doesn’t work in spreadsheets' : 'One line'} onChange={(e) => setSummary(e.target.value)} />
       <label className="fb-label">{k.title}</label>
       <textarea className="input fb-text" rows={7} value={details} placeholder={k.placeholder} onChange={(e) => setDetails(e.target.value)} />
       <label className="fb-check">

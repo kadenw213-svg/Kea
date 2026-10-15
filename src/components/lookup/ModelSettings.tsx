@@ -1,26 +1,52 @@
-import { InstructionsBox } from './AiSidebar';
-import { DEPTHS, Depth } from '../../lib/ai';
 import { useEffect, useState } from 'react';
-import { Download, Trash2, CheckCircle2, Gauge, RotateCcw, Cpu, MonitorSmartphone } from 'lucide-react';
-import { useAi } from './aiStore';
+import { Download, Trash2, CheckCircle2, Gauge, RotateCcw, Cpu, MonitorSmartphone, Pause, Play } from 'lucide-react';
 import { useSetting, useSettings } from '../../lib/settings';
-import { api, AiSettings as Settings, AiTier } from '../../lib/api';
-import { DownloadProgress } from './ModelSetup';
+import { api, AiSettings as Settings, AiTier, AiState, AiModelState } from '../../lib/api';
 import { toast, ask } from '../../store';
 
 const gb = (n: number) => `${(n / 1024 ** 3).toFixed(1)} GB`;
 const SLIDER_LABELS = ['Fastest', 'Fast', 'Balanced', 'High quality', 'Best quality'];
 
-/** AI section of the Settings window. */
-export function AiSettingsPanel() {
-  const ai = useAi();
+function DownloadProgress({ m }: { m: AiModelState }) {
+  const d = m.download!;
+  const p = d.total ? Math.round((d.received / d.total) * 100) : 0;
+  return (
+    <div className="dl">
+      <div className="progress">
+        <div style={{ width: `${d.status === 'verifying' ? 100 : p}%` }} />
+      </div>
+      <div className="dl-meta">
+        {d.status === 'verifying' ? 'Checking the download…' : d.status === 'error' ? <span style={{ color: 'var(--danger)' }}>{d.error}</span> : `${gb(d.received)} of ${gb(d.total)} · ${p}%`}
+        {d.status === 'downloading' && (
+          <button className="link-btn" onClick={() => api.ai.pauseDownload(m.tier)}>
+            <Pause size={12} /> Pause
+          </button>
+        )}
+        {(d.status === 'paused' || d.status === 'error') && (
+          <button className="link-btn" onClick={() => api.ai.download(m.tier)}>
+            <Play size={12} /> Resume
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Settings → Look up → the optional local model. It only helps pick the right Wikipedia article and sections
+ * (by choosing among options); it never writes any of the text you read.
+ */
+export function ModelSettings() {
+  const [state, setState] = useState<AiState | null>(null);
+  const ai = { state, set: (p: { state: AiState }) => setState(p.state) };
   const [bench, setBench] = useState<{ loadMs: number; tokensPerSecond: number } | null>(null);
   const [benching, setBenching] = useState(false);
   const advanced = useSetting<boolean>('ui.showAdvanced');
   const setAdvanced = (fn: (a: boolean) => boolean) => useSettings.getState().set({ 'ui.showAdvanced': fn(!!advanced) });
 
   useEffect(() => {
-    api.ai.state().then((state) => ai.set({ state }));
+    api.ai.state().then(setState);
+    return api.ai.onDownload((m) => setState((st) => (st ? { ...st, models: st.models.map((x) => (x.tier === m.tier ? m : x)) } : st)));
   }, []);
 
   if (!ai.state) return <div className="muted">Loading…</div>;
@@ -72,23 +98,16 @@ export function AiSettingsPanel() {
             ))}
           </div>
           <div className="muted" style={{ marginTop: 6 }}>
-            Higher quality uses a bigger model and reads more of long documents at once, but answers take longer.
+            A bigger model picks more reliably but takes a little longer.
             {s.custom && ' (Custom settings in use.)'}
           </div>
         </div>
 
         <div className="set-section">
-          <div className="set-label">How answers are written</div>
-          <div className="muted" style={{ marginBottom: 8 }}>Default depth for Explain, Summarize and questions (also switchable in the AI sidebar).</div>
-          <DepthPicker />
-          <div style={{ marginTop: 12 }}>
-            <InstructionsBox />
+          <div className="set-label">Smarter picking (optional)</div>
+          <div className="muted" style={{ marginBottom: 8 }}>
+            A small model that runs on this PC can help Look up choose the right article when a word has several meanings (like “cell” in biology), and the most useful sections. It only chooses; every word you read comes from Wikipedia or the dictionary. Without it, Look up matches words instead.
           </div>
-          <WikiSettings />
-        </div>
-
-        <div className="set-section">
-          <div className="set-label">Models</div>
           {st.models.map((m) => (
             <div key={m.tier} className={`model-row ${s.tier === m.tier ? 'sel' : ''}`}>
               <div className="model-info">
@@ -148,7 +167,7 @@ export function AiSettingsPanel() {
             </button>
             {bench && (
               <span className="muted">
-                {bench.tokensPerSecond.toFixed(1)} words-ish/sec · a summary takes about {Math.max(2, Math.round(350 / Math.max(1, bench.tokensPerSecond)))} s · model loaded in {(bench.loadMs / 1000).toFixed(1)} s
+                {bench.tokensPerSecond.toFixed(1)} tokens/sec · model loaded in {(bench.loadMs / 1000).toFixed(1)} s
               </span>
             )}
           </div>
@@ -198,24 +217,7 @@ export function AiSettingsPanel() {
               </select>
             </label>
             <label className="set-row">
-              <span>Longest answer</span>
-              <select className="select" value={s.maxTokens} onChange={(e) => update({ maxTokens: +e.target.value, custom: true })}>
-                {[256, 512, 768, 1024, 1536, 2048].map((n) => (
-                  <option key={n} value={n}>
-                    {n} tokens
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="set-row">
-              <span>Creativity</span>
-              <input type="range" min={0} max={1} step={0.05} value={s.temperature} onChange={(e) => update({ temperature: +e.target.value, custom: true })} />
-              <span className="muted" style={{ width: 32 }}>
-                {s.temperature.toFixed(2)}
-              </span>
-            </label>
-            <label className="set-row">
-              <span>Keep model in memory (faster answers, uses RAM)</span>
+              <span>Keep model in memory (faster picks, uses RAM)</span>
               <input type="checkbox" checked={s.keepLoaded} onChange={(e) => update({ keepLoaded: e.target.checked })} />
             </label>
           </div>
@@ -233,91 +235,6 @@ export function AiSettingsPanel() {
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function DepthPicker() {
-  const depth = useSettings((s) => (s.values['ai.depth'] as Depth) || 'standard');
-  return (
-    <div className="depth-list">
-      {DEPTHS.map((d) => (
-        <label key={d.id} className={`depth-opt ${depth === d.id ? 'on' : ''}`}>
-          <input type="radio" name="ai-depth" checked={depth === d.id} onChange={() => useSettings.getState().set({ 'ai.depth': d.id })} />
-          <span>
-            <b>{d.label}</b>
-            <span className="muted"> · {d.help}</span>
-          </span>
-        </label>
-      ))}
-    </div>
-  );
-}
-
-/** Settings → AI → Wikipedia. On by default; only the search words leave this PC, and offline it quietly answers locally. */
-function WikiSettings() {
-  const v = useSettings((s) => s.values);
-  const set = (k: string, val: any) => useSettings.getState().set({ [k]: val });
-  const on = v['ai.wikipedia'] !== false;
-  const amount = (k: string, def: string) => (
-    <select className="select" value={v[k] || def} onChange={(e) => set(k, e.target.value)}>
-      <option value="intro">Introduction only (fastest)</option>
-      <option value="medium">Medium</option>
-      <option value="long">Long (most detail, slower)</option>
-    </select>
-  );
-  const use = (k: string, def: boolean, label: string) => (
-    <label className="wiki-use">
-      <input type="checkbox" checked={v[k] === undefined ? def : !!v[k]} onChange={(e) => set(k, e.target.checked)} /> {label}
-    </label>
-  );
-  return (
-    <div className="wiki-settings">
-      <label className="depth-opt">
-        <input type="checkbox" checked={on} onChange={(e) => set('ai.wikipedia', e.target.checked)} />
-        <span>
-          <b>Check Wikipedia for up-to-date facts</b>
-          <span className="muted">
-            {' '}
-            · The AI on this PC reads the matching Wikipedia article before answering and links it under the answer. Only the search words are sent, never your file. With no internet it simply answers on its own.
-          </span>
-        </span>
-      </label>
-      {on && (
-        <div className="wiki-grid">
-          <label>Use for</label>
-          <span className="wiki-uses">
-            {use('ai.wikiExplain', true, 'Explain')}
-            {use('ai.wikiAsk', true, 'Questions')}
-            {use('ai.wikiSummarize', false, 'Summarize')}
-          </span>
-          <label>Brief and Standard answers read</label>
-          {amount('ai.wikiAmountQuick', 'intro')}
-          <label>Deep answers read</label>
-          {amount('ai.wikiAmountDeep', 'medium')}
-          <label>Expert answers read</label>
-          {amount('ai.wikiAmountExpert', 'long')}
-          <label>Finding the article</label>
-          <select className="select" value={v['ai.wikiFind'] || 'fast'} onChange={(e) => set('ai.wikiFind', e.target.value)}>
-            <option value="fast">Fast: search your words directly</option>
-            <option value="accurate">Accurate: the AI picks the topic first (about 2 s slower)</option>
-          </select>
-          <label>Articles to read</label>
-          <select className="select" value={v['ai.wikiArticles'] || 1} onChange={(e) => set('ai.wikiArticles', Number(e.target.value))}>
-            <option value={1}>1 (fastest)</option>
-            <option value={2}>2</option>
-            <option value={3}>3 (broadest)</option>
-          </select>
-          <label>Wikipedia language</label>
-          <select className="select" value={v['ai.wikiLang'] || 'en'} onChange={(e) => set('ai.wikiLang', e.target.value)}>
-            {[['en', 'English'], ['simple', 'Simple English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['pl', 'Polish'], ['ru', 'Russian'], ['ja', 'Japanese'], ['zh', 'Chinese'], ['ar', 'Arabic']].map(([c, l]) => (
-              <option key={c} value={c}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
     </div>
   );
 }

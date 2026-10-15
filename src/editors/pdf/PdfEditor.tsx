@@ -70,8 +70,8 @@ import { ColorPicker } from '../../components/ColorPicker';
 import { imagesToPdf, imageToPng, mimeFor } from '../../lib/pdfTools';
 import { extOf, baseName } from '../../lib/fileTypes';
 import './pdf.css';
-import { AiButton } from '../../components/ai/AiButton';
-import { publishSelection } from '../../components/ai/aiStore';
+import { LookupButton } from '../../components/lookup/LookupButton';
+import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
 
 const CSS_UNITS = 96 / 72;
@@ -1391,7 +1391,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
         </button>
         <div className="tb-sep" />
         <div className="tb-end">
-        <AiButton />
+        <LookupButton />
         <button className="btn primary sm" onClick={() => save(false)} title="Save (Ctrl+S)">
           <Save size={16} /> Save
         </button>

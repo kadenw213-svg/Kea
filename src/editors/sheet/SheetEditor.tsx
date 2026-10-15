@@ -84,8 +84,8 @@ import { clamp, escapeHtml, modKey } from '../../lib/util';
 import { MenuButton, Popover } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
 import './sheet.css';
-import { AiButton } from '../../components/ai/AiButton';
-import { publishSelection } from '../../components/ai/aiStore';
+import { LookupButton } from '../../components/lookup/LookupButton';
+import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
 
 interface Pos {
@@ -2359,7 +2359,7 @@ function SheetToolbar(p: {
       </B>
       <div className="tb-sep" />
       <div className="tb-end">
-      <AiButton />
+      <LookupButton />
       <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => p.onSave(false)} title="Save (Ctrl+S)">
         <Save size={16} /> Save
       </button>
