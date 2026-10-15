@@ -135,8 +135,8 @@ export const SECTIONS: Section[] = [
       { key: 'appearance.toolbarSize', label: 'Toolbar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }, { value: 1.3, label: 'Extra large' }] },
       { key: 'appearance.tabSize', label: 'Tab bar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }] },
       { key: 'appearance.menuFont', label: 'Menu text size', type: 'number', default: 13.5, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true },
-      { key: 'ai.sidebarWidth', label: 'Look up panel width', type: 'number', default: 380, min: 300, max: 640, step: 10, unit: 'px', advanced: true, help: 'You can also drag the panel\u2019s left edge.' },
-      { key: 'appearance.aiFont', label: 'Look up text size', type: 'number', default: 13, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true }
+      { key: 'ai.sidebarWidth', label: 'Encyclopedia panel width', type: 'number', default: 380, min: 300, max: 640, step: 10, unit: 'px', advanced: true, help: 'You can also drag the panel\u2019s left edge.' },
+      { key: 'appearance.aiFont', label: 'Encyclopedia text size', type: 'number', default: 13, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true }
     ]
   },
   {
@@ -414,7 +414,7 @@ export const SECTIONS: Section[] = [
   },
   {
     id: 'lookup',
-    label: 'Look up',
+    label: 'Encyclopedia',
     icon: 'BookOpen',
     blurb: 'Highlight a word or idea and press Ctrl+J. Explain shows Wikipedia’s own words, with a link to the article; Dictionary works offline.',
     fields: [

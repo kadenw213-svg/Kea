@@ -2,7 +2,7 @@ import { api, WikiCandidate, WikiPage, DictEntry, AiEvent } from './api';
 import { setting } from './settings';
 
 /**
- * Look up: explains terms with Wikipedia's own words and defines words with an offline dictionary.
+ * Encyclopedia: explains terms with Wikipedia's own words and defines words with an offline dictionary.
  *
  * Nothing shown is written by a model. Code finds the article and shows its text word for word. The local model
  * (when it's downloaded and allowed) only acts as a librarian: when a term has several meanings it picks the article

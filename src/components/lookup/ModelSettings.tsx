@@ -33,7 +33,7 @@ function DownloadProgress({ m }: { m: AiModelState }) {
 }
 
 /**
- * Settings → Look up → the optional local model. It only helps pick the right Wikipedia article and sections
+ * Settings → Encyclopedia → the optional local model. It only helps pick the right Wikipedia article and sections
  * (by choosing among options); it never writes any of the text you read.
  */
 export function ModelSettings() {
@@ -106,7 +106,7 @@ export function ModelSettings() {
         <div className="set-section">
           <div className="set-label">Smarter picking (optional)</div>
           <div className="muted" style={{ marginBottom: 8 }}>
-            A small model that runs on this PC can help Look up choose the right article when a word has several meanings (like “cell” in biology), and the most useful sections. It only chooses; every word you read comes from Wikipedia or the dictionary. Without it, Look up matches words instead.
+            A small model that runs on this PC can help the Encyclopedia choose the right article when a word has several meanings (like “cell” in biology), and the most useful sections. It only chooses; every word you read comes from Wikipedia or the dictionary. Without it, the Encyclopedia matches words instead.
           </div>
           {st.models.map((m) => (
             <div key={m.tier} className={`model-row ${s.tier === m.tier ? 'sel' : ''}`}>

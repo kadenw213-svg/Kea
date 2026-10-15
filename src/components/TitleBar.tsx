@@ -57,7 +57,7 @@ export function TitleBar() {
                 <History size={16} /> Version history <span className="kbd">Ctrl+Shift+H</span>
               </button>
               <button className="menu-item" onClick={() => (openSettings('lookup'), close())}>
-                <BookOpen size={16} /> Look up settings
+                <BookOpen size={16} /> Encyclopedia settings
               </button>
               <div className="menu-sep" />
               <button className="menu-item" onClick={() => (newFile('doc'), close())}>

@@ -9,7 +9,7 @@ import { useLookup, setLookupOpen, LookupCard } from './lookupStore';
 import '../../styles/ai.css';
 import '../../styles/lookup.css';
 
-/** The Look up panel (Ctrl+J): explain a term from Wikipedia, or define a word with the offline dictionary. */
+/** The Encyclopedia panel (Ctrl+J): explain a term from Wikipedia, or define a word with the offline dictionary. */
 export function LookupPanel() {
   const lk = useLookup();
   const activeId = useTabs((s) => s.activeId);
@@ -120,7 +120,7 @@ export function LookupPanel() {
         <div className="ai-head">
           <div className="ai-title">
             <BookOpen size={17} />
-            <span>Look up</span>
+            <span>Encyclopedia</span>
           </div>
           <div style={{ display: 'flex' }}>
             {lk.cards.length > 0 && (
@@ -128,7 +128,7 @@ export function LookupPanel() {
                 <Trash2 size={15} />
               </button>
             )}
-            <button className="icon-btn sm" title="Look up settings" onClick={() => openSettings('lookup')}>
+            <button className="icon-btn sm" title="Encyclopedia settings" onClick={() => openSettings('lookup')}>
               <Settings2 size={15} />
             </button>
             <button className="icon-btn sm" title="Close (Ctrl+J)" onClick={() => setLookupOpen(false)}>

@@ -6,7 +6,7 @@
 
 <p align="center">
   A free, private office suite for Windows. Documents, spreadsheets, presentations and PDFs in one clean window,<br>
-  with a Look up panel for studying and voice typing that runs on your own computer.
+  with an Encyclopedia panel for studying and voice typing that runs on your own computer.
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@ Everything sits in tabs in one window. It's free and open source, and it works w
 - **Presentations** (.pptx): themes, transitions, speaker view, and presenting on a second screen.
 - **PDFs**: edit existing text, highlight, draw, sign, fill forms, redact, merge, compress, password-protect,
   make scanned pages searchable (OCR), and convert to Word.
-- **Look up** (**Ctrl+J**): highlight a word or idea you don't know. **Explain** shows Wikipedia's own explanation
+- **Encyclopedia** (**Ctrl+J**): highlight a word or idea you don't know. **Explain** shows Wikipedia's own explanation
   (the article that fits what you're reading, its definition and the most useful sections, with a link), and
   **Dictionary** gives definitions, examples, synonyms and opposites, even offline. Nothing is written by AI.
 - **Spelling and grammar checks** as you type, offline.
@@ -37,7 +37,7 @@ Everything sits in tabs in one window. It's free and open source, and it works w
 
 - **Everything stays on your PC.** Files are opened and saved directly on your computer, and there's no account to make.
   Slate doesn't upload your documents anywhere.
-- **Look up uses real sources.** Explanations are Wikipedia's text, word for word, and only the search words are sent
+- **The Encyclopedia uses real sources.** Explanations are Wikipedia's text, word for word, and only the search words are sent
   (never your file). The dictionary (WordNet) is built in and works offline. An optional small model on your PC can
   help pick the right article when a word has several meanings; it only chooses and never writes.
 - **Voice typing runs locally**, using a small speech model (40–250 MB) downloaded the first time.
