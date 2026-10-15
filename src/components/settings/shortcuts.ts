@@ -22,8 +22,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     group: 'AI sidebar',
     items: [
       ['Alt+1', 'Explain'],
-      ['Alt+2', 'Summarize'],
-      ['Alt+3', 'Suggest edits']
+      ['Alt+2', 'Summarize']
     ]
   },
   {

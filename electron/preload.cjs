@@ -44,11 +44,6 @@ contextBridge.exposeInMainWorld('api', {
     }
   },
   wikiLookup: (query, opts) => ipcRenderer.invoke('wiki:lookup', query, opts),
-  study: {
-    get: (key) => ipcRenderer.invoke('study:get', key),
-    save: (key, data) => ipcRenderer.invoke('study:save', key, data),
-    reset: (key) => ipcRenderer.invoke('study:reset', key)
-  },
   speech: {
     state: () => ipcRenderer.invoke('speech:state'),
     download: (id) => ipcRenderer.invoke('speech:download', id),

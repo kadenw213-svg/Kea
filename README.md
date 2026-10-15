@@ -26,8 +26,9 @@ Everything sits in tabs in one window. It's free and open source, and it works w
 - **Presentations** (.pptx): themes, transitions, speaker view, and presenting on a second screen.
 - **PDFs**: edit existing text, highlight, draw, sign, fill forms, redact, merge, compress, password-protect,
   make scanned pages searchable (OCR), and convert to Word.
-- **AI assistant**: highlight anything and press **Ctrl+J** to explain, summarize, suggest edits (as comments,
-  tracked changes or direct edits), or make flashcards and practice quizzes. You can also just ask it anything.
+- **AI assistant**: highlight anything and press **Ctrl+J** to explain or summarize it, or just ask anything; it can
+  check Wikipedia for facts. Ask it to edit in plain words ("comment on places where I use passive voice", "fix the
+  grammar directly") and it leaves comments, tracked changes or direct edits. It can also make flashcards.
 - **Voice typing** (**Ctrl+Alt+V**): talk, and Slate types for you anywhere.
 - **Read aloud**, **split view**, a **command palette** (**Ctrl+Shift+P**), **version history**, autosave and crash recovery.
 

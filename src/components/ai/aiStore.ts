@@ -5,7 +5,7 @@ export interface AiMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
-  kind?: 'text' | 'suggestions' | 'flashcards' | 'quiz';
+  kind?: 'text' | 'suggestions' | 'flashcards';
   data?: any;
   context?: string; // short label of what the request was about
   streaming?: boolean;

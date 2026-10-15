@@ -114,7 +114,10 @@
   inset: 0;
   display: block;
 }
-.pdf-canvas.dark {
+.pdf-canvas.dark,
+/* Edits sit on the page, so they're darkened the same way (a white cover behind edited text would glare). */
+.pdf-scroll.dark .ann-svg,
+.pdf-scroll.dark .text-ann {
   filter: invert(0.9) hue-rotate(180deg);
 }
 .page-loading {

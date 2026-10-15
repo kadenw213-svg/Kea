@@ -85,7 +85,6 @@ export function AiSettingsPanel() {
             <InstructionsBox />
           </div>
           <WikiSettings />
-          <QuizSettings />
         </div>
 
         <div className="set-section">
@@ -321,87 +320,4 @@ function WikiSettings() {
       )}
     </div>
   );
-}
-
-/** Settings → AI → Quizzes: kept small; formats and timing under Advanced. */
-function QuizSettings() {
-  const v = useSettings((s) => s.values);
-  const set = (k: string, val: any) => useSettings.getState().set({ [k]: val });
-  const adv = !!v['ui.showAdvanced'];
-  const formats = (v['ai.quizFormats'] as Record<string, boolean>) || {};
-  const names: [string, string][] = [
-    ['mc', 'Multiple choice'],
-    ['multi', 'Select all that apply'],
-    ['tf', 'True or false'],
-    ['fill', 'Fill in the blank'],
-    ['short', 'Short answer (graded by AI)']
-  ];
-  return (
-    <div className="wiki-settings">
-      <div className="set-label" style={{ marginTop: 16 }}>
-        Quizzes
-      </div>
-      <div className="muted" style={{ marginBottom: 8 }}>
-        Quizzes cover the open reading only. Missed concepts come back later in a different form, and first in your next quiz on that file.
-      </div>
-      <div className="wiki-grid" style={{ marginLeft: 0 }}>
-        <label>Questions per quiz</label>
-        <select className="select" value={v['ai.quizCount'] ?? 5} onChange={(e) => set('ai.quizCount', Number(e.target.value))}>
-          {[3, 5, 10, 15, 20].map((n) => (
-            <option key={n}>{n}</option>
-          ))}
-        </select>
-        <label>Level</label>
-        <select className="select" value={v['ai.quizLevel'] || 'auto'} onChange={(e) => set('ai.quizLevel', e.target.value)}>
-          <option value="auto">Match the reading (automatic)</option>
-          <option value="high school">High school</option>
-          <option value="college">College</option>
-          <option value="graduate">Graduate</option>
-        </select>
-        <label>Questions may use</label>
-        <select className="select" value={v['ai.quizScope'] || 'exam'} onChange={(e) => set('ai.quizScope', e.target.value)}>
-          <option value="exam">Exam-level knowledge about the reading's topics</option>
-          <option value="document">Only what the reading says</option>
-        </select>
-        {adv && (
-          <>
-            <label>Question types</label>
-            <span className="wiki-uses" style={{ flexWrap: 'wrap' }}>
-              {names.map(([k, label]) => (
-                <label key={k} className="wiki-use">
-                  <input type="checkbox" checked={formats[k] !== false} onChange={(e) => set('ai.quizFormats', { ...formats, [k]: e.target.checked })} /> {label}
-                </label>
-              ))}
-            </span>
-            <label>Missed questions come back after</label>
-            <select className="select" value={v['ai.quizRetestAfter'] ?? 2} onChange={(e) => set('ai.quizRetestAfter', Number(e.target.value))}>
-              {[1, 2, 3, 5].map((n) => (
-                <option key={n} value={n}>
-                  {n} question{n > 1 ? 's' : ''}
-                </option>
-              ))}
-            </select>
-            <label>Remember quiz progress</label>
-            <span className="wiki-uses">
-              <label className="wiki-use">
-                <input type="checkbox" checked={v['ai.quizMemory'] !== false} onChange={(e) => set('ai.quizMemory', e.target.checked)} /> Per file, on this PC
-              </label>
-              <button className="btn sm" onClick={resetCurrentQuiz}>
-                Reset progress for the open file
-              </button>
-            </span>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-async function resetCurrentQuiz() {
-  const { useTabs, toast } = await import('../../store');
-  const { resetRecord } = await import('../../lib/study');
-  const t = useTabs.getState().tabs.find((x) => x.id === useTabs.getState().activeId);
-  if (!t || t.kind === 'home') return toast('Open the file first.');
-  await resetRecord(t.path || t.name);
-  toast(`Quiz progress for ${t.name} was reset.`, 'success');
 }

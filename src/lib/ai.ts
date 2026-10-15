@@ -447,6 +447,98 @@ const SUGGEST_SCHEMA = {
   }
 };
 
+const PARTICIPLE =
+  /\b(am|is|are|was|were|be|been|being|get|gets|got|gotten)\s+(?:\w+ly\s+)?(\w+ed|known|made|written|given|taken|seen|done|built|shown|found|held|thought|told|brought|kept|left|led|put|set|sent|spent|won|begun|broken|chosen|driven|eaten|fallen|forgotten|frozen|hidden|spoken|stolen|torn|worn|drawn|grown|thrown|blown|paid|said|sold|struck|taught|understood|caught|bought|fought|sought|felt|meant|lost|heard|read|run|cut|hit|hurt|known|born|borne)\b/i;
+/** Writing checks a rule does better than a small model: which requests they answer, and which sentences they find. */
+const WRITING_CHECKS: { asks: RegExp; finds: (s: string) => boolean }[] = [
+  { asks: /\bpassive\b/i, finds: (s) => PARTICIPLE.test(s) && !/\b(is|are|was|were) (interested|tired|excited|located|based|supposed|used to|related)\b/i.test(s) },
+  { asks: /\brun[- ]?ons?\b/i, finds: (s) => s.split(/\s+/).length > 22 && (s.match(/\b(and|but|so|then)\b/gi) || []).length >= 3 },
+  { asks: /\b(long|lengthy|wordy)\b.{0,20}\bsentences?\b|\bsentences?\b.{0,20}\b(too long|long|lengthy|wordy)\b/i, finds: (s) => s.split(/\s+/).length > 30 },
+  { asks: /\b(filler|weak|vague|empty)\b.{0,15}\bwords?\b|\b(very|really|basically|actually)\b/i, finds: (s) => /\b(very|really|just|basically|actually|literally|things?|stuff|a lot|kind of|sort of)\b/i.test(s) },
+  { asks: /\bcontractions?\b/i, finds: (s) => /\w(n't|'re|'ve|'ll|'m|'d)\b|\b(it|that|there|what|who|let|he|she|here)'s\b/i.test(s.replace(/’/g, "'")) },
+  { asks: /\bfirst[- ]person\b/i, finds: (s) => /\b(I|me|my|mine|we|us|our|ours)\b/.test(s) },
+  { asks: /\bsecond[- ]person\b|\b(using|use of|uses?) ["“]?you["”]?\b/i, finds: (s) => /\b(you|your|yours)\b/i.test(s) }
+];
+
+/** The text's sentences, exactly as written (so a comment or edit can find them again). */
+function textSentences(text: string) {
+  const out: string[] = [];
+  for (const line of text.split(/\n+/)) for (const s of line.match(/[^.!?]+(?:[.!?]+["')\]”’]*|$)/g) || []) if (s.trim().split(/\s+/).length >= 4) out.push(s.trim());
+  return out;
+}
+
+/**
+ * Review the text by the user's own guideline ("comment on places where I use passive voice", "fix every run-on
+ * sentence directly"). Small models skim when asked to "find places" in free text, so Slate numbers the sentences
+ * and makes the model answer yes or no for every one, in batches; then it writes a comment (and a rewrite) for each
+ * sentence that matched. Every result is a real sentence of the text, so comments always land in the right place.
+ */
+export async function runReview(ctx: TaskContext, cb: TaskCallbacks, request: string, rewrites: boolean): Promise<Suggestion[]> {
+  const sents = textSentences(ctx.text).slice(0, 240);
+  const BATCH = 25;
+  // Common writing checks are found by rules (exact and instant); the model only writes the notes.
+  const check = WRITING_CHECKS.find((c) => c.asks.test(request));
+  const hits: string[] = check ? sents.filter((s) => check.finds(s)) : [];
+  for (let b = 0; !check && b < sents.length && hits.length < 12; b += BATCH) {
+    const part = sents.slice(b, b + BATCH);
+    cb.onStatus(sents.length > BATCH ? `Reading for that (${Math.min(b + BATCH, sents.length)} of ${sents.length} sentences)…` : 'Reading for that…');
+    const schema = { type: 'object', properties: { answers: { type: 'array', minItems: part.length, maxItems: part.length, items: { type: 'boolean' } } } };
+    const r = await complete(
+      {
+        system: systemPrompt(),
+        prompt: `The user asks: "${request}"
+For EACH numbered sentence below, in order, answer true if the request applies to that sentence, false if not. Judge each sentence on its own, carefully.
+
+${part.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
+        jsonSchema: schema,
+        temperature: 0,
+        maxTokens: 12 * part.length + 80
+      },
+      cb.cancelled,
+      cb.onRequest
+    );
+    const j = parseJson(r) || {};
+    (j.answers || []).forEach((a: any, i: number) => a === true && part[i] && hits.push(part[i]));
+  }
+  if (!hits.length) return [];
+  const found = hits.slice(0, 12);
+  cb.onStatus(`Writing ${found.length} note${found.length > 1 ? 's' : ''}…`);
+  const schema = {
+    type: 'object',
+    properties: {
+      notes: {
+        type: 'array',
+        minItems: found.length,
+        maxItems: found.length,
+        items: { type: 'object', properties: { comment: { type: 'string', maxLength: 220 }, suggestion: { type: 'string', maxLength: 360 } } }
+      }
+    }
+  };
+  const r = await complete(
+    {
+      system: systemPrompt(),
+      prompt: `The user asked: "${request}"
+These sentences from ${ctx.scopeLabel} of "${ctx.docName}" were picked out for it. For each, in order:
+"comment" = one short sentence to the writer, as "you", saying what you noticed and why it matters, following the request.
+"suggestion" = ${rewrites ? 'the improved sentence that can directly replace it' : 'a better version that could replace it, or "" if a rewrite doesn\'t fit the request'}.
+
+${found.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
+      jsonSchema: schema,
+      temperature: 0.2,
+      maxTokens: 200 * found.length + 100
+    },
+    cb.cancelled,
+    cb.onRequest
+  );
+  const notes = (parseJson(r) || {}).notes || [];
+  const flat = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  return found
+    .map((q, i) => ({ quote: q, issue: String(notes[i]?.comment || '').trim(), suggestion: String(notes[i]?.suggestion || '').trim() }))
+    .map((x) => (flat(x.suggestion) === flat(x.quote) ? { ...x, suggestion: '' } : x))
+    .filter((x) => x.issue || x.suggestion)
+    .filter((x) => !rewrites || x.suggestion);
+}
+
 /** A few concrete, ready-to-apply rewrites for the selected text (or the document). */
 export async function runSuggest(ctx: TaskContext, cb: TaskCallbacks): Promise<Suggestion[]> {
   const work = await condense({ ...ctx, maxTokens: 800 }, 'Note the sentences that are unclear, wordy, awkward or have mistakes, quoting them exactly.', cb);
@@ -476,12 +568,6 @@ export interface Flashcard {
   front: string;
   back: string;
 }
-export interface QuizQuestion {
-  question: string;
-  choices: string[];
-  answer: number;
-  explanation: string;
-}
 export type Difficulty = 'easy' | 'medium' | 'hard';
 const LEVEL: Record<Difficulty, string> = {
   easy: 'basic recall of the most important facts and definitions',
@@ -489,7 +575,7 @@ const LEVEL: Record<Difficulty, string> = {
   hard: 'application and analysis: compare ideas, apply them to new cases, spot misconceptions'
 };
 
-// ---------- Variety & coverage for flashcards and quizzes ----------
+// ---------- Variety & coverage for flashcards ----------
 /** Previously asked items per source (kept on this PC), so new sets ask about different things. */
 const studyKey = (kind: string, ctx: TaskContext) => {
   let h = 0;
@@ -644,72 +730,6 @@ ${cov.block}`,
   for (const c of fresh) if (kept.length < Math.ceil(fresh.length / 2) && c.front && c.back && !kept.some((k) => similar(k.front, c.front)) && !prev.some((p) => similar(p, c.front))) kept.push(c);
   if (!kept.length) kept.push(...fresh.filter((c: Flashcard) => c.front && c.back).slice(0, Math.max(1, Math.ceil(fresh.length / 2))));
   remember(key, kept.map((c) => c.front));
-  return shuffled(kept);
-}
-
-/** Multiple-choice practice quiz from the text. */
-export async function runQuiz(ctx: TaskContext, cb: TaskCallbacks, count: number, difficulty: Difficulty): Promise<QuizQuestion[]> {
-  const outTokens = Math.min(Math.floor(ctx.contextSize * 0.55), 220 * count + 200);
-  const work = await condense({ ...ctx, maxTokens: outTokens }, 'Note the key facts, ideas and relationships a test might ask about.', cb);
-  cb.onStatus('Writing questions…');
-  const key = studyKey('quiz', ctx);
-  const prev = recall(key);
-  const focus = focusPlan(work, count, studyKey('quiz-used', ctx));
-  const cov = focus ? { block: focus.block, plan: focus.instruction } : coveragePlan(work, count, 'questions');
-  if (focus) count = focus.picks.length;
-  const r = await stream(
-    {
-      system: systemPrompt(),
-      prompt: `Write a ${count}-question multiple-choice practice quiz (keep each answer short, under 20 words) on ${ctx.scopeLabel} of "${ctx.docName}". Level: ${LEVEL[difficulty]}.
-For each question: "correct" = the right answer; "wrong" = 3 believable but clearly incorrect answers; "explanation" = one sentence on why the right answer is right, based on the text. Every question must ask about a different fact or idea.${cov.plan}${focus ? '' : avoidList(prev, 'questions')}
-
-${focus ? 'FACTS' : 'TEXT'}:
-${cov.block}`,
-      jsonSchema: {
-        type: 'object',
-        properties: {
-          questions: {
-            type: 'array',
-            minItems: count,
-            maxItems: count,
-            items: {
-              type: 'object',
-              properties: {
-                question: { type: 'string', maxLength: 300 },
-                correct: { type: 'string', maxLength: 260 },
-                wrong: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string', maxLength: 260 } },
-                explanation: { type: 'string', maxLength: 300 }
-              }
-            }
-          }
-        }
-      },
-      temperature: 0.7,
-      maxTokens: outTokens
-    },
-    { ...cb, onToken: (full) => cb.onStatus(`Writing questions… ${(full.match(/"explanation"/g) || []).length} of ${count}`) }
-  );
-  const j = parseJson(r.text) || {};
-  const all: QuizQuestion[] = (j.questions || [])
-    .map((q: any) => {
-      // The model names the right answer itself (small models often mix up answer letters); Slate shuffles.
-      const correct = String(q?.correct || '').trim();
-      const wrong: string[] = (Array.isArray(q?.wrong) ? q.wrong : []).map((c: any) => String(c).trim()).filter((c: string) => c && c.toLowerCase() !== correct.toLowerCase());
-      const choices = [correct, ...wrong.slice(0, 3)];
-      for (let i = choices.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [choices[i], choices[j]] = [choices[j], choices[i]];
-      }
-      return { question: String(q?.question || '').trim(), choices, answer: correct ? choices.indexOf(correct) : -1, explanation: String(q?.explanation || '').trim() };
-    })
-    .filter((q: QuizQuestion) => q.question && q.choices.length >= 2 && Number.isInteger(q.answer) && q.answer >= 0 && q.answer < q.choices.length);
-  // Drop near-duplicates within this quiz and of questions asked before; mix the order.
-  const kept: QuizQuestion[] = [];
-  for (const q of all) if (!kept.some((k) => similar(k.question, q.question)) && !prev.some((p) => similar(p, q.question))) kept.push(q);
-  // A short text may have run out of new facts: top up so a quiz is never (nearly) empty.
-  for (const q of all) if (kept.length < Math.ceil(all.length / 2) && !kept.includes(q) && !kept.some((k) => similar(k.question, q.question)) && !prev.some((p) => similar(p, q.question))) kept.push(q);
-  if (!kept.length) kept.push(...all.slice(0, Math.max(1, Math.ceil(all.length / 2))));
-  remember(key, kept.map((q) => q.question));
   return shuffled(kept);
 }
 

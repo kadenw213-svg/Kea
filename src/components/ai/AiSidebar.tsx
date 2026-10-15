@@ -7,7 +7,6 @@ import {
   Settings2,
   Lightbulb,
   ListCollapse,
-  Wand2,
   Send,
   Square,
   Copy,
@@ -19,7 +18,6 @@ import {
   Check,
   GraduationCap,
   Layers,
-  ListChecks,
   ScrollText,
   Globe,
   SlidersHorizontal,
@@ -28,9 +26,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { wikiQuery, wikiChars } from '../../lib/ai';
-import { FlashcardsView, QuizView } from './Study';
-import { QuizSession, QuizSessionData } from './QuizSession';
-import { ensureRecord, conceptsIn, planQuiz, writeQuestion, contextFor, loadRecord, missedCount } from '../../lib/study';
+import { FlashcardsView } from './Study';
 import { MenuButton } from '../Popover';
 import { openSettings, useSettings } from '../../lib/settings';
 import type { AiHooks } from '../../store';
@@ -38,20 +34,32 @@ import { useAi, setAiOpen, AiMessage } from './aiStore';
 import { useTabs, editorRegistry, toast, prompt as askText } from '../../store';
 import { api } from '../../lib/api';
 import { DEPTHS, Depth } from '../../lib/ai';
-import { runExplain, runSummarize, runAsk, runSuggest, runFlashcards, runQuiz, Difficulty, TaskContext, TaskCallbacks, wordCount, markdownToHtml, markdownToPlain, Suggestion } from '../../lib/ai';
+import { runExplain, runSummarize, runAsk, runSuggest, runReview, runFlashcards, Difficulty, TaskContext, TaskCallbacks, wordCount, markdownToHtml, markdownToPlain, Suggestion } from '../../lib/ai';
 import { uid } from '../../lib/util';
 import { ModelSetup } from './ModelSetup';
 import '../../styles/ai.css';
 
 let cancelFlag = { cancelled: false };
 
+/**
+ * How an AI edit reaches the document. It comes from the request itself, never from a setting:
+ * "comment on places where…" leaves Slate AI comments, "…as tracked changes" adds suggestions to accept or reject,
+ * "…directly" changes the text, and anything else waits in the sidebar with Apply / Replace.
+ */
 export type EditMode = 'suggest' | 'comment' | 'track' | 'direct';
-const EDIT_MODES: { id: EditMode; label: string; help: string }[] = [
-  { id: 'suggest', label: 'Suggest', help: 'AI edits wait in this sidebar until you click Apply or Replace.' },
-  { id: 'comment', label: 'Comment', help: 'Suggested edits are left as comments from "Slate AI" on the sentences they are about, like a reviewer (documents only; elsewhere this works like Suggest).' },
-  { id: 'track', label: 'Ask first', help: 'AI edits go into the document as suggestions from "Slate AI" that you accept or reject (documents only; elsewhere this works like Suggest).' },
-  { id: 'direct', label: 'Edit directly', help: 'AI edits change the text right away. Ctrl+Z undoes them.' }
-];
+const WANTS_COMMENTS =
+  /\b(leave|add|make|put|write|give|insert|drop)\b.{0,30}\b(comments?|annotations?)\b|\bcomment (on|where|wherever|about|every|each|any)\b|\bannotate\b|\bas comments\b|\b(flag|mark|point out|call out)\b.{0,40}\b(places|spots|parts|sentences|lines|paragraphs|instances|cases|every|each|all|any|where|wherever)\b/i;
+const WANTS_TRACK = /\b(track(ed)?[ -]changes?|suggesting mode|as (a |tracked )?suggestions?|for me to (accept|approve|review)|that i can (accept|reject|approve))\b/i;
+const WANTS_DIRECT = /\b(directly|in place|right away|right in the (doc|document|text)|in the (doc|document) itself|apply (it|them|this|that|these|those|the (changes?|edits?|fix(es)?))|go ahead and|just (change|edit|fix|rewrite|do) it|change it in the (doc|document))\b/i;
+const WANTS_SUGGESTIONS = /\b(suggest|give me|recommend|propose|any)\b.{0,20}\b(edits?|improvements?|changes|revisions?)\b|\bhow (can|could|should|do) i (improve|make (this|it) better)\b|\b(improve|polish|proofread|edit) (my|the|this) (writing|essay|paper|document|draft)\b/i;
+/** Changing the text (across the whole file, not just a highlight): "fix every run-on sentence", "make my verbs active". */
+const DOC_EDIT = /\b(rewrite|rephrase|reword|fix|correct|replace|change|shorten|simplify|tighten|improve|edit|remove|cut)\b/i;
+function requestMode(q: string, h: AiHooks | undefined): EditMode {
+  if (WANTS_COMMENTS.test(q) && h?.addComment) return 'comment';
+  if (WANTS_TRACK.test(q)) return h?.track ? 'track' : 'suggest';
+  if (WANTS_DIRECT.test(q)) return 'direct';
+  return 'suggest';
+}
 /** Asking to change highlighted text ("make this formal", "fix the grammar"…) rather than asking about it. */
 // Only clear rewrites of the highlight count; "make a list of…", "turn this into flashcards" etc. are questions.
 const EDIT_REQUEST = /^\s*(please\s+)?(?:(rewrite|re-write|rephrase|reword|paraphrase|proofread|fix|correct|shorten|lengthen|simplify|condense|tighten|polish|improve|edit|clean up|capitali[sz]e)\b(?!.*\b(list|summary|flashcards?|quiz|questions|outline|notes|table)\b)|(make|turn|convert|change|put|format|translate|expand)\s+(this|it|that|the (text|paragraph|sentence|selection|highlight))\b(?!.*\b(into|as)\s+(a |an )?(list|summary|flashcards?|quiz|questions|outline|notes|table|bullets?)\b))/i;
@@ -82,17 +90,13 @@ export function AiSidebar() {
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const rawHooks = editorRegistry.get(activeId)?.ai;
-  const editMode = useSettings((s) => (s.values['ai.editMode'] as EditMode) || 'suggest');
-  // "Ask first" only exists where the editor can track changes; elsewhere it behaves like Suggest.
-  const effMode: EditMode = (editMode === 'track' && !rawHooks?.track) || (editMode === 'comment' && !rawHooks?.addComment) ? 'suggest' : editMode;
-  const hooks = withMode(rawHooks, effMode);
-  const canEdit = !!(rawHooks?.replaceQuote || rawHooks?.replaceSelection);
+  const hooks = rawHooks;
   const depth = useSettings((s) => (s.values['ai.depth'] as Depth) || 'standard');
   const instructions = useSettings((s) => String(s.values['ai.instructions'] || ''));
   const [showInstr, setShowInstr] = useState(false);
   const wikiOn = useSettings((s) => s.values['ai.wikipedia'] !== false);
   const wikiNoticeSeen = useSettings((s) => !!s.values['ai.wikiNoticeSeen']);
-  const customised = depth !== 'standard' || editMode !== 'suggest' || !wikiOn;
+  const customised = depth !== 'standard' || !wikiOn;
   const [ctxOpen, setCtxOpen] = useState(false);
 
   // Load model state when first opened.
@@ -153,8 +157,10 @@ export function AiSidebar() {
   const patch = (id: string, p: Partial<AiMessage>) => useAi.getState().set({ messages: useAi.getState().messages.map((m) => (m.id === id ? { ...m, ...p } : m)) });
 
   /** Shared runner: adds the user + assistant bubbles, streams, handles errors and stop. */
-  const run = async (label: string, userText: string, task: (ctx: TaskContext, cb: TaskCallbacks) => Promise<any>, kind: AiMessage['kind'] = 'text', opts: { autoReplace?: boolean; wiki?: boolean } = {}) => {
+  const run = async (label: string, userText: string, task: (ctx: TaskContext, cb: TaskCallbacks) => Promise<any>, kind: AiMessage['kind'] = 'text', opts: { autoReplace?: boolean; wiki?: boolean; mode?: EditMode } = {}) => {
     if (ai.busy) return;
+    const mode: EditMode = opts.mode || 'suggest';
+    const mh = withMode(rawHooks, mode);
     if (!ready) {
       toast('Download an AI model first (it only takes a minute).');
       return;
@@ -201,25 +207,26 @@ export function AiSidebar() {
         onRequest: (id) => patch(aid, { requestId: id }),
         cancelled: () => flag.cancelled
       });
-      if (kind === 'flashcards' || kind === 'quiz') {
-        if (result && (result.length || result.plan?.length)) patch(aid, { data: result, streaming: false, text: '' });
-        else patch(aid, { kind: 'text', streaming: false, error: true, text: `I couldn't make ${kind === 'quiz' ? 'a quiz' : 'flashcards'} from this. Try a longer passage, or Try again.` });
+      if (kind === 'flashcards') {
+        if (result?.length) patch(aid, { data: result, streaming: false, text: '' });
+        else patch(aid, { kind: 'text', streaming: false, error: true, text: "I couldn't make flashcards from this. Try a longer passage, or Try again." });
       } else if (kind === 'suggestions') {
-        if (!result.length) patch(aid, { kind: 'text', streaming: false, text: 'This reads well already. I have no specific edits to suggest.' });
-        else if (effMode === 'comment' && rawHooks?.addComment && !flag.cancelled) {
-          // Comment: leave each suggestion as a reviewer comment on its sentence.
+        if (!result.length)
+          patch(aid, { kind: 'text', streaming: false, text: opts.mode ? "I didn't find any places in the text where that applies." : 'This reads well already. I have no specific edits to suggest.' });
+        else if (mode === 'comment' && rawHooks?.addComment && !flag.cancelled) {
+          // Comment: leave each finding as a Slate AI comment on its sentence.
           const applied: number[] = [];
-          (result as Suggestion[]).forEach((s, i) => rawHooks.addComment!(s.quote, `${s.issue ? s.issue[0].toUpperCase() + s.issue.slice(1).replace(/\.?$/, '.') + ' ' : ''}Suggested: “${s.suggestion}”`) && applied.push(i));
+          (result as Suggestion[]).forEach((s, i) => rawHooks.addComment!(s.quote, `${s.issue ? s.issue[0].toUpperCase() + s.issue.slice(1).replace(/\.?$/, '.') : ''}${s.suggestion ? `${s.issue ? ' ' : ''}Suggested: “${s.suggestion}”` : ''}`) && applied.push(i));
           patch(aid, { data: result, streaming: false, text: '', applied, appliedHow: 'comment' });
           if (applied.length) toast(`Left ${applied.length} comment${applied.length > 1 ? 's' : ''} in the document.`, 'success');
-        } else if ((effMode === 'track' || effMode === 'direct') && hooks?.replaceQuote && !flag.cancelled) {
-          // Ask first / Edit directly: put the edits into the document straight away.
+        } else if ((mode === 'track' || mode === 'direct') && mh?.replaceQuote && !flag.cancelled) {
+          // "…as tracked changes" / "…directly": put the edits into the document straight away.
           const applied: number[] = [];
-          (result as Suggestion[]).forEach((s, i) => hooks.replaceQuote!(s.quote, s.suggestion) && applied.push(i));
-          patch(aid, { data: result, streaming: false, text: '', applied, appliedHow: effMode as 'direct' | 'track' });
+          (result as Suggestion[]).forEach((s, i) => s.suggestion && mh.replaceQuote!(s.quote, s.suggestion) && applied.push(i));
+          patch(aid, { data: result, streaming: false, text: '', applied, appliedHow: mode as 'direct' | 'track' });
           if (applied.length)
             toast(
-              effMode === 'track'
+              mode === 'track'
                 ? `Added ${applied.length} suggested edit${applied.length > 1 ? 's' : ''} to the document. Accept or reject them there.`
                 : `Made ${applied.length} edit${applied.length > 1 ? 's' : ''}. Ctrl+Z undoes them.`,
               'success'
@@ -227,8 +234,8 @@ export function AiSidebar() {
         } else patch(aid, { data: result, streaming: false, text: '' });
       } else {
         let replaced: AiMessage['replaced'];
-        if (opts.autoReplace && (effMode === 'track' || effMode === 'direct') && hooks?.replaceSelection && !flag.cancelled && result.text.trim()) {
-          if (hooks.replaceSelection(markdownToPlain(result.text))) replaced = effMode as 'direct' | 'track';
+        if (opts.autoReplace && (mode === 'track' || mode === 'direct') && mh?.replaceSelection && !flag.cancelled && result.text.trim()) {
+          if (mh.replaceSelection(markdownToPlain(result.text))) replaced = mode as 'direct' | 'track';
         }
         patch(aid, { streaming: false, text: result.text, speed: result.tokensPerSecond, replaced });
       }
@@ -250,44 +257,11 @@ export function AiSidebar() {
 
   const explain = () => run('explain', 'Explain this', runExplain, 'text', { wiki: true });
   const summarize = () => run('summarize', 'Summarize this', runSummarize, 'text', { wiki: true });
-  const suggest = () => run('suggest', 'Suggest edits', runSuggest, 'suggestions');
   const studyCount = (k: string, d: number) => Math.max(1, Math.min(30, Number(useSettings.getState().values[k]) || d));
   const studyLevel = () => ((useSettings.getState().values['ai.studyDifficulty'] as Difficulty) || 'medium');
   const flashcards = () => {
     const n = studyCount('ai.flashcardCount', 10);
     run('flashcards', `Make ${n} flashcards`, (ctx, cb) => runFlashcards(ctx, cb, n, studyLevel()), 'flashcards');
-  };
-  /** Key for this file's quiz progress: its path (or name for unsaved files). */
-  const docKey = () => tab?.path || tab?.name || 'untitled';
-  /**
-   * Practice quiz on the loaded reading: find its concepts (once per file), plan a mixed set across all sections
-   * (missed concepts first), write the first question; the quiz card writes the rest while you answer.
-   */
-  const quiz = (onlyMissed = false) => {
-    const n = studyCount('ai.quizCount', 5);
-    const key = docKey();
-    run(
-      'quiz',
-      onlyMissed ? 'Quiz me on what I missed' : `Quiz me (${n} questions)`,
-      async (ctx, cb): Promise<QuizSessionData | null> => {
-        const full = hooks ? (await hooks.getDocument()).full : ctx.text;
-        const rec = await ensureRecord(key, full, ctx.docName, ctx.contextSize, cb.cancelled, cb.onStatus);
-        if (!rec.concepts.length) return null;
-        const scoped = ctx.isSelection ? conceptsIn(rec, ctx.text) : [];
-        const pool = scoped.length ? scoped : rec.concepts;
-        const plan = planQuiz(rec, n, pool, studyLevel(), onlyMissed);
-        // Start with a fill-in when there is one: it comes straight from the reading, so the quiz starts at once.
-        const fi = plan.findIndex((p) => p.format === 'fill');
-        if (fi > 0 && !onlyMissed) [plan[0], plan[fi]] = [plan[fi], plan[0]];
-        cb.onStatus('Writing the first question…');
-        let first: Awaited<ReturnType<typeof writeQuestion>> = null;
-        while (plan.length && !(first = await writeQuestion(plan[0], rec, contextFor(full, plan[0].concept, plan[0].partner), cb.cancelled))) plan.shift();
-        if (!plan.length) return null;
-        const sections = [...new Set(pool.map((c) => c.section))];
-        return { docKey: key, text: full, rec, plan, first, pool: pool.map((c) => c.id), covering: sections.length > 3 ? `${sections[0]} → ${sections[sections.length - 1]} (${sections.length} sections)` : sections.join(', ') };
-      },
-      'quiz'
-    );
   };
   const send = () => {
     const q = input.trim();
@@ -298,21 +272,27 @@ export function AiSidebar() {
       .messages.filter((m) => !m.error && !m.streaming && (m.kind || 'text') === 'text' && m.text)
       .slice(-6)
       .map((m) => ({ role: m.role, text: m.role === 'user' ? m.text : m.text.slice(0, 2000) }));
-    // With a live highlight, "make this formal" etc. edits the text itself (unless edits are set to Suggest).
-    const autoReplace = scope === 'selection' && !!selection && !ai.pinned && EDIT_REQUEST.test(q);
-    run('ask', q, (ctx, cb) => runAsk(q, history, ctx, cb), 'text', { autoReplace, wiki: !autoReplace });
+    const mode = hooks ? requestMode(q, hooks) : 'suggest';
+    // "Comment on places where I…": a review by the user's own guideline, left as Slate AI comments.
+    if (mode === 'comment') return run('suggest', q, (ctx, cb) => runReview(ctx, cb, q, false), 'suggestions', { mode });
+    // "Suggest some edits" / "how can I improve this?": ready-to-apply rewrites (in place when asked "directly").
+    if (hooks?.replaceQuote && WANTS_SUGGESTIONS.test(q)) return run('suggest', q, runSuggest, 'suggestions', { mode });
+    const highlightEdit = scope === 'selection' && !!selection && !ai.pinned && EDIT_REQUEST.test(q);
+    // "Fix every run-on sentence directly" / "…as tracked changes" across the file: find each place, then edit it.
+    if (!highlightEdit && mode !== 'suggest' && DOC_EDIT.test(q) && hooks?.replaceQuote) return run('suggest', q, (ctx, cb) => runReview(ctx, cb, q, true), 'suggestions', { mode });
+    // With a live highlight, "make this formal" etc. rewrites it: in the sidebar to Replace, or in place when asked.
+    run('ask', q, (ctx, cb) => runAsk(q, history, ctx, cb), 'text', { autoReplace: highlightEdit, wiki: !highlightEdit, mode });
   };
 
-  // Keyboard: Alt+1/2/3 quick actions, Ctrl+F searches the conversation when focus is in the sidebar.
+  // Keyboard: Alt+1/2 quick actions, Ctrl+F searches the conversation when focus is in the sidebar.
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!ai.open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey && !e.ctrlKey && ['1', '2', '3'].includes(e.key)) {
+      if (e.altKey && !e.ctrlKey && ['1', '2'].includes(e.key)) {
         e.preventDefault();
         if (e.key === '1') explain();
         if (e.key === '2') summarize();
-        if (e.key === '3') suggest();
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && rootRef.current?.contains(document.activeElement)) {
         e.preventDefault();
@@ -375,7 +355,7 @@ export function AiSidebar() {
               {instructions.trim() && <span className="ai-dot" />}
             </button>
             <MenuButton
-              title="Answer options: depth, AI edits, Wikipedia"
+              title="Answer options: depth, Wikipedia"
               align="right"
               button={(open) => (
                 <button className={`icon-btn sm ${open ? 'active' : ''}`} style={{ position: 'relative' }}>
@@ -384,7 +364,7 @@ export function AiSidebar() {
                 </button>
               )}
             >
-              {(close) => <OptionsMenu close={close} canEdit={canEdit} />}
+              {(close) => <OptionsMenu close={close} />}
             </MenuButton>
             <button className="icon-btn sm" title="Close (Ctrl+J)" onClick={() => setAiOpen(false)}>
               <X size={16} />
@@ -469,18 +449,15 @@ export function AiSidebar() {
           <button className="ai-chip" onClick={summarize} disabled={!!ai.busy} title="Summarize (Alt+2)">
             <ListCollapse size={14} /> Summarize
           </button>
-          <button className="ai-chip" onClick={suggest} disabled={!!ai.busy} title="Suggest edits (Alt+3)">
-            <Wand2 size={14} /> Edits
-          </button>
           <MenuButton
-            title="Study: flashcards and practice quizzes"
+            title="Study: flashcards"
             button={(open) => (
               <button className={`ai-chip ${open ? 'on' : ''}`} disabled={!!ai.busy}>
                 <GraduationCap size={14} /> Study
               </button>
             )}
           >
-            {(close) => <StudyMenu close={close} onCards={flashcards} onQuiz={() => quiz()} onMissed={() => quiz(true)} docKey={hooks ? docKey() : null} />}
+            {(close) => <StudyMenu close={close} onCards={flashcards} />}
           </MenuButton>
         </div>}
 
@@ -492,6 +469,7 @@ export function AiSidebar() {
               <Sparkles size={28} />
               <div>Ask anything. Or highlight part of your {noun} and ask about it.</div>
               <div className="muted">Everything runs on your computer. Nothing is uploaded.</div>
+              {hooks?.addComment && <div className="muted ai-tip">Try: “Comment on places where I use passive voice” or “Fix the grammar directly”.</div>}
             </div>
           )}
           {visible.map((m) => (
@@ -558,8 +536,6 @@ function MessageView({ m, hooks, highlight }: { m: AiMessage; hooks: any; highli
     );
   }
   if (m.kind === 'flashcards' && m.data) return <FlashcardsView cards={m.data} title={(useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)?.name || 'Study').replace(/\.[^.]+$/, '')} hooks={hooks} />;
-  if (m.kind === 'quiz' && m.data?.plan) return <QuizSession data={m.data} hooks={hooks} />;
-  if (m.kind === 'quiz' && m.data) return <QuizView questions={m.data} hooks={hooks} />;
   if (m.kind === 'suggestions' && m.data) return <SuggestionsReport list={m.data} hooks={hooks} initial={m.applied} how={m.appliedHow} />;
   const html = markdownToHtml(m.text || '');
   const marked = highlight ? html.replace(new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?![^<]*>)`, 'gi'), '<mark>$1</mark>') : html;
@@ -620,12 +596,11 @@ function MessageView({ m, hooks, highlight }: { m: AiMessage; hooks: any; highli
   );
 }
 
-/** Answer options popover: depth, how AI edits are applied, Wikipedia. Everything else lives in Settings → AI. */
-function OptionsMenu({ close, canEdit }: { close(): void; canEdit: boolean }) {
+/** Answer options popover: depth and Wikipedia (how edits are applied comes from each request). Everything else lives in Settings → AI. */
+function OptionsMenu({ close }: { close(): void }) {
   const v = useSettings((s) => s.values);
   const set = (k: string, val: any) => useSettings.getState().set({ [k]: val });
   const depth = (v['ai.depth'] as Depth) || 'standard';
-  const mode = (v['ai.editMode'] as EditMode) || 'suggest';
   const wiki = v['ai.wikipedia'] !== false;
   return (
     <div className="ai-options">
@@ -638,19 +613,6 @@ function OptionsMenu({ close, canEdit }: { close(): void; canEdit: boolean }) {
         ))}
       </div>
       <div className="opt-help">{DEPTHS.find((d) => d.id === depth)?.help}</div>
-      {canEdit && (
-        <>
-          <div className="opt-label">AI edits</div>
-          <div className="seg small opt-seg">
-            {EDIT_MODES.map((m) => (
-              <button key={m.id} className={mode === m.id ? 'on' : ''} title={m.help} onClick={() => set('ai.editMode', m.id)}>
-                {m.label}
-              </button>
-            ))}
-          </div>
-          <div className="opt-help">{EDIT_MODES.find((m) => m.id === mode)?.help}</div>
-        </>
-      )}
       <label className="opt-toggle">
         <span>
           <Globe size={14} /> Check Wikipedia
@@ -709,24 +671,11 @@ export function InstructionsBox({ onClose }: { onClose?: () => void }) {
 }
 
 /** Study menu: what to make, plus how many and how hard (remembered in settings). */
-function StudyMenu({ close, onCards, onQuiz, onMissed, docKey }: { close(): void; onCards(): void; onQuiz(): void; onMissed(): void; docKey: string | null }) {
+function StudyMenu({ close, onCards }: { close(): void; onCards(): void }) {
   const v = useSettings((s) => s.values);
   const set = (k: string, val: any) => useSettings.getState().set({ [k]: val });
-  // How many concepts in this file were missed in earlier quizzes.
-  const [missed, setMissed] = useState(0);
-  useEffect(() => {
-    if (docKey) loadRecord(docKey).then((r) => setMissed(missedCount(r)));
-  }, [docKey]);
   return (
     <div className="study-menu">
-      <button className="menu-item" onClick={() => (close(), onQuiz())}>
-        <ListChecks size={16} /> Practice quiz
-      </button>
-      {missed > 0 && (
-        <button className="menu-item" onClick={() => (close(), onMissed())}>
-          <RotateCcw size={16} /> Review missed <span className="kbd">{missed}</span>
-        </button>
-      )}
       <button className="menu-item" onClick={() => (close(), onCards())}>
         <Layers size={16} /> Flashcards
       </button>
@@ -736,14 +685,6 @@ function StudyMenu({ close, onCards, onQuiz, onMissed, docKey }: { close(): void
           Cards
           <select className="select sm" value={v['ai.flashcardCount'] ?? 10} onChange={(e) => set('ai.flashcardCount', Number(e.target.value))}>
             {[5, 10, 15, 20, 30].map((n) => (
-              <option key={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Questions
-          <select className="select sm" value={v['ai.quizCount'] ?? 5} onChange={(e) => set('ai.quizCount', Number(e.target.value))}>
-            {[3, 5, 10, 15, 20].map((n) => (
               <option key={n}>{n}</option>
             ))}
           </select>

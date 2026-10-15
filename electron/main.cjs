@@ -201,7 +201,8 @@ app.whenReady().then(() => {
   require('./google.cjs').register({ log });
   require('./cite.cjs').register({ log });
   require('./wiki.cjs').register();
-  require('./study.cjs').register();
+  // Quizzes were removed in v0.15.0: clear the per-file quiz progress they kept.
+  fs.rm(path.join(app.getPath('userData'), 'study'), { recursive: true, force: true }, () => {});
   require('./present.cjs').register({ log, getWindow: () => mainWindow });
   require('./search.cjs').register();
   require('./tts.cjs').register();
