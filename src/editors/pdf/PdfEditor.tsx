@@ -50,6 +50,7 @@ import {
 import type { Tab } from '../../store';
 import { editorRegistry, setDirty, toast, prompt, useTabs, ask } from '../../store';
 import { loadPdf, PasswordError, getTextRects, PDFDocumentProxy, TextItemRect } from './pdfjs';
+import { readOutline, takePdfTarget, findChapter, OutlineEntry } from '../../lib/pdfTarget';
 import type { Annotation, Box, DocState, PageInfo, PageRef, TextAnn, Tool, ImageAnn } from './types';
 import { DEFAULTS } from './types';
 import { setting } from '../../lib/settings';
@@ -212,6 +213,9 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   const [zoom, setZoom] = useState(1);
   const [darkPages, setDarkPages] = useState(() => !!setting('pdf.darkPages'));
   const [sidebar, setSidebar] = useState(() => setting('pdf.sidebar') !== false);
+  // A textbook's chapters and sections (the PDF's bookmarks), shown in the side panel next to the pages.
+  const [outline, setOutline] = useState<OutlineEntry[]>([]);
+  const [sideView, setSideView] = useState<'pages' | 'chapters'>('pages');
   const [selectedPages, setSelectedPages] = useState<Set<string>>(new Set());
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sigOpen, setSigOpen] = useState(false);
@@ -286,6 +290,21 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
         }
         setSources([{ bytes: srcBytes, doc: pdf }]);
         setInfos(info);
+        readOutline(pdf).then((o) => {
+          if (cancelled) return;
+          setOutline(o);
+          if (o.length >= 2) setSideView('chapters');
+          // Opened from Scholar for one chapter: go straight to it.
+          const target = takePdfTarget(tab.path);
+          const hit = target ? findChapter(o, target) : null;
+          if (hit) {
+            setSidebar(true);
+            setTimeout(() => {
+              const i = history.get().pages.findIndex((pg) => pg.src === 0 && pg.index === hit.page);
+              if (i >= 0) scrollToPage(i);
+            }, 600);
+          }
+        });
         history.reset({
           pages: Array.from({ length: pdf.numPages }, (_, i) => ({ id: uid(), src: 0, index: i, rotation: 0 })),
           annots: []
@@ -1504,6 +1523,20 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
       <div className="pdf-body">
         {sidebar && (
           <div className="side-panel">
+            {outline.length > 0 && (
+              <div className="side-tabs">
+                <button className={sideView === 'chapters' ? 'on' : ''} onClick={() => setSideView('chapters')}>
+                  Chapters
+                </button>
+                <button className={sideView === 'pages' ? 'on' : ''} onClick={() => setSideView('pages')}>
+                  Pages
+                </button>
+              </div>
+            )}
+            {sideView === 'chapters' && outline.length > 0 ? (
+              <OutlineList outline={outline} pages={doc.pages} currentIndex={currentIndex} onGo={scrollToPage} />
+            ) : (
+            <>
             <div className="panel-head">
               <span>
                 Pages <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>· {pageCount}</span>
@@ -1546,6 +1579,8 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
                 <FilePlus2 size={14} /> Insert
               </button>
             </div>
+            </>
+            )}
           </div>
         )}
 
@@ -1887,3 +1922,31 @@ function FontSizeInput({ value, onChange }: { value: number; onChange(v: number)
 
 // Re-exported for the print helper.
 export { escapeHtml };
+
+/** A textbook's chapters and sections from its bookmarks; the one being read is highlighted. */
+function OutlineList({ outline, pages, currentIndex, onGo }: { outline: OutlineEntry[]; pages: { src: number; index: number }[]; currentIndex: number; onGo(i: number): void }) {
+  const at = (e: OutlineEntry) => (e.page < 0 ? -1 : pages.findIndex((p) => p.src === 0 && p.index === e.page));
+  // The heading being read: the last one before this page, or the first one on it.
+  let current = -1;
+  outline.forEach((e, k) => {
+    const i = at(e);
+    if (i >= 0 && (i < currentIndex || (i === currentIndex && (current < 0 || at(outline[current]) < currentIndex)))) current = k;
+  });
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    listRef.current?.querySelector('.outline-item.on')?.scrollIntoView({ block: 'nearest' });
+  }, [current]);
+  return (
+    <div className="outline-list" ref={listRef}>
+      {outline.map((e, k) => {
+        const i = at(e);
+        return (
+          <button key={k} className={`outline-item depth-${e.depth} ${k === current ? 'on' : ''}`} disabled={i < 0} onClick={() => onGo(i)} title={e.title}>
+            <span className="outline-title">{e.title}</span>
+            {i >= 0 && <span className="outline-page">{i + 1}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

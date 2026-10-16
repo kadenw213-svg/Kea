@@ -99,6 +99,19 @@ export interface KeaApi {
     close(): Promise<boolean>;
     onClosed(cb: () => void): () => void;
   };
+  scholar: {
+    profiles(): Promise<ProfileList>;
+    createProfile(name: string): Promise<ProfileList>;
+    selectProfile(id: string): Promise<ProfileList>;
+    renameProfile(id: string, name: string): Promise<ProfileList>;
+    status(): Promise<{ hasData: boolean; paths: { dir: string; workspace: string; db: string; textbooks: string } }>;
+    courses(): Promise<ScholarCourse[]>;
+    items(q: { from: string; to: string; courseId?: string }): Promise<ScholarItem[]>;
+    course(id: string): Promise<ScholarCourseDetail | null>;
+    setDone(id: string, done: boolean): Promise<boolean>;
+    importExisting(folder: string): Promise<{ pdfs: number }>;
+    onChanged(cb: () => void): () => void;
+  };
   lookup: {
     search(query: string, lang?: string): Promise<WikiCandidate[]>;
     find(query: string, lang?: string, limit?: number): Promise<WikiCandidate[]>;
@@ -267,6 +280,86 @@ declare global {
 }
 
 /** A Wikipedia search result: title, short description, first two sentences. */
+// ---------- Kea Scholar ----------
+export interface ProfileList {
+  active: string;
+  list: { id: string; name: string; created: string }[];
+}
+export interface ScholarReading {
+  chapter: string;
+  title: string | null;
+  /** The chapter's study PDF in the class textbook, when one has been made. */
+  pdf: { file: string; pages: number | null; title: string } | null;
+}
+export interface ScholarLink {
+  label: string;
+  url: string;
+  kind: string;
+  chapter?: string | null;
+}
+export interface ScholarItem {
+  id: string;
+  courseId: string;
+  courseCode: string;
+  type: string;
+  title: string;
+  date: string;
+  dateEnd: string | null;
+  start: string | null;
+  end: string | null;
+  due: string | null;
+  module: string | null;
+  description: string | null;
+  sourceWording: string | null;
+  links: ScholarLink[];
+  weeklyLinks: ScholarLink[];
+  covered: string[];
+  studyFocus: string[];
+  points: number | null;
+  optional: boolean;
+  tentative: boolean;
+  /** When it was checked off, or null. */
+  done: string | null;
+  readings: ScholarReading[];
+}
+export interface ScholarCourse {
+  id: string;
+  code: string;
+  name: string;
+  term: string;
+  instructor: string | null;
+  url: string | null;
+  synthetic: boolean;
+  start: string | null;
+  end: string | null;
+  next: { id: string; title: string; type: string; date: string; due: string | null } | null;
+  dueThisWeek: number;
+  chapters: number;
+}
+export interface ScholarChapter {
+  label: string;
+  title: string | null;
+  sections: string[];
+  objectives: string[];
+  vocabulary: string;
+  readingUrl: string | null;
+  readingLabel: string | null;
+  pdf: ScholarReading['pdf'];
+}
+export interface ScholarCourseDetail {
+  id: string;
+  code: string;
+  name: string;
+  term: string;
+  instructor: string | null;
+  url: string | null;
+  start: string | null;
+  end: string | null;
+  chapters: ScholarChapter[];
+  weeks: ScholarItem[];
+  portal: { kind: string; label: string; url: string }[];
+}
+
 export interface WikiCandidate {
   title: string;
   description: string;

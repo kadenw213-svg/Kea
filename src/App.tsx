@@ -19,6 +19,7 @@ import { modKey } from './lib/util';
 import { VoiceTypingPanel, toggleVoice } from './components/VoiceTyping';
 
 const PdfEditor = lazy(() => import('./editors/pdf/PdfEditor'));
+const ScholarScreen = lazy(() => import('./components/scholar/ScholarScreen').then((m) => ({ default: m.ScholarScreen })));
 const DocEditor = lazy(() => import('./editors/doc/DocEditor'));
 const SheetEditor = lazy(() => import('./editors/sheet/SheetEditor'));
 const CodeEditor = lazy(() => import('./editors/code/CodeEditor'));
@@ -217,6 +218,16 @@ export function App() {
           >
             {t.kind === 'home' ? (
               <HomeScreen visible={t.id === activeId || !!(split && (t.id === split.left || t.id === split.right))} />
+            ) : t.kind === 'scholar' ? (
+              <Suspense
+                fallback={
+                  <div className="center-fill">
+                    <div className="spinner" />
+                  </div>
+                }
+              >
+                <ScholarScreen />
+              </Suspense>
             ) : (
               <Suspense
                 fallback={

@@ -2,7 +2,7 @@ import { Logo } from './Logo';
 import { useRef, useState } from 'react';
 import { Popover } from './Popover';
 import { Columns2, PanelRightClose, XSquare } from 'lucide-react';
-import { Home, Plus, X } from 'lucide-react';
+import { Home, Plus, X, GraduationCap } from 'lucide-react';
 import { useTabs } from '../store';
 import { FileIcon } from './FileIcon';
 import { MenuButton } from './Popover';
@@ -114,7 +114,7 @@ export function TitleBar() {
             onDragEnd={() => (dragFrom.current = null)}
             title={t.path || t.name}
           >
-            {t.kind === 'home' ? <Home size={16} /> : <FileIcon name={t.name} kind={t.kind} size={15} />}
+            {t.kind === 'home' ? <Home size={16} /> : t.kind === 'scholar' ? <GraduationCap size={15} /> : <FileIcon name={t.name} kind={t.kind} size={15} />}
             {t.kind !== 'home' && <span className="tab-label">{t.name}</span>}
             {t.kind !== 'home' && (
               <button

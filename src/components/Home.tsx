@@ -41,6 +41,7 @@ import { useTabs, toast, prompt } from '../store';
 import { mergePdfs, imagesToPdf } from '../lib/pdfTools';
 import { MenuButton } from './Popover';
 import { kindFor, extOf } from '../lib/fileTypes';
+import { openScholar } from './scholar/scholarStore';
 import { Preview } from './home/Preview';
 import { ConnectDrives } from './home/ConnectDrives';
 import { DriveLogo } from './home/DriveLogo';
@@ -109,7 +110,6 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   const loadSeq = useRef(0);
   const showStart = useSetting<boolean>('home.showStart');
   const showScholar = useSetting<boolean>('scholar.enabled');
-  const [scholarInfo, setScholarInfo] = useState<string | null>(null);
   const showTools = useSetting<boolean>('home.showTools');
   const showGreeting = useSetting<boolean>('home.greeting');
   const showPreviews = useSetting<boolean>('home.previews');
@@ -373,31 +373,22 @@ export function HomeScreen({ visible }: { visible: boolean }) {
               <span className="muted">Your classes, their textbooks and your calendar, kept up to date for you.</span>
             </div>
             <div className="scholar-row">
-              <button className={`scholar-card ${scholarInfo === 'classes' ? 'on' : ''}`} onClick={() => setScholarInfo(scholarInfo === 'classes' ? null : 'classes')}>
+              <button className="scholar-card" onClick={() => openScholar({ name: 'week' })}>
                 <GraduationCap size={26} />
                 <span className="scholar-name">Classes</span>
                 <span className="scholar-desc">Each class with its textbook, readings and what's due</span>
               </button>
-              <button className={`scholar-card ${scholarInfo === 'calendar' ? 'on' : ''}`} onClick={() => setScholarInfo(scholarInfo === 'calendar' ? null : 'calendar')}>
+              <button className="scholar-card" onClick={() => openScholar({ name: 'calendar' })}>
                 <CalendarDays size={26} />
                 <span className="scholar-name">Calendar</span>
                 <span className="scholar-desc">Assignments and tests that open their readings, ready to check off</span>
               </button>
-              <button className={`scholar-card ${scholarInfo === 'library' ? 'on' : ''}`} onClick={() => setScholarInfo(scholarInfo === 'library' ? null : 'library')}>
+              <button className="scholar-card" onClick={() => openScholar({ name: 'library' })}>
                 <Library size={26} />
                 <span className="scholar-name">Library</span>
                 <span className="scholar-desc">Free, complete courses you can add and study at your own pace</span>
               </button>
             </div>
-            {scholarInfo && (
-              <div className="scholar-soon">
-                {scholarInfo === 'classes'
-                  ? 'Classes arrive in the next update. Add a course from your school and Kea scans it in the background, then keeps its assignments, readings and a textbook for each week up to date.'
-                  : scholarInfo === 'calendar'
-                    ? 'The calendar arrives in the next update. Every assignment, quiz and test links straight to its reading and instructions, and you can check each one off. Your Google Calendar shows alongside.'
-                    : 'The Library comes soon after: complete courses with their textbooks, free to add for anyone, no account needed.'}
-              </div>
-            )}
           </section>
         )}
 

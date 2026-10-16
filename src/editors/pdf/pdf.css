@@ -588,3 +588,81 @@
     opacity: 0.55;
   }
 }
+
+/* ---------- Chapters (a textbook's bookmarks) ---------- */
+.side-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px 4px;
+}
+.side-tabs button {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 4px 0;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.side-tabs button.on {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--text-3);
+}
+.outline-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.outline-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.outline-item:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.outline-item.on {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.outline-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.outline-item.depth-0 {
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 4px;
+}
+.outline-item.depth-1 {
+  padding-left: 18px;
+}
+.outline-item.depth-2 {
+  padding-left: 30px;
+  font-size: 12.5px;
+}
+.outline-title {
+  flex: 1;
+  min-width: 0;
+}
+.outline-page {
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}

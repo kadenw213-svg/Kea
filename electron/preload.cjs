@@ -43,6 +43,23 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('present:closed', fn);
     }
   },
+  scholar: {
+    profiles: () => ipcRenderer.invoke('scholar:profiles'),
+    createProfile: (name) => ipcRenderer.invoke('scholar:createProfile', name),
+    selectProfile: (id) => ipcRenderer.invoke('scholar:selectProfile', id),
+    renameProfile: (id, name) => ipcRenderer.invoke('scholar:renameProfile', id, name),
+    status: () => ipcRenderer.invoke('scholar:status'),
+    courses: () => ipcRenderer.invoke('scholar:courses'),
+    items: (q) => ipcRenderer.invoke('scholar:items', q),
+    course: (id) => ipcRenderer.invoke('scholar:course', id),
+    setDone: (id, done) => ipcRenderer.invoke('scholar:setDone', id, done),
+    importExisting: (folder) => ipcRenderer.invoke('scholar:importExisting', folder),
+    onChanged: (cb) => {
+      const h = () => cb();
+      ipcRenderer.on('scholar:changed', h);
+      return () => ipcRenderer.removeListener('scholar:changed', h);
+    }
+  },
   lookup: {
     search: (query, lang) => ipcRenderer.invoke('lookup:search', query, lang),
     find: (query, lang, limit) => ipcRenderer.invoke('lookup:find', query, lang, limit),
