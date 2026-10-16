@@ -104,7 +104,10 @@ export interface SlateApi {
     article(title: string, lang?: string): Promise<WikiPage | null>;
     titles(list: string[], lang?: string): Promise<WikiCandidate[]>;
     complete(prefix: string, lang?: string): Promise<string[]>;
+    about(list: string[], lang?: string): Promise<Record<string, { intro: string; categories: string[] }>>;
+    meanings(title: string, lang?: string): Promise<WikiCandidate[]>;
     define(word: string, maxSenses?: number): Promise<DictEntry | null>;
+    wiktionary(word: string): Promise<DictEntry | null>;
   };
   speech: {
     state(): Promise<SpeechModel[]>;
@@ -274,6 +277,10 @@ export interface WikiCandidate {
   /** When the term redirects here: the section the redirect points at (may be empty), and the term as redirected. */
   fragment?: string;
   redirectFrom?: string;
+  /** When the search matched a section of the article: that section's title. */
+  section?: string;
+  /** Its place in the results of searching the term with the reading's main words (0 = first). */
+  contextRank?: number;
 }
 /** A Wikipedia article as plain text, split into its lead and sections (reference sections removed). */
 export interface WikiPage {
@@ -285,11 +292,28 @@ export interface WikiPage {
   sections: { title: string; level: number; text: string }[];
 }
 /** An offline dictionary entry (WordNet). */
+/** A dictionary entry: from Wiktionary when online, or the offline dictionary (WordNet). */
 export interface DictEntry {
   word: string;
-  entries: { pos: string; lemma: string; senses: { def: string; examples: string[]; synonyms: string[]; antonyms: string[] }[] }[];
+  entries: {
+    pos: string;
+    lemma: string;
+    senses: {
+      def: string;
+      examples: string[];
+      synonyms: string[];
+      antonyms: string[];
+      /** Wiktionary only: the subject the sense belongs to ("Chemistry"), its narrower senses, and for an
+       * inflected form ("dissolves") the base word. */
+      label?: string;
+      sub?: string[];
+      formOf?: string;
+    }[];
+  }[];
   synonyms: string[];
   antonyms: string[];
+  source?: 'wiktionary' | 'wordnet';
+  url?: string;
 }
 
 export interface SpeechModel {

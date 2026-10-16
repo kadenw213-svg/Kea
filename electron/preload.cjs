@@ -48,7 +48,10 @@ contextBridge.exposeInMainWorld('api', {
     article: (title, lang) => ipcRenderer.invoke('lookup:article', title, lang),
     titles: (list, lang) => ipcRenderer.invoke('lookup:titles', list, lang),
     complete: (prefix, lang) => ipcRenderer.invoke('lookup:complete', prefix, lang),
-    define: (word, maxSenses) => ipcRenderer.invoke('lookup:define', word, maxSenses)
+    about: (list, lang) => ipcRenderer.invoke('lookup:about', list, lang),
+    meanings: (title, lang) => ipcRenderer.invoke('lookup:meanings', title, lang),
+    define: (word, maxSenses) => ipcRenderer.invoke('lookup:define', word, maxSenses),
+    wiktionary: (word) => ipcRenderer.invoke('lookup:wiktionary', word)
   },
   speech: {
     state: () => ipcRenderer.invoke('speech:state'),

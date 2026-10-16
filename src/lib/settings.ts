@@ -416,7 +416,7 @@ export const SECTIONS: Section[] = [
     id: 'lookup',
     label: 'Encyclopedia',
     icon: 'BookOpen',
-    blurb: 'Highlight a word or idea and press Ctrl+J. Explain shows Wikipedia’s own words, with a link to the article; Dictionary works offline.',
+    blurb: 'Highlight a word or idea and press Ctrl+J. Explain shows Wikipedia’s own words, with a link to the article; Dictionary shows Wiktionary’s entry with its examples (or the offline dictionary when you’re offline).',
     fields: [
       {
         key: 'lookup.lang',
@@ -430,7 +430,20 @@ export const SECTIONS: Section[] = [
       { key: 'lookup.findPassage', label: 'Find the part of the article about what you highlighted', type: 'toggle', default: true, help: 'When a term is covered inside a bigger article (“saturated solution” in “Solubility”), show the paragraphs about it first.', advanced: true },
       { key: 'lookup.passages', label: 'Paragraphs about the term to show', type: 'number', default: 2, min: 1, max: 5, advanced: true },
       { key: 'lookup.sections', label: 'Article sections to show under the definition', type: 'number', default: 2, min: 0, max: 6, advanced: true },
-      { key: 'lookup.dictSenses', label: 'Dictionary meanings per part of speech', type: 'number', default: 5, min: 1, max: 20, advanced: true }
+      {
+        key: 'lookup.dictSource',
+        label: 'Dictionary',
+        type: 'select',
+        default: 'wiktionary',
+        options: [
+          { value: 'wiktionary', label: 'Wiktionary when online (fuller, with examples), offline dictionary otherwise' },
+          { value: 'wordnet', label: 'Offline dictionary only (WordNet)' }
+        ],
+        help: 'Wiktionary is Wikipedia’s dictionary; only the word is sent.'
+      },
+      { key: 'lookup.dictSenses', label: 'Dictionary meanings per part of speech', type: 'number', default: 12, min: 1, max: 30, advanced: true },
+      { key: 'lookup.dictExamples', label: 'Example sentences per meaning', type: 'number', default: 4, min: 0, max: 10, advanced: true },
+      { key: 'lookup.dictSubsenses', label: 'Show narrower meanings under each meaning', type: 'toggle', default: true, advanced: true }
     ]
   },
   {
@@ -447,7 +460,7 @@ export const SECTIONS: Section[] = [
     id: 'privacy',
     label: 'Privacy & data',
     icon: 'Shield',
-    blurb: 'Slate works offline. It only goes online to check GitHub for updates, to read Wikipedia when you use Explain, to download models you choose, and to set up cloud drives you sign in to.',
+    blurb: 'Slate works offline. It only goes online to check GitHub for updates, to read Wikipedia and Wiktionary when you use the Encyclopedia, to download models you choose, and to set up cloud drives you sign in to.',
     fields: [
       { key: 'privacy.citeLookup', label: 'Allow citation look-ups', type: 'toggle', default: true, help: 'When you click "Look up" in Citations, Slate asks Crossref (DOIs), Open Library (ISBNs) or the web page itself for the details. Nothing is sent otherwise.' },
       { key: 'privacy.log', label: 'Keep a troubleshooting log', type: 'toggle', default: true, advanced: true, help: 'A small local file (slate.log) with errors and file names. Never sent anywhere.' }

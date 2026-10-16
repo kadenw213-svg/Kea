@@ -1521,6 +1521,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
               </div>
             </div>
             <Thumbnails
+              dark={darkPages}
               pages={doc.pages}
               docs={docs}
               sizeOf={sizeOf}

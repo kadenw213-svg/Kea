@@ -35,12 +35,21 @@ export const lookupLang = () => String(setting('lookup.lang') || 'en');
 
 // ---------- Text helpers ----------
 const STOP = new Set(
-  'a an the and or but if of to in on at for with by from as is are was were be been being it its this that these those which who whom what how why when where can could should would will shall may might must do does did not no than then so such into onto about also more most some any each every many much while because often like well made make makes take takes used use uses other there their they them he she his her we our you your i me my one two all very just only over under between through during before after above below up down out off again further once here both few own same too s t'.split(
+  'a an the and or but if of to in on at for with by from as is are was were be been being it its this that these those which who whom what how why when where can could should would will shall may might must do does did not no than then so such into onto about also more most some any each every many much while because often like well made make makes take takes used use uses other there their they them he she his her we our you your i me my one two all very just only over under between through during before after above below up down out off again further once here both few own same too s t around until unless without within since though although against toward towards among upon along behind beyond despite whether yet still even ever never always quite rather almost perhaps instead whose whatever whenever wherever'.split(
     ' '
   )
 );
-/** A word's rough stem, so "organisms" matches "organism" and "producing" matches "produce". */
-const stem = (w: string) => (w.length > 4 ? w.replace(/ies$/, 'y').replace(/(ing|ed|es|s)$/, '') : w);
+/**
+ * A word's rough stem, so "organisms" matches "organism" and "producing" matches "produce" (a final "e" goes too,
+ * so "molecule" and "molecules" meet at "molecul").
+ */
+const stem = (w: string) => (w.length > 4 ? w.replace(/ies$/, 'y').replace(/(ing|ed|es|s)$/, '').replace(/(?<=..[^aeiou])e$/, '') : w);
+/** Everyday words that appear in articles on any subject, so they say nothing about which meaning is meant (stemmed). */
+const COMMON = new Set(
+  'add year day time week month people person thing way place part number world life small large big little new old good great high low long short first last next different same important general main early late certain common usual whole half full open close real true kind sort type form area side end point line case fact group man woman child home house hand work place left right best better least less several various known called named found given include including become became begin began show shown seen look find give get got keep let put set say said tell think know want need come came go went ten hundred thousand million billion three four five six seven eight nine'
+    .split(' ')
+    .map(stem)
+);
 const words = (s: string) => (s.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length > 2 && !STOP.has(w)).map(stem);
 /** The most frequent content words of a text (what it's about). */
 function keywords(text: string, n = 40) {
@@ -50,6 +59,18 @@ function keywords(text: string, n = 40) {
 }
 const overlap = (text: string, keys: Set<string>) => new Set(words(text).filter((w) => keys.has(w))).size;
 const bare = (t: string) => t.toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
+/** Two names for the same thing, give or take word endings: "supersaturated" / "Supersaturation", "light-dependent reaction(s)". */
+function sameTerm(a: string, b: string) {
+  const x = bare(a).split(/[\s-]+/);
+  const y = bare(b).split(/[\s-]+/);
+  // Only the endings may differ ("saturat-ed/-ion"), not whole syllables ("cell" isn't "cellular").
+  const sameWord = (p: string, q: string) => {
+    let k = 0;
+    while (k < p.length && p[k] === q[k]) k++;
+    return p === q || (k >= 4 && p.length - k <= 3 && q.length - k <= 3);
+  };
+  return x.length === y.length && x.every((w, i) => sameWord(w, y[i]));
+}
 
 /** Wikipedia's plain text keeps some markup leftovers (maths, empty brackets); tidy them without changing words. */
 export function tidy(text: string) {
@@ -272,7 +293,12 @@ export async function warmUp() {
 }
 
 // ---------- Picking the article ----------
-/** Rank the search results for a term: exact title first, then fit with what you're reading, then Wikipedia's order. */
+/** The sentences around the term in the reading (they say most about which meaning it has). */
+function nearText(term: string, context: string, span = 350) {
+  const i = context.search(termPattern(term));
+  return i < 0 ? '' : context.slice(Math.max(0, i - span), i + term.length + span);
+}
+const nearWords = (term: string, context: string, skip: Set<string>) => new Set(words(nearText(term, context)).filter((w) => !skip.has(w)));
 /**
  * The term as it's used in the reading: "polar" in "polar molecules", "respiration" in "cellular respiration".
  * These phrases often name the right article directly (Wikipedia's search for the bare word may not even list it).
@@ -301,20 +327,45 @@ function phrasesInText(term: string, context: string): { phrase: string; head: b
 async function pickArticle(term: string, searched: WikiCandidate[], context: string, lang: string) {
   // Add articles named by the term's phrases in the reading.
   const phrases = phrasesInText(term, context);
-  const fromText = phrases.length ? await api.lookup.titles(phrases.map((p) => p.phrase), lang).catch(() => [] as WikiCandidate[]) : [];
+  const termWords = new Set(words(term));
+  const near = nearWords(term, context, termWords);
+  // "Term (word from the reading)": Wikipedia names meanings that way, or redirects them into the right section
+  // ("Cell (spreadsheet)" → "Spreadsheet#Cells", "Nucleus (cell)" → "Cell nucleus").
+  const qualifiers = [...new Set((nearText(term, context).toLowerCase().match(/[\p{L}]{4,}/gu) || []).filter((w) => !STOP.has(w) && !termWords.has(stem(w))).flatMap((w) => (w.endsWith('s') ? [w.slice(0, -1), w] : [w])))].slice(0, 20);
+  const head = term.trim().charAt(0).toUpperCase() + term.trim().slice(1);
+  // A disambiguation page lists every meaning; keep the ones whose descriptions share words with the reading.
+  const disamb = searched.find((c) => c.rank === -1 && c.disambiguation);
+  const [fromText, qualified, listed] = await Promise.all([
+    phrases.length ? api.lookup.titles(phrases.map((p) => p.phrase), lang).catch(() => [] as WikiCandidate[]) : Promise.resolve([] as WikiCandidate[]),
+    qualifiers.length ? api.lookup.titles(qualifiers.map((q) => `${head} (${q})`), lang).catch(() => [] as WikiCandidate[]) : Promise.resolve([] as WikiCandidate[]),
+    disamb && context.trim() ? api.lookup.meanings(disamb.title, lang).catch(() => [] as WikiCandidate[]) : Promise.resolve([] as WikiCandidate[])
+  ]);
+  const readingWords = new Set([...keywords(context, 60), ...near]);
+  const fromList = listed
+    .map((c) => ({ c, n: overlap(`${c.title} ${c.description}`, readingWords) }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 5)
+    .map((x) => x.c);
+  const isQualified = new Set(qualified.map((c) => c.title));
   // Which phrases name the concept: for a noun the ones it ends ("cell membrane" for "membrane"); for an adjective
   // the ones it starts ("polar molecules" for "polar"). The offline dictionary tells which the term is.
   const adjective = (await api.lookup.define(term, 1).catch(() => null))?.entries[0]?.pos === 'adjective';
   const strong = new Set(phrases.filter((p) => p.head !== adjective).map((p) => p.phrase));
   const headTitle = new Set(fromText.filter((c) => strong.has(c.phrase || bare(c.title))).map((c) => c.title));
   const inText = new Set(fromText.map((c) => c.title));
-  const cands = [...searched, ...fromText.filter((c) => !searched.some((s) => s.title === c.title))];
+  const cands: WikiCandidate[] = [];
+  for (const c of [...searched, ...fromText, ...qualified, ...fromList]) {
+    const had = cands.find((x) => x.title === c.title);
+    if (!had) cands.push(c);
+    else if (!had.fragment && c.fragment) had.fragment = c.fragment;
+  }
   const usable = cands.filter((c) => !c.disambiguation && !/^(list|lists|index|outline|glossary) of /i.test(c.title));
   if (!usable.length) return null;
   const t = bare(term);
-  const termWords = new Set(words(term));
   // What the reading is about, minus the term itself (every candidate shares that).
   const keys = new Set([...keywords(context, 60)].filter((w) => !termWords.has(w)));
+  const onlyRedirect = cands.some((c) => c.rank === -1 && c.redirectFrom && !c.fragment && !sameTerm(c.title, term));
   const score = (c: WikiCandidate, i: number) => {
     const title = bare(c.title);
     const qualifier = c.title.match(/\(([^)]*)\)\s*$/)?.[1] || '';
@@ -324,16 +375,56 @@ async function pickArticle(term: string, searched: WikiCandidate[], context: str
     const exact = c.rank === -1 || abbrev || title === t || title === t.replace(/s$/, '') || `${title}s` === t;
     const fits = words(title).every((w) => termWords.has(w));
     // "Nucleus (neuroanatomy)" is one meaning of several: an exact title counts fully only without a qualifier.
-    const base = exact ? (qualifier ? 2.5 : 4) : fits ? 2 : 0;
+    // A section titled with the term ("Light-dependent reactions" in "Photosynthesis") nearly matches the article the
+    // term redirects to, when it only redirects (the reading decides between them); otherwise it's a hint.
+    const section = c.section && sameTerm(c.section, term) ? (onlyRedirect ? 3 : 1) : 0;
+    // "Cell (spreadsheet)" found from "spreadsheet" in the reading: named for this term in this sense.
+    const base = Math.max(section, isQualified.has(c.title) ? 4 : 0, exact ? (qualifier ? 2.5 : 4) : fits ? 2 : 0);
     const titleFit = Math.min(2, words(title).filter((w) => !termWords.has(w) && keys.has(w)).length) + Math.min(1.5, overlap(qualifier, keys) * 1.5);
     // Books, films, bands, companies… rarely what a reader means, unless the reading is about them.
     const work = /\b(book|novel|film|movie|album|song|single|band|television|series|video game|magazine|newspaper|company|brand|footballer|politician|actor|actress|singer|rapper|character)\b/i.test(c.description) && !overlap(c.description, keys) ? -2 : 0;
-    return work + base + titleFit +(headTitle.has(c.title) ? 4.5 : inText.has(c.title) ? 1 : 0) + Math.min(3, overlap(`${c.description} ${c.description} ${c.intro}`, keys) * 0.5) + 1 / (2 + i);
+    const searchedWithReading = c.contextRank !== undefined ? Math.max(0, 2 - c.contextRank * 0.5) : 0;
+    return searchedWithReading + work + base + titleFit +(headTitle.has(c.title) ? 4.5 : inText.has(c.title) ? 1 : 0) + Math.min(3, overlap(`${c.description} ${c.description} ${c.intro}`, keys) * 0.5) + 1 / (2 + i);
   };
-  const ranked = usable.map((c, i) => ({ c, s: score(c, i) })).sort((a, b) => b.s - a.s);
+  const ranked: { c: WikiCandidate; s: number; cats?: string[] }[] = usable.map((c, i) => ({ c, s: score(c, i) })).sort((a, b) => b.s - a.s);
+  // Read more of the leading articles: their whole introduction and categories, compared with the reading. Words
+  // from the sentences around the highlight count twice (in a chemistry passage that says "mitochondria" next to
+  // "cell", "Cell (biology)" shares those words and "Cell (processor)" doesn't).
+  if (context.trim() && ranked.length > 1) {
+    const top = ranked.slice(0, 10);
+    const more = await api.lookup.about(top.map((r) => r.c.title), lang).catch(() => ({}) as Record<string, { intro: string; categories: string[] }>);
+    // Each article's words, and how many of the articles use each one: a word most of them share ("small", or
+    // "anode" among kinds of battery) says little about which is meant; one only a few use ("prisoner") says a lot.
+    const bags = top.map((r) => {
+      const m = more[r.c.title];
+      return m ? new Set(words(`${r.c.description} ${m.intro} ${m.categories.join(' ')}`)) : null;
+    });
+    const df = new Map<string, number>();
+    for (const b of bags) for (const w of b || []) if (readingWords.has(w)) df.set(w, (df.get(w) || 0) + 1);
+    const read = bags.filter(Boolean).length;
+    const weight = (w: string) => Math.log((read + 1) / ((df.get(w) || 0) + 0.5));
+    top.forEach((r, i) => {
+      const theirs = bags[i];
+      if (!theirs) return;
+      // Words from the sentences around the highlight count twice. A long introduction shares more words by chance,
+      // so the total is scaled by its length.
+      let fit = 0;
+      for (const w of readingWords) if (theirs.has(w) && !COMMON.has(w) && !termWords.has(w)) fit += weight(w) * (near.has(w) ? 2 : 1);
+      fit /= Math.max(1, Math.sqrt(theirs.size / 80));
+      // The short description sums up the meaning ("Small room in a prison… where a prisoner is held").
+      let described = 0;
+      for (const w of new Set(words(r.c.description))) if (readingWords.has(w)) described += weight(w);
+      r.s += Math.min(6, fit * 0.9) + Math.min(2.5, described * 0.8);
+      // The reading's own phrase naming an article ("a galvanic cell") settles it when the article fits the reading at
+      // all; one that only happens to be a title ("a small cell" → "Small cell") doesn't count.
+      if (headTitle.has(r.c.title)) r.s += fit > 0.3 ? 3 : -3;
+      r.cats = more[r.c.title]?.categories;
+    });
+    ranked.sort((a, b) => b.s - a.s);
+  }
   let best = ranked[0].c;
   // A near-tie (word matching can't tell the meanings apart): let the librarian break it, if it's available.
-  const close = ranked.length > 1 && ranked[1].s > ranked[0].s - 0.6;
+  const close = ranked.length > 1 && ranked[1].s > ranked[0].s - 1.5;
   if (close && context.trim()) {
     const opts = ranked.slice(0, 6);
     const j = await choose(
@@ -343,14 +434,17 @@ Text around it:
 ${context.slice(0, 1200)}
 """
 Which Wikipedia article is about the meaning of "${term}" used in that text?
-${opts.map((o, i) => `${i + 1}. ${o.c.title}: ${o.c.description || o.c.intro.slice(0, 140)}`).join('\n')}`,
+${opts.map((o, i) => `${i + 1}. ${o.c.title}${o.c.section && sameTerm(o.c.section, term) ? ` (its section "${o.c.section}")` : ''}: ${o.c.description || o.c.intro.slice(0, 140)}${o.cats?.length ? ` [categories: ${o.cats.slice(0, 5).join('; ')}]` : ''}`).join('\n')}`,
       { type: 'object', properties: { article: { enum: opts.map((_, i) => i + 1) } } },
       20
     );
     const n = Number(j?.article);
     if (n >= 1 && n <= opts.length) best = opts[n - 1].c;
   }
-  return { best, others: ranked.map((r) => r.c).filter((c) => c !== best).slice(0, 5) };
+  const others = ranked.map((r) => r.c).filter((c) => c !== best).slice(0, 5);
+  // Chosen for its section about the term: open the article there.
+  if (best.section && !best.fragment && sameTerm(best.section, term)) best = { ...best, fragment: best.section };
+  return { best, others };
 }
 
 // ---------- Picking the sections ----------
@@ -447,14 +541,9 @@ export function termPattern(term: string) {
 async function findPassages(page: WikiPage, term: string, context: string, fragment = ''): Promise<ExplainResult['focus']> {
   if (setting('lookup.findPassage') === false) return [];
   // The article is about the term itself ("supersaturated" → "Supersaturation"): its definition is already the answer.
-  const tw = bare(term).split(/\s+/);
-  const aw = bare(page.title).split(/\s+/);
-  const sameWord = (a: string, b: string) => {
-    let k = 0;
-    while (k < a.length && a[k] === b[k]) k++;
-    return k === a.length || k === b.length || k >= Math.max(4, Math.min(a.length, b.length) - 4);
-  };
-  if (!fragment && tw.length === aw.length && tw.every((w, i) => sameWord(w, aw[i]))) return [];
+  if (!fragment && sameTerm(term, page.title)) return [];
+  // So is one whose opening paragraph names it ("Adenosine triphosphate (ATP) is…", "Freddie Mercury was…").
+  if (!fragment && termPattern(term).test(paragraphs(page.lead)[0] || '')) return [];
   const n = Math.max(1, Math.min(5, Number(setting('lookup.passages') ?? 2)));
   const frag = fragment.replace(/_/g, ' ').toLowerCase();
   const termWords = new Set(words(term));
@@ -543,8 +632,11 @@ export async function explainTerm(asked: string, context: string, onStatus: (s: 
     !forceTitle && about.length ? api.lookup.search(`${term} ${about.join(' ')}`, lang).catch(() => [] as WikiCandidate[]) : Promise.resolve([] as WikiCandidate[])
   ]);
   // Only results that name the term itself: the rest are about the reading's topic, not the word.
-  const named = (c: WikiCandidate) => words(c.title).some((w) => termStems.has(w));
-  const cands = [...plain, ...withContext.filter((c) => named(c) && !plain.some((p) => p.title === c.title))];
+  // (Or a longer form of it: "polar" → "Chemical polarity", "python" → "Pythonidae".)
+  const named = (c: WikiCandidate) => words(c.title).some((w) => termStems.has(w) || [...termStems].some((s) => s.length >= 4 && w.startsWith(s))) || (!!c.section && sameTerm(c.section, term));
+  // Wikipedia's own ranking for the term with the reading's words ("polar water molecules" → "Chemical polarity" first).
+  const ctxRank = new Map(withContext.filter(named).map((c, i) => [c.title, i]));
+  const cands = [...plain, ...withContext.filter((c) => named(c) && !plain.some((p) => p.title === c.title))].map((c) => (ctxRank.has(c.title) ? { ...c, contextRank: ctxRank.get(c.title) } : c));
   const pick = forceTitle ? { best: cands.find((c) => c.title === forceTitle) || cands[0], others: cands.filter((c) => c.title !== forceTitle && !c.disambiguation).slice(0, 5) } : await pickArticle(term, cands, context, lang);
   if (!pick?.best) return null;
   onStatus(`Reading “${pick.best.title}”…`);
@@ -589,8 +681,23 @@ ${text.slice(0, 1500)}
   return [...new Set(words(text).filter((w) => w.length > 6))].sort((a, b) => b.length - a.length).slice(0, 2);
 }
 
-/** Offline dictionary (WordNet): definitions, examples, synonyms and antonyms. */
+/**
+ * The Dictionary: Wiktionary's entry word for word when online (every sense, with its examples), with synonyms and
+ * opposites from the offline dictionary (WordNet). Offline, or when Wiktionary has no entry, WordNet alone.
+ */
 export async function defineWord(word: string): Promise<DictEntry | null> {
   const w = word.replace(/\s+/g, ' ').trim().replace(/^[“"'(]+|[”"').,;:!?]+$/g, '');
-  return api.lookup.define(w, Number(setting('lookup.dictSenses')) || 5);
+  const maxSenses = Math.max(1, Math.min(30, Number(setting('lookup.dictSenses')) || 12));
+  const maxExamples = Math.max(0, Math.min(10, Number(setting('lookup.dictExamples') ?? 4)));
+  const offline = api.lookup.define(w, maxSenses).catch(() => null);
+  const online = setting('lookup.dictSource') !== 'wordnet' && navigator.onLine ? await api.lookup.wiktionary(w).catch(() => null) : null;
+  const wn = await offline;
+  if (!online) return wn ? { ...wn, source: 'wordnet' } : null;
+  const subs = setting('lookup.dictSubsenses') !== false;
+  return {
+    ...online,
+    entries: online.entries.map((e) => ({ ...e, senses: e.senses.slice(0, maxSenses).map((s) => ({ ...s, examples: s.examples.slice(0, maxExamples), sub: subs ? s.sub : [] })) })),
+    synonyms: wn?.synonyms || [],
+    antonyms: wn?.antonyms || []
+  };
 }

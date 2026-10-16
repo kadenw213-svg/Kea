@@ -9,7 +9,7 @@ import { useLookup, setLookupOpen, LookupCard } from './lookupStore';
 import '../../styles/ai.css';
 import '../../styles/lookup.css';
 
-/** The Encyclopedia panel (Ctrl+J): explain a term from Wikipedia, or define a word with the offline dictionary. */
+/** The Encyclopedia panel (Ctrl+J): explain a term from Wikipedia, or define a word (Wiktionary, or the offline dictionary). */
 export function LookupPanel() {
   const lk = useLookup();
   const activeId = useTabs((s) => s.activeId);
@@ -169,7 +169,7 @@ export function LookupPanel() {
             <div className="ai-empty">
               <BookOpen size={28} />
               <div>Highlight a word or idea you don’t know, then choose Explain or Dictionary.</div>
-              <div className="muted">Explanations are Wikipedia’s own words, with a link to the article. The dictionary works offline. Highlight anything in a result to look that up too.</div>
+              <div className="muted">Explanations are Wikipedia’s own words and definitions are Wiktionary’s, with links. Offline, the dictionary still works. Highlight anything in a result to look that up too.</div>
             </div>
           )}
           {lk.cards.map((c) => (
@@ -323,45 +323,86 @@ function DefineView({ query, d, onWord, onExplain, onInsert, canInsert }: { quer
         </div>
       </div>
     );
-  const first = d.entries[0];
+  const first = d.entries.find((e) => e.senses.some((s) => !s.formOf)) || d.entries[0];
+  const firstSense = first.senses.find((s) => !s.formOf) || first.senses[0];
+  const wiki = d.source === 'wiktionary';
   const chips = (list: string[]) =>
     list.map((w) => (
       <button key={w} className="lk-chip" onClick={() => onWord(w)} title={`Look up “${w}”`}>
         {w}
       </button>
     ));
-  const asText = () => [d.word, ...d.entries.map((e) => `${e.pos}\n${e.senses.map((s, i) => `${i + 1}. ${s.def}`).join('\n')}`)].join('\n\n');
+  const asText = () =>
+    [
+      d.word,
+      ...d.entries.map(
+        (e) =>
+          `${e.pos}${e.lemma !== d.word ? ` (${e.lemma})` : ''}\n${e.senses
+            .map((s, i) => [`${i + 1}. ${s.label ? `(${s.label}) ` : ''}${s.def}`, ...(s.sub || []).map((x) => `   - ${x}`), ...s.examples.map((x) => `   “${x}”`)].join('\n'))
+            .join('\n')}`
+      ),
+      wiki ? `Source: Wiktionary, “${d.word}” ${d.url}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n\n');
   return (
     <>
       <div className="lk-head">
         <div className="lk-term">{d.word}</div>
-        <span className="lk-src muted">Dictionary</span>
+        {wiki ? (
+          <a className="wiki-chip" href={d.url} target="_blank" rel="noreferrer" title="Open the entry on Wiktionary">
+            <Globe size={12} /> Wiktionary <ExternalLink size={11} />
+          </a>
+        ) : (
+          <span className="lk-src muted">Dictionary</span>
+        )}
       </div>
-      {d.entries.map((e) => (
-        <div key={e.pos} className="lk-pos">
+      {d.entries.map((e, k) => (
+        <div key={k} className="lk-pos">
           <div className="lk-pos-name">
             {e.pos}
-            {e.lemma !== d.word && <span className="muted"> · from “{e.lemma}”</span>}
+            {e.lemma.toLowerCase() !== d.word.toLowerCase() && <span className="muted"> · {e.lemma}</span>}
           </div>
           <ol>
-            {e.senses.map((s, i) => (
-              <li key={i}>
-                <div>{s.def}</div>
-                {s.examples.slice(0, 2).map((x) => (
-                  <div key={x} className="lk-ex">
-                    “{x}”
+            {e.senses.map((s, i) =>
+              s.formOf ? (
+                <li key={i} className="lk-formof">
+                  {s.def}{' '}
+                  <button className="lk-chip" onClick={() => onWord(s.formOf!)} title={`Look up “${s.formOf}”`}>
+                    {s.formOf}
+                  </button>
+                </li>
+              ) : (
+                <li key={i}>
+                  <div>
+                    {s.label && <span className="lk-label">{s.label}</span>}
+                    {s.def}
                   </div>
-                ))}
-                {s.synonyms.length > 0 && <div className="lk-rel">Synonyms: {chips(s.synonyms)}</div>}
-                {s.antonyms.length > 0 && <div className="lk-rel">Opposites: {chips(s.antonyms)}</div>}
-              </li>
-            ))}
+                  {s.sub && s.sub.length > 0 && (
+                    <ol className="lk-sub">
+                      {s.sub.map((x, j) => (
+                        <li key={j}>{x}</li>
+                      ))}
+                    </ol>
+                  )}
+                  {s.examples.map((x, j) => (
+                    <div key={j} className="lk-ex">
+                      “<Marked text={x} term={e.lemma} />”
+                    </div>
+                  ))}
+                  {s.synonyms.length > 0 && <div className="lk-rel">Synonyms: {chips(s.synonyms)}</div>}
+                  {s.antonyms.length > 0 && <div className="lk-rel">Opposites: {chips(s.antonyms)}</div>}
+                </li>
+              )
+            )}
           </ol>
         </div>
       ))}
+      {wiki && d.synonyms.length > 0 && <div className="lk-rel lk-rel-all">Synonyms: {chips(d.synonyms.slice(0, 14))}</div>}
+      {wiki && d.antonyms.length > 0 && <div className="lk-rel lk-rel-all">Opposites: {chips(d.antonyms.slice(0, 10))}</div>}
       <div className="ai-actions">
         {canInsert && (
-          <button className="btn sm" onClick={() => onInsert(`**${d.word}** (${first.pos}): ${first.senses[0].def}`)} title="Add this word and its main meaning to your document (for a vocabulary list)">
+          <button className="btn sm" onClick={() => onInsert(`**${d.word}** (${first.pos}): ${firstSense.def}${firstSense.examples[0] ? ` _“${firstSense.examples[0]}”_` : ''}${wiki ? '\n\n_Source: Wiktionary_' : ''}`)} title="Add this word and its main meaning to your document (for a vocabulary list)">
             <ArrowDownToLine size={13} /> Insert
           </button>
         )}

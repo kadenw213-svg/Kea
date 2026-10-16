@@ -80,6 +80,8 @@ const Thumb = memo(function Thumb(p: ThumbProps) {
 });
 
 interface Props {
+  /** Dark pages are on: the thumbnails are darkened the same way. */
+  dark?: boolean;
   pages: PageRef[];
   docs: (PDFDocumentProxy | null)[];
   sizeOf(ref: PageRef): { width: number; height: number; rotation: number };
@@ -90,7 +92,7 @@ interface Props {
   onContextMenu(e: React.MouseEvent, index: number): void;
 }
 
-export function Thumbnails({ pages, docs, sizeOf, selected, currentIndex, onSelect, onReorder, onContextMenu }: Props) {
+export function Thumbnails({ pages, docs, sizeOf, selected, currentIndex, onSelect, onReorder, onContextMenu, dark }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const anchor = useRef(0);
@@ -128,7 +130,7 @@ export function Thumbnails({ pages, docs, sizeOf, selected, currentIndex, onSele
   };
 
   return (
-    <div className="thumbs" ref={rootRef} onDragLeave={(e) => e.currentTarget === e.target && setDrop(null)}>
+    <div className={`thumbs ${dark ? 'dark' : ''}`} ref={rootRef} onDragLeave={(e) => e.currentTarget === e.target && setDrop(null)}>
       {pages.map((p, i) => {
         const s = sizeOf(p);
         return (

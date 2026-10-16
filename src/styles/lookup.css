@@ -132,6 +132,32 @@
 .lk-ex {
   color: var(--text-3);
   font-style: italic;
+  margin-top: 2px;
+}
+.lk-ex strong {
+  color: var(--text-2);
+}
+.lk-label {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.lk-sub {
+  margin: 3px 0 2px;
+  padding-left: 18px;
+  list-style: lower-alpha;
+  color: var(--text-2);
+}
+.lk-formof {
+  color: var(--text-2);
+  font-style: italic;
+}
+.lk-rel-all {
+  margin-top: 10px;
 }
 .lk-rel {
   display: flex;
