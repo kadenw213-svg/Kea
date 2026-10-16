@@ -426,6 +426,9 @@ export const SECTIONS: Section[] = [
         options: [['en', 'English'], ['simple', 'Simple English (easier words)'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['pl', 'Polish'], ['ru', 'Russian'], ['ja', 'Japanese'], ['zh', 'Chinese'], ['ar', 'Arabic']].map(([value, label]) => ({ value, label }))
       },
       { key: 'lookup.useModel', label: 'Let the local model pick the right article and sections', type: 'toggle', default: true, help: 'Only when a model is downloaded (below). It chooses among Wikipedia’s options and never writes text.' },
+      { key: 'lookup.mendInput', label: 'Fix highlights that cut a word off', type: 'toggle', default: true, help: '“polar dissolves pol” becomes “polar dissolves polar”, using the words in your document (or Wikipedia’s titles, when you type).', advanced: true },
+      { key: 'lookup.findPassage', label: 'Find the part of the article about what you highlighted', type: 'toggle', default: true, help: 'When a term is covered inside a bigger article (“saturated solution” in “Solubility”), show the paragraphs about it first.', advanced: true },
+      { key: 'lookup.passages', label: 'Paragraphs about the term to show', type: 'number', default: 2, min: 1, max: 5, advanced: true },
       { key: 'lookup.sections', label: 'Article sections to show under the definition', type: 'number', default: 2, min: 0, max: 6, advanced: true },
       { key: 'lookup.dictSenses', label: 'Dictionary meanings per part of speech', type: 'number', default: 5, min: 1, max: 20, advanced: true }
     ]

@@ -103,6 +103,7 @@ export interface SlateApi {
     search(query: string, lang?: string): Promise<WikiCandidate[]>;
     article(title: string, lang?: string): Promise<WikiPage | null>;
     titles(list: string[], lang?: string): Promise<WikiCandidate[]>;
+    complete(prefix: string, lang?: string): Promise<string[]>;
     define(word: string, maxSenses?: number): Promise<DictEntry | null>;
   };
   speech: {
@@ -270,6 +271,9 @@ export interface WikiCandidate {
   rank: number;
   /** For articles found from a phrase in the reading: that phrase. */
   phrase?: string;
+  /** When the term redirects here: the section the redirect points at (may be empty), and the term as redirected. */
+  fragment?: string;
+  redirectFrom?: string;
 }
 /** A Wikipedia article as plain text, split into its lead and sections (reference sections removed). */
 export interface WikiPage {

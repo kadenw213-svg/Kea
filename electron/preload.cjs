@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('api', {
     search: (query, lang) => ipcRenderer.invoke('lookup:search', query, lang),
     article: (title, lang) => ipcRenderer.invoke('lookup:article', title, lang),
     titles: (list, lang) => ipcRenderer.invoke('lookup:titles', list, lang),
+    complete: (prefix, lang) => ipcRenderer.invoke('lookup:complete', prefix, lang),
     define: (word, maxSenses) => ipcRenderer.invoke('lookup:define', word, maxSenses)
   },
   speech: {

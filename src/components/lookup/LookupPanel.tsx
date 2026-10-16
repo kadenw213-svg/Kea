@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { BookOpen, BookA, Lightbulb, X, Settings2, Trash2, Globe, ExternalLink, Copy, ArrowDownToLine, Feather, ChevronDown, ChevronUp, WifiOff } from 'lucide-react';
-import { openSettings, useSettings } from '../../lib/settings';
+import { openSettings, setting, useSettings } from '../../lib/settings';
 import { useTabs, editorRegistry, toast } from '../../store';
 import { uid } from '../../lib/util';
-import { explainTerm, explainSimpler, termsIn, defineWord, contextAround, warmUp, ExplainResult } from '../../lib/lookup';
+import { explainTerm, explainSimpler, termsIn, defineWord, contextAround, wholeWords, warmUp, termPattern, ExplainResult } from '../../lib/lookup';
 import type { DictEntry } from '../../lib/api';
 import { useLookup, setLookupOpen, LookupCard } from './lookupStore';
 import '../../styles/ai.css';
@@ -37,23 +37,27 @@ export function LookupPanel() {
 
   const patch = (id: string, p: Partial<LookupCard>) => useLookup.getState().set({ cards: useLookup.getState().cards.map((c) => (c.id === id ? { ...c, ...p } : c)) });
   const add = (c: LookupCard) => useLookup.getState().set({ cards: [c, ...useLookup.getState().cards].slice(0, 40) });
-  const context = async (text: string) => {
-    const full = hooks ? (await hooks.getDocument().catch(() => ({ full: '' }))).full : '';
-    return contextAround(full, text);
-  };
+  const docText = async () => (hooks ? (await hooks.getDocument().catch(() => ({ full: '' }))).full : '');
+  const context = async (text: string) => contextAround(await docText(), text);
 
   const explain = async (text = query, forceTitle?: string) => {
-    const t = text.replace(/\s+/g, ' ').trim();
+    let t = text.replace(/\s+/g, ' ').trim();
     if (!t) return toast('Highlight a word or phrase, or type one.');
     if (!navigator.onLine) return toast('Explain reads Wikipedia, so it needs the internet. Dictionary works offline.');
-    const ctx = await context(t);
+    const full = await docText();
+    // A highlight that cut a word off gets its whole words back from the document ("polar dissolves pol").
+    if (!forceTitle && !typed.current && setting('lookup.mendInput') !== false) {
+      const whole = wholeWords(full, t);
+      if (whole !== t) setQuery((t = whole));
+    }
+    const ctx = contextAround(full, t);
     const terms = forceTitle ? [t] : await termsIn(t);
     for (const term of terms) {
       const id = uid();
       add({ id, kind: 'explain', query: term, loading: true, status: 'Searching Wikipedia…' });
       try {
         const r = await explainTerm(term, ctx, (status) => patch(id, { status }), forceTitle);
-        patch(id, r ? { loading: false, explain: r } : { loading: false, error: `Wikipedia has no article for “${term}”. Check the spelling, or try a shorter term.` });
+        patch(id, r ? { loading: false, explain: r, query: r.term } :{ loading: false, error: `Wikipedia has no article for “${term}”. Check the spelling, or try a shorter term.` });
       } catch (err: any) {
         patch(id, { loading: false, error: /abort|fetch|network|answer/i.test(String(err?.message)) ? 'Wikipedia didn’t answer. Check your internet connection and try again.' : String(err?.message || err) });
       }
@@ -199,6 +203,19 @@ function Para({ text }: { text: string }) {
   );
 }
 
+/** A paragraph with the highlighted term in bold wherever it's used. */
+function Marked({ text, term }: { text: string; term: string }) {
+  const re = termPattern(term);
+  const out: React.ReactNode[] = [];
+  let at = 0;
+  for (const m of text.matchAll(re)) {
+    out.push(text.slice(at, m.index), <strong key={m.index}>{m[0]}</strong>);
+    at = m.index! + m[0].length;
+  }
+  out.push(text.slice(at));
+  return <>{out}</>;
+}
+
 function Section({ title, text }: { title: string; text: string }) {
   const paras = text.split(/\n\n+/);
   const [open, setOpen] = useState(false);
@@ -218,7 +235,7 @@ function Section({ title, text }: { title: string; text: string }) {
 function ExplainView({ r, onSimpler, onOther, onInsert, canInsert }: { r: ExplainResult; onSimpler(): void; onOther(title: string): void; onInsert(md: string): void; canInsert: boolean }) {
   const [more, setMore] = useState(false);
   const source = `Wikipedia${r.lang === 'simple' ? ' (Simple English)' : ''}, “${r.page.title}”`;
-  const asText = () => [`${r.page.title}`, r.definition, ...r.sections.map((s) => `${s.title}\n${s.text}`), `Source: ${source} ${r.page.url}`].join('\n\n');
+  const asText = () => [`${r.page.title}`, ...r.focus.map((f) => f.text), r.definition,...r.sections.map((s) => `${s.title}\n${s.text}`), `Source: ${source} ${r.page.url}`].join('\n\n');
   return (
     <>
       <div className="lk-head">
@@ -228,7 +245,30 @@ function ExplainView({ r, onSimpler, onOther, onInsert, canInsert }: { r: Explai
         </a>
       </div>
       {r.page.description && <div className="lk-desc">{r.page.description}</div>}
+      {r.asked && r.asked.toLowerCase() !== r.term.toLowerCase() && (
+        <div className="lk-desc muted">
+          Looked up “{r.term}” (you highlighted “{r.asked}”)
+        </div>
+      )}
       <div className="lk-body">
+        {r.focus.length > 0 && (
+          <div className="lk-focus">
+            <div className="lk-sec-title">
+              “{r.term}” in this article{r.focus[0].section ? <span className="muted"> · {r.focus[0].section}</span> : null}
+            </div>
+            {r.focus.map((f, i) => (
+              <div key={i}>
+                {i > 0 && f.section && f.section !== r.focus[i - 1].section && <div className="lk-focus-sec muted">{f.section}</div>}
+                {f.text.split(/\n\n+/).map((p, k) => (
+                  <p key={k}>
+                    <Marked text={p} term={r.term} />
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+        {r.focus.length > 0 && <div className="lk-sec-title">{r.page.title}</div>}
         <Para text={r.definition} />
         {r.more && (
           <>
@@ -259,7 +299,7 @@ function ExplainView({ r, onSimpler, onOther, onInsert, canInsert }: { r: Explai
           </button>
         )}
         {canInsert && (
-          <button className="btn sm" onClick={() => onInsert(`**${r.page.title}**: ${r.definition.split('\n\n')[0]}\n\n_Source: ${source}_`)} title="Put the definition into your document, with its source">
+          <button className="btn sm" onClick={() => onInsert(r.focus.length ? `**${r.term}**: ${r.focus[0].text}\n\n_Source: ${source}_` : `**${r.page.title}**: ${r.definition.split('\n\n')[0]}\n\n_Source: ${source}_`)} title="Put the definition into your document, with its source">
             <ArrowDownToLine size={13} /> Insert
           </button>
         )}

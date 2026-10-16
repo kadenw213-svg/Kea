@@ -6,7 +6,8 @@ import { setting } from './settings';
  *
  * Nothing shown is written by a model. Code finds the article and shows its text word for word. The local model
  * (when it's downloaded and allowed) only acts as a librarian: when a term has several meanings it picks the article
- * that fits what you're reading, by answering with an option number. Sections are chosen by matching words.
+ * that fits what you're reading, and when the term is only part of a bigger article ("saturated solution" in
+ * "Solubility") which of the article's passages about it fits best, by answering with an option number.
  */
 
 export interface ExplainResult {
@@ -16,8 +17,15 @@ export interface ExplainResult {
   definition: string;
   /** The rest of the introduction. */
   more: string;
+  /**
+   * When the term is a part of the article's topic ("saturated solution" in "Solubility"): the article's own
+   * paragraphs about it, best first. `mark` is the term as the paragraph writes it (shown in bold).
+   */
+  focus: { section: string; text: string; mark: string }[];
   /** The sections that fit what you're reading, in article order. */
   sections: { title: string; text: string }[];
+  /** What was highlighted, when it was mended into `term` ("polar dissolves pol"). */
+  asked?: string;
   /** Other articles the term could mean (click to switch). */
   others: WikiCandidate[];
   lang: string;
@@ -185,6 +193,32 @@ export function latexToText(src: string): string {
 
 const paragraphs = (t: string) => tidy(t).split(/\n+/).map((p) => p.trim()).filter(Boolean);
 
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const isWordChar = (c?: string) => !!c && /[\p{L}\p{N}]/u.test(c);
+
+/**
+ * A highlight that cut a word off at either end ("polar dissolves pol", "ar molecules"): the whole words, as the
+ * document has them. A highlight that appears somewhere as whole words is taken as it is.
+ */
+export function wholeWords(full: string, selection: string) {
+  const s = selection.replace(/\s+/g, ' ').trim();
+  if (!full || !s) return s;
+  const re = new RegExp(s.split(' ').map(esc).join('\\s+'), 'gi');
+  let fixed: string | null = null;
+  for (const m of full.matchAll(re)) {
+    let a = m.index!;
+    let b = a + m[0].length;
+    if (!isWordChar(full[a - 1]) && !isWordChar(full[b])) return s;
+    if (fixed !== null) continue;
+    // Out to the word's ends, through hyphens inside it ("light-dep" → "light-dependent").
+    const inWord = (i: number) => isWordChar(full[i]) || (full[i] === '-' && isWordChar(full[i - 1]) && isWordChar(full[i + 1]));
+    for (const stop = a - 40; a > stop && inWord(a - 1); ) a--;
+    for (const stop = b + 40; b < stop && inWord(b); ) b++;
+    fixed = full.slice(a, b).replace(/\s+/g, ' ').trim();
+  }
+  return fixed ?? s;
+}
+
 /** The words around the highlight in the document, so the right meaning can be picked ("cell" in biology). */
 export function contextAround(full: string, selection: string, chars = 1500) {
   if (!full) return selection;
@@ -334,17 +368,170 @@ function pickSections(page: WikiPage, term: string, context: string): { title: s
   return all.filter((s) => chosen.includes(s)).map((s) => ({ title: s.title, text: paragraphs(s.text).join('\n\n') }));
 }
 
-function shape(term: string, page: WikiPage, sections: ExplainResult['sections'], others: WikiCandidate[], lang: string): ExplainResult {
+// ---------- Mending clipped or broken input ----------
+/**
+ * What the reader probably meant when a word at either end of the term looks cut off ("polar dissolves pol",
+ * "cellular respir"). Code makes the options: words from the reading that it's the start of, Wikipedia titles that
+ * start with the whole input, or the input without the broken word. The librarian picks one; without it, the first.
+ * A word counts as cut off only when it never appears whole in the reading but starts longer words there, or when
+ * Wikipedia has titles that finish it.
+ */
+async function mendTerm(term: string, context: string, lang: string, onStatus: (s: string) => void): Promise<string> {
+  const ws = term.split(' ');
+  const freq = new Map<string, number>();
+  for (const w of context.match(/[\p{L}\p{N}][\p{L}\p{N}-]*/gu) || []) freq.set(w.toLowerCase(), (freq.get(w.toLowerCase()) || 0) + 1);
+  const options: string[] = [];
+  const add = (o: string) => o && o.toLowerCase() !== term.toLowerCase() && !options.some((x) => x.toLowerCase() === o.toLowerCase()) && options.push(o);
+  // A dictionary word of four letters or more is meant as written ("cell", not "cellular"); shorter ones ("pol") may be cut.
+  const whole = async (w: string) => freq.has(w.toLowerCase()) || (w.length >= 4 && !!(await api.lookup.define(w, 1).catch(() => null)));
+  const broken = new Map<number, boolean>();
+  for (let i = 0; i < ws.length; i++) broken.set(i, ws[i].length >= 2 && !(await whole(ws[i])));
+  let clipped = false;
+  for (let i = 0; i < ws.length; i++) {
+    const w = ws[i].toLowerCase();
+    if (!broken.get(i)) continue;
+    // From the reading: longer words this one is the start of ("satur" → "saturated"), or for the first word also
+    // the end of (a highlight that began mid-word: "ar molecules" → "polar molecules").
+    const fits = [...freq.entries()]
+      .filter(([c]) => c.length > w.length && (c.startsWith(w) || (i === 0 && c.endsWith(w))))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+    for (const [c] of fits) add(ws.map((x, k) => (k === i ? c : x)).join(' '));
+    if (fits.length) clipped = true;
+  }
+  // From Wikipedia: titles that carry on from the last word ("cellular respir" → "Cellular respiration").
+  const last = ws[ws.length - 1];
+  // (Not for a lone short fragment with nothing around it: "pol" could start hundreds of titles.)
+  const titles = broken.get(ws.length - 1) && (ws.length > 1 || last.length >= 5) ?await api.lookup.complete(term, lang).catch(() => [] as string[]) : [];
+  for (const t of titles) {
+    if (t.toLowerCase().startsWith(term.toLowerCase()) && isWordChar(t[term.length])) {
+      add(t);
+      clipped = true;
+    }
+  }
+  // A short broken word at an end of a longer phrase: the phrase without it ("polar dissolves pol" → "polar dissolves").
+  if (ws.length >= 3 && last.length <= 4 && broken.get(ws.length - 1) && !clipped) add(ws.slice(0, -1).join(' '));
+  if (!options.length) return term;
+  if (options.length === 1) return options[0];
+  onStatus('Working out what you meant…');
+  const j = await choose(
+    `Someone highlighted "${term}" in a text to look it up, but a word at the start or end may have been cut off.
+${context.trim() ? `Text around it:\n"""\n${context.slice(0, 900)}\n"""\n` : ''}What did they mean to look up?
+${options.slice(0, 6).map((o, i) => `${i + 1}. ${o}`).join('\n')}`,
+    { type: 'object', properties: { meant: { enum: options.slice(0, 6).map((_, i) => i + 1) } } },
+    20
+  );
+  const n = Number(j?.meant);
+  return n >= 1 && n <= Math.min(6, options.length) ? options[n - 1] : options[0];
+}
+
+// ---------- Finding the passage about the term ----------
+/** The term as a paragraph may write it: "saturated solution", "saturated solutions", "Saturated Solution". */
+export function termPattern(term: string) {
+  const parts = term
+    .trim()
+    .split(/\s+/)
+    .map((w) => {
+      const st = stem(w.toLowerCase());
+      return st.length < w.length ? `${esc(st)}\\p{L}{0,4}` : `${esc(w)}(?:s|es)?`;
+    });
+  return new RegExp(`(?<![\\p{L}\\p{N}])${parts.join('[\\s-]+')}(?![\\p{L}\\p{N}])`, 'giu');
+}
+
+/**
+ * The paragraphs of an article that are about the term itself, when the term isn't the article's subject
+ * ("saturated solution" → "Solubility"). Paragraphs that use the term are ranked by whether they define it
+ * ("…a saturated solution, one in which…", "…is called a saturated solution"), by the section a redirect points at,
+ * and by how well they fit what you're reading. When two are close, the librarian picks between them.
+ */
+async function findPassages(page: WikiPage, term: string, context: string, fragment = ''): Promise<ExplainResult['focus']> {
+  if (setting('lookup.findPassage') === false) return [];
+  // The article is about the term itself ("supersaturated" → "Supersaturation"): its definition is already the answer.
+  const tw = bare(term).split(/\s+/);
+  const aw = bare(page.title).split(/\s+/);
+  const sameWord = (a: string, b: string) => {
+    let k = 0;
+    while (k < a.length && a[k] === b[k]) k++;
+    return k === a.length || k === b.length || k >= Math.max(4, Math.min(a.length, b.length) - 4);
+  };
+  if (!fragment && tw.length === aw.length && tw.every((w, i) => sameWord(w, aw[i]))) return [];
+  const n = Math.max(1, Math.min(5, Number(setting('lookup.passages') ?? 2)));
+  const frag = fragment.replace(/_/g, ' ').toLowerCase();
+  const termWords = new Set(words(term));
+  const keys = new Set([...keywords(context, 40)].filter((w) => !termWords.has(w)));
+  const blocks = [{ title: '', text: paragraphs(page.lead) }, ...page.sections.map((s) => ({ title: s.title, text: paragraphs(s.text) }))];
+  const cands: { section: string; text: string; mark: string; score: number; order: number }[] = [];
+  blocks.forEach((b, bi) => {
+    const inFragment = !!frag && b.title.toLowerCase() === frag;
+    b.text.forEach((para, pi) => {
+      const hits = [...para.matchAll(termPattern(term))];
+      if ((!hits.length && !inFragment) || para.length < 60) return;
+      // "…the net reaction is:" goes on in the next paragraph (the equation or list it introduces).
+      if (/:$/.test(para) && b.text[pi + 1]) para = `${para}\n\n${b.text[pi + 1]}`;
+      const mark = hits[0]?.[0] || '';
+      const m = esc(mark);
+      // "a saturated solution, one in which…", "a saturated solution is…", "…is called a saturated solution".
+      const defines =
+        !!mark &&
+        (new RegExp(`${m}\\)?,?\\s+(?:is|are|refers to|means|describes|denotes)\\b`, 'i').test(para) ||
+          new RegExp(`${m},\\s+(?:one|which|that|i\\.e\\.|meaning)\\b`, 'i').test(para) ||
+          new RegExp(`\\b(?:called|known as|termed|referred to as|defined as)\\s+(?:an?\\s+|the\\s+)?${m}`, 'i').test(para));
+      const score =
+        (mark ? 3 : 0) +
+        (defines ? 4 : 0) +
+        (inFragment ? (pi === 0 ? 6 : 3) : 0) +
+        Math.min(2, (hits.length - 1) * 0.5) +
+        Math.min(3, overlap(para, keys) * 0.3) +
+        (/\b(definition|overview|description|terminology)\b/i.test(b.title) ? 1 : 0) -
+        bi * 0.05;
+      cands.push({ section: b.title, text: para, mark, score, order: bi * 1000 + pi });
+    });
+  });
+  if (!cands.length) return [];
+  const ranked = cands.sort((a, b) => b.score - a.score);
+  // A near-tie between passages: the librarian says which one explains the term as it's used in the reading.
+  if (ranked.length > 1 && ranked[1].score > ranked[0].score - 1 && context.trim()) {
+    const opts = ranked.slice(0, 5);
+    const j = await choose(
+      `Someone reading this text highlighted "${term}" and wants it explained.
+Text around it:
+"""
+${context.slice(0, 900)}
+"""
+Which passage from the Wikipedia article "${page.title}" best explains "${term}" as it is used in that text?
+${opts.map((o, i) => `${i + 1}. ${o.section ? `[${o.section}] ` : ''}${o.text.slice(0, 320)}`).join('\n')}`,
+      { type: 'object', properties: { passage: { enum: opts.map((_, i) => i + 1) } } },
+      20
+    );
+    const k = Number(j?.passage);
+    if (k >= 1 && k <= opts.length) ranked.unshift(...ranked.splice(k - 1, 1));
+  }
+  // The best passage, then other ones that use the term, in article order.
+  const [top, ...rest] = ranked;
+  const more = rest
+    .filter((c) => c.mark && c.score >= 3.5)
+    .slice(0, n - 1)
+    .sort((a, b) => a.order - b.order);
+  return [top, ...more].map(({ section, text, mark }) => ({ section, text, mark }));
+}
+
+function shape(term: string, page: WikiPage, sections: ExplainResult['sections'], others: WikiCandidate[], lang: string, focus: ExplainResult['focus'] = []): ExplainResult {
   const lead = paragraphs(page.lead);
   // The opening paragraph is Wikipedia's definition; a very short first line (a note or coordinates) joins the next.
   const first = lead[0] && lead[0].length < 60 && lead[1] ? 2 : 1;
-  return { term, page, definition: lead.slice(0, first).join('\n\n'), more: lead.slice(first).join('\n\n'), sections, others, lang };
+  const definition = lead.slice(0, first).join('\n\n');
+  // Never show a paragraph twice: one picked as a passage is left out of the introduction and the sections below.
+  const shown = new Set(focus.flatMap((f) => f.text.split(/\n\n+/)));
+  const secs = sections.map((s) => ({ ...s, text: s.text.split(/\n\n+/).filter((p) => !shown.has(p)).join('\n\n') })).filter((s) => s.text);
+  return { term, page, definition, more: lead.slice(first).filter((p) => !shown.has(p)).join('\n\n'), focus, sections: secs, others, lang };
 }
 
 /** Explain a term from Wikipedia: the right article for what you're reading, its definition and its most useful sections. */
-export async function explainTerm(term: string, context: string, onStatus: (s: string) => void, forceTitle?: string): Promise<ExplainResult | null> {
+export async function explainTerm(asked: string, context: string, onStatus: (s: string) => void, forceTitle?: string): Promise<ExplainResult | null> {
   const lang = lookupLang();
-  onStatus('Searching Wikipedia…');
+  // Mend a clipped highlight first ("polar dissolves pol" → "polar dissolves polar").
+  const term = forceTitle || setting('lookup.mendInput') === false ? asked : await mendTerm(asked.replace(/\s+/g, ' ').trim(), context, lang, onStatus);
+  onStatus(term === asked ? 'Searching Wikipedia…' : `Searching Wikipedia for “${term}”…`);
   // Search the term, and the term with the reading's main words ("capital" + "trade machines"), which finds the
   // meaning used in the reading when the bare word's results are about something else.
   const termStems = new Set(words(term));
@@ -363,8 +550,10 @@ export async function explainTerm(term: string, context: string, onStatus: (s: s
   onStatus(`Reading “${pick.best.title}”…`);
   const page = await api.lookup.article(pick.best.title, lang);
   if (!page) return null;
+  onStatus(`Finding “${term}” in “${page.title}”…`);
+  const focus = await findPassages(page, term, context, pick.best.fragment);
   const sections = pickSections(page, term, context);
-  return shape(term, page, sections, pick.others, lang);
+  return { ...shape(term, page, sections, pick.others, lang, focus), asked };
 }
 
 /** The same topic from Simple English Wikipedia (shorter sentences, everyday words), when it has an article. */
@@ -375,7 +564,7 @@ export async function explainSimpler(r: ExplainResult, context: string, onStatus
   if (!hit || hit.disambiguation) return null;
   const page = await api.lookup.article(hit.title, 'simple');
   if (!page) return null;
-  return shape(r.term, page, pickSections(page, r.term, context), [], 'simple');
+  return shape(r.term, page, pickSections(page, r.term, context), [], 'simple', await findPassages(page, r.term, context));
 }
 
 /**

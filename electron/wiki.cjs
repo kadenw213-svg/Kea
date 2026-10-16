@@ -27,11 +27,13 @@ async function search(query, lang) {
     getJson(`${api}&action=query&${props}&generator=search&gsrlimit=8&gsrsearch=${encodeURIComponent(q)}`)
   ]);
   const pages = [];
-  const add = (p, rank) => {
+  const add = (p, rank, extra) => {
     if (!p || p.missing || p.invalid || pages.some((x) => x.title === p.title)) return;
-    pages.push({ title: p.title, description: p.description || '', intro: (p.extract || '').trim(), disambiguation: !!p.pageprops && 'disambiguation' in p.pageprops, rank });
+    pages.push({ title: p.title, description: p.description || '', intro: (p.extract || '').trim(), disambiguation: !!p.pageprops && 'disambiguation' in p.pageprops, rank, ...extra });
   };
-  add(exact?.query?.pages?.[0], -1);
+  // A redirect can point at the section about the term ("Saturation (chemistry)" → "Saturation#Chemistry").
+  const r = exact?.query?.redirects?.[0];
+  add(exact?.query?.pages?.[0], -1, r ? { fragment: r.tofragment || '', redirectFrom: r.from } : undefined);
   for (const p of (found?.query?.pages || []).sort((a, b) => (a.index || 0) - (b.index || 0))) add(p, p.index || 0);
   return pages;
 }
@@ -43,11 +45,15 @@ async function titles(list, lang) {
   const j = await getJson(`${apiBase(lang)}&action=query&prop=description|pageprops|extracts&ppprop=disambiguation&exintro=1&explaintext=1&exsentences=3&exlimit=max&redirects=1&titles=${encodeURIComponent(want.join('|'))}`);
   // Follow Wikipedia's renames back to the phrase that was asked for ("polar molecule" → "Chemical polarity").
   const back = new Map();
+  const frag = new Map();
   for (const n of j.query?.normalized || []) back.set(n.to, n.from);
-  for (const r of j.query?.redirects || []) back.set(r.to, back.get(r.from) || r.from);
+  for (const r of j.query?.redirects || []) {
+    back.set(r.to, back.get(r.from) || r.from);
+    if (r.tofragment) frag.set(r.to, r.tofragment);
+  }
   return (j.query?.pages || [])
     .filter((p) => !p.missing && !p.invalid && !(p.pageprops && 'disambiguation' in p.pageprops))
-    .map((p) => ({ title: p.title, description: p.description || '', intro: (p.extract || '').trim(), disambiguation: false, rank: 0, phrase: String(back.get(p.title) || p.title).toLowerCase() }));
+    .map((p) => ({ title: p.title, description: p.description || '', intro: (p.extract || '').trim(), disambiguation: false, rank: 0, phrase: String(back.get(p.title) || p.title).toLowerCase(), fragment: frag.get(p.title) || '' }));
 }
 
 // Wikipedia's HTML → plain text that keeps what the plain-text format loses: superscripts and subscripts
@@ -128,7 +134,16 @@ async function article(title, lang) {
   };
 }
 
+/** Article titles that start with what was typed ("cellular respir" → "Cellular respiration"), for clipped words. */
+async function complete(prefix, lang) {
+  const q = String(prefix || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (q.length < 3) return [];
+  const j = await getJson(`${apiBase(lang)}&action=opensearch&namespace=0&limit=8&redirects=resolve&search=${encodeURIComponent(q)}`);
+  return Array.isArray(j?.[1]) ? j[1].map(String) : [];
+}
+
 function register() {
+  ipcMain.handle('lookup:complete', (_e, prefix, lang) => complete(prefix, lang));
   ipcMain.handle('lookup:search', (_e, query, lang) => search(query, lang));
   ipcMain.handle('lookup:article', (_e, title, lang) => article(title, lang));
   ipcMain.handle('lookup:titles', (_e, list, lang) => titles(list, lang));

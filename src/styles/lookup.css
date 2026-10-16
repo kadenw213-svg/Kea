@@ -68,6 +68,20 @@
 .lk-section p {
   margin: 4px 0 0;
 }
+.lk-focus {
+  margin: 8px 0 14px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+.lk-focus p {
+  margin: 4px 0 0;
+}
+.lk-focus-sec {
+  margin-top: 8px;
+  font-size: 12px;
+}
 .lk-more {
   display: inline-flex;
   align-items: center;
