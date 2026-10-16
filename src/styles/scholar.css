@@ -656,3 +656,122 @@
 .gate-adv summary {
   cursor: pointer;
 }
+
+/* Setup (connecting a school) */
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 14px 0 6px;
+}
+.setup-step {
+  display: flex;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.setup-mark {
+  color: var(--text-3);
+  padding-top: 1px;
+}
+.setup-step.done .setup-mark {
+  color: #81c995;
+}
+.setup-body {
+  flex: 1;
+  min-width: 0;
+}
+.setup-body p {
+  margin: 4px 0 8px;
+  font-size: 13.5px;
+}
+.setup-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  font-size: 15px;
+}
+.setup-ok {
+  font-size: 13px;
+  color: #81c995;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.setup-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.setup-row .input {
+  flex: 1;
+}
+.setup-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  font-size: 13.5px;
+}
+.setup-log {
+  max-height: 180px;
+  overflow: auto;
+  font-size: 11.5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  color: var(--text-3);
+}
+
+/* Scans */
+.scan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.scan-now {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.news-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.news-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.news-head .muted {
+  margin-left: auto;
+  font-size: 12px;
+}
+.news-body {
+  margin-top: 6px;
+  font-size: 13.5px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.news-body.open {
+  display: block;
+}
+.sch-h2 svg {
+  vertical-align: -2px;
+}

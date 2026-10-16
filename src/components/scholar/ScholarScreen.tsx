@@ -15,7 +15,9 @@ import {
   FileText,
   Lock,
   FolderInput,
-  ChevronDown
+  ChevronDown,
+  Activity,
+  Loader2
 } from 'lucide-react';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarItem, ScholarReading } from '../../lib/api';
 import { openPaths } from '../../lib/open';
@@ -23,6 +25,7 @@ import { setPdfTarget } from '../../lib/pdfTarget';
 import { toast, prompt } from '../../store';
 import { useScholar, reloadScholar, ScholarView } from './scholarStore';
 import { MenuButton } from '../Popover';
+import { SetupWizard, ScansView } from './Setup';
 import '../../styles/scholar.css';
 
 // ---------- Dates ----------
@@ -94,7 +97,16 @@ export function ScholarScreen() {
   const [courses, setCourses] = useState<ScholarCourse[]>([]);
   const [item, setItem] = useState<ScholarItem | null>(null);
 
+  const [scanning, setScanning] = useState(false);
+  const [unread, setUnread] = useState(0);
   useEffect(() => api.scholar.onChanged(() => reloadScholar()), []);
+  useEffect(() => {
+    const news = () => api.scholar.news().then((n) => setUnread(n.filter((x) => !x.read).length));
+    api.scholar.runStatus().then((s) => setScanning(!!s.running));
+    news();
+    const offs = [api.scholar.onRun((r) => setScanning(r.running)), api.scholar.onNews(news)];
+    return () => offs.forEach((f) => f());
+  }, [version]);
   useEffect(() => {
     let live = true;
     (async () => {
@@ -141,7 +153,7 @@ export function ScholarScreen() {
       <div className="center-fill">
         <div className="spinner" />
       </div>
-    ) : !hasData || view.name === 'add' ? (
+    ) : (!hasData && view.name !== 'scans' && view.name !== 'library') || view.name === 'add' ? (
       <AddClass first={!hasData} />
     ) : view.name === 'calendar' ? (
       <CalendarView ctx={ctx} />
@@ -149,6 +161,8 @@ export function ScholarScreen() {
       <ClassView ctx={ctx} courseId={view.courseId} />
     ) : view.name === 'library' ? (
       <LibraryView />
+    ) : view.name === 'scans' ? (
+      <ScansView />
     ) : (
       <WeekView ctx={ctx} />
     );
@@ -201,6 +215,10 @@ export function ScholarScreen() {
           <Plus size={17} /> Add a class
         </button>
         <div className="sch-spacer" />
+        <button className={`sch-link ${view.name === 'scans' ? 'on' : ''}`} onClick={() => go({ name: 'scans' })}>
+          {scanning ? <Loader2 size={17} className="spin" /> : <Activity size={17} />} {scanning ? 'Scanning…' : 'Scans'}
+          {unread > 0 && <span className="sch-badge">{unread}</span>}
+        </button>
         <button className={`sch-link ${view.name === 'library' ? 'on' : ''}`} onClick={() => go({ name: 'library' })}>
           <Library size={17} /> Library
         </button>
@@ -782,9 +800,7 @@ function AddClass({ first }: { first: boolean }) {
             </li>
             <li>Without Claude, this stays off rather than guessing. Library classes work without it.</li>
           </ul>
-          <button className="btn tonal" disabled title="Setup arrives in the next update">
-            Set up Claude and my school (next update)
-          </button>
+          <SetupWizard onDone={() => useScholar.getState().set({ view: { name: 'scans' } })} />
           <details className="gate-adv">
             <summary>Already use the Class Calendar Import skills?</summary>
             <p>Bring in the classes, readings and study PDFs they've already made. Your original folder isn't changed.</p>

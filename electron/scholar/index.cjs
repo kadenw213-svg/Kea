@@ -4,6 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const profiles = require('./profiles.cjs');
 const db = require('./db.cjs');
+const browser = require('./browser.cjs');
+const workspace = require('./workspace.cjs');
+const runner = require('./runner.cjs');
+const settings = require('../settings.cjs');
 
 // ---------- Kea's own state for a profile (what's checked off) ----------
 function readState() {
@@ -67,11 +71,50 @@ function importExisting(folder) {
   return { pdfs };
 }
 
+// ---------- The daily schedule ----------
+const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Whether class scans can run for this profile: Claude signed in, the engine installed, a class site saved. */
+async function ready() {
+  const c = await workspace.check();
+  return !!(c.claude && c.uv && c.account.loggedIn && c.engineReady && browser.schoolInfo().home);
+}
+
+/**
+ * Once a day after the chosen time (5:00 by default, like the scheduled task it replaces): the daily check (which
+ * also imports any new class), then this week's textbook chapters; on the chosen weekday, the weekly update too.
+ */
+async function tick() {
+  try {
+    if (settings.get('scholar.autoScan', true) === false || runner.status().running) return;
+    const [h, m] = String(settings.get('scholar.scanTime', '05:00')).split(':').map(Number);
+    const now = new Date();
+    if (now.getHours() * 60 + now.getMinutes() < (h || 0) * 60 + (m || 0)) return;
+    const s = readState();
+    s.lastRuns = s.lastRuns || {};
+    if (s.lastRuns.daily === localDate()) return;
+    if (!(await ready())) return;
+    s.lastRuns.daily = localDate();
+    writeState(s);
+    await runner.run('daily', '', 'schedule');
+    const weekday = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][now.getDay()];
+    if (settings.get('scholar.weeklyDay', 'sunday') === weekday) await runner.run('sync', '', 'schedule');
+    if (settings.get('scholar.studyPdfs', true) !== false) await runner.run('study', '', 'schedule');
+  } catch (err) {
+    console.error('Scholar schedule', err);
+  }
+}
+
 function register() {
   const p = () => profiles.paths();
   ipcMain.handle('scholar:profiles', () => profiles.all());
   ipcMain.handle('scholar:createProfile', (_e, name) => (profiles.create(name), watch(), profiles.all()));
-  ipcMain.handle('scholar:selectProfile', (_e, id) => (profiles.select(id), watch(), profiles.all()));
+  ipcMain.handle('scholar:selectProfile', (_e, id) => {
+    if (runner.status().running) throw new Error('A class scan is running. Switch profiles when it finishes.');
+    profiles.select(id);
+    watch();
+    return profiles.all();
+  });
   ipcMain.handle('scholar:renameProfile', (_e, id, name) => profiles.rename(id, name));
   ipcMain.handle('scholar:status', () => ({ hasData: fs.existsSync(p().db), paths: p() }));
   ipcMain.handle('scholar:courses', () => db.courses(p().db, p().textbooks, readState().done || {}));
@@ -86,7 +129,38 @@ function register() {
     return true;
   });
   ipcMain.handle('scholar:importExisting', (_e, folder) => importExisting(folder));
+
+  // The class site and Kea's own sign-in.
+  ipcMain.handle('scholar:school', () => browser.schoolInfo());
+  ipcMain.handle('scholar:setSchoolHome', (_e, home) => browser.setHome(home));
+  ipcMain.handle('scholar:signIn', (_e, remember) => browser.signIn(remember));
+  ipcMain.handle('scholar:forgetLogin', () => browser.forgetLogin());
+  ipcMain.handle('scholar:siteStatus', () => browser.status());
+  ipcMain.on('class-site:login', browser.onLoginSubmitted);
+  ipcMain.on('class-site:remembering', browser.remembering);
+
+  // Setup: what's installed, and installing it.
+  const lines = (e) => (line) => e.sender.send('scholar:setupLine', line);
+  ipcMain.handle('scholar:check', () => workspace.check());
+  ipcMain.handle('scholar:installUv', (e) => workspace.installUv(lines(e)));
+  ipcMain.handle('scholar:installClaude', (e) => workspace.installClaude(lines(e)));
+  ipcMain.handle('scholar:signInClaude', () => workspace.signInClaude());
+  ipcMain.handle('scholar:setupEngine', (e) => workspace.setupEngine(browser.schoolInfo().home, lines(e)));
+
+  // Scans.
+  ipcMain.handle('scholar:run', (_e, task, arg) => (runner.run(task, arg || '', 'manual'), true));
+  ipcMain.handle('scholar:stop', () => (runner.stop(), true));
+  ipcMain.handle('scholar:runStatus', () => runner.status());
+  ipcMain.handle('scholar:activity', () => runner.activity());
+  ipcMain.handle('scholar:news', () => runner.news());
+  ipcMain.handle('scholar:markNewsRead', (_e, ids) => runner.markNewsRead(ids));
+
+  // Developer aid (unpackaged builds only): read a page through the class-site browser.
+  if (!require('electron').app.isPackaged) ipcMain.handle('scholar:debugOpen', (_e, url) => browser.open(url));
+
   watch();
+  setTimeout(tick, 60000);
+  setInterval(tick, 5 * 60000);
 }
 
 module.exports = { register };

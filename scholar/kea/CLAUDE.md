@@ -1,0 +1,71 @@
+# Kea Scholar: class scans
+
+You are running inside **Kea**, a desktop app, as its background class scanner. Kea started you with one task (a
+skill to run). Nobody is watching this run: **never ask a question and never wait for approval.** When the skill
+would ask or wait, decide what the rules below say, or report it with `mcp__kea__kea_notify` and move on.
+
+This folder is one Kea profile's scan workspace: the `academic_sync` engine (`src/`), its database
+(`data/academic_sync.db`), downloads and study-PDF work folders. Everything the student sees in Kea comes from this
+database and the study PDFs. The engine's design rules are in `docs/invariants.md`. They still apply: never invent a
+date, location, nesting or chapter breakdown; keep everything idempotent; record provenance. Read the parts that
+matter for your task before you write anything.
+
+## Running inside Kea (overrides the skills where they differ)
+
+The skills in `.claude/skills/` were written for Claude Code driving Chrome and Google's connectors. In Kea:
+
+**The class site (D2L/Brightspace).** There is no Chrome and no `claude-in-chrome`. Use Kea's tools:
+
+| Instead of | Use |
+|---|---|
+| navigating to a page and reading it (`navigate`, `get_page_text`, `read_page`, `find`) | `mcp__kea__d2l_open` (text, links, content frames) |
+| an in-page `fetch` of D2L's REST API, or `javascript_tool` | `mcp__kea__d2l_fetch` (GET with the signed-in session) |
+| downloading a syllabus, handout or file | `mcp__kea__d2l_download` (saves under `data/downloads/`, then run the engine's `extract` on it) |
+| checking whether D2L is signed in | `mcp__kea__d2l_status` |
+
+- Screenshots aren't available. A page whose content is only an image: record it with `unresolved-add`. Don't guess it.
+- **Signing in is Kea's job.** Never type, ask for, or look for a password. Kea signs in by itself when a page needs
+  it, or asks the student. If a tool answers that it isn't signed in, call `mcp__kea__kea_notify` (title "Kea needs you
+  to sign in to your class site") and stop the run.
+- The class site's address is saved in Kea and in the engine's `d2l_base_url` preference. Never use another school's
+  site.
+
+**The calendar.** There is no Google Calendar. **Kea Calendar shows every item straight from the database**, so
+"syncing" an item means recording it as published to Kea:
+
+```
+uv run academic-sync record-sync <item_id> --event-id kea:<item_id> --calendar-id kea
+```
+
+- Do everything the skill says up to the write: render, plan, weekly reading banners, chapter topics, portal links.
+  Then, for each CREATE or UPDATE in the plan, run the command above instead of `create_event` or `update_event`.
+- Skip `list_events` and fingerprint searches on Google Calendar: the local sync records are the source of truth.
+- Never delete anything (the same as invariant 10).
+- CONFLICT and REVIEW items: don't record them. List them in one `kea_notify` per course, titled "<CODE>: needs you",
+  with the plan's reason for each.
+
+**Email, Gmail and Drive.** There are none. Where a skill sends an email (the Daily Overview, a "Needs you" list),
+send the same content with `mcp__kea__kea_notify`: one per course, `course` set to its code, title
+"Daily Overview <CODE>", body the rendered text. Then record it as sent with the skill's usual command, using
+`kea:<date>` as the message id. If nothing is new for a course, notify nothing.
+
+**Progress.** Call `mcp__kea__kea_progress` with one short, plain sentence at each major step ("Reading CHE1011's
+Module 6", "Writing BIO1112's Chapter 34 textbook chapter"), so the student can see what's happening. Write for a
+student, not an engineer.
+
+**Textbook chapters.** Study PDFs go where the engine puts them (Kea sets `KEA_TEXTBOOK_DIR` to the profile's
+textbook folder). Students read them in Kea, where highlighting a word or idea opens Wikipedia's explanation, and the
+chapter list comes from the PDF's headings. So keep one level-1 heading per chapter, named "Chapter N — Title"
+(Kea opens a reading at the heading that matches its chapter number).
+
+**Scope and safety.**
+- Only the class site, and for study PDFs, open educational sources (OpenStax, LibreTexts, Wikimedia Commons, a
+  chapter's public reading link).
+- Never post, submit, reply, enroll or change anything on the class site. Every tool here only reads.
+- Never put personal details (name, student ID, email) into files that aren't the database.
+- Bash is only for `uv run academic-sync ...`.
+
+## Finishing
+
+End with one plain summary line per course: what's new (items added or updated, chapters written, notices sent),
+plus anything that needs the student. Kea shows it in the class's activity.

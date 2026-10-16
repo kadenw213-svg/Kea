@@ -110,6 +110,25 @@ export interface KeaApi {
     course(id: string): Promise<ScholarCourseDetail | null>;
     setDone(id: string, done: boolean): Promise<boolean>;
     importExisting(folder: string): Promise<{ pdfs: number }>;
+    school(): Promise<SchoolInfo>;
+    setSchoolHome(home: string): Promise<SchoolInfo>;
+    signIn(remember: boolean): Promise<SchoolInfo & { signedIn: boolean }>;
+    forgetLogin(): Promise<SchoolInfo>;
+    siteStatus(): Promise<{ setUp: boolean; signedIn: boolean; home?: string }>;
+    check(): Promise<ScholarSetup>;
+    installUv(): Promise<{ code: number; out: string }>;
+    installClaude(): Promise<{ code: number; out: string }>;
+    signInClaude(): Promise<ClaudeAccount>;
+    setupEngine(): Promise<boolean>;
+    run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe', arg?: string): Promise<boolean>;
+    stop(): Promise<boolean>;
+    runStatus(): Promise<{ running: ScholarRun | null; queued: { task: string; arg: string }[] }>;
+    activity(): Promise<ScholarRun[]>;
+    news(): Promise<ScholarNews[]>;
+    markNewsRead(ids?: string[]): Promise<boolean>;
+    onRun(cb: (r: ScholarRun & { running: boolean }) => void): () => void;
+    onNews(cb: (n: ScholarNews) => void): () => void;
+    onSetupLine(cb: (line: string) => void): () => void;
     onChanged(cb: () => void): () => void;
   };
   lookup: {
@@ -281,6 +300,46 @@ declare global {
 
 /** A Wikipedia search result: title, short description, first two sentences. */
 // ---------- Kea Scholar ----------
+export interface SchoolInfo {
+  home: string;
+  host: string;
+  /** Kea saved a login to sign in with (the login itself never leaves Kea's main process). */
+  remembers: boolean;
+  loginHost: string;
+}
+export interface ClaudeAccount {
+  loggedIn: boolean;
+  email?: string;
+  method?: string;
+  plan?: string;
+}
+export interface ScholarSetup {
+  uv: string | null;
+  claude: string | null;
+  account: ClaudeAccount;
+  engineReady: boolean;
+  hasData: boolean;
+}
+export interface ScholarRun {
+  id: string;
+  task: string;
+  label: string;
+  arg: string;
+  why: string;
+  start: string;
+  end: string | null;
+  ok: boolean | null;
+  summary: string;
+  steps: { at: string; message: string }[];
+}
+export interface ScholarNews {
+  id: string;
+  at: string;
+  read: boolean;
+  course: string;
+  title: string;
+  body: string;
+}
 export interface ProfileList {
   active: string;
   list: { id: string; name: string; created: string }[];

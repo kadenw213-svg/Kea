@@ -414,6 +414,32 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'scholar',
+    label: 'Scholar',
+    icon: 'GraduationCap',
+    blurb: 'Your classes, their textbooks and calendar. Classes you add from your school are kept up to date by scans that run in the background through your own Claude account.',
+    fields: [
+      { key: 'scholar.autoScan', label: 'Check my classes every day', type: 'toggle', default: true, help: 'New assignments, grades, feedback and announcements, and any new class (scanned in full). Uses a little of your Claude plan each day.' },
+      {
+        key: 'scholar.scanTime',
+        label: 'Daily check after',
+        type: 'select',
+        default: '05:00',
+        options: ['03:00', '04:00', '05:00', '06:00', '07:00', '08:00', '12:00', '18:00'].map((t) => ({ value: t, label: new Date(`2000-01-01T${t}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })),
+        help: 'If Kea is closed then, the check runs the next time it opens.'
+      },
+      { key: 'scholar.studyPdfs', label: "Write each week's textbook chapters", type: 'toggle', default: true, help: "Each class's chapters for the week ahead, written from what the class covers and its tests." },
+      {
+        key: 'scholar.weeklyDay',
+        label: 'Update readings and links every',
+        type: 'select',
+        default: 'sunday',
+        advanced: true,
+        options: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map((d) => ({ value: d, label: d[0].toUpperCase() + d.slice(1) }))
+      }
+    ]
+  },
+  {
     id: 'lookup',
     label: 'Encyclopedia',
     icon: 'BookOpen',

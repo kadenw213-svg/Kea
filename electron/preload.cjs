@@ -54,6 +54,37 @@ contextBridge.exposeInMainWorld('api', {
     course: (id) => ipcRenderer.invoke('scholar:course', id),
     setDone: (id, done) => ipcRenderer.invoke('scholar:setDone', id, done),
     importExisting: (folder) => ipcRenderer.invoke('scholar:importExisting', folder),
+    school: () => ipcRenderer.invoke('scholar:school'),
+    setSchoolHome: (home) => ipcRenderer.invoke('scholar:setSchoolHome', home),
+    signIn: (remember) => ipcRenderer.invoke('scholar:signIn', remember),
+    forgetLogin: () => ipcRenderer.invoke('scholar:forgetLogin'),
+    siteStatus: () => ipcRenderer.invoke('scholar:siteStatus'),
+    check: () => ipcRenderer.invoke('scholar:check'),
+    installUv: () => ipcRenderer.invoke('scholar:installUv'),
+    installClaude: () => ipcRenderer.invoke('scholar:installClaude'),
+    signInClaude: () => ipcRenderer.invoke('scholar:signInClaude'),
+    setupEngine: () => ipcRenderer.invoke('scholar:setupEngine'),
+    run: (task, arg) => ipcRenderer.invoke('scholar:run', task, arg),
+    stop: () => ipcRenderer.invoke('scholar:stop'),
+    runStatus: () => ipcRenderer.invoke('scholar:runStatus'),
+    activity: () => ipcRenderer.invoke('scholar:activity'),
+    news: () => ipcRenderer.invoke('scholar:news'),
+    markNewsRead: (ids) => ipcRenderer.invoke('scholar:markNewsRead', ids),
+    onRun: (cb) => {
+      const h = (_e, r) => cb(r);
+      ipcRenderer.on('scholar:run', h);
+      return () => ipcRenderer.removeListener('scholar:run', h);
+    },
+    onNews: (cb) => {
+      const h = (_e, n) => cb(n);
+      ipcRenderer.on('scholar:news', h);
+      return () => ipcRenderer.removeListener('scholar:news', h);
+    },
+    onSetupLine: (cb) => {
+      const h = (_e, l) => cb(l);
+      ipcRenderer.on('scholar:setupLine', h);
+      return () => ipcRenderer.removeListener('scholar:setupLine', h);
+    },
     onChanged: (cb) => {
       const h = () => cb();
       ipcRenderer.on('scholar:changed', h);
