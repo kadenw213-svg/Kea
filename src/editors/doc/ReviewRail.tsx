@@ -7,12 +7,14 @@ import { MenuButton } from '../../components/Popover';
 import { uid, timeAgo } from '../../lib/util';
 import { Logo } from '../../components/Logo';
 
-/** Comments and suggestions made by Slate's AI get the app's logo and a quiet grey look. */
-export const AI_AUTHOR = 'Slate AI';
+/** Comments and suggestions made by Kea's AI get the app's logo and a quiet grey look. */
+export const AI_AUTHOR = 'Kea AI';
+/** Also the name used before the app was renamed, so older documents keep their look. */
+export const isAiAuthor = (a?: string) => a === AI_AUTHOR || a === 'Slate AI';
 const initial = (name: string) => (name.trim()[0] || '?').toUpperCase();
 const hue = (name: string) => [...name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
 function Avatar({ name }: { name: string }) {
-  if (name === AI_AUTHOR) return <Logo size={26} className="rv-avatar ai" />;
+  if (isAiAuthor(name)) return <Logo size={26} className="rv-avatar ai" />;
   return (
     <span className="rv-avatar" style={{ background: `hsl(${hue(name)} 45% 42%)` }}>
       {initial(name)}
@@ -190,7 +192,7 @@ export function ReviewRail({
             <div
               key={key}
               ref={(el) => (el ? cardRefs.current.set(key, el) : cardRefs.current.delete(key))}
-              className={`rv-card ${t.author === AI_AUTHOR ? 'ai' : ''} ${isActive || isDraft ? 'active' : ''} ${t.resolved ? 'resolved' : ''}`}
+              className={`rv-card ${isAiAuthor(t.author) ? 'ai' : ''} ${isActive || isDraft ? 'active' : ''} ${t.resolved ? 'resolved' : ''}`}
               style={{ top: tops[key] ?? 0 }}
               onMouseDown={() => setActive(it.id)}
             >

@@ -1022,12 +1022,12 @@ body.col-resizing * {
   font-size: var(--menu-font, 13.5px);
 }
 
-.slate-logo {
+.kea-logo {
   display: inline-block;
   flex-shrink: 0;
   line-height: 0;
 }
-.slate-logo svg {
+.kea-logo svg {
   width: 100%;
   height: 100%;
   display: block;

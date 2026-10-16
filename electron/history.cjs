@@ -1,5 +1,5 @@
 // Version history (earlier copies of files, kept before they're overwritten) and crash recovery
-// (hidden copies of unsaved work, restored on the next start if Slate didn't close normally).
+// (hidden copies of unsaved work, restored on the next start if Kea didn't close normally).
 const { app, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');

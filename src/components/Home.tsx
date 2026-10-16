@@ -28,7 +28,10 @@ import {
   Moon,
   Check,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  GraduationCap,
+  CalendarDays,
+  Library
 } from 'lucide-react';
 import { api, DirEntry, DriveInfo, FileMeta, HomeSettings, KnownFolder } from '../lib/api';
 import { newFile, openPaths, openWithDialog } from '../lib/open';
@@ -105,6 +108,8 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   const [showTemplates, setShowTemplates] = useState(false);
   const loadSeq = useRef(0);
   const showStart = useSetting<boolean>('home.showStart');
+  const showScholar = useSetting<boolean>('scholar.enabled');
+  const [scholarInfo, setScholarInfo] = useState<string | null>(null);
   const showTools = useSetting<boolean>('home.showTools');
   const showGreeting = useSetting<boolean>('home.greeting');
   const showPreviews = useSetting<boolean>('home.previews');
@@ -292,7 +297,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   const fileMenu = (it: Item) => (close: () => void) => (
     <>
       <button className="menu-item" onClick={() => (open(it), close())}>
-        <FolderOpen size={16} /> Open in Slate
+        <FolderOpen size={16} /> Open in Kea
       </button>
       {GOOGLE_EXT[extOf(it.name)] && (
         <button className="menu-item" onClick={() => (api.openPath(it.path), close())}>
@@ -357,12 +362,48 @@ export function HomeScreen({ visible }: { visible: boolean }) {
         {showGreeting && (
           <>
             <h1 className="home-title">{greeting()}</h1>
-            <p className="home-sub">Open anything, or start something new. Your files stay on this computer and your own drives.</p>
+            <p className="home-sub">Your classes, readings and files in one place. Everything stays on this computer and your own drives.</p>
           </>
         )}
 
+        {showScholar !== false && (
+          <section className="scholar-start">
+            <div className="section-head">
+              <h2>Scholar</h2>
+              <span className="muted">Your classes, their textbooks and your calendar, kept up to date for you.</span>
+            </div>
+            <div className="scholar-row">
+              <button className={`scholar-card ${scholarInfo === 'classes' ? 'on' : ''}`} onClick={() => setScholarInfo(scholarInfo === 'classes' ? null : 'classes')}>
+                <GraduationCap size={26} />
+                <span className="scholar-name">Classes</span>
+                <span className="scholar-desc">Each class with its textbook, readings and what's due</span>
+              </button>
+              <button className={`scholar-card ${scholarInfo === 'calendar' ? 'on' : ''}`} onClick={() => setScholarInfo(scholarInfo === 'calendar' ? null : 'calendar')}>
+                <CalendarDays size={26} />
+                <span className="scholar-name">Calendar</span>
+                <span className="scholar-desc">Assignments and tests that open their readings, ready to check off</span>
+              </button>
+              <button className={`scholar-card ${scholarInfo === 'library' ? 'on' : ''}`} onClick={() => setScholarInfo(scholarInfo === 'library' ? null : 'library')}>
+                <Library size={26} />
+                <span className="scholar-name">Library</span>
+                <span className="scholar-desc">Free, complete courses you can add and study at your own pace</span>
+              </button>
+            </div>
+            {scholarInfo && (
+              <div className="scholar-soon">
+                {scholarInfo === 'classes'
+                  ? 'Classes arrive in the next update. Add a course from your school and Kea scans it in the background, then keeps its assignments, readings and a textbook for each week up to date.'
+                  : scholarInfo === 'calendar'
+                    ? 'The calendar arrives in the next update. Every assignment, quiz and test links straight to its reading and instructions, and you can check each one off. Your Google Calendar shows alongside.'
+                    : 'The Library comes soon after: complete courses with their textbooks, free to add for anyone, no account needed.'}
+              </div>
+            )}
+          </section>
+        )}
+
         {(showStart || showTools) && (
-        <section className="home-start">
+        <section className={`home-start ${showScholar !== false ? 'compact' : ''}`}>
+          {showScholar !== false && <div className="section-head"><h2>Office</h2></div>}
           {showStart && (
           <div className="start-row">
             <button className="start-card" onClick={() => newFile('doc')}>

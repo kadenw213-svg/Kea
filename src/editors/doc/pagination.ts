@@ -5,7 +5,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { DocMeta, pageBox, hfFor, expandFields, HeaderFooter } from './docMeta';
 
 /**
- * Print-layout view. The document stays one continuous editor, but after every change Slate measures
+ * Print-layout view. The document stays one continuous editor, but after every change Kea measures
  * the top-level blocks and inserts "page gap" widgets where pages end. Each gap draws the bottom margin
  * (footnotes + footer) of one page, the grey space between pages, and the top margin (header) of the
  * next. The same page breaks drive printing and PDF export, so what you see is what prints.

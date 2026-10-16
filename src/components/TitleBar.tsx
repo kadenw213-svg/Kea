@@ -32,7 +32,7 @@ export function TitleBar() {
     <div className={`titlebar ${isMac() ? 'mac' : ''}`}>
       {!isMac() && (
         <MenuButton
-          title="Slate Office menu"
+          title="Kea menu"
           button={() => (
             <button className="brand">
               <Logo size={22} />
@@ -42,7 +42,7 @@ export function TitleBar() {
         >
           {(close) => (
             <>
-              <div className="menu-title">Slate Office {upd.version}</div>
+              <div className="menu-title">Kea {upd.version}</div>
               <button className="menu-item" onClick={() => (openUpdates(), close())}>
                 <RefreshCw size={16} /> {hasUpdate ? 'Update available' : 'Check for updates'}
                 {hasUpdate && <span className="kbd" style={{ color: 'var(--accent)' }}>●</span>}
@@ -73,10 +73,10 @@ export function TitleBar() {
                 <FolderOpen size={16} /> Open file… <span className="kbd">Ctrl+O</span>
               </button>
               <div className="menu-sep" />
-              <button className="menu-item" onClick={() => (window.open('https://github.com/kadenw213-svg/slate-office'), close())}>
+              <button className="menu-item" onClick={() => (window.open('https://github.com/kadenw213-svg/kea'), close())}>
                 <Github size={16} /> Source code on GitHub
               </button>
-              <button className="menu-item" onClick={() => (window.open('https://github.com/kadenw213-svg/slate-office/releases'), close())}>
+              <button className="menu-item" onClick={() => (window.open('https://github.com/kadenw213-svg/kea/releases'), close())}>
                 <Info size={16} /> Release notes
               </button>
             </>

@@ -115,7 +115,7 @@ let idleTimer = null;
 
 function startWorker() {
   if (worker) return workerReady;
-  worker = utilityProcess.fork(path.join(__dirname, 'ai-worker.mjs'), [], { serviceName: 'Slate AI', stdio: 'pipe' });
+  worker = utilityProcess.fork(path.join(__dirname, 'ai-worker.mjs'), [], { serviceName: 'Kea AI', stdio: 'pipe' });
   worker.stderr?.on('data', (d) => log('ai-worker stderr', String(d).slice(0, 500)));
   workerReady = new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('The AI engine did not start.')), 30000);

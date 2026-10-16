@@ -1,8 +1,8 @@
 {
-  "name": "slate-office",
-  "productName": "Slate Office",
-  "version": "0.18.0",
-  "description": "A clean, dark, offline office suite: PDF editor, documents, spreadsheets, text and images.",
+  "name": "kea",
+  "productName": "Kea",
+  "version": "0.19.0",
+  "description": "Kea: your classes, textbooks and calendar, with a clean offline office suite for PDFs, documents, spreadsheets and slides.",
   "author": "kadenw213-svg",
   "license": "MIT",
   "private": true,
@@ -88,7 +88,7 @@
   },
   "build": {
     "appId": "com.slate.office",
-    "productName": "Slate Office",
+    "productName": "Kea",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -112,85 +112,85 @@
     "fileAssociations": [
       {
         "ext": "pdf",
-        "name": "SlateOffice.pdf",
+        "name": "Kea.pdf",
         "description": "PDF Document",
         "role": "Editor"
       },
       {
         "ext": "docx",
-        "name": "SlateOffice.docx",
+        "name": "Kea.docx",
         "description": "Word Document",
         "role": "Editor"
       },
       {
         "ext": "doc",
-        "name": "SlateOffice.doc",
+        "name": "Kea.doc",
         "description": "Word 97-2003 Document",
         "role": "Editor"
       },
       {
         "ext": "odt",
-        "name": "SlateOffice.odt",
+        "name": "Kea.odt",
         "description": "OpenDocument Text",
         "role": "Editor"
       },
       {
         "ext": "rtf",
-        "name": "SlateOffice.rtf",
+        "name": "Kea.rtf",
         "description": "Rich Text Document",
         "role": "Editor"
       },
       {
         "ext": "html",
-        "name": "SlateOffice.html",
+        "name": "Kea.html",
         "description": "HTML Document",
         "role": "Editor"
       },
       {
         "ext": "xlsx",
-        "name": "SlateOffice.xlsx",
+        "name": "Kea.xlsx",
         "description": "Excel Workbook",
         "role": "Editor"
       },
       {
         "ext": "xls",
-        "name": "SlateOffice.xls",
+        "name": "Kea.xls",
         "description": "Excel 97-2003 Workbook",
         "role": "Editor"
       },
       {
         "ext": "ods",
-        "name": "SlateOffice.ods",
+        "name": "Kea.ods",
         "description": "OpenDocument Spreadsheet",
         "role": "Editor"
       },
       {
         "ext": "csv",
-        "name": "SlateOffice.csv",
+        "name": "Kea.csv",
         "description": "CSV File",
         "role": "Editor"
       },
       {
         "ext": "tsv",
-        "name": "SlateOffice.tsv",
+        "name": "Kea.tsv",
         "description": "Tab-separated Values",
         "role": "Editor"
       },
       {
         "ext": "pptx",
-        "name": "SlateOffice.pptx",
+        "name": "Kea.pptx",
         "description": "PowerPoint Presentation",
         "role": "Editor"
       },
       {
         "ext": "txt",
-        "name": "SlateOffice.txt",
+        "name": "Kea.txt",
         "description": "Text File",
         "role": "Editor"
       },
       {
         "ext": "md",
-        "name": "SlateOffice.md",
+        "name": "Kea.md",
         "description": "Markdown File",
         "role": "Editor"
       }
@@ -211,7 +211,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Slate Office",
+      "shortcutName": "Kea",
       "include": "build/installer.nsh"
     },
     "mac": {
@@ -225,7 +225,7 @@
       {
         "provider": "github",
         "owner": "kadenw213-svg",
-        "repo": "slate-office",
+        "repo": "kea",
         "releaseType": "release"
       }
     ],
@@ -235,10 +235,10 @@
       "electron/ai-worker.mjs"
     ]
   },
-  "homepage": "https://github.com/kadenw213-svg/slate-office",
+  "homepage": "https://github.com/kadenw213-svg/kea",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kadenw213-svg/slate-office.git"
+    "url": "https://github.com/kadenw213-svg/kea.git"
   },
   "rendererDependencies": [
     "@cantoo/pdf-lib",

@@ -7,8 +7,8 @@ import { DriveLogo } from './DriveLogo';
 
 const BLURB: Record<DriveId, string> = {
   onedrive: 'Built into Windows. Sign in with your Microsoft account.',
-  gdrive: "Uses Google's free Drive app. Slate downloads it from Google (about 280 MB), then you sign in with Google.",
-  dropbox: "Uses Dropbox's app. Slate downloads it from Dropbox, then you sign in.",
+  gdrive: "Uses Google's free Drive app. Kea downloads it from Google (about 280 MB), then you sign in with Google.",
+  dropbox: "Uses Dropbox's app. Kea downloads it from Dropbox, then you sign in.",
   icloud: 'Uses Apple’s iCloud app from the Microsoft Store. Sign in with your Apple ID.'
 };
 
@@ -40,8 +40,8 @@ export function ConnectDrives({ drives, onClose, onChange }: { drives: DriveInfo
     setProgress((p) => ({ ...p, [d.id]: { status: 'waiting' } }));
     try {
       const r = await api.connectDrive(d.id);
-      if (r.action === 'launched') toast(`Finish signing in to ${d.label} in its window. Slate will pick it up automatically.`);
-      else if (r.action === 'installing') toast(`Follow ${d.label}'s setup, then sign in. Slate will pick it up automatically.`);
+      if (r.action === 'launched') toast(`Finish signing in to ${d.label} in its window. Kea will pick it up automatically.`);
+      else if (r.action === 'installing') toast(`Follow ${d.label}'s setup, then sign in. Kea will pick it up automatically.`);
       else toast(`Install ${d.label} from the page that opened, then sign in.`);
       setProgress((p) => ({ ...p, [d.id]: { status: 'waiting' } }));
     } catch (err: any) {
@@ -60,7 +60,7 @@ export function ConnectDrives({ drives, onClose, onChange }: { drives: DriveInfo
           </button>
         </div>
         <p>
-          Sign in once and your cloud files show up on Home. Each service's own app keeps them in sync, so Slate never
+          Sign in once and your cloud files show up on Home. Each service's own app keeps them in sync, so Kea never
           sees your password and works offline with anything you've opened.
         </p>
         <div className="drive-list">

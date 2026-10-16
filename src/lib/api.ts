@@ -75,7 +75,7 @@ export interface RecoveryEntry {
   savedAt: number;
 }
 
-export interface SlateApi {
+export interface KeaApi {
   setZoom(factor: number): void;
   settings: {
     get(): Promise<Record<string, any>>;
@@ -262,7 +262,7 @@ export interface UpdateState {
 
 declare global {
   interface Window {
-    api: SlateApi;
+    api: KeaApi;
   }
 }
 
@@ -328,4 +328,4 @@ export interface SpeechModel {
   download: { status: string; received: number; total: number; error?: string } | null;
 }
 
-export const api: SlateApi = window.api;
+export const api: KeaApi = window.api;

@@ -117,7 +117,7 @@ export async function docxToHtml(bytes: Uint8Array): Promise<string> {
   return (await docxToDoc(bytes)).html;
 }
 
-/** Word document → editor HTML plus page setup, headers/footers, default formatting and Slate data. */
+/** Word document → editor HTML plus page setup, headers/footers, default formatting and Kea data. */
 export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta: DocMeta }> {
   const meta = defaultMeta();
   const zip = await JSZip.loadAsync(bytes);
@@ -130,7 +130,7 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
   const docXml = await read('word/document.xml');
   if (!docXml) throw new Error('This file is not a valid Word document.');
 
-  // Slate's own data (citations, comments, goal…), stored in a custom XML part.
+  // Kea's own data (citations, comments, goal…), stored in a custom XML part.
   let extra: any = null;
   for (const name of Object.keys(zip.files).filter((n) => /^customXml\/[^/]+\.xml$/i.test(n))) {
     const xml = await read(name);
@@ -145,7 +145,7 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
   const citeRecords: { ids: string[]; page: string; text: string }[] = extra?.citations || [];
   let citeIdx = 0;
 
-  // Comments (Word id → text) and the ids Slate used for them.
+  // Comments (Word id → text) and the ids Kea used for them.
   const commentIds: Record<string, string> = extra?.commentIds || {};
   const cid = (wid: string) => commentIds[wid] || `w${wid}`;
   const wordComments: { id: string; author: string; at: number; text: string }[] = [];
@@ -283,7 +283,7 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
   const runHtml = async (r: Element, paraRun: RunProps): Promise<string> => {
     const rPr = kid(r, 'rPr');
     const rStyleId = attr(kid(rPr, 'rStyle'), 'val');
-    // A Slate citation: rebuild it from the saved record when the text still matches.
+    // A Kea citation: rebuild it from the saved record when the text still matches.
     if (rStyleId === 'SlateCitation') {
       const text = Array.from(r.getElementsByTagNameNS(W, 't')).map((t) => t.textContent || '').join('');
       const rec = citeRecords[citeIdx];
@@ -378,7 +378,7 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
         }
         case 'oMath':
         case 'oMathPara': {
-          // Word's own equations: keep their text (Slate can't edit Office Math yet).
+          // Word's own equations: keep their text (Kea can't edit Office Math yet).
           const text = Array.from(c.getElementsByTagNameNS('http://schemas.openxmlformats.org/officeDocument/2006/math', 't'))
             .map((t) => t.textContent || '')
             .join('');
@@ -438,7 +438,7 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
   const paraBlocks = async (p: Element): Promise<Block[]> => {
     const pPr = kid(p, 'pPr');
     const styleId = attr(kid(pPr, 'pStyle'), 'val') || defaultParaStyle;
-    // Slate's bibliography and contents are rebuilt from live data, so their entries are skipped.
+    // Kea's bibliography and contents are rebuilt from live data, so their entries are skipped.
     if (styleId === 'SlateBibliography' || styleId === 'SlateTOC') return [];
     if (styleId === 'SlateBibliographyTitle') {
       const title = Array.from(p.getElementsByTagNameNS(W, 't')).map((t) => t.textContent || '').join('');
@@ -734,19 +734,19 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
     }
   }
 
-  // Comments written in Word (or anything without Slate's richer copy).
+  // Comments written in Word (or anything without Kea's richer copy).
   if (wordComments.length) meta.comments = wordComments.map((c) => ({ ...c, replies: [] }));
 
-  // ---------- Slate's own data (citations, comments, goal…) ----------
+  // ---------- Kea's own data (citations, comments, goal…) ----------
   if (extra) {
     try {
       if (extra.sources) meta.sources = extra.sources;
-      // Slate's copy has replies and resolved state; keep any comments added in Word since.
+      // Kea's copy has replies and resolved state; keep any comments added in Word since.
       if (extra.comments) meta.comments = [...extra.comments, ...wordComments.filter((w) => !extra.comments.some((c: any) => c.id === w.id)).map((c) => ({ ...c, replies: [] }))];
       if (extra.citationStyle) meta.citationStyle = extra.citationStyle;
       if ('wordGoal' in extra) meta.wordGoal = extra.wordGoal;
       if ('pageless' in extra) meta.pageless = extra.pageless;
-      // Slate's own header/footer text keeps fields like {TITLE} that Word can't store.
+      // Kea's own header/footer text keeps fields like {TITLE} that Word can't store.
       if (extra.header) meta.header = extra.header;
       if (extra.footer) meta.footer = extra.footer;
       if ('firstHeader' in extra) meta.firstHeader = extra.firstHeader;

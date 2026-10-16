@@ -67,7 +67,7 @@ export function VersionHistoryDialog() {
 
   const body = () => {
     if (!tab || tab.kind === 'home') return <p>Open a file to see its earlier versions.</p>;
-    if (!tab.path) return <p>Save this file first. Slate keeps its versions from then on.</p>;
+    if (!tab.path) return <p>Save this file first. Kea keeps its versions from then on.</p>;
     if (!list) return <div className="muted">Loading…</div>;
     return (
       <>

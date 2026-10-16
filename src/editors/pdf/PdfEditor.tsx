@@ -1058,7 +1058,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
     // Autosave never interrupts typing in a text box, and never shows dialogs.
     if (isSilentSave() && (encrypted || editingId)) return false;
     if (encrypted) {
-      await ask('This PDF is locked', "Slate couldn't unlock this PDF for editing, so it can only be viewed. If you know its password, close it and open it again.", [{ id: 'ok', label: 'OK', primary: true }]);
+      await ask('This PDF is locked', "Kea couldn't unlock this PDF for editing, so it can only be viewed. If you know its password, close it and open it again.", [{ id: 'ok', label: 'OK', primary: true }]);
       return false;
     }
     setEditingId(null);

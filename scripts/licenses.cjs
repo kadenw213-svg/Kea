@@ -1,4 +1,4 @@
-// Collects the licenses of every package shipped with Slate into public/licenses/third-party.txt.
+// Collects the licenses of every package shipped with Kea into public/licenses/third-party.txt.
 // Run automatically before each build.
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -27,7 +27,7 @@ const seen = new Map();
 })(tree.dependencies, true);
 
 const out = [
-  'Slate Office includes the following open-source software. Thank you to everyone who made it.',
+  'Kea includes the following open-source software. Thank you to everyone who made it.',
   '',
   'AI MODELS (downloaded only if you choose them in Settings → AI)',
   '  • Llama 3.2 3B Instruct: Llama 3.2 is licensed under the Llama 3.2 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved. Built with Llama. See LLAMA-3.2-LICENSE.txt and LLAMA-3.2-USE-POLICY.md.',

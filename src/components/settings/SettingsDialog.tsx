@@ -105,7 +105,7 @@ function Row({ f }: { f: Field }) {
           value={value}
           onChange={(v) => {
             useSettings.getState().set({ [f.key]: v });
-            if (f.restart) toast('This takes effect after you restart Slate.');
+            if (f.restart) toast('This takes effect after you restart Kea.');
           }}
         />
       </div>
@@ -156,7 +156,7 @@ function PrivacyExtras() {
         Clear file descriptions
       </button>
       <button className="btn sm" onClick={() => api.openDataFolder()}>
-        <FolderOpen size={14} /> Open Slate's data folder
+        <FolderOpen size={14} /> Open Kea's data folder
       </button>
     </div>
   );
@@ -193,7 +193,7 @@ function ShortcutsPanel({ q }: { q: string }) {
   );
 }
 
-/** Open a text file that ships inside the app (licenses) in a Slate tab. */
+/** Open a text file that ships inside the app (licenses) in a Kea tab. */
 async function openBundled(rel: string) {
   const res = await fetch(`./${rel}`);
   const data = new Uint8Array(await res.arrayBuffer());
@@ -209,7 +209,7 @@ function AboutPanel() {
       <div className="about-hero">
         <Logo size={56} />
         <div>
-          <div className="about-name">Slate Office {version}</div>
+          <div className="about-name">Kea {version}</div>
           <div className="muted">A free, offline office suite. Open source under the MIT license.</div>
         </div>
       </div>
@@ -230,19 +230,19 @@ function AboutPanel() {
       </div>
       <div className="about-card">
         <div className="about-title">Open-source software</div>
-        <p>Slate is built on hundreds of open-source projects, including Electron, React, pdf.js, pdf-lib, TipTap, ExcelJS, SheetJS, PptxGenJS, CodeMirror, llama.cpp and node-llama-cpp. Their licenses and copyright notices are included with the app.</p>
+        <p>Kea is built on hundreds of open-source projects, including Electron, React, pdf.js, pdf-lib, TipTap, ExcelJS, SheetJS, PptxGenJS, CodeMirror, llama.cpp and node-llama-cpp. Their licenses and copyright notices are included with the app.</p>
         <div className="about-links">
           <a href="#" onClick={(e) => (e.preventDefault(), openBundled('licenses/third-party.txt'))}>
             Third-party licenses <ExternalLink size={12} />
           </a>
-          <a href="https://github.com/kadenw213-svg/slate-office" target="_blank">
+          <a href="https://github.com/kadenw213-svg/kea" target="_blank">
             Source code <ExternalLink size={12} />
           </a>
         </div>
       </div>
       <div className="about-card">
         <div className="about-title">Trademarks</div>
-        <p>Microsoft, Word, Excel, PowerPoint and OneDrive are trademarks of Microsoft. Google Drive and Google Docs are trademarks of Google LLC. Dropbox is a trademark of Dropbox, Inc. iCloud is a trademark of Apple Inc. Slate isn't affiliated with or endorsed by any of them.</p>
+        <p>Microsoft, Word, Excel, PowerPoint and OneDrive are trademarks of Microsoft. Google Drive and Google Docs are trademarks of Google LLC. Dropbox is a trademark of Dropbox, Inc. iCloud is a trademark of Apple Inc. Kea isn't affiliated with or endorsed by any of them.</p>
       </div>
     </div>
   );

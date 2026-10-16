@@ -2,7 +2,7 @@
 // clicks "Look up" (Crossref for DOIs, Open Library for ISBNs, or the web page's own metadata).
 const { ipcMain, net } = require('electron');
 
-const UA = 'SlateOffice/1.0 (https://github.com/kadenw213-svg/slate-office)';
+const UA = 'Kea/1.0 (https://github.com/kadenw213-svg/kea)';
 
 async function getJson(url) {
   const res = await net.fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });

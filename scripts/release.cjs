@@ -1,6 +1,6 @@
 // Builds the Windows installer and publishes it as a GitHub release.
 // Usage: bump "version" in package.json, then run `npm run release`.
-// Installed copies of Slate Office pick the new version up from "Check for updates".
+// Installed copies of Kea pick the new version up from "Check for updates".
 const { execSync } = require('child_process');
 const pkg = require('../package.json');
 
@@ -16,9 +16,9 @@ if (!token) {
   }
 }
 
-console.log(`\nReleasing Slate Office v${pkg.version}\n`);
+console.log(`\nReleasing Kea v${pkg.version}\n`);
 run('node scripts/licenses.cjs');
 run('node scripts/assets.cjs');
 run('npx vite build');
 run('npx electron-builder --win --x64 --publish always', { GH_TOKEN: token });
-console.log(`\nPublished v${pkg.version}: https://github.com/kadenw213-svg/slate-office/releases/tag/v${pkg.version}\n`);
+console.log(`\nPublished v${pkg.version}: https://github.com/kadenw213-svg/kea/releases/tag/v${pkg.version}\n`);

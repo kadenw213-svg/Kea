@@ -17,7 +17,7 @@ let pendingOpen = collectFileArgs(process.argv);
 function log(...parts) {
   try {
     if (require('./settings.cjs').get('privacy.log', true) === false) return;
-    const file = path.join(app.getPath('userData'), 'slate.log');
+    const file = path.join(app.getPath('userData'), 'kea.log');
     const line = `[${new Date().toISOString()}] ${parts.map((p) => (p instanceof Error ? p.stack : typeof p === 'string' ? p : JSON.stringify(p))).join(' ')}
 `;
     if (fs.existsSync(file) && fs.statSync(file).size > 512 * 1024) fs.renameSync(file, file + '.old');
@@ -32,8 +32,33 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ]);
 
-// Developer aid: SLATE_USERDATA runs a separate profile (and lock), so tests don't touch a running copy.
-if (process.env.SLATE_USERDATA) app.setPath('userData', process.env.SLATE_USERDATA);
+// Developer aid: KEA_USERDATA runs a separate profile (and lock), so tests don't touch a running copy.
+const devUserData = process.env.KEA_USERDATA || process.env.SLATE_USERDATA;
+if (devUserData) app.setPath('userData', devUserData);
+else migrateFromSlate();
+
+/**
+ * The app was called Slate Office before 0.19. On the first start as Kea, its data folder (settings, history,
+ * downloaded models, recovery copies) moves to Kea's, so nothing is lost and nothing is stored twice.
+ */
+function migrateFromSlate() {
+  const now = app.getPath('userData');
+  const old = path.join(app.getPath('appData'), 'Slate Office');
+  try {
+    if (!fs.existsSync(old) || path.resolve(old) === path.resolve(now)) return;
+    // Already moved (Kea has its own settings): leave whatever is left of the old folder alone.
+    if (fs.existsSync(path.join(now, 'settings.json'))) return;
+    if (!fs.existsSync(now)) return fs.renameSync(old, now);
+    // Kea's folder exists but holds nothing of the user's yet (an earlier move failed because Slate was open):
+    // move each item across, keeping anything Kea already made.
+    for (const name of fs.readdirSync(old)) {
+      const to = path.join(now, name);
+      if (!fs.existsSync(to)) fs.renameSync(path.join(old, name), to);
+    }
+  } catch (err) {
+    console.error('Could not move Slate Office data to Kea (will try again next start)', err);
+  }
+}
 const settings = require('./settings.cjs');
 
 // Smooth, GPU-accelerated scrolling everywhere (both can be turned off in Settings → General → Advanced).
@@ -166,25 +191,25 @@ function createWindow() {
     rendererReady = false;
   });
 
-  // Developer aid: SLATE_CAPTURE=path.png captures a screenshot after load, then exits.
-  if (process.env.SLATE_CAPTURE) {
+  // Developer aid: KEA_CAPTURE=path.png captures a screenshot after load, then exits.
+  if (process.env.KEA_CAPTURE) {
     mainWindow.webContents.once('did-finish-load', () => {
       // Background windows don't run CSS animations, so turn them off for captures.
       mainWindow.webContents.insertCSS('*,*::before,*::after{transition:none!important;animation:none!important}');
       setTimeout(async () => {
-        if (process.env.SLATE_EVAL) {
+        if (process.env.KEA_EVAL) {
           try {
-            const out = await mainWindow.webContents.executeJavaScript(fs.readFileSync(process.env.SLATE_EVAL, 'utf8'));
+            const out = await mainWindow.webContents.executeJavaScript(fs.readFileSync(process.env.KEA_EVAL, 'utf8'));
             if (out !== undefined) console.log('[eval]', typeof out === 'string' ? out : JSON.stringify(out));
           } catch (err) {
             console.log('[eval error]', err.message);
           }
         }
         const img = await mainWindow.webContents.capturePage();
-        fs.writeFileSync(process.env.SLATE_CAPTURE, img.toPNG());
+        fs.writeFileSync(process.env.KEA_CAPTURE, img.toPNG());
         allowClose = true;
         app.quit();
-      }, Number(process.env.SLATE_CAPTURE_DELAY || 4000));
+      }, Number(process.env.KEA_CAPTURE_DELAY || 4000));
     });
     mainWindow.webContents.on('console-message', (_e, level, message, line, source) => {
       if (level >= 2) console.log(`[renderer] ${message} (${source}:${line})`);
@@ -217,7 +242,7 @@ app.whenReady().then(() => {
     if (rel === '/' || rel === '') rel = '/index.html';
     // Downloaded voice-typing models live in the user's data folder, not inside the app.
     // Cross-origin isolation lets WebAssembly use several CPU cores (voice typing, OCR). "credentialless"
-    // doesn't block anything Slate loads; every file comes from the app itself.
+    // doesn't block anything Kea loads; every file comes from the app itself.
     const isoHeaders = (res, extra = {}) => {
       const headers = new Headers(res.headers);
       headers.set('Cross-Origin-Opener-Policy', 'same-origin');
@@ -263,7 +288,7 @@ app.on('open-file', (e, filePath) => {
 // Anything that quits the app (updates, shutdown) must not be blocked by the unsaved-work prompt.
 app.on('before-quit', () => {
   allowClose = true;
-  // Don't leave a voice talking after Slate closes.
+  // Don't leave a voice talking after Kea closes.
   require('./tts.cjs').stop();
 });
 
@@ -334,7 +359,7 @@ ipcMain.handle('file:write', (_e, p, data) => {
     log('history snapshot failed', err);
   }
   // Write to a temp file first so a crash mid-save never corrupts the original.
-  const tmp = p + '.slate-tmp';
+  const tmp = p + '.kea-tmp';
   const buf = Buffer.from(data);
   fs.writeFileSync(tmp, buf);
   // OneDrive and antivirus scanners can hold files briefly; retry before giving up.
@@ -386,7 +411,7 @@ ipcMain.handle('recent:clear', () => {
 function withHiddenWindow(html, fn) {
   return new Promise((resolve, reject) => {
     const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
-    const tmp = path.join(app.getPath('temp'), `slate-print-${Date.now()}.html`);
+    const tmp = path.join(app.getPath('temp'), `kea-print-${Date.now()}.html`);
     fs.writeFileSync(tmp, html, 'utf8');
     win.loadFile(tmp);
     win.webContents.once('did-finish-load', async () => {

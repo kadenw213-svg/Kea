@@ -74,7 +74,7 @@ export function UpdateDialog() {
 
   let icon = <RefreshCw size={28} className="spin-slow" />;
   let title = 'Checking for updates…';
-  let body: React.ReactNode = 'Looking for a newer version of Slate Office.';
+  let body: React.ReactNode = 'Looking for a newer version of Kea.';
   let actions: React.ReactNode = (
     <button className="btn" onClick={close}>
       Close
@@ -85,7 +85,7 @@ export function UpdateDialog() {
     case 'latest':
       icon = <CheckCircle2 size={28} color="var(--success)" />;
       title = "You're up to date";
-      body = `Slate Office ${version} is the newest version.`;
+      body = `Kea ${version} is the newest version.`;
       break;
     case 'available':
       icon = <Sparkles size={28} color="var(--accent)" />;
@@ -138,7 +138,7 @@ export function UpdateDialog() {
     case 'ready':
       icon = <CheckCircle2 size={28} color="var(--success)" />;
       title = 'Update ready to install';
-      body = `Slate Office will restart into version ${state.version || ''}. You'll be asked to save any unsaved work first.`;
+      body = `Kea will restart into version ${state.version || ''}. You'll be asked to save any unsaved work first.`;
       actions = (
         <>
           <button className="btn" onClick={close}>
@@ -168,7 +168,7 @@ export function UpdateDialog() {
     case 'dev':
       icon = <AlertCircle size={28} color="var(--warning)" />;
       title = 'Updates work in the installed app';
-      body = "You're running Slate Office from source. Install it with the setup file to get one-click updates.";
+      body = "You're running Kea from source. Install it with the setup file to get one-click updates.";
       break;
   }
 

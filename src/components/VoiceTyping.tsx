@@ -234,7 +234,7 @@ export async function startVoice() {
     });
   } catch (err: any) {
     const msg = /Permission|NotAllowed/i.test(err?.name + err?.message)
-      ? 'Slate isn’t allowed to use the microphone. Turn on Windows Settings → Privacy & security → Microphone → "Let desktop apps access your microphone".'
+      ? 'Kea isn’t allowed to use the microphone. Turn on Windows Settings → Privacy & security → Microphone → "Let desktop apps access your microphone".'
       : /NotFound|Overconstrained/i.test(err?.name + err?.message)
         ? 'No microphone was found. Plug one in, or pick another one in Settings → Voice typing.'
         : err?.message || String(err);

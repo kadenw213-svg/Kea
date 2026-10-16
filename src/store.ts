@@ -10,7 +10,7 @@ export interface Tab {
   path: string | null;
   data: Uint8Array | null;
   dirty: boolean;
-  /** A Google Docs/Sheets/Slides file edited in Slate and saved back to Google Drive. */
+  /** A Google Docs/Sheets/Slides file edited in Kea and saved back to Google Drive. */
   remote?: { provider: 'google'; id: string; ext: string; localPath: string; canEdit: boolean };
   /** Bumped when the file is reloaded from disk so the editor remounts. */
   version: number;
@@ -48,7 +48,7 @@ export interface AiHooks {
   replaceQuote?(quote: string, replacement: string): boolean;
   /** Run edits so they show up as tracked suggestions (accept / reject) instead of changing the text. */
   track?<T>(fn: () => T): T;
-  /** Leave a reviewer comment (from "Slate AI") on a quote; false if the quote can't be found. */
+  /** Leave a reviewer comment (from "Kea AI") on a quote; false if the quote can't be found. */
   addComment?(quote: string, text: string): boolean;
   insertLabel?: string;
 }

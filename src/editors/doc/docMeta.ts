@@ -143,7 +143,7 @@ export function expandFields(text: string, ctx: { page: number; pages: number; t
     .replace(/\{DATE\}/gi, new Date().toLocaleDateString());
 }
 
-/** Slate-only data that Word doesn't have a place for, stored as a custom document property. */
+/** Kea-only data that Word doesn't have a place for, stored as a custom document property. */
 export function metaExtras(m: DocMeta) {
   return {
     v: 1,

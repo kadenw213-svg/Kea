@@ -1,5 +1,5 @@
 // Google Docs, Sheets and Slides support. Google Drive for desktop only puts small shortcut files
-// (.gdoc/.gsheet/.gslides) on disk; the documents themselves live in Google's cloud. Slate signs in to
+// (.gdoc/.gsheet/.gslides) on disk; the documents themselves live in Google's cloud. Kea signs in to
 // the user's Google account (OAuth for desktop apps: system browser + loopback redirect + PKCE), finds
 // the document, downloads it as .docx/.xlsx/.pptx, and uploads changes back so it stays a Google Doc.
 // The OAuth client ID is the user's own (created once in Google Cloud console); tokens are encrypted
@@ -78,13 +78,13 @@ function signIn() {
       const done = (ok, msg) => {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(
-          `<!doctype html><meta charset="utf-8"><title>Slate Office</title><body style="font-family:Segoe UI,system-ui,sans-serif;background:#131314;color:#e3e3e3;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h2 style="font-weight:500">${ok ? 'Signed in to Google' : 'Sign-in did not finish'}</h2><p style="color:#9aa0a6">${msg}</p></div></body>`
+          `<!doctype html><meta charset="utf-8"><title>Kea</title><body style="font-family:Segoe UI,system-ui,sans-serif;background:#131314;color:#e3e3e3;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h2 style="font-weight:500">${ok ? 'Signed in to Google' : 'Sign-in did not finish'}</h2><p style="color:#9aa0a6">${msg}</p></div></body>`
         );
       };
-      if (url.searchParams.get('state') !== state) return done(false, 'Please try again from Slate.');
+      if (url.searchParams.get('state') !== state) return done(false, 'Please try again from Kea.');
       const code = url.searchParams.get('code');
       if (!code) {
-        done(false, url.searchParams.get('error') === 'access_denied' ? 'Access was not allowed.' : 'Please try again from Slate.');
+        done(false, url.searchParams.get('error') === 'access_denied' ? 'Access was not allowed.' : 'Please try again from Kea.');
         finish(new Error(url.searchParams.get('error') === 'access_denied' ? 'Google sign-in was cancelled.' : 'Google sign-in failed.'));
         return;
       }
@@ -99,7 +99,7 @@ function signIn() {
           s.name = about.user?.displayName;
           saveSession(s);
         } catch {}
-        done(true, 'You can close this tab and go back to Slate.');
+        done(true, 'You can close this tab and go back to Kea.');
         finish(null, { email: s.email, name: s.name });
       } catch (err) {
         done(false, String(err.message || err));
@@ -192,7 +192,7 @@ async function resolve(localPath) {
 
   const parts = path.resolve(localPath).split(/[\\/]/).filter(Boolean);
   let i = parts.findIndex((p) => p === 'My Drive' || p === 'Shared drives');
-  if (i < 0) throw new Error("Slate couldn't tell where this file is in your Google Drive.");
+  if (i < 0) throw new Error("Kea couldn't tell where this file is in your Google Drive.");
   let parent = 'root';
   let driveId = null;
   if (parts[i] === 'Shared drives') {

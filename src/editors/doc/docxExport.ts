@@ -182,7 +182,7 @@ function runsFrom(nodes: JSONNode[] | undefined, ctx?: Ctx): ParagraphChild[] {
     let run: any;
     if (ins || del) {
       // Suggestions become Word tracked changes.
-      const rev = { id: ctx ? ctx.revId++ : 1, author: String((ins || del)!.attrs?.author || 'Slate'), date: new Date(Number((ins || del)!.attrs?.at) || Date.now()).toISOString() };
+      const rev = { id: ctx ? ctx.revId++ : 1, author: String((ins || del)!.attrs?.author || 'Kea'), date: new Date(Number((ins || del)!.attrs?.at) || Date.now()).toISOString() };
       run = del ? new DeletedTextRun({ ...(opts as IRunOptions), ...rev, text: n.text.replace(/\t/g, ' ') }) : new InsertedTextRun({ ...(opts as IRunOptions), ...rev, text: n.text.replace(/\t/g, ' ') });
     } else run = new TextRun({ ...(opts as IRunOptions), children, ...(link ? { style: 'Hyperlink' } : {}) });
     out.push(link && !ins && !del ? new ExternalHyperlink({ link, children: [run] }) : run);
@@ -437,7 +437,7 @@ function hfParagraph(hf: HeaderFooter, contentTwips: number, title: string): Par
 
 const hasText = (hf?: HeaderFooter | null) => !!hf && !!(hf.left || hf.center || hf.right);
 
-/** Store Slate-only settings (citations, comments, goal…) in a custom XML part, which Word preserves. */
+/** Store Kea-only settings (citations, comments, goal…) in a custom XML part, which Word preserves. */
 async function addSlatePart(bytes: Uint8Array, meta: DocMeta, extra: Record<string, any> = {}): Promise<Uint8Array> {
   const zip = await JSZip.loadAsync(bytes);
   const json = JSON.stringify({ ...metaExtras(meta), ...extra });
@@ -511,7 +511,7 @@ export async function jsonToDocx(json: JSONNode, metaIn?: DocMeta | null, title 
   const footer = (hf?: HeaderFooter | null) => new Footer({ children: [hasText(hf) ? hfParagraph(hf!, contentTwips, title) : new Paragraph('')] });
 
   const doc = new Document({
-    creator: 'Slate Office',
+    creator: 'Kea',
     title: title || undefined,
     footnotes: ctx.footnotes,
     ...(commentDefs.length ? { comments: { children: commentDefs } } : {}),
@@ -527,7 +527,7 @@ export async function jsonToDocx(json: JSONNode, metaIn?: DocMeta | null, title 
         heading4: { run: { font: D.font, size: 24, bold: true, color: '434343' }, paragraph: { spacing: { before: 240, after: 80 }, ...noIndent } },
         hyperlink: { run: { color: '1155CC', underline: {} } }
       },
-      // Named styles let Slate recognise its citations, bibliography and contents when the file is reopened.
+      // Named styles let Kea recognise its citations, bibliography and contents when the file is reopened.
       paragraphStyles: [
         { id: 'SlateBibliographyTitle', name: 'Bibliography Title', basedOn: 'Normal', next: 'SlateBibliography', paragraph: { alignment: AlignmentType.CENTER, indent: { firstLine: 0 } } },
         { id: 'SlateBibliography', name: 'Bibliography Entry', basedOn: 'Normal', paragraph: { indent: { left: 720, hanging: 720 } } },

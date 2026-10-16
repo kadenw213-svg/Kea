@@ -1198,7 +1198,7 @@
   font-size: 13px;
 }
 
-/* ---------- Slate AI comments and suggestions: dark grey, with the app logo ---------- */
+/* ---------- Kea AI comments and suggestions: dark grey, with the app logo ---------- */
 .doc-content,
 .rv-cards {
   --cmt-ai: rgba(154, 160, 166, 0.22);

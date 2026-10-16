@@ -9,8 +9,8 @@ import { openPaths } from './open';
  * Keeps work safe without the user thinking about it:
  *  - Autosave: files that already live somewhere are saved a few seconds after typing stops.
  *  - Crash recovery: every dirty tab (even never-saved ones) is copied to a hidden folder
- *    every few seconds, and offered back on the next start if Slate didn't close normally.
- *  - Session: remembers open files so Slate can reopen them (Settings → General).
+ *    every few seconds, and offered back on the next start if Kea didn't close normally.
+ *  - Session: remembers open files so Kea can reopen them (Settings → General).
  */
 
 const RECOVERY_EXT: Record<string, string> = { doc: 'docx', sheet: 'xlsx', slides: 'pptx', pdf: 'pdf' };
@@ -129,7 +129,7 @@ export async function restoreOnStart(openedFromArgs: boolean) {
     const names = entries.map((e) => `• ${e.name}`).join('\n');
     const choice = await ask(
       'Restore unsaved work?',
-      `Slate didn't close normally last time. It kept copies of ${entries.length === 1 ? 'this file' : 'these files'}:\n${names}`,
+      `Kea didn't close normally last time. It kept copies of ${entries.length === 1 ? 'this file' : 'these files'}:\n${names}`,
       [
         { id: 'discard', label: 'Discard', danger: true },
         { id: 'later', label: 'Ask me later' },
@@ -140,7 +140,7 @@ export async function restoreOnStart(openedFromArgs: boolean) {
       for (const e of entries) {
         try {
           const data = await api.recovery.read(e.tabId);
-          // Recovery copies are saved in Slate's own format; keep the original location only if it matches.
+          // Recovery copies are saved in Kea's own format; keep the original location only if it matches.
           const sameFormat = e.path && extOf(e.path) === e.ext;
           const name = sameFormat || extOf(e.name) === e.ext ? e.name : `${baseName(e.name)}.${e.ext}`;
           const id = useTabs.getState().addTab({ kind: e.kind as any, name, path: sameFormat ? e.path : null, data });

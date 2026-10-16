@@ -3,19 +3,19 @@ import { Bug, Lightbulb, MessageSquare, ExternalLink, Copy } from 'lucide-react'
 import { api } from '../../lib/api';
 import { toast, useTabs } from '../../store';
 
-const REPO = 'https://github.com/kadenw213-svg/slate-office';
+const REPO = 'https://github.com/kadenw213-svg/kea';
 // Browsers and GitHub cut off very long links; longer reports go through the clipboard instead.
 const MAX_URL = 7500;
 
 type Kind = 'bug' | 'idea' | 'other';
 const KINDS: { id: Kind; label: string; icon: JSX.Element; title: string; placeholder: string }[] = [
   { id: 'bug', label: 'Report a bug', icon: <Bug size={16} />, title: 'What went wrong?', placeholder: 'What did you do, what did you expect, and what happened instead? Steps to make it happen again help a lot.' },
-  { id: 'idea', label: 'Request a feature', icon: <Lightbulb size={16} />, title: 'What would you like Slate to do?', placeholder: 'Describe the feature and how you would use it.' },
+  { id: 'idea', label: 'Request a feature', icon: <Lightbulb size={16} />, title: 'What would you like Kea to do?', placeholder: 'Describe the feature and how you would use it.' },
   { id: 'other', label: 'Something else', icon: <MessageSquare size={16} />, title: 'Your feedback', placeholder: 'Anything you want to tell us.' }
 ];
 
 /**
- * Settings → Feedback. Slate has no servers, so a report becomes a pre-filled issue on the project's GitHub
+ * Settings → Feedback. Kea has no servers, so a report becomes a pre-filled issue on the project's GitHub
  * page, opened in your browser. Nothing is sent until you press "Submit" there.
  */
 export function FeedbackPanel() {
@@ -34,7 +34,7 @@ export function FeedbackPanel() {
   const body = () => {
     let b = details.trim() || '_No details given._';
     if (withInfo && info)
-      b += `\n\n---\n**Slate** ${info.version} · ${info.os} · ${info.cpu} · ${info.ramGb} GB RAM · Electron ${info.electron}${activeKind ? ` · open: ${activeKind}` : ''}`;
+      b += `\n\n---\n**Kea** ${info.version} · ${info.os} · ${info.cpu} · ${info.ramGb} GB RAM · Electron ${info.electron}${activeKind ? ` · open: ${activeKind}` : ''}`;
     if (withLog && info?.logTail) b += `\n\n<details><summary>Troubleshooting log (last lines)</summary>\n\n\`\`\`\n${info.logTail}\n\`\`\`\n</details>`;
     return b;
   };
@@ -58,7 +58,7 @@ export function FeedbackPanel() {
   return (
     <div className="feedback">
       <p className="sblurb">
-        Found a bug or have an idea? Tell us. Your report opens as a pre-filled page on Slate's GitHub, where you can check it and press <b>Submit</b>. It needs a free GitHub account, and nothing is sent until you submit.
+        Found a bug or have an idea? Tell us. Your report opens as a pre-filled page on Kea's GitHub, where you can check it and press <b>Submit</b>. It needs a free GitHub account, and nothing is sent until you submit.
       </p>
       <div className="fb-kinds">
         {KINDS.map((x) => (
@@ -72,7 +72,7 @@ export function FeedbackPanel() {
       <label className="fb-label">{k.title}</label>
       <textarea className="input fb-text" rows={7} value={details} placeholder={k.placeholder} onChange={(e) => setDetails(e.target.value)} />
       <label className="fb-check">
-        <input type="checkbox" checked={withInfo} onChange={(e) => setWithInfo(e.target.checked)} /> Include Slate version and basic PC details
+        <input type="checkbox" checked={withInfo} onChange={(e) => setWithInfo(e.target.checked)} /> Include Kea version and basic PC details
         {info && <span className="muted"> ({info.version}, {info.os}, {info.ramGb} GB RAM)</span>}
       </label>
       {kind === 'bug' && (

@@ -13,7 +13,7 @@
   font-weight: 500;
   margin: 0 0 6px;
   letter-spacing: -0.01em;
-  background: linear-gradient(90deg, #a8c7fa, #c58af9 60%, #f28b82);
+  background: linear-gradient(90deg, #f6f7f8, #c9ccd1 55%, #8b9199);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -34,7 +34,94 @@
   color: var(--text-3);
 }
 
+/* ---------- Section headings (Scholar · Office) ---------- */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.section-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.section-head .muted {
+  font-size: 13px;
+}
+
+/* ---------- Scholar ---------- */
+.scholar-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.scholar-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 14px;
+  row-gap: 2px;
+  align-items: center;
+  text-align: left;
+  padding: 18px 20px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: linear-gradient(160deg, var(--surface-2), var(--surface));
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, background 0.15s;
+}
+.scholar-card svg {
+  grid-row: span 2;
+  color: #c9ccd1;
+}
+.scholar-card:hover,
+.scholar-card.on {
+  border-color: #9aa0a8;
+  transform: translateY(-2px);
+}
+.scholar-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+.scholar-desc {
+  font-size: 12.5px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.scholar-soon {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+@media (max-width: 900px) {
+  .scholar-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Start new ---------- */
+/* With Scholar above, the Office cards are smaller so classes lead. */
+.home-start.compact .start-thumb {
+  height: 64px;
+}
+.home-start.compact .start-thumb svg {
+  width: 22px;
+  height: 22px;
+}
+.home-start.compact .start-card {
+  font-size: 13px;
+  gap: 6px;
+}
 .start-row {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));

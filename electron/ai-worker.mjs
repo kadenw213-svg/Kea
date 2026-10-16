@@ -1,4 +1,4 @@
-// Slate AI worker: runs llama.cpp (via node-llama-cpp) in an Electron utility process so text
+// Kea AI worker: runs llama.cpp (via node-llama-cpp) in an Electron utility process so text
 // generation never blocks the app window. Talks to the main process over parentPort messages.
 import os from 'node:os';
 import { getLlama, LlamaChatSession } from 'node-llama-cpp';

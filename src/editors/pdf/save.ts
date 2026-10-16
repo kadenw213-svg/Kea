@@ -385,7 +385,7 @@ export async function buildPdf(sources: Uint8Array[], pages: PageRef[], annots: 
     }
   }
   out.setModificationDate(new Date());
-  out.setProducer('Slate Office');
+  out.setProducer('Kea');
   return out.save();
 }
 

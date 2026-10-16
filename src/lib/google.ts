@@ -17,10 +17,10 @@ async function ensureSignedIn(name: string): Promise<boolean | 'browser'> {
   const st = await api.google.status();
   if (st.signedIn && st.configured) return true;
   const choice = await ask(
-    'Open Google files in Slate',
+    'Open Google files in Kea',
     st.configured
-      ? `To open “${name}” here, sign in to your Google account once. Slate downloads it, and saves your changes back to Google Drive so it stays a Google file.`
-      : `Google Docs, Sheets and Slides live in Google's cloud. To open them in Slate, connect your Google account once. It takes about five minutes to set up, and Settings walks you through it.`,
+      ? `To open “${name}” here, sign in to your Google account once. Kea downloads it, and saves your changes back to Google Drive so it stays a Google file.`
+      : `Google Docs, Sheets and Slides live in Google's cloud. To open them in Kea, connect your Google account once. It takes about five minutes to set up, and Settings walks you through it.`,
     [
       { id: 'browser', label: 'Open in browser instead' },
       { id: 'cancel', label: 'Cancel' },
@@ -44,7 +44,7 @@ async function ensureSignedIn(name: string): Promise<boolean | 'browser'> {
   }
 }
 
-/** Open a Google Drive for desktop shortcut (.gdoc/.gsheet/.gslides) as a real document in Slate. */
+/** Open a Google Drive for desktop shortcut (.gdoc/.gsheet/.gslides) as a real document in Kea. */
 export async function openGoogleShortcut(localPath: string) {
   const name = localPath.split(/[\\/]/).pop()!.replace(/\.(gdoc|gsheet|gslides)$/i, '');
   if (setting('google.openWith') === 'browser') {

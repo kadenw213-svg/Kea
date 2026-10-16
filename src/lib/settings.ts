@@ -45,7 +45,7 @@ export const SECTIONS: Section[] = [
     fields: [
       {
         key: 'general.startup',
-        label: 'When Slate starts',
+        label: 'When Kea starts',
         type: 'select',
         default: 'home',
         options: [
@@ -147,7 +147,7 @@ export const SECTIONS: Section[] = [
     fields: [
       { key: 'files.autosave', label: 'Autosave files that already have a location', type: 'toggle', default: true, help: 'Like Google Docs: changes are written to the file a few seconds after you stop typing. New files still ask where to save the first time.' },
       { key: 'files.autosaveDelay', label: 'Autosave after you stop typing for', type: 'number', default: 3, min: 1, max: 600, unit: 'seconds', advanced: true, when: (v) => v['files.autosave'] },
-      { key: 'files.recovery', label: 'Crash recovery', type: 'toggle', default: true, help: 'Keeps a hidden copy of unsaved work (including new, never-saved files) so it can be restored if Slate or Windows crashes.' },
+      { key: 'files.recovery', label: 'Crash recovery', type: 'toggle', default: true, help: 'Keeps a hidden copy of unsaved work (including new, never-saved files) so it can be restored if Kea or Windows crashes.' },
       { key: 'files.recoveryInterval', label: 'Save recovery copies every', type: 'number', default: 15, min: 5, max: 600, unit: 'seconds', advanced: true, when: (v) => v['files.recovery'] },
       { key: 'files.versions', label: 'Version history', type: 'toggle', default: true, help: 'Keeps earlier versions of each file so you can go back. Open it from the S menu → Version history.' },
       { key: 'files.versionEvery', label: 'Keep a version at most every', type: 'number', default: 10, min: 0, max: 1440, unit: 'minutes', advanced: true, when: (v) => v['files.versions'], help: '0 keeps a version on every save.' },
@@ -185,6 +185,7 @@ export const SECTIONS: Section[] = [
     label: 'Home',
     icon: 'Home',
     fields: [
+      { key: 'scholar.enabled', label: 'Show Scholar (classes, calendar and library)', type: 'toggle', default: true },
       { key: 'home.showStart', label: 'Show "Start new" cards', type: 'toggle', default: true },
       { key: 'home.showTools', label: 'Show quick tools (Combine PDFs, Images to PDF)', type: 'toggle', default: true },
       { key: 'home.greeting', label: 'Show greeting', type: 'toggle', default: true },
@@ -202,7 +203,7 @@ export const SECTIONS: Section[] = [
       },
       { key: 'home.descriptions', label: 'Show descriptions on cards', type: 'toggle', default: true },
       { key: 'home.previewOnline', label: 'Make previews of online-only cloud files', type: 'toggle', default: false, advanced: true, help: 'Downloads those files to this PC to draw their preview.' },
-      { key: 'home.showAllTypes', label: 'Show every file type in folders', type: 'toggle', default: false, advanced: true, help: 'Normally Home only lists files Slate can open.' },
+      { key: 'home.showAllTypes', label: 'Show every file type in folders', type: 'toggle', default: false, advanced: true, help: 'Normally Home only lists files Kea can open.' },
       { key: 'home.showHidden', label: 'Show hidden files and folders', type: 'toggle', default: false, advanced: true },
       { key: 'home.previewMaxMb', label: 'Skip previews for files bigger than', type: 'number', default: 80, min: 1, max: 2000, unit: 'MB', advanced: true }
     ]
@@ -311,7 +312,7 @@ export const SECTIONS: Section[] = [
     id: 'voice',
     label: 'Voice typing',
     icon: 'Mic',
-    blurb: 'Talk and Slate types for you, in documents, slides, cells and text boxes. Start it with Ctrl+Alt+V. Speech is turned into text on this PC; nothing is uploaded.',
+    blurb: 'Talk and Kea types for you, in documents, slides, cells and text boxes. Start it with Ctrl+Alt+V. Speech is turned into text on this PC; nothing is uploaded.',
     fields: [
       { key: 'voice.model', label: 'Speech model', type: 'select', default: 'base', options: [{ value: 'tiny', label: 'Fastest (English)' }, { value: 'base', label: 'Balanced (English)' }, { value: 'small', label: 'Most accurate (English)' }, { value: 'base-multi', label: 'Balanced (many languages)' }, { value: 'small-multi', label: 'Most accurate (many languages)' }] },
       { key: 'voice.language', label: 'Language you speak', type: 'select', default: 'auto', options: [{ value: 'auto', label: 'Detect automatically' }, { value: 'english', label: 'English' }, { value: 'spanish', label: 'Spanish' }, { value: 'french', label: 'French' }, { value: 'german', label: 'German' }, { value: 'italian', label: 'Italian' }, { value: 'portuguese', label: 'Portuguese' }, { value: 'dutch', label: 'Dutch' }, { value: 'polish', label: 'Polish' }, { value: 'russian', label: 'Russian' }, { value: 'ukrainian', label: 'Ukrainian' }, { value: 'turkish', label: 'Turkish' }, { value: 'arabic', label: 'Arabic' }, { value: 'hindi', label: 'Hindi' }, { value: 'chinese', label: 'Chinese' }, { value: 'japanese', label: 'Japanese' }, { value: 'korean', label: 'Korean' }, { value: 'vietnamese', label: 'Vietnamese' }, { value: 'indonesian', label: 'Indonesian' }, { value: 'tagalog', label: 'Tagalog' }], when: (v) => String(v['voice.model'] || '').endsWith('-multi') },
@@ -403,7 +404,7 @@ export const SECTIONS: Section[] = [
         type: 'select',
         default: 'slate',
         options: [
-          { value: 'slate', label: 'In Slate' },
+          { value: 'slate', label: 'In Kea' },
           { value: 'browser', label: 'In the web browser' }
         ]
       },
@@ -470,7 +471,7 @@ export const SECTIONS: Section[] = [
     label: 'Updates',
     icon: 'RefreshCw',
     fields: [
-      { key: 'updates.autoCheck', label: 'Check for updates when Slate starts', type: 'toggle', default: true },
+      { key: 'updates.autoCheck', label: 'Check for updates when Kea starts', type: 'toggle', default: true },
       { key: 'updates.autoDownload', label: 'Download updates automatically', type: 'toggle', default: false, advanced: true, help: 'You still choose when to restart and install.' },
       { key: 'updates.prerelease', label: 'Get early test versions', type: 'toggle', default: false, advanced: true }
     ]
@@ -479,10 +480,10 @@ export const SECTIONS: Section[] = [
     id: 'privacy',
     label: 'Privacy & data',
     icon: 'Shield',
-    blurb: 'Slate works offline. It only goes online to check GitHub for updates, to read Wikipedia and Wiktionary when you use the Encyclopedia, to download models you choose, and to set up cloud drives you sign in to.',
+    blurb: 'Kea works offline. It only goes online to check GitHub for updates, to read Wikipedia and Wiktionary when you use the Encyclopedia, to download models you choose, and to set up cloud drives you sign in to.',
     fields: [
-      { key: 'privacy.citeLookup', label: 'Allow citation look-ups', type: 'toggle', default: true, help: 'When you click "Look up" in Citations, Slate asks Crossref (DOIs), Open Library (ISBNs) or the web page itself for the details. Nothing is sent otherwise.' },
-      { key: 'privacy.log', label: 'Keep a troubleshooting log', type: 'toggle', default: true, advanced: true, help: 'A small local file (slate.log) with errors and file names. Never sent anywhere.' }
+      { key: 'privacy.citeLookup', label: 'Allow citation look-ups', type: 'toggle', default: true, help: 'When you click "Look up" in Citations, Kea asks Crossref (DOIs), Open Library (ISBNs) or the web page itself for the details. Nothing is sent otherwise.' },
+      { key: 'privacy.log', label: 'Keep a troubleshooting log', type: 'toggle', default: true, advanced: true, help: 'A small local file (kea.log) with errors and file names. Never sent anywhere.' }
     ]
   },
   { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'Keyboard', fields: [] },

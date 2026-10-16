@@ -95,7 +95,7 @@ async function listDir(dir, opts = {}) {
   try {
     names = fs.readdirSync(dir);
   } catch (e) {
-    throw new Error(e.code === 'ENOENT' ? 'This folder no longer exists.' : e.code === 'EPERM' || e.code === 'EACCES' ? "Slate doesn't have permission to open this folder." : e.message);
+    throw new Error(e.code === 'ENOENT' ? 'This folder no longer exists.' : e.code === 'EPERM' || e.code === 'EACCES' ? "Kea doesn't have permission to open this folder." : e.message);
   }
   const entries = [];
   for (const name of names) {
@@ -302,7 +302,7 @@ function verifySigner(file, signer) {
 
 let installing = null;
 async function downloadInstaller(id, inst, send) {
-  const dest = path.join(app.getPath('temp'), 'slate-' + inst.file);
+  const dest = path.join(app.getPath('temp'), 'kea-' + inst.file);
   const res = await net.fetch(inst.url);
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status})`);
   const total = Number(res.headers.get('content-length')) || 0;
@@ -359,7 +359,7 @@ async function connect(id, send) {
       try {
         fs.unlinkSync(file);
       } catch {}
-      throw new Error(`The downloaded installer isn't signed by ${p.installer.signer}, so Slate didn't run it.`);
+      throw new Error(`The downloaded installer isn't signed by ${p.installer.signer}, so Kea didn't run it.`);
     }
     send({ id, status: 'installing' });
     const err = await shell.openPath(file);
@@ -408,7 +408,7 @@ function register({ log, getWindow }) {
     const os = require('os');
     let logTail = '';
     try {
-      logTail = fs.readFileSync(path.join(app.getPath('userData'), 'slate.log'), 'utf8').split('\n').slice(-40).join('\n');
+      logTail = fs.readFileSync(path.join(app.getPath('userData'), 'kea.log'), 'utf8').split('\n').slice(-40).join('\n');
     } catch {}
     return {
       version: app.getVersion(),

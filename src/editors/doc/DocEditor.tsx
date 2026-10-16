@@ -98,7 +98,7 @@ import { CitationsDialog, CiteTarget } from './CitationsDialog';
 import { TableOfContents, refreshToc } from './toc';
 import { paginationKey } from './pagination';
 import { CommentMark, Insertion, Deletion, Review, reviewKey, newCommentId, listChanges } from './review';
-import { ReviewRail } from './ReviewRail';
+import { ReviewRail, isAiAuthor } from './ReviewRail';
 import { Grammar, GrammarIssue, applyFix, ignoreIssue, recheckGrammar } from './grammar';
 import { MathNode, renderAllMath, inlineMathSvgs } from './math';
 import { MathDialog } from './MathDialog';
@@ -143,7 +143,7 @@ export function newDocMeta(): DocMeta {
   });
 }
 
-/** Slate settings embedded in .html files saved by Slate. */
+/** Kea settings embedded in .html files saved by Kea. */
 function metaFromHtml(text: string): DocMeta | null {
   const m = /<meta name="slate-doc" content="([^"]+)"/.exec(text);
   if (!m) return null;
@@ -184,7 +184,7 @@ export default function DocEditor({ tab, active }: { tab: Tab; active: boolean }
           const body = new DOMParser().parseFromString(text, 'text/html').body;
           body.querySelectorAll('script, style, iframe, object, embed').forEach((n) => n.remove());
           const own = metaFromHtml(text);
-          // Slate's own files and templates keep their blank lines; other HTML gets tidied like a paste.
+          // Kea's own files and templates keep their blank lines; other HTML gets tidied like a paste.
           setHtml(own ? body.innerHTML : cleanPastedHtml(body.innerHTML), own);
         }
       } catch (err: any) {
@@ -600,9 +600,9 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
       .filter((t) => t.resolved)
       .map((t) => `.doc-content [data-comment="${t.id}"] { background: none !important; border-bottom: none !important; }`)
       .join('') +
-    // Slate AI's comments are grey in the text, so they stand apart from people's (yellow) comments.
+    // Kea AI's comments are grey in the text, so they stand apart from people's (yellow) comments.
     meta.comments
-      .filter((t) => !t.resolved && t.author === 'Slate AI' && t.id !== activeComment)
+      .filter((t) => !t.resolved && isAiAuthor(t.author) && t.id !== activeComment)
       .map((t) => `.doc-content [data-comment="${t.id}"] { background: var(--cmt-ai) !important; border-bottom-color: var(--cmt-ai-line) !important; }`)
       .join('');
   const insertFootnote = () => {

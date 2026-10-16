@@ -2,7 +2,7 @@
 // highlighted question) short search phrases of a few words are sent, never whole sentences or the user's file.
 const { ipcMain, net } = require('electron');
 
-const UA = 'SlateOffice/1.0 (https://github.com/kadenw213-svg/slate-office)';
+const UA = 'Kea/1.0 (https://github.com/kadenw213-svg/kea)';
 const SKIP_SECTIONS = /^(see also|references|notes|footnotes|citations|sources|bibliography|further reading|external links|gallery|works cited|notes and references|explanatory notes)$/i;
 
 async function getJson(url, retry = true) {

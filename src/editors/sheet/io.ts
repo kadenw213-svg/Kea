@@ -4,7 +4,7 @@ import { Workbook, Sheet, Cell, CellStyle, NumFmt, newSheet, key, parseKey, pars
 import { FormulaError, colIndex, parseAddr, addr } from './formula';
 import { chartData, chartSvg, chartPng } from './chart';
 
-/** Slate-only sheet features (live charts, rule details) live in a very hidden sheet with this name. */
+/** Kea-only sheet features (live charts, rule details) live in a very hidden sheet with this name. */
 const DATA_SHEET = '_slate_data';
 const rangeRef = (g: Range) => `${addr(g.r1, g.c1)}:${addr(g.r2, g.c2)}`;
 const BORDER_STYLES = ['thin', 'medium', 'thick', 'dashed', 'dotted', 'double'];
@@ -74,7 +74,7 @@ async function readXlsx(bytes: Uint8Array): Promise<Workbook> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
   const sheets: Sheet[] = [];
-  // Slate's own data for each sheet, if the file was saved by Slate.
+  // Kea's own data for each sheet, if the file was saved by Kea.
   let extra: Record<string, any> = {};
   const dataWs = wb.getWorksheet(DATA_SHEET);
   if (dataWs) {
@@ -213,7 +213,7 @@ async function readXlsx(bytes: Uint8Array): Promise<Workbook> {
       }
     }
     if (rules.length) sheet.condRules = rules;
-    // Slate's own copy wins: it has live charts and the exact rule settings.
+    // Kea's own copy wins: it has live charts and the exact rule settings.
     const x = extra[ws.name];
     if (x) {
       if (x.charts) sheet.charts = x.charts;
@@ -329,7 +329,7 @@ function readCsv(text: string, delim: string | undefined, name: string): Sheet {
 export async function writeXlsx(wb: Workbook): Promise<Uint8Array> {
   const calc = new Calc(wb);
   const out = new ExcelJS.Workbook();
-  out.creator = 'Slate Office';
+  out.creator = 'Kea';
   out.created = new Date();
   const extra: Record<string, any> = {};
   for (const sheet of wb.sheets) {
@@ -420,7 +420,7 @@ export async function writeXlsx(wb: Workbook): Promise<Uint8Array> {
         } catch {}
       }
     }
-    // Charts: a picture Excel can show, plus the live chart in Slate's data.
+    // Charts: a picture Excel can show, plus the live chart in Kea's data.
     for (const ch of sheet.charts || []) {
       try {
         const svg = chartSvg(ch, chartData(ch, sheet, calc), ch.w, ch.h, 'light');
