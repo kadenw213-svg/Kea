@@ -220,6 +220,17 @@
   cursor: pointer;
   user-select: none;
 }
+.lk-tex svg {
+  vertical-align: middle;
+  max-width: 100%;
+}
+.lk-tex.display {
+  display: block;
+  margin: 6px 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
 .lk-none {
   margin-top: 6px;
   font-size: 12px;

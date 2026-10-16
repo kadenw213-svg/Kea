@@ -3,8 +3,8 @@ import { BookOpen, BookA, Lightbulb, X, Settings2, Trash2, Globe, ExternalLink, 
 import { openSettings, setting, useSettings } from '../../lib/settings';
 import { useTabs, editorRegistry, toast } from '../../store';
 import { uid } from '../../lib/util';
-import { explainTerm, explainSimpler, termsIn, defineWord, contextAround, wholeWords, warmUp, termPattern, ExplainResult } from '../../lib/lookup';
-import { classify, answerQuestion, AnswerResult, AnswerPassage } from '../../lib/question';
+import { explainTerm, explainSimpler, termsIn, defineWord, contextAround, wholeWords, warmUp, termPattern, latexToText, untex, ExplainResult } from '../../lib/lookup';
+import { classify, answerQuestion, answerMath, AnswerResult, AnswerPassage } from '../../lib/question';
 import type { DictEntry } from '../../lib/api';
 import { useLookup, setLookupOpen, LookupCard } from './lookupStore';
 import '../../styles/ai.css';
@@ -54,7 +54,7 @@ export function LookupPanel() {
     const ctx = contextAround(full, t);
     // A question or fill-in-the-blank gets the passages that answer it; "What is osmosis?" is the term "osmosis".
     const kind = forceTitle || setting('lookup.questions') === false ? null : classify(t);
-    if (kind?.kind === 'question') return answer(t, ctx);
+    if (kind?.kind === 'question' || kind?.kind === 'math') return answer(t, ctx, kind.kind === 'math');
     const terms = forceTitle ? [t] : await termsIn(kind?.kind === 'term' ? kind.term : t);
     for (const term of terms) {
       const id = uid();
@@ -67,11 +67,11 @@ export function LookupPanel() {
       }
     }
   };
-  const answer = async (q: string, ctx: string) => {
+  const answer = async (q: string, ctx: string, math = false) => {
     const id = uid();
-    add({ id, kind: 'answer', query: q, loading: true, status: 'Reading the question…' });
+    add({ id, kind: 'answer', query: q, loading: true, status: math ? 'Recognising the maths…' : 'Reading the question…' });
     try {
-      await answerQuestion(q, ctx, (status) => patch(id, { status }), (r) => patch(id, { answer: r }));
+      await (math ? answerMath : answerQuestion)(q, ctx, (status) => patch(id, { status }), (r) => patch(id, { answer: r }));
       patch(id, { loading: false });
     } catch (err: any) {
       patch(id, { loading: false, error: /abort|fetch|network|answer/i.test(String(err?.message)) ? 'Wikipedia didn’t answer. Check your internet connection and try again.' : String(err?.message || err) });
@@ -232,19 +232,41 @@ function Marked({ text, term }: { text: string; term: string }) {
   return <>{out}</>;
 }
 
+/** An equation from Wikipedia, typeset (offline, with the Doc editor's MathJax); readable text until it's drawn. */
+function Tex({ tex, display }: { tex: string; display: boolean }) {
+  const [svg, setSvg] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    import('../../editors/doc/math')
+      .then((m) => m.texToSvg(tex, display))
+      .then((s) => live && setSvg(/math-error/.test(s) ? null : s))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [tex, display]);
+  if (!svg) return <span>{latexToText(tex)}</span>;
+  return <span className={`lk-tex${display ? ' display' : ''}`} title={latexToText(tex)} dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+
 /** Bold the question's words; underline the sentence that answers (or, in learning mode, hide it until clicked). */
 function Highlighted({ text, marks, answer, learn }: { text: string; marks: string[]; answer: string; learn: boolean }) {
   const [shown, setShown] = useState(false);
+  // A paragraph that is only an equation is shown on its own line.
+  const alone = /^[^]*[.,;:]?$/.test(text.trim());
   const bold = (s: string, key: string) => {
-    if (!marks.length) return [s];
-    const re = new RegExp(marks.map((m) => termPattern(m).source).join('|'), 'giu');
     const out: React.ReactNode[] = [];
-    let at = 0;
-    for (const m of s.matchAll(re)) {
-      out.push(s.slice(at, m.index), <strong key={`${key}${m.index}`}>{m[0]}</strong>);
-      at = m.index! + m[0].length;
-    }
-    out.push(s.slice(at));
+    s.split(/([^]*)/).forEach((piece, n) => {
+      if (piece.startsWith('')) return out.push(<Tex key={`${key}t${n}`} tex={piece.slice(1, -1)} display={alone} />);
+      if (!marks.length) return out.push(piece);
+      const re = new RegExp(marks.map((m) => termPattern(m).source).join('|'), 'giu');
+      let at = 0;
+      for (const m of piece.matchAll(re)) {
+        out.push(piece.slice(at, m.index), <strong key={`${key}${n}-${m.index}`}>{m[0]}</strong>);
+        at = m.index! + m[0].length;
+      }
+      out.push(piece.slice(at));
+    });
     return out;
   };
   const i = answer ? text.indexOf(answer) : -1;
@@ -269,14 +291,15 @@ function AnswerView({ r, status, onOpen, onInsert, canInsert }: { r: AnswerResul
   const wiki = `Wikipedia${r.lang === 'simple' ? ' (Simple English)' : ''}`;
   const cite = (p: AnswerPassage) => `${wiki}, “${p.title}”${p.section ? ` (§ ${p.section})` : ''}, accessed ${today}, ${p.url}`;
   const found = r.parts.some((p) => p.passages.length);
+  // Parts answered by an earlier part's passage are named in that part's heading, not shown again.
+  const parts = r.parts.filter((p) => !p.hidden);
   const asText = (md: boolean) =>
-    r.parts
+    parts
       .map((p) =>
         [
           multi ? (md ? `**${p.label}**` : p.label) : '',
-          p.sameAs && !p.passages.length ? `(See part ${p.sameAs}.)` : '',
-          ...p.passages.map((x) => `${x.text}\n\n${md ? `_Source: ${cite(x)}_` : `Source: ${cite(x)}`}`),
-          !p.passages.length && !p.sameAs ? '(Wikipedia doesn’t answer this directly.)' : ''
+          ...p.passages.map((x) => `${untex(x.text)}\n\n${md ? `_Source: ${cite(x)}_` : `Source: ${cite(x)}`}`),
+          !p.passages.length ? '(Wikipedia doesn’t answer this directly.)' : ''
         ]
           .filter(Boolean)
           .join('\n\n')
@@ -285,10 +308,9 @@ function AnswerView({ r, status, onOpen, onInsert, canInsert }: { r: AnswerResul
   return (
     <>
       <div className="lk-question">{r.question}</div>
-      {r.parts.map((p, i) => (
+      {parts.map((p, i) => (
         <div key={i} className="lk-part">
           {multi && <div className="lk-part-label">{p.label}</div>}
-          {p.done && p.sameAs !== undefined && <div className="lk-none muted">{p.passages.length ? `Also see part ${p.sameAs} above.` : `Answered by the passage for part ${p.sameAs} above.`}</div>}
           {p.passages.map((x, k) => (
             <div key={k} className="lk-passage">
               <div className="lk-cite">
@@ -307,7 +329,7 @@ function AnswerView({ r, status, onOpen, onInsert, canInsert }: { r: AnswerResul
               </button>
             </div>
           ))}
-          {p.done && !p.passages.length && p.sameAs === undefined && (
+          {p.done && !p.passages.length && (
             <div className="lk-none muted">
               Wikipedia doesn’t seem to answer this {multi ? 'part' : 'question'} directly.
               {p.closest && (

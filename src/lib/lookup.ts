@@ -73,7 +73,14 @@ export function sameTerm(a: string, b: string) {
 }
 
 /** Wikipedia's plain text keeps some markup leftovers (maths, empty brackets); tidy them without changing words. */
-export function tidy(text: string) {
+/**
+ * An equation kept as LaTeX inside text (`keepTex`), so the panel can typeset it: latex.
+ * `untex` turns them into readable text for matching, copying and inserting.
+ */
+export const TEX = /([\s\S]*?)/g;
+export const untex = (s: string) => s.replace(TEX, (_, tex) => latexToText(tex));
+
+export function tidy(text: string, keepTex = false) {
   // Invisible word joiners Wikipedia puts around inline maths.
   let t = text.replace(/\u2060/g, '');
   // Equations: Wikipedia's plain text spells each symbol out on its own indented line, followed by the LaTeX source
@@ -99,7 +106,7 @@ export function tidy(text: string) {
     // No space where the formula touches a bracket, hyphen or apostrophe ("(x)", "x-axis", "x's").
     const before = /[(\[\s]$/.test(t.slice(0, start)) ? '' : ' ';
     const after = /^[-–)\]'’,.;:]/.test(t.slice(end)) ? '' : ' ';
-    t = `${t.slice(0, start)}${before}${latexToText(latex)}${after}${t.slice(end)}`;
+    t = `${t.slice(0, start)}${before}${keepTex ? `${latex.trim()}` : latexToText(latex)}${after}${t.slice(end)}`;
   }
   return t
     .replace(/\(\s*[;,]?\s*\)/g, '')
@@ -212,7 +219,7 @@ export function latexToText(src: string): string {
     .trim();
 }
 
-export const paragraphs = (t: string) => tidy(t).split(/\n+/).map((p) => p.trim()).filter(Boolean);
+export const paragraphs = (t: string, keepTex = false) => tidy(t, keepTex).split(/\n+/).map((p) => p.trim()).filter(Boolean);
 
 export const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const isWordChar = (c?: string) => !!c && /[\p{L}\p{N}]/u.test(c);
