@@ -101,6 +101,7 @@ export interface SlateApi {
   };
   lookup: {
     search(query: string, lang?: string): Promise<WikiCandidate[]>;
+    find(query: string, lang?: string, limit?: number): Promise<WikiCandidate[]>;
     article(title: string, lang?: string): Promise<WikiPage | null>;
     titles(list: string[], lang?: string): Promise<WikiCandidate[]>;
     complete(prefix: string, lang?: string): Promise<string[]>;

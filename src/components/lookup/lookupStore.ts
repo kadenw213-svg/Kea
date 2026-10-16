@@ -1,16 +1,19 @@
 import { create } from 'zustand';
 import type { DictEntry } from '../../lib/api';
 import type { ExplainResult } from '../../lib/lookup';
+import type { AnswerResult } from '../../lib/question';
 
 /** One lookup in the panel: a Wikipedia explanation or a dictionary entry. */
 export interface LookupCard {
   id: string;
-  kind: 'explain' | 'define';
+  kind: 'explain' | 'define' | 'answer';
   query: string;
   loading?: boolean;
   status?: string;
   error?: string;
   explain?: ExplainResult;
+  /** A highlighted question: the passages that answer each part. */
+  answer?: AnswerResult;
   /** null = not in the dictionary. */
   define?: DictEntry | null;
 }

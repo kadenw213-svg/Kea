@@ -1,5 +1,5 @@
-// Encyclopedia: reads Wikipedia for the Encyclopedia panel. Only the term and single words from around it are sent
-// (as searches and titles to try), never sentences or the user's file.
+// Encyclopedia: reads Wikipedia for the Encyclopedia panel. Only the term, single words from around it and (for a
+// highlighted question) short search phrases of a few words are sent, never whole sentences or the user's file.
 const { ipcMain, net } = require('electron');
 
 const UA = 'SlateOffice/1.0 (https://github.com/kadenw213-svg/slate-office)';
@@ -45,6 +45,18 @@ async function search(query, lang) {
   add(exact?.query?.pages?.[0], -1, r ? { fragment: r.tofragment || '', redirectFrom: r.from } : undefined);
   for (const p of (found?.query?.pages || []).sort((a, b) => (a.index || 0) - (b.index || 0))) add(p, p.index || 0, sectionOf.has(p.title) ? { section: sectionOf.get(p.title) } : undefined);
   return pages;
+}
+
+/** A light search (one request) for a short phrase: the top articles with their descriptions and opening sentences. */
+async function find(query, lang, limit = 5) {
+  const q = String(query || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!q) return [];
+  const n = Math.max(1, Math.min(10, Number(limit) || 5));
+  const j = await getJson(`${apiBase(lang)}&action=query&prop=description|pageprops|extracts&ppprop=disambiguation&exintro=1&explaintext=1&exsentences=3&exlimit=max&redirects=1&generator=search&gsrlimit=${n}&gsrsearch=${encodeURIComponent(q)}`);
+  return (j.query?.pages || [])
+    .filter((p) => !p.missing && !p.invalid && !(p.pageprops && 'disambiguation' in p.pageprops))
+    .sort((a, b) => (a.index || 0) - (b.index || 0))
+    .map((p) => ({ title: p.title, description: p.description || '', intro: (p.extract || '').trim(), disambiguation: false, rank: p.index || 0 }));
 }
 
 /** The meanings a disambiguation page lists ("Cell" → "Cell (biology)", "Prison cell", …), with short descriptions. */
@@ -242,6 +254,7 @@ function register() {
   ipcMain.handle('lookup:meanings', (_e, title, lang) => meanings(title, lang));
   ipcMain.handle('lookup:complete',(_e, prefix, lang) => complete(prefix, lang));
   ipcMain.handle('lookup:search', (_e, query, lang) => search(query, lang));
+  ipcMain.handle('lookup:find', (_e, query, lang, limit) => find(query, lang, limit));
   ipcMain.handle('lookup:article', (_e, title, lang) => article(title, lang));
   ipcMain.handle('lookup:titles', (_e, list, lang) => titles(list, lang));
 }

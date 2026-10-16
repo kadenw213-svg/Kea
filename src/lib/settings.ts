@@ -426,6 +426,25 @@ export const SECTIONS: Section[] = [
         options: [['en', 'English'], ['simple', 'Simple English (easier words)'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['pl', 'Polish'], ['ru', 'Russian'], ['ja', 'Japanese'], ['zh', 'Chinese'], ['ar', 'Arabic']].map(([value, label]) => ({ value, label }))
       },
       { key: 'lookup.useModel', label: 'Let the local model pick the right article and sections', type: 'toggle', default: true, help: 'Only when a model is downloaded (below). It chooses among Wikipedia’s options and never writes text.' },
+      { key: 'lookup.questions', label: 'Answer highlighted questions and fill-in-the-blanks', type: 'toggle', default: true, help: 'Highlight a question and Explain shows only the Wikipedia passages that explain it, word for word with their sources, instead of whole articles. A term on its own (or “What is osmosis?”) is still explained in full.' },
+      { key: 'lookup.qBroad', label: '“What is X?” and “Define X” explain X in full', type: 'toggle', default: true, advanced: true },
+      {
+        key: 'lookup.qUnit',
+        label: 'Passage size for questions',
+        type: 'select',
+        default: 'paragraph',
+        advanced: true,
+        options: [
+          { value: 'paragraph', label: 'Paragraphs (a whole section when its title names what’s asked)' },
+          { value: 'section', label: 'Whole sections' }
+        ]
+      },
+      { key: 'lookup.qPassages', label: 'Passages per question part', type: 'number', default: 2, min: 1, max: 4, advanced: true },
+      { key: 'lookup.qContinue', label: 'Include the paragraphs that carry a passage on (“This…”)', type: 'toggle', default: true, advanced: true },
+      { key: 'lookup.qDedicated', label: 'Prefer an article about the exact process asked about', type: 'toggle', default: true, help: '“Chloride shift” for a question on how chloride helps carry carbon dioxide.', advanced: true },
+      { key: 'lookup.qGuesses', label: 'Let the local model suggest what to search for', type: 'toggle', default: true, help: 'It guesses likely answers and the names of the processes involved, only as search words. They’re never shown, and a passage is shown only when Wikipedia’s own wording confirms it.', advanced: true },
+      { key: 'lookup.qMarkAnswer', label: 'Underline the sentence that answers each part', type: 'toggle', default: true, advanced: true },
+      { key: 'lookup.qLearn', label: 'Learning mode: hide the answering sentence until you click it', type: 'toggle', default: false, advanced: true },
       { key: 'lookup.mendInput', label: 'Fix highlights that cut a word off', type: 'toggle', default: true, help: '“polar dissolves pol” becomes “polar dissolves polar”, using the words in your document (or Wikipedia’s titles, when you type).', advanced: true },
       { key: 'lookup.findPassage', label: 'Find the part of the article about what you highlighted', type: 'toggle', default: true, help: 'When a term is covered inside a bigger article (“saturated solution” in “Solubility”), show the paragraphs about it first.', advanced: true },
       { key: 'lookup.passages', label: 'Paragraphs about the term to show', type: 'number', default: 2, min: 1, max: 5, advanced: true },

@@ -4,6 +4,7 @@ import { openSettings, setting, useSettings } from '../../lib/settings';
 import { useTabs, editorRegistry, toast } from '../../store';
 import { uid } from '../../lib/util';
 import { explainTerm, explainSimpler, termsIn, defineWord, contextAround, wholeWords, warmUp, termPattern, ExplainResult } from '../../lib/lookup';
+import { classify, answerQuestion, AnswerResult, AnswerPassage } from '../../lib/question';
 import type { DictEntry } from '../../lib/api';
 import { useLookup, setLookupOpen, LookupCard } from './lookupStore';
 import '../../styles/ai.css';
@@ -23,7 +24,7 @@ export function LookupPanel() {
   useEffect(() => {
     if (!selection) return;
     typed.current = false;
-    setQuery(selection.length > 300 ? selection.slice(0, 300) : selection);
+    setQuery(selection.length > 1500 ? selection.slice(0, 1500) : selection);
   }, [selection]);
   useEffect(() => {
     if (lk.open) warmUp();
@@ -51,7 +52,10 @@ export function LookupPanel() {
       if (whole !== t) setQuery((t = whole));
     }
     const ctx = contextAround(full, t);
-    const terms = forceTitle ? [t] : await termsIn(t);
+    // A question or fill-in-the-blank gets the passages that answer it; "What is osmosis?" is the term "osmosis".
+    const kind = forceTitle || setting('lookup.questions') === false ? null : classify(t);
+    if (kind?.kind === 'question') return answer(t, ctx);
+    const terms = forceTitle ? [t] : await termsIn(kind?.kind === 'term' ? kind.term : t);
     for (const term of terms) {
       const id = uid();
       add({ id, kind: 'explain', query: term, loading: true, status: 'Searching Wikipedia…' });
@@ -61,6 +65,16 @@ export function LookupPanel() {
       } catch (err: any) {
         patch(id, { loading: false, error: /abort|fetch|network|answer/i.test(String(err?.message)) ? 'Wikipedia didn’t answer. Check your internet connection and try again.' : String(err?.message || err) });
       }
+    }
+  };
+  const answer = async (q: string, ctx: string) => {
+    const id = uid();
+    add({ id, kind: 'answer', query: q, loading: true, status: 'Reading the question…' });
+    try {
+      await answerQuestion(q, ctx, (status) => patch(id, { status }), (r) => patch(id, { answer: r }));
+      patch(id, { loading: false });
+    } catch (err: any) {
+      patch(id, { loading: false, error: /abort|fetch|network|answer/i.test(String(err?.message)) ? 'Wikipedia didn’t answer. Check your internet connection and try again.' : String(err?.message || err) });
     }
   };
   const define = async (text = query) => {
@@ -145,7 +159,7 @@ export function LookupPanel() {
           <input
             className="input"
             value={query}
-            placeholder="Highlight or type a word, term or idea"
+            placeholder="Highlight or type a word, idea or question"
             onChange={(e) => ((typed.current = true), setQuery(e.target.value))}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), explain())}
           />
@@ -168,18 +182,20 @@ export function LookupPanel() {
           {!lk.cards.length && (
             <div className="ai-empty">
               <BookOpen size={28} />
-              <div>Highlight a word or idea you don’t know, then choose Explain or Dictionary.</div>
-              <div className="muted">Explanations are Wikipedia’s own words and definitions are Wiktionary’s, with links. Offline, the dictionary still works. Highlight anything in a result to look that up too.</div>
+              <div>Highlight a word, idea or question, then choose Explain or Dictionary.</div>
+              <div className="muted">Explanations are Wikipedia’s own words and definitions are Wiktionary’s, with links. For a question or fill-in-the-blank, Explain shows just the passages that answer it. Offline, the dictionary still works. Highlight anything in a result to look that up too.</div>
             </div>
           )}
           {lk.cards.map((c) => (
             <div key={c.id} className="lk-card">
-              {c.loading ? (
+              {c.loading && !c.answer ? (
                 <div className="ai-status">
                   <span className="dot-pulse" /> {c.status || 'Looking it up…'}
                 </div>
               ) : c.error ? (
                 <div className="lk-error">{c.error}</div>
+              ) : c.kind === 'answer' && c.answer ? (
+                <AnswerView r={c.answer} status={c.loading ? c.status || 'Looking it up…' : ''} onOpen={(title) => explain(title, title)} onInsert={insert} canInsert={!!hooks?.insertText} />
               ) : c.kind === 'explain' && c.explain ? (
                 <ExplainView r={c.explain} onSimpler={() => simpler(c)} onOther={(title) => explain(c.query, title)} onInsert={insert} canInsert={!!hooks?.insertText} />
               ) : c.kind === 'define' ? (
@@ -214,6 +230,119 @@ function Marked({ text, term }: { text: string; term: string }) {
   }
   out.push(text.slice(at));
   return <>{out}</>;
+}
+
+/** Bold the question's words; underline the sentence that answers (or, in learning mode, hide it until clicked). */
+function Highlighted({ text, marks, answer, learn }: { text: string; marks: string[]; answer: string; learn: boolean }) {
+  const [shown, setShown] = useState(false);
+  const bold = (s: string, key: string) => {
+    if (!marks.length) return [s];
+    const re = new RegExp(marks.map((m) => termPattern(m).source).join('|'), 'giu');
+    const out: React.ReactNode[] = [];
+    let at = 0;
+    for (const m of s.matchAll(re)) {
+      out.push(s.slice(at, m.index), <strong key={`${key}${m.index}`}>{m[0]}</strong>);
+      at = m.index! + m[0].length;
+    }
+    out.push(s.slice(at));
+    return out;
+  };
+  const i = answer ? text.indexOf(answer) : -1;
+  if (i < 0) return <>{bold(text, 'a')}</>;
+  const hidden = learn && !shown;
+  return (
+    <>
+      {bold(text.slice(0, i), 'a')}
+      <span className={`lk-answer${hidden ? ' hidden' : ''}`} onClick={() => learn && setShown(!shown)} title={learn ? (shown ? 'Click to hide' : 'Click to reveal') : undefined}>
+        {bold(answer, 'b')}
+      </span>
+      {bold(text.slice(i + answer.length), 'c')}
+    </>
+  );
+}
+
+function AnswerView({ r, status, onOpen, onInsert, canInsert }: { r: AnswerResult; status: string; onOpen(title: string): void; onInsert(md: string): void; canInsert: boolean }) {
+  const mark = setting('lookup.qMarkAnswer') !== false;
+  const learn = setting('lookup.qLearn') === true;
+  const multi = r.parts.length > 1;
+  const today = new Date().toISOString().slice(0, 10);
+  const wiki = `Wikipedia${r.lang === 'simple' ? ' (Simple English)' : ''}`;
+  const cite = (p: AnswerPassage) => `${wiki}, “${p.title}”${p.section ? ` (§ ${p.section})` : ''}, accessed ${today}, ${p.url}`;
+  const found = r.parts.some((p) => p.passages.length);
+  const asText = (md: boolean) =>
+    r.parts
+      .map((p) =>
+        [
+          multi ? (md ? `**${p.label}**` : p.label) : '',
+          p.sameAs && !p.passages.length ? `(See part ${p.sameAs}.)` : '',
+          ...p.passages.map((x) => `${x.text}\n\n${md ? `_Source: ${cite(x)}_` : `Source: ${cite(x)}`}`),
+          !p.passages.length && !p.sameAs ? '(Wikipedia doesn’t answer this directly.)' : ''
+        ]
+          .filter(Boolean)
+          .join('\n\n')
+      )
+      .join('\n\n');
+  return (
+    <>
+      <div className="lk-question">{r.question}</div>
+      {r.parts.map((p, i) => (
+        <div key={i} className="lk-part">
+          {multi && <div className="lk-part-label">{p.label}</div>}
+          {p.done && p.sameAs !== undefined && <div className="lk-none muted">{p.passages.length ? `Also see part ${p.sameAs} above.` : `Answered by the passage for part ${p.sameAs} above.`}</div>}
+          {p.passages.map((x, k) => (
+            <div key={k} className="lk-passage">
+              <div className="lk-cite">
+                <a href={x.url} target="_blank" rel="noreferrer" title={`Open the article${x.edited ? ` (last edited ${x.edited.slice(0, 10)})` : ''}`}>
+                  {x.title}
+                </a>
+                {x.section && <span className="muted"> › {x.section}</span>}
+              </div>
+              {x.text.split(/\n\n+/).map((para, j) => (
+                <p key={j}>
+                  <Highlighted text={para} marks={x.marks} answer={mark ? x.answer : ''} learn={learn} />
+                </p>
+              ))}
+              <button className="link-btn lk-more" onClick={() => onOpen(x.title)}>
+                <BookOpen size={12} /> Show the full article
+              </button>
+            </div>
+          ))}
+          {p.done && !p.passages.length && p.sameAs === undefined && (
+            <div className="lk-none muted">
+              Wikipedia doesn’t seem to answer this {multi ? 'part' : 'question'} directly.
+              {p.closest && (
+                <>
+                  {' '}
+                  Closest article:{' '}
+                  <button className="lk-chip" onClick={() => onOpen(p.closest!)}>
+                    {p.closest}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+      {status ? (
+        <div className="ai-status">
+          <span className="dot-pulse" /> {status}
+        </div>
+      ) : (
+        found && (
+          <div className="ai-actions">
+            {canInsert && (
+              <button className="btn sm" onClick={() => onInsert(asText(true))} title="Put these passages into your document, each with its source">
+                <ArrowDownToLine size={13} /> Insert
+              </button>
+            )}
+            <button className="icon-btn sm" title="Copy" onClick={() => navigator.clipboard.writeText(asText(false)).then(() => toast('Copied', 'success'))}>
+              <Copy size={14} />
+            </button>
+          </div>
+        )
+      )}
+    </>
+  );
 }
 
 function Section({ title, text }: { title: string; text: string }) {

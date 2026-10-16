@@ -34,7 +34,7 @@ export interface ExplainResult {
 export const lookupLang = () => String(setting('lookup.lang') || 'en');
 
 // ---------- Text helpers ----------
-const STOP = new Set(
+export const STOP = new Set(
   'a an the and or but if of to in on at for with by from as is are was were be been being it its this that these those which who whom what how why when where can could should would will shall may might must do does did not no than then so such into onto about also more most some any each every many much while because often like well made make makes take takes used use uses other there their they them he she his her we our you your i me my one two all very just only over under between through during before after above below up down out off again further once here both few own same too s t around until unless without within since though although against toward towards among upon along behind beyond despite whether yet still even ever never always quite rather almost perhaps instead whose whatever whenever wherever'.split(
     ' '
   )
@@ -43,24 +43,24 @@ const STOP = new Set(
  * A word's rough stem, so "organisms" matches "organism" and "producing" matches "produce" (a final "e" goes too,
  * so "molecule" and "molecules" meet at "molecul").
  */
-const stem = (w: string) => (w.length > 4 ? w.replace(/ies$/, 'y').replace(/(ing|ed|es|s)$/, '').replace(/(?<=..[^aeiou])e$/, '') : w);
+export const stem = (w: string) => (w.length > 4 ? w.replace(/ies$/, 'y').replace(/(ing|ed|es|s)$/, '').replace(/(?<=..[^aeiou])e$/, '') : w);
 /** Everyday words that appear in articles on any subject, so they say nothing about which meaning is meant (stemmed). */
 const COMMON = new Set(
   'add year day time week month people person thing way place part number world life small large big little new old good great high low long short first last next different same important general main early late certain common usual whole half full open close real true kind sort type form area side end point line case fact group man woman child home house hand work place left right best better least less several various known called named found given include including become became begin began show shown seen look find give get got keep let put set say said tell think know want need come came go went ten hundred thousand million billion three four five six seven eight nine'
     .split(' ')
     .map(stem)
 );
-const words = (s: string) => (s.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length > 2 && !STOP.has(w)).map(stem);
+export const words = (s: string) => (s.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((w) => w.length > 2 && !STOP.has(w)).map(stem);
 /** The most frequent content words of a text (what it's about). */
-function keywords(text: string, n = 40) {
+export function keywords(text: string, n = 40) {
   const f = new Map<string, number>();
   for (const w of words(text)) f.set(w, (f.get(w) || 0) + 1);
   return new Set([...f.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([w]) => w));
 }
-const overlap = (text: string, keys: Set<string>) => new Set(words(text).filter((w) => keys.has(w))).size;
-const bare = (t: string) => t.toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
+export const overlap = (text: string, keys: Set<string>) => new Set(words(text).filter((w) => keys.has(w))).size;
+export const bare = (t: string) => t.toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
 /** Two names for the same thing, give or take word endings: "supersaturated" / "Supersaturation", "light-dependent reaction(s)". */
-function sameTerm(a: string, b: string) {
+export function sameTerm(a: string, b: string) {
   const x = bare(a).split(/[\s-]+/);
   const y = bare(b).split(/[\s-]+/);
   // Only the endings may differ ("saturat-ed/-ion"), not whole syllables ("cell" isn't "cellular").
@@ -212,9 +212,9 @@ export function latexToText(src: string): string {
     .trim();
 }
 
-const paragraphs = (t: string) => tidy(t).split(/\n+/).map((p) => p.trim()).filter(Boolean);
+export const paragraphs = (t: string) => tidy(t).split(/\n+/).map((p) => p.trim()).filter(Boolean);
 
-const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const isWordChar = (c?: string) => !!c && /[\p{L}\p{N}]/u.test(c);
 
 /**
@@ -250,7 +250,7 @@ export function contextAround(full: string, selection: string, chars = 1500) {
 
 // ---------- The librarian (optional local model) ----------
 let readyCache: { at: number; ok: boolean } | null = null;
-async function modelReady() {
+export async function modelReady() {
   if (setting('lookup.useModel') === false) return false;
   if (readyCache && Date.now() - readyCache.at < 30000) return readyCache.ok;
   const st = await api.ai.state().catch(() => null);
@@ -260,11 +260,11 @@ async function modelReady() {
 }
 
 /** Ask the model to choose among numbered options. It can only answer with option numbers (JSON schema). */
-async function choose(prompt: string, schema: any, maxTokens: number): Promise<any | null> {
+export async function choose(prompt: string, schema: any, maxTokens: number, system = 'You are a careful librarian. You only choose from the numbered options you are given. Reply only with the JSON.'): Promise<any | null> {
   if (!(await modelReady())) return null;
   try {
     const id = await api.ai.generate({
-      system: 'You are a careful librarian. You only choose from the numbered options you are given. Reply only with the JSON.',
+      system,
       prompt,
       jsonSchema: schema,
       temperature: 0,

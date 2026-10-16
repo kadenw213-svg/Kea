@@ -168,6 +168,62 @@
   font-size: 12px;
   color: var(--text-3);
 }
+/* A highlighted question: its parts, each with the passages that answer it. */
+.lk-question {
+  color: var(--text-2);
+  font-style: italic;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.lk-part {
+  margin-top: 12px;
+}
+.lk-part + .lk-part {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.lk-part-label {
+  font-weight: 700;
+}
+.lk-passage {
+  margin-top: 8px;
+}
+.lk-passage + .lk-passage {
+  margin-top: 14px;
+}
+.lk-passage p {
+  margin: 4px 0 0;
+}
+.lk-cite {
+  font-size: 12px;
+}
+.lk-cite a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.lk-cite a:hover {
+  text-decoration: underline;
+}
+.lk-answer {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  border-radius: 3px;
+  transition: filter 0.15s;
+}
+.lk-answer.hidden {
+  filter: blur(4px);
+  cursor: pointer;
+  user-select: none;
+}
+.lk-none {
+  margin-top: 6px;
+  font-size: 12px;
+}
 .lk-card .ai-actions {
   margin-top: 10px;
 }
