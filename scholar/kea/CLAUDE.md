@@ -65,6 +65,23 @@ chapter list comes from the PDF's headings. So keep one level-1 heading per chap
 - Never put personal details (name, student ID, email) into files that aren't the database.
 - Bash is only for `uv run academic-sync ...`.
 
+## Continuing a run that stopped
+
+When the task's arguments include **`resume`**, an earlier run of the same task stopped partway (usually the
+student's Claude usage limit). Everything it saved is still in the database and `data/downloads/`. What it only read
+and never saved is gone. Don't start over:
+
+1. Run `uv run academic-sync status` and `uv run academic-sync completeness`, and read each class's
+   `data/downloads/<CODE>/raw_notes.md`, to see what's already there.
+2. A class that already has items recorded as synced to Kea (`calendar-id kea`) is **done** for this run. Leave it,
+   and its leftover gaps, to the next `/academic-sync`.
+3. For a half-done class, keep what's saved and continue from the first missing step: extract, link, banners,
+   chapters, then record the sync. Re-open a page only when a missing piece needs it, not the areas listed as
+   Inspected.
+4. Classes never started: scan them in full, as the skill says.
+5. Finish the classes one at a time. Record each class's sync as soon as it's ready, before you start the next, so
+   another stop loses as little as possible.
+
 ## Finishing
 
 End with one plain summary line per course: what's new (items added or updated, chapters written, notices sent),

@@ -126,6 +126,11 @@ export interface KeaApi {
     activity(): Promise<ScholarRun[]>;
     news(): Promise<ScholarNews[]>;
     markNewsRead(ids?: string[]): Promise<boolean>;
+    /** A run paused by a Claude usage limit, waiting to continue. */
+    pending(): Promise<ScholarPending | null>;
+    /** Continue the paused run now, or the last stopped run of a task. */
+    resume(task?: string): Promise<boolean>;
+    onResume(cb: (p: ScholarPending | null) => void): () => void;
     onRun(cb: (r: ScholarRun & { running: boolean }) => void): () => void;
     onNews(cb: (n: ScholarNews) => void): () => void;
     onSetupLine(cb: (line: string) => void): () => void;
@@ -331,6 +336,14 @@ export interface ScholarRun {
   ok: boolean | null;
   summary: string;
   steps: { at: string; message: string }[];
+  /** Set when the run stopped at a Claude usage limit: when Kea continues it. */
+  paused?: string;
+}
+export interface ScholarPending {
+  task: string;
+  arg: string;
+  label: string;
+  until: string;
 }
 export interface ScholarNews {
   id: string;

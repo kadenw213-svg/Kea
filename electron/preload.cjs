@@ -70,6 +70,13 @@ contextBridge.exposeInMainWorld('api', {
     activity: () => ipcRenderer.invoke('scholar:activity'),
     news: () => ipcRenderer.invoke('scholar:news'),
     markNewsRead: (ids) => ipcRenderer.invoke('scholar:markNewsRead', ids),
+    pending: () => ipcRenderer.invoke('scholar:pending'),
+    resume: (task) => ipcRenderer.invoke('scholar:resume', task),
+    onResume: (cb) => {
+      const h = (_e, p) => cb(p);
+      ipcRenderer.on('scholar:resume', h);
+      return () => ipcRenderer.removeListener('scholar:resume', h);
+    },
     onRun: (cb) => {
       const h = (_e, r) => cb(r);
       ipcRenderer.on('scholar:run', h);

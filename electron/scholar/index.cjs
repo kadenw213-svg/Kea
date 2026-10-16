@@ -87,6 +87,12 @@ async function ready() {
 async function tick() {
   try {
     if (settings.get('scholar.autoScan', true) === false || runner.status().running) return;
+    // A run paused by a usage limit continues first, once the limit has reset; nothing else starts until then.
+    const waiting = runner.pending();
+    if (waiting) {
+      if (new Date(waiting.until) <= new Date() && (await ready())) runner.resume();
+      return;
+    }
     const [h, m] = String(settings.get('scholar.scanTime', '05:00')).split(':').map(Number);
     const now = new Date();
     if (now.getHours() * 60 + now.getMinutes() < (h || 0) * 60 + (m || 0)) return;
@@ -154,11 +160,16 @@ function register() {
   ipcMain.handle('scholar:activity', () => runner.activity());
   ipcMain.handle('scholar:news', () => runner.news());
   ipcMain.handle('scholar:markNewsRead', (_e, ids) => runner.markNewsRead(ids));
+  ipcMain.handle('scholar:pending', () => runner.pending());
+  ipcMain.handle('scholar:resume', (_e, task) => (runner.pending() ? runner.resume() : runner.resumeLast(task || 'import')));
 
   // Developer aid (unpackaged builds only): read a page through the class-site browser.
   if (!require('electron').app.isPackaged) ipcMain.handle('scholar:debugOpen', (_e, url) => browser.open(url));
 
   watch();
+  try {
+    runner.adoptStopped();
+  } catch {}
   setTimeout(tick, 60000);
   setInterval(tick, 5 * 60000);
 }

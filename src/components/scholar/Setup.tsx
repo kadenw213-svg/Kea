@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, Square, RefreshCw, BookOpen, Bell, KeyRound, Activity } from 'lucide-react';
-import { api, ScholarSetup, SchoolInfo, ScholarRun, ScholarNews } from '../../lib/api';
+import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, Square, RefreshCw, BookOpen, Bell, KeyRound, Activity, Clock } from 'lucide-react';
+import { api, ScholarSetup, SchoolInfo, ScholarRun, ScholarNews, ScholarPending } from '../../lib/api';
 import { toast } from '../../store';
 import { reloadScholar } from './scholarStore';
 
@@ -208,11 +208,13 @@ export function ScansView() {
   const [activity, setActivity] = useState<ScholarRun[]>([]);
   const [news, setNews] = useState<ScholarNews[]>([]);
   const [open, setOpen] = useState<string | null>(null);
+  const [paused, setPaused] = useState<ScholarPending | null>(null);
   const load = async () => {
-    const [st, a, n] = await Promise.all([api.scholar.runStatus(), api.scholar.activity(), api.scholar.news()]);
+    const [st, a, n, p] = await Promise.all([api.scholar.runStatus(), api.scholar.activity(), api.scholar.news(), api.scholar.pending()]);
     setRun(st.running ? { ...st.running, running: true } : null);
     setActivity(a);
     setNews(n);
+    setPaused(p);
   };
   useEffect(() => {
     load();
@@ -221,7 +223,8 @@ export function ScansView() {
         setRun(r.running ? r : null);
         if (!r.running) (load(), reloadScholar());
       }),
-      api.scholar.onNews(() => load())
+      api.scholar.onNews(() => load()),
+      api.scholar.onResume((p) => setPaused(p))
     ];
     return () => offs.forEach((f) => f());
   }, []);
@@ -258,6 +261,23 @@ export function ScansView() {
           </div>
         </div>
       )}
+      {paused && !run && (
+        <div className="scan-now">
+          <Clock size={16} />
+          <div>
+            <b>{paused.label}: paused</b>
+            <div className="muted">
+              Your Claude usage limit was reached. Everything found so far is saved, and Kea continues where it stopped at{' '}
+              {new Date(paused.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+              {new Date(paused.until).toDateString() !== new Date().toDateString() ? ` on ${new Date(paused.until).toLocaleDateString(undefined, { weekday: 'long' })}` : ''}. Keep Kea open (it can
+              stay in the background).
+            </div>
+          </div>
+          <button className="btn sm" onClick={() => api.scholar.resume().then(() => toast('Continuing the scan.', 'success'))}>
+            <Play size={14} /> Continue now
+          </button>
+        </div>
+      )}
       {news.length > 0 && (
         <section>
           <h2 className="sch-h2">
@@ -286,7 +306,7 @@ export function ScansView() {
             {activity.slice(0, 20).map((a) => (
               <div key={a.id} className="news-item" onClick={() => setOpen(open === a.id ? null : a.id)}>
                 <div className="news-head">
-                  {a.ok ? <CheckCircle2 size={15} color="#81c995" /> : <Circle size={15} color="#f28b82" />}
+                  {a.ok ? <CheckCircle2 size={15} color="#81c995" /> : a.paused ? <Clock size={15} color="#fdd663" /> : <Circle size={15} color="#f28b82" />}
                   <b>{a.label}</b>
                   <span className="muted">
                     {timeAgo(a.start)}
