@@ -1593,6 +1593,54 @@ def portal_link_set_cmd(
     console.print(f"[green]Saved[/green] {kind} link for {course}.")
 
 
+@app.command("kea-brief")
+def kea_brief_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    horizon: Annotated[int, typer.Option("--horizon", help="Days ahead weekly banners should reach.")] = 13,
+) -> None:
+    """Kea: one JSON answer with everything a recurring run starts from, so it
+    doesn't need status/plan/needs-link-refresh/portal-link-list one by one:
+    the course, its saved links, items whose link may have unlocked, items to
+    record (CREATE/UPDATE, with ids), items that need the student
+    (CONFLICT/REVIEW), how far its weekly banners reach, and whether the next
+    week's banner still needs building. Kea's own pre-check uses it to skip a
+    run when there's nothing to do."""
+    today = date.today()
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        items = repository.list_items_for_course(session, c.id)
+        plan = compute_plan(session, c.id, items)
+        refresh = repository.list_items_needing_link_recheck(session, course_id=c.id,
+                                                            lookback_days=14, lookahead_days=14)
+        links = repository.list_portal_links(session, c.id)
+        unresolved = repository.list_unresolved_references(session, c.id)
+        banners = [i for i in items if i.item_type == ItemType.WEEKLY_READING
+                   and i.status.value not in study_pdf_mod._INACTIVE and i.date]
+        through = max((i.date_range_end or i.date for i in banners), default=None)
+        reach = today + timedelta(days=horizon)
+        if c.end_date:
+            reach = min(reach, c.end_date)
+        running = c.end_date is None or today <= c.end_date
+
+        def entry(e):  # type: ignore[no-untyped-def]
+            return {"item_id": e.item.id, "action": e.action.value, "title": e.item.title,
+                    "date": e.item.date.isoformat() if e.item.date else None, "reason": e.reason}
+
+        out = {
+            "course": {"code": c.course_code, "name": c.name, "start": str(c.start_date or ""),
+                       "end": str(c.end_date or ""), "d2l_url": c.d2l_url},
+            "portal_links": [{"kind": x.kind, "label": x.label, "url": x.url} for x in links],
+            "needs_link_refresh": [{"item_id": i.id, "title": i.title, "date": str(i.date or ""),
+                                    "link_available_date": str(i.link_available_date or "")} for i in refresh],
+            "to_record": [entry(e) for e in plan.entries if e.action in (SyncAction.CREATE, SyncAction.UPDATE)],
+            "needs_you": [entry(e) for e in plan.entries if e.action in (SyncAction.CONFLICT, SyncAction.REVIEW)],
+            "banners_through": through.isoformat() if through else None,
+            "next_banner_needed": running and (through is None or through < reach),
+            "unresolved_open": len(unresolved),
+        }
+    print(json.dumps(out, indent=1))
+
+
 @app.command("portal-link-list")
 def portal_link_list_cmd(
     course: Annotated[str, typer.Option("--course")],

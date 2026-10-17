@@ -9,6 +9,7 @@ const profiles = require('./profiles.cjs');
 const browser = require('./browser.cjs');
 const workspace = require('./workspace.cjs');
 const db = require('./db.cjs');
+const { compact } = require('./compact.cjs');
 
 const stateFile = () => path.join(profiles.paths().dir, 'precheck.json');
 const readState = () => {
@@ -98,14 +99,14 @@ const AREAS = {
 };
 
 /** What changed in one area since last time, in words: "2 new announcements: Exam 3 moved; Lab 8 notes". */
-function describe(area, before, now) {
+function describe(area, before, now, label = AREAS[area].label) {
   const old = new Map((before || []).map((e) => [String(e.id), e]));
   const added = now.filter((e) => !old.has(String(e.id)));
   const changed = now.filter((e) => old.has(String(e.id)) && hash(old.get(String(e.id))) !== hash(e));
   const names = (list) => list.slice(0, 6).map((e) => e.title).join('; ') + (list.length > 6 ? `; and ${list.length - 6} more` : '');
   const parts = [];
-  if (added.length) parts.push(`${added.length} new ${AREAS[area].label}${added.length > 1 ? 's' : ''}: ${names(added)}`);
-  if (changed.length) parts.push(`${changed.length} changed ${AREAS[area].label}${changed.length > 1 ? 's' : ''}: ${names(changed)}`);
+  if (added.length) parts.push(`${added.length} new ${label}${added.length > 1 ? 's' : ''}: ${names(added)}`);
+  if (changed.length) parts.push(`${changed.length} changed ${label}${changed.length > 1 ? 's' : ''}: ${names(changed)}`);
   return parts;
 }
 
@@ -120,7 +121,11 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
   const p = profiles.paths();
   const dir = path.join(p.workspace, 'data', 'digests', 'kea-precheck', day());
   fs.mkdirSync(dir, { recursive: true });
-  const save = (name, data) => fs.writeFileSync(path.join(dir, name), JSON.stringify(data, null, 1));
+  const save = (name, data) => {
+    fs.writeFileSync(path.join(dir, name), JSON.stringify(data, null, 1));
+    // Claude reads the trimmed copy (a third of the size); Kea's own code reads the full answer.
+    if (name !== 'summary.json') fs.writeFileSync(path.join(dir, name.replace(/\.json$/, '.min.json')), JSON.stringify(compact(data, browser.schoolInfo().home)));
+  };
 
   const v = await versions();
   // A request that needs a signed-in student: when the session has expired, Kea signs in here (with the saved login,
@@ -272,6 +277,7 @@ const plain = (html) =>
 function updateInbox(dir, ous = {}) {
   const box = readInbox();
   const known = new Map(box.items.map((i) => [i.id, i]));
+  const deleted = new Set(box.deleted || []);
   const home = browser.schoolInfo().home;
   const fresh = [];
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('-news.json'))) {
@@ -286,6 +292,8 @@ function updateInbox(dir, ous = {}) {
     for (const n of Array.isArray(list) ? list : []) {
       if (n.IsHidden) continue;
       const id = `news:${code}:${n.Id}`;
+      // Deleted by the student: it stays gone, even though the class site still lists it.
+      if (deleted.has(id)) continue;
       const at = n.StartDate || n.CreatedDate || n.LastModifiedDate;
       const body = plain(n.Body?.Html || n.Body?.Text);
       const prev = known.get(id);
@@ -297,7 +305,7 @@ function updateInbox(dir, ous = {}) {
     }
   }
   const items = [...known.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 500);
-  fs.writeFileSync(inboxFile(), JSON.stringify({ items, seeded: true }));
+  fs.writeFileSync(inboxFile(), JSON.stringify({ ...box, items, seeded: true }));
   if (box.seeded && fresh.length) {
     const { Notification, BrowserWindow } = require('electron');
     for (const n of fresh.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.body.slice(0, 200) }).show();
@@ -364,11 +372,11 @@ async function updateAlerts(list) {
   const homeOu = (home.match(/\/d2l\/home\/(\d+)/) || [])[1];
   if (!home || !homeOu) return;
   const box = readInbox();
-  const known = new Set(box.items.map((i) => i.id));
+  const known = new Set([...box.items.map((i) => i.id), ...(box.deleted || [])]);
   const fresh = [];
   for (const k of ALERT_KINDS) {
     const r = await browser
-      .fetchText(new URL(`/d2l/MiniBar/${homeOu}/ActivityFeed/GetAlertsDaylight?Category=${k.cat}&_d2l_prc%24headingLevel=2&_d2l_prc%24scope=&_d2l_prc%24hasActiveForm=false&isXhr=true&requestId=1`, home).href)
+      .fetchText(new URL(`/d2l/MiniBar/${homeOu}/ActivityFeed/GetAlertsDaylight?Category=${k.cat}&_d2l_prc%24headingLevel=2&_d2l_prc%24scope=&_d2l_prc%24hasActiveForm=false&isXhr=true&requestId=1`, home).href, 0, true)
       .catch(() => null);
     if (!r || r.status !== 200) continue;
     // D2L answers these with a small JSON wrapper around the menu's HTML.
@@ -458,6 +466,25 @@ function markInboxRead(ids) {
   fs.writeFileSync(inboxFile(), JSON.stringify(box));
 }
 
+/** What identifies the same message on the PC and the phone (whose own checks give it a different id). */
+const inboxKey = (i) => `${i.course}|${i.title}|${String(i.body || '').slice(0, 60)}`;
+
+/**
+ * Delete Inbox items, by id or by `inboxKey` (deletions made on the phone). They're remembered, so the next look at
+ * the class site doesn't bring them back. Returns the keys of what was deleted.
+ */
+function deleteInbox(ids = [], keys = []) {
+  const box = readInbox();
+  const idSet = new Set(ids);
+  const keySet = new Set(keys);
+  const gone = box.items.filter((i) => idSet.has(i.id) || keySet.has(inboxKey(i)));
+  box.items = box.items.filter((i) => !gone.includes(i));
+  box.deleted = [...new Set([...(box.deleted || []), ...ids, ...gone.map((i) => i.id)])].slice(-3000);
+  box.deletedKeys = [...new Set([...(box.deletedKeys || []), ...keys, ...gone.map(inboxKey)])].slice(-3000);
+  fs.writeFileSync(inboxFile(), JSON.stringify(box));
+  return gone.map(inboxKey);
+}
+
 /**
  * Where work can be handed in: every class's assignment folders (from Kea's latest look at the class site), with
  * their due dates and whether something is already handed in. Soonest due first; closed folders last.
@@ -494,4 +521,85 @@ async function handInTargets() {
   return out;
 }
 
-module.exports = { run, pollAnnouncements, readInbox, markInboxRead, readGrades, handInTargets };
+// ---------- The weekly update's own check (no Claude) ----------
+// The daily check already reads announcements, grades and links that just unlocked. What only the weekly update does
+// is follow the class's structure: new or moved content, assignment folders, quizzes and calendar dates, and the next
+// week's reading. Kea compares those with what it saw at the last weekly update and starts Claude only when one of them
+// moved, a saved link may have unlocked, or the next week still needs building.
+const syncStateFile = () => path.join(profiles.paths().dir, 'sync-state.json');
+const readSyncState = () => {
+  try {
+    return JSON.parse(fs.readFileSync(syncStateFile(), 'utf8'));
+  } catch {
+    return { courses: {} };
+  }
+};
+
+const SYNC_AREAS = {
+  content: AREAS.content,
+  dropbox: AREAS.dropbox,
+  quizzes: AREAS.quizzes,
+  calendar: {
+    rel: (v, ou) => {
+      const from = new Date(Date.now() - 7 * 864e5).toISOString();
+      const to = new Date(Date.now() + 240 * 864e5).toISOString();
+      return `/d2l/api/le/${v.le}/${ou}/calendar/events/myEvents/?startDateTime=${from}&endDateTime=${to}`;
+    },
+    // Only what's still ahead: events dropping out of the window as days pass aren't changes.
+    list: (d) => (Array.isArray(d) ? d : d?.Objects || []).filter((e) => new Date(e.EndDateTime || e.StartDateTime || 0) >= new Date(Date.now() - 864e5)),
+    entry: (e) => ({ id: e.CalendarEventId, title: e.Title, start: e.StartDateTime, end: e.EndDateTime }),
+    label: 'calendar date'
+  }
+};
+
+/**
+ * One class's weekly check: { dir, reasons: [what moved], brief, first, commit() }. `brief` is the engine's kea-brief
+ * (saved links, links that may have unlocked, whether the next week needs building). `commit()` saves what was seen
+ * as the new baseline: call it once the Claude run (or the decision to skip it) is settled.
+ */
+async function syncCheck(code, ou) {
+  const p = profiles.paths();
+  const dir = path.join(p.workspace, 'data', 'digests', 'kea-sync', day());
+  fs.mkdirSync(dir, { recursive: true });
+  const uv = await workspace.findUv();
+  const r = await workspace.runHidden(uv, ['run', 'academic-sync', 'kea-brief', '--course', code], { cwd: p.workspace, env: workspace.engineEnv(uv) });
+  const brief = JSON.parse(r.out.slice(r.out.indexOf('{')));
+  fs.writeFileSync(path.join(dir, `${code}-brief.json`), JSON.stringify(brief, null, 1));
+
+  const v = await versions();
+  const before = readSyncState().courses[code] || null;
+  const seen = {};
+  const reasons = [];
+  for (const [area, a] of Object.entries(SYNC_AREAS)) {
+    let got;
+    try {
+      got = await browser.getJson(a.rel(v, ou));
+    } catch (err) {
+      reasons.push(`couldn't check ${area} (${String(err.message || err).slice(0, 80)})`);
+      continue;
+    }
+    if (got.status === 403 || got.status === 404) continue;
+    if (!got.data) {
+      reasons.push(`couldn't check ${area} (D2L answered ${got.status})`);
+      continue;
+    }
+    fs.writeFileSync(path.join(dir, `${code}-${area}.min.json`), JSON.stringify(compact(got.data, browser.schoolInfo().home)));
+    seen[area] = a.list(got.data).map(a.entry);
+    if (before?.[area]) reasons.push(...describe(area, before[area], seen[area], a.label));
+  }
+  if (brief.next_banner_needed) reasons.push(`the next week's reading still needs building (weeks are built through ${brief.banners_through || 'none yet'})`);
+  if (brief.needs_link_refresh.length) reasons.push(`${brief.needs_link_refresh.length} saved item${brief.needs_link_refresh.length > 1 ? 's' : ''} whose link may have unlocked: ${brief.needs_link_refresh.map((i) => i.title).slice(0, 6).join('; ')}`);
+  return {
+    dir: path.relative(p.workspace, dir),
+    reasons,
+    brief,
+    first: !before,
+    commit: () => {
+      const st = readSyncState();
+      st.courses[code] = { ...(st.courses[code] || {}), ...seen, at: new Date().toISOString() };
+      fs.writeFileSync(syncStateFile(), JSON.stringify(st));
+    }
+  };
+}
+
+module.exports = { run, pollAnnouncements, readInbox, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck };

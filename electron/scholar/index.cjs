@@ -82,6 +82,17 @@ function mergePhone() {
     if (scans.length) runner.markNewsRead(scans);
     if (mine.length || scans.length) changed = true;
   }
+  // Deleted on the phone (by content, since the phone's own checks name messages differently).
+  const deletedKeys = (phone.deleted || []).filter((k) => typeof k === 'string');
+  if (deletedKeys.length) {
+    const known = new Set(precheck.readInbox().deletedKeys || []);
+    const fresh = deletedKeys.filter((k) => !known.has(k));
+    if (fresh.length) {
+      runner.deleteNews([], fresh);
+      precheck.deleteInbox([], fresh);
+      changed = true;
+    }
+  }
   if (changed) BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
   return changed;
 }
@@ -112,7 +123,9 @@ async function snapshot() {
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fix(x)]));
     return v;
   };
-  return fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, courses, items, details, grades, inbox, doneLog });
+  // What was deleted on the PC, so the phone also hides its own copies.
+  const inboxDeleted = (precheck.readInbox().deletedKeys || []).slice(-1500);
+  return fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, courses, items, details, grades, inbox, inboxDeleted, doneLog });
 }
 const syncSoon = (delay) => cloud.schedule(snapshot, delay);
 
@@ -282,6 +295,14 @@ function register() {
   ipcMain.handle('scholar:markInboxRead', (_e, ids) => {
     precheck.markInboxRead(ids ? ids.filter((i) => !i.startsWith('scan:')) : null);
     runner.markNewsRead(ids ? ids.filter((i) => i.startsWith('scan:')).map((i) => i.slice(5)) : null);
+    syncSoon(5000);
+    return true;
+  });
+  ipcMain.handle('scholar:deleteInbox', (_e, ids) => {
+    const list = Array.isArray(ids) ? ids.map(String) : [];
+    // What scans reported is remembered by its content too, so the phone hides its own copy of it.
+    const scanKeys = runner.deleteNews(list.filter((i) => i.startsWith('scan:')).map((i) => i.slice(5)));
+    precheck.deleteInbox(list.filter((i) => !i.startsWith('scan:')), scanKeys);
     syncSoon(5000);
     return true;
   });

@@ -138,6 +138,7 @@ export interface KeaApi {
     /** Announcements (straight from the class site) and what scans found, newest first. */
     inbox(): Promise<ScholarInboxItem[]>;
     markInboxRead(ids?: string[]): Promise<boolean>;
+    deleteInbox(ids: string[]): Promise<boolean>;
     /** Look for new announcements now (no Claude). False when Kea isn't signed in. */
     checkInbox(): Promise<boolean>;
     /** Cloud drives on this computer, and the folder Kea keeps the phone's copy in. */

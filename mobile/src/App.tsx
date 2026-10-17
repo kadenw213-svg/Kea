@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, BookOpen, CalendarDays, Camera, CheckCircle2, ChevronLeft, Circle, ExternalLink, FolderOpen, GraduationCap, Inbox, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Upload, X } from 'lucide-react';
+import { AlertTriangle, Award, BookOpen, CalendarDays, Camera, CheckCircle2, ChevronLeft, Circle, ExternalLink, FolderOpen, GraduationCap, Inbox, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, Upload, X } from 'lucide-react';
 import type { ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 import { CATEGORIES, LinkGroups, TODO, categoryOf, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
-import { Kea, KeaData, cachedData, doneOf, folders, handInUrl, loadData, phoneDone, phoneRead, setPhoneDone, setPhoneRead, watchClasses } from './kea';
+import { Kea, KeaData, cachedData, doneOf, folders, handInUrl, inboxKey, loadData, phoneDeleted, phoneDone, phoneRead, setPhoneDeleted, setPhoneDone, setPhoneRead, watchClasses } from './kea';
 
 // ---------- Dates ----------
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -77,17 +77,23 @@ export function App() {
     setDone(phoneDone());
     if (item?.id === it.id) setItem({ ...it, done: on ? new Date().toISOString() : null, handIn: on ? it.handIn : null });
   };
+  const [deleted, setDeleted] = useState<string[]>(phoneDeleted);
   const inbox = useMemo(() => {
-    const seen = new Set<string>();
+    // Deleted here or on the PC (both by content, since each side names messages its own way).
+    const seen = new Set<string>([...deleted, ...(data?.inboxDeleted || [])]);
     return [...phoneInbox, ...(data?.inbox || [])]
       .filter((i) => {
-        const k = `${i.course}|${i.title}|${String(i.body).slice(0, 60)}`;
+        const k = inboxKey(i);
         if (seen.has(k)) return false;
         seen.add(k);
         return true;
       })
       .sort((a, b) => String(b.at).localeCompare(String(a.at)));
-  }, [phoneInbox, data]);
+  }, [phoneInbox, data, deleted]);
+  const remove = (list: ScholarInboxItem[]) => {
+    setPhoneDeleted(list.map(inboxKey));
+    setDeleted(phoneDeleted());
+  };
   const [readIds, setReadIds] = useState<string[]>(phoneRead);
   const unread = inbox.filter((i) => !i.read && !readIds.includes(i.id)).length;
   // Read on the phone: remembered here and passed to the PC (read on the PC arrives in its copy).
@@ -117,7 +123,7 @@ export function App() {
       </header>
       <main className="body">
         {tab === 'today' && <Today ctx={ctx} missing={missing} />}
-        {tab === 'inbox' && <InboxView items={inbox} readIds={readIds} markRead={markRead} />}
+        {tab === 'inbox' && <InboxView items={inbox} readIds={readIds} markRead={markRead} remove={remove} />}
         {tab === 'calendar' && <Agenda ctx={ctx} />}
         {tab === 'classes' && <Classes ctx={ctx} code={course} setCode={setCourse} />}
         {tab === 'scan' && <Scan data={data} />}
@@ -248,11 +254,13 @@ function Today({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
   );
 }
 
-function InboxView({ items, readIds, markRead }: { items: ScholarInboxItem[]; readIds: string[]; markRead(ids: string[]): void }) {
+function InboxView({ items, readIds, markRead, remove }: { items: ScholarInboxItem[]; readIds: string[]; markRead(ids: string[]): void; remove(items: ScholarInboxItem[]): void }) {
   const [open, setOpen] = useState<string | null>(null);
   const [filter, setFilter] = useState('all');
+  const [confirm, setConfirm] = useState(false);
   const codes = [...new Set(items.map((i) => i.course).filter(Boolean))].sort();
   const shown = items.filter((i) => filter === 'all' || i.course === filter);
+  const readShown = shown.filter((i) => i.read || readIds.includes(i.id));
   return (
     <div className="page">
       <div className="chips">
@@ -262,6 +270,14 @@ function InboxView({ items, readIds, markRead }: { items: ScholarInboxItem[]; re
           </button>
         ))}
         <button onClick={() => markRead(items.map((i) => i.id))}>Mark all read</button>
+        {readShown.length > 0 &&
+          (confirm ? (
+            <button className="danger" onClick={() => (remove(readShown), setConfirm(false))}>
+              Delete {readShown.length} read?
+            </button>
+          ) : (
+            <button onClick={() => setConfirm(true)}>Delete read</button>
+          ))}
       </div>
       {!shown.length && <div className="empty">Nothing yet. New announcements, grades and messages land here, with a notification.</div>}
       {shown.map((i) => {
@@ -275,16 +291,29 @@ function InboxView({ items, readIds, markRead }: { items: ScholarInboxItem[]; re
               <span className="muted small">{i.at ? ago(i.at) : ''}</span>
             </div>
             <div className="msg-body">{i.body}</div>
-            {open === i.id && i.url && (
-              <button
-                className="btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  Kea.open({ url: i.url });
-                }}
-              >
-                <ExternalLink size={14} /> Open on the class site
-              </button>
+            {open === i.id && (
+              <div className="msg-actions">
+                {i.url && (
+                  <button
+                    className="btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      Kea.open({ url: i.url });
+                    }}
+                  >
+                    <ExternalLink size={14} /> Open on the class site
+                  </button>
+                )}
+                <button
+                  className="btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    remove([i]);
+                  }}
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+              </div>
             )}
           </div>
         );

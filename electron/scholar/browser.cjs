@@ -244,12 +244,16 @@ async function request(url) {
   return res;
 }
 
-async function fetchText(url, offset = 0) {
+async function fetchText(url, offset = 0, raw = false) {
   const res = await request(url);
   const type = res.headers.get('content-type') || '';
   if (!/json|text|xml|html|javascript/i.test(type)) return { status: res.status, contentType: type, text: '', note: 'Not text: use d2l_download to save it.' };
-  const body = await res.text();
-  const LIMIT = 100000;
+  let body = await res.text();
+  // For Claude, JSON is trimmed (rich text as plain text with its links, no empty fields, false flags or bookkeeping):
+  // about a third of the size. Kea's own code asks for it raw.
+  if (!raw && /json/i.test(type)) body = require('./compact.cjs').compactText(body, readSchool().home);
+  // Parts small enough to arrive whole: a bigger answer is set aside in a file Claude then has to search piece by piece.
+  const LIMIT = 40000;
   return { status: res.status, url: res.url, contentType: type, text: body.slice(offset, offset + LIMIT), more: body.length > offset + LIMIT ? `Continues: call again with offset ${offset + LIMIT} (of ${body.length}).` : undefined };
 }
 

@@ -1450,3 +1450,31 @@
 .ib-item .btn {
   margin-left: 23px;
 }
+.ib-del {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  opacity: 0;
+}
+.ib-item:hover .ib-del,
+.ib-item.open .ib-del,
+.ib-del:focus-visible {
+  opacity: 1;
+}
+.ib-del:hover {
+  background: var(--surface-2, rgba(127, 127, 127, 0.14));
+  color: var(--danger, #d9534f);
+}
+.ib-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}

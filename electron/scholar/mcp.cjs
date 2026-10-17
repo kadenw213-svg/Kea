@@ -16,7 +16,8 @@ const TOOLS = [
   },
   {
     name: 'd2l_fetch',
-    description: "GET an address with the class site's signed-in session and return the response text (for D2L's REST API under /d2l/api/..., JSON, HTML or text files). Long answers come in parts: call again with the offset it gives.",
+    description:
+      "GET an address with the class site's signed-in session and return the response text (for D2L's REST API under /d2l/api/..., JSON, HTML or text files). JSON comes trimmed: rich text as plain text with links as [text](address), relative links made absolute, and empty or false fields left out. Long answers come in parts: call again with the offset it gives.",
     inputSchema: { type: 'object', properties: { url: { type: 'string' }, offset: { type: 'integer', minimum: 0 } }, required: ['url'] }
   },
   {

@@ -78,11 +78,32 @@ TASKS.import.pre = async (job, step) => {
   return { split: r.newShells.map((s) => `${s.course_code} -- new class shell: ${JSON.stringify(s)}`), summary: `Scanning ${r.newShells.length} new class${r.newShells.length > 1 ? 'es' : ''}, one at a time: ${r.newShells.map((s) => s.course_code).join(', ')}.` };
 };
 
-TASKS.sync.pre = async (job) => {
-  if (job.arg.trim()) return {};
-  const codes = (await db().watchList(profiles.paths().db)).map((c) => c.code);
-  if (!codes.length) return { skip: 'No classes to update yet.', ok: true };
-  return { split: codes, summary: `Updating ${codes.length} classes, one at a time: ${codes.join(', ')}.` };
+// The weekly update: one run per class, each first checked by Kea itself (precheck.syncCheck). A class whose content,
+// assignment folders, quizzes and calendar haven't moved since last week, with every coming week built and no link
+// waiting to unlock, is skipped without Claude. Any other argument (`CODE full`, `resume`) always runs Claude.
+TASKS.sync.pre = async (job, step) => {
+  const arg = job.arg.trim();
+  const list = await db().watchList(profiles.paths().db);
+  if (!arg) {
+    if (!list.length) return { skip: 'No classes to update yet.', ok: true };
+    return { split: list.map((c) => c.code), summary: `Updating ${list.length} classes, one at a time: ${list.map((c) => c.code).join(', ')}.` };
+  }
+  const course = list.find((c) => c.code === arg);
+  if (!course) return {};
+  step(`Checking ${course.code} for changes…`);
+  const r = await precheck().syncCheck(course.code, course.ou);
+  // No baseline yet, right after a weekly update that ran with Claude: that run already saw all this.
+  const last = readJson(activityFile(), []).find((e) => e.task === 'sync' && e.ok && e.arg === course.code && !/no Claude usage/.test(e.summary || ''));
+  const recent = last && Date.now() - new Date(last.end || last.start).getTime() < 8 * 864e5;
+  if (!r.reasons.length && (!r.first || recent)) {
+    r.commit();
+    return { skip: `${course.code}: nothing moved since the last update, every coming week is built and no link is waiting to unlock. Checked by Kea itself, so no Claude usage.`, ok: true };
+  }
+  step(`${course.code}: ${r.reasons[0] || 'first weekly check'}. Reading it…`);
+  return {
+    prompt: `/academic-sync ${course.code} -- Kea pre-check: ${r.dir.replace(/\\/g, '/')}\n\nWhat Kea saw since the last weekly update:\n${r.reasons.join('\n') || 'Nothing: this is the first weekly update Kea has checked, so do the usual light re-scan.'}`,
+    after: (ok) => ok && r.commit()
+  };
 };
 
 // Every chapter gets written, not only the coming week's: with no argument (the daily schedule) or `missing [CODE]`
@@ -268,6 +289,8 @@ async function next() {
       if (pre.prompt) prompt = pre.prompt;
       after = pre.after || null;
     }
+    // Testing Kea's own checks: say what Claude would be asked, without starting it.
+    if (process.env.KEA_DRY_RUN) return finish(true, `Dry run, Claude not started. Prompt: ${prompt}`);
     const server = await mcp.start({ progress: step, notify: (n) => addNews(n), docText: (file) => docText(uv, cwd, file) });
     current.server = server;
     // One connection file per run: a finished run's cleanup must never delete the next run's file.
@@ -279,7 +302,9 @@ async function next() {
     out.write(`\n=== ${entry.start} ${job.task} ${job.arg} (${job.why}) ===\n`);
     // Scans always run on Opus (the user's choice: accuracy over usage), whatever Claude Code's own default is.
     // PDFs are never read directly (every page would go to Claude as a picture): downloads come with a text copy.
-    const args = ['-p', prompt, '--model', 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', '--permission-mode', 'dontAsk', '--allowedTools', ...t.tools, '--disallowedTools', 'Read(**/*.pdf)'];
+    // Nor is the engine's source: its commands are listed in Kea's CLAUDE.md, and reading the code to find them was
+    // the biggest waste in early runs.
+    const args = ['-p', prompt, '--model', 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', '--permission-mode', 'dontAsk', '--allowedTools', ...t.tools, '--disallowedTools', 'Read(**/*.pdf)', 'Read(./src/**/*.py)'];
     step(`${t.label}…`);
     const child = spawn(claude, args, { cwd, env: workspace.engineEnv(uv), windowsHide: true });
     current.child = child;
@@ -354,4 +379,15 @@ function markNewsRead(ids) {
   return true;
 }
 
-module.exports = { run, stop, status, activity, news, markNewsRead, pending, resume, resumeLast, resetTime, adoptStopped, TASKS };
+/** Delete what scans reported, by id or by the Inbox's content key (deletions made on the phone). */
+function deleteNews(ids = [], keys = []) {
+  const { inboxKey } = require('./precheck.cjs');
+  const idSet = new Set(ids);
+  const keySet = new Set(keys);
+  const list = readJson(newsFile(), []);
+  const gone = list.filter((n) => idSet.has(n.id) || keySet.has(inboxKey({ course: n.course || '', title: n.title, body: n.body })));
+  fs.writeFileSync(newsFile(), JSON.stringify(list.filter((n) => !gone.includes(n)), null, 1));
+  return gone.map((n) => inboxKey({ course: n.course || '', title: n.title, body: n.body }));
+}
+
+module.exports = { run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, TASKS };

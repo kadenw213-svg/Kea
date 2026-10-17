@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('api', {
     pending: () => ipcRenderer.invoke('scholar:pending'),
     inbox: () => ipcRenderer.invoke('scholar:inbox'),
     markInboxRead: (ids) => ipcRenderer.invoke('scholar:markInboxRead', ids),
+    deleteInbox: (ids) => ipcRenderer.invoke('scholar:deleteInbox', ids),
     checkInbox: () => ipcRenderer.invoke('scholar:checkInbox'),
     grades: (courseId, code) => ipcRenderer.invoke('scholar:grades', courseId, code),
     handInTargets: () => ipcRenderer.invoke('scholar:handInTargets'),

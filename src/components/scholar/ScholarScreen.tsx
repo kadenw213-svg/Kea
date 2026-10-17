@@ -28,7 +28,8 @@ import {
   RotateCcw,
   Clock,
   Award,
-  Layers
+  Layers,
+  Trash2
 } from 'lucide-react';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
 import { openPaths } from '../../lib/open';
@@ -536,6 +537,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
   const [open, setOpen] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const [checking, setChecking] = useState(false);
+  const [confirmRead, setConfirmRead] = useState(false);
   const load = () => api.scholar.inbox().then(setItems);
   useEffect(() => {
     load();
@@ -554,6 +556,14 @@ function InboxView({ ctx }: { ctx: Ctx }) {
       setItems(items.map((x) => (x.id === i.id ? { ...x, read: true } : x)));
     }
   };
+  // Deleted messages stay deleted: Kea remembers them, so the next look at the class site doesn't bring them back.
+  const remove = (ids: string[]) => {
+    if (!ids.length) return;
+    api.scholar.deleteInbox(ids);
+    setItems(items.filter((x) => !ids.includes(x.id)));
+    if (open && ids.includes(open)) setOpen(null);
+  };
+  const readShown = shown.filter((i) => i.read);
   const checkNow = async () => {
     setChecking(true);
     const ok = await api.scholar.checkInbox().catch(() => false);
@@ -580,6 +590,22 @@ function InboxView({ ctx }: { ctx: Ctx }) {
             Mark all read
           </button>
         )}
+        {readShown.length > 0 &&
+          (confirmRead ? (
+            <span className="ib-confirm">
+              Delete {readShown.length} read message{readShown.length === 1 ? '' : 's'}?
+              <button className="btn sm danger" onClick={() => (remove(readShown.map((i) => i.id)), setConfirmRead(false))}>
+                Delete
+              </button>
+              <button className="btn sm" onClick={() => setConfirmRead(false)}>
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button className="btn sm" onClick={() => setConfirmRead(true)}>
+              <Trash2 size={14} /> Delete read
+            </button>
+          ))}
       </div>
       <p className="sch-sub">Announcements come straight from your class site every half hour. Messages, new grades and feedback come from the daily check.</p>
       {!shown.length ? (
@@ -601,6 +627,17 @@ function InboxView({ ctx }: { ctx: Ctx }) {
                 <b className="ib-title">{i.title}</b>
                 {i.updated && <span className="ln-tag">Updated</span>}
                 <span className="muted ib-at">{i.at ? timeAgo(i.at) : ''}</span>
+                <button
+                  className="ib-del"
+                  title="Delete"
+                  aria-label="Delete"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    remove([i.id]);
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
               <div className="ib-body">{i.body}</div>
               {open === i.id && i.url && (

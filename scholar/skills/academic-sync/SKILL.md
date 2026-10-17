@@ -8,7 +8,15 @@ user-invocable: true
 
 > **In Kea:** read `CLAUDE.md` → "Running inside Kea" first. It replaces Chrome with Kea's `mcp__kea__d2l_*` tools,
 > Google Calendar with `record-sync ... --calendar-id kea`, and email with `mcp__kea__kea_notify`, and runs are
-> unattended (no questions, no approval gates). Everything else below applies as written.
+> unattended (no questions, no approval gates). Everything else below applies as written, except:
+> - **Step 0 is the brief.** Read `<CODE>-brief.json` from Kea's pre-check folder (or run `kea-brief --course <CODE>`
+>   when there is none) instead of `courses`/`status`/`completeness`/`plan`/`needs-link-refresh`.
+> - **Step 1 follows what moved.** Kea's pre-check lists what changed since the last update and saved the class's
+>   content, assignment folders, quizzes and calendar beside the brief. Open only the pages behind those changes.
+>   Announcements are the daily check's job. Extend banners only when the brief says `next_banner_needed`.
+> - **Step 2 uses the brief's `needs_link_refresh`**, and opens each item's saved link or its area's portal link
+>   directly.
+> - Record every `to_record` item (`record-sync`) unless it's a duplicate or wrong; say which and why in the summary.
 
 Arguments passed: `$ARGUMENTS` (may be empty, a term, a course code, or a
 subcommand hint).

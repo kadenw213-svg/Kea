@@ -10,6 +10,43 @@ database and the study PDFs. The engine's design rules are in `docs/invariants.m
 date, location, nesting or chapter breakdown; keep everything idempotent; record provenance. Read the parts that
 matter for your task before you write anything.
 
+**Read docs by section, never whole.** `docs/d2l_discovery.md` and `docs/invariants.md` are long. Find the heading a
+skill points to (`Grep` for `^## ` in the file), then `Read` just that section with `offset` and `limit`. Every turn of
+a run re-sends everything read so far, so a long file read early costs again on every later turn.
+
+## Engine commands
+
+Everything below runs as `uv run academic-sync <command>` from this folder. This list is complete and current:
+**don't run `--help`, and never read the engine's source (`src/**/*.py`, which Kea blocks) to find a command or a
+field.** If a command answers with an error, its message says what's wrong.
+
+- **Start every recurring run with `kea-brief --course X`**: one JSON with the course, its saved portal links,
+  `needs_link_refresh` items, `to_record` (CREATE/UPDATE items **with their ids**), `needs_you` (CONFLICT/REVIEW),
+  `banners_through` and `next_banner_needed`. It replaces `status`, `plan`, `needs-link-refresh` and `portal-link-list`.
+- Courses: `courses`, `status`, `completeness [--course X]`, `course add --code X --name X --term X [--section]
+  [--start] [--end] [--d2l-id] [--d2l-url] [--instructor] [--campus] [--delivery]`.
+- Reading sources: `extract <path> --course X --source-type X [--title] [--url] [--tentative]` (source types:
+  syllabus, d2l_content, d2l_calendar, d2l_dropbox, d2l_quizzes, d2l_discussions, d2l_checklist, d2l_announcements,
+  d2l_schedule_page, d2l_home, linked_pdf, linked_doc, lab_handout, external_courseware, other); `doc-text <path>`.
+- Items: `render <item_id> [--reference-url --reference-url-label --resource-url --resource-url-label
+  --submission-url --submission-url-label --links --covered-chapters --study-focus --video-url --video-url-label
+  --link-available-date --points --optional --details --nesting --location] [--save] [--json]`;
+  `record-sync <item_id> --event-id kea:<item_id> --calendar-id kea`; `export [--course X]`; `plan --course X --verbose`.
+- Weeks and chapters: `weekly-reading-add --course X --week-start X --week-end X --chapters X [--reference-url ...]
+  [--links JSON]`; `chapter-topic-add --course X --chapter X [--title] [--vocabulary] [--objective] [--section]
+  [--exhaustive] [--reading-url] [--reading-label]`; `chapter-summary-set --course X --chapter X --summary X`.
+- Saved links (the URL registry): `portal-link-set --course X --kind X --url X [--label]` (kinds: home, grades,
+  announcements, content, dropbox, quizzes, discussions, calendar, external_home, external_gradebook, assignment, quiz,
+  content_topic, grade_item, module, other). Save every page you had to find, so no run has to find it again.
+- Gaps: `unresolved [--course X]`, `unresolved-add --course X --description X [--kind] [--source-wording]`,
+  `unresolved-resolve <id> --note X`.
+- Daily: `digest-deadlines --course X`, `digest-ingest --file X`, `digest-render --course X`,
+  `digest-record-sent --course X [--message-id] [--skipped]`; `shells-check --file X`.
+- Textbooks: `study-pdf-due`, `study-pdf-check --banner X`, `study-pdf-build --banner X`, `study-pdf-skip --banner X
+  --reason X`, `study-pdf-image search|get <query> [--banner]`, `study-pdf-plot <script>`, `study-pdf-preview
+  --banner X`, `study-pdf-list`. Practice sets: `practice-check <path> [--count N]`.
+- Preferences: `prefs get|set|unset|list`.
+
 ## Running inside Kea (overrides the skills where they differ)
 
 The skills in `.claude/skills/` were written for Claude Code driving Chrome and Google's connectors. In Kea:
@@ -44,10 +81,25 @@ folders, quizzes and content list, compares them with its last check, and starts
 something changed. Then the arguments look like `only CHE1011 BIO1112 -- Kea pre-check: data/digests/kea-precheck/<date>`,
 followed by what changed.
 - Check only the listed classes. For every other class, run `digest-record-sent --course <CODE> --skipped`.
-- The pre-check folder holds the API answers Kea already fetched: `<CODE>-news.json`, `-grades.json`, `-final.json`,
-  `-dropbox.json`, `-quizzes.json`, `-content.json`, plus `summary.json`. Use them instead of fetching the same data
-  again. Fetch only what they don't cover (an announcement's own page, an outside platform's gradebook, messages).
+- The pre-check folder holds the API answers Kea already fetched, trimmed for you: `<CODE>-news.min.json`,
+  `-grades.min.json`, `-final.min.json`, `-dropbox.min.json`, `-quizzes.min.json`, `-content.min.json`, plus
+  `summary.json`. Read the `.min.json` files (rich text is plain text with its links as `[text](address)`; empty and
+  false fields are left out), never the full `.json` beside them, and don't fetch the same data again. Fetch only what
+  they don't cover (an announcement's own page, an outside platform's gradebook).
 - New class shells are already found and queued by Kea (Step 1b is done). Skip enrollment checks.
+- Messages, announcements and grades also reach the student's Kea Inbox straight from Kea, without you.
+
+**The weekly update's pre-check.** Kea checks each class before a weekly update too, and starts you only when its
+content, assignment folders, quizzes or calendar moved since the last update, a saved link may have unlocked, or the
+next week still needs building. The arguments then look like `CODE -- Kea pre-check: data/digests/kea-sync/<date>`,
+followed by what moved. That folder holds `<CODE>-brief.json` (the `kea-brief` answer: don't run it again) and
+`<CODE>-content.min.json`, `-dropbox.min.json`, `-quizzes.min.json`, `-calendar.min.json`. Work from those and the
+list of what moved: open only the pages behind what moved, then do the skill's usual write-up. Announcements and
+grades are the daily check's job, so skip them here unless what moved points to one.
+
+**API answers.** `mcp__kea__d2l_fetch` trims JSON the same way (plain text with links, no empty or false fields) and
+answers in parts of about 40,000 characters, so each part arrives whole: page through with `offset` instead of
+searching a saved copy.
 
 **One class per run.** Kea runs first scans, weekly updates and textbook chapters one class (or one week) at a time.
 When the arguments name one class, work on that class only. When they include `-- new class shell: {...}`, it is a

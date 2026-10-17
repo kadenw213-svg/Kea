@@ -34,6 +34,8 @@ export interface KeaData {
   details: ScholarCourseDetail[];
   grades: Record<string, ScholarGrades | null>;
   inbox: ScholarInboxItem[];
+  /** Inbox messages deleted on the PC, by content, so the phone hides its own copies too. */
+  inboxDeleted?: string[];
   /** The PC's checkmark changes, with their times (for merging with the phone's). */
   doneLog?: Record<string, { on: boolean; at: string }>;
 }
@@ -129,16 +131,24 @@ const store = (k: string, v: unknown) => {
     localStorage.setItem(k, JSON.stringify(v));
   } catch {}
 };
+const DELETED = 'kea.deleted';
 export const phoneDone = () => load<DoneLog>(DONE, {});
 export const phoneRead = () => load<string[]>(READ, []);
+/** Inbox messages deleted on the phone, by content (the phone's own checks name them differently from the PC). */
+export const phoneDeleted = () => load<string[]>(DELETED, []);
+export const inboxKey = (i: { course: string; title: string; body: string }) => `${i.course}|${i.title}|${String(i.body || '').slice(0, 60)}`;
 
 let timer: any = null;
 /** Write phone.json for Kea on the PC (a moment after the last change, so a burst of taps is one write). */
 function syncOut() {
   clearTimeout(timer);
   timer = setTimeout(() => {
-    Kea.writeFile({ path: 'phone.json', text: JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000) }) }).catch(() => {});
+    Kea.writeFile({ path: 'phone.json', text: JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000), deleted: phoneDeleted().slice(-1000) }) }).catch(() => {});
   }, 1500);
+}
+export function setPhoneDeleted(keys: string[]) {
+  store(DELETED, [...new Set([...phoneDeleted(), ...keys])].slice(-2000));
+  syncOut();
 }
 export function setPhoneDone(id: string, on: boolean) {
   const d = phoneDone();

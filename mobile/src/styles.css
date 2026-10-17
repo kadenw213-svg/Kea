@@ -306,6 +306,16 @@ b.low {
   background: var(--surface-3);
   color: var(--text);
 }
+.chips button.danger {
+  border-color: #f28b82;
+  color: #f28b82;
+}
+.msg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
 .msg {
   padding: 11px 12px;
   border: 1px solid var(--border);
