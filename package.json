@@ -1,7 +1,7 @@
 {
   "name": "kea",
   "productName": "Kea",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "Kea: your classes, textbooks and calendar, with a clean offline office suite for PDFs, documents, spreadsheets and slides.",
   "author": "kadenw213-svg",
   "license": "MIT",
@@ -24,6 +24,9 @@
   },
   "devDependencies": {
     "@cantoo/pdf-lib": "2.11.1",
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/cli": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.9",

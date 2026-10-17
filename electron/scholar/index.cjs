@@ -24,6 +24,32 @@ function writeState(s) {
   fs.writeFileSync(p.state, JSON.stringify(s, null, 2));
 }
 
+// ---------- The copy in the student's cloud drive (for Kea on their phone) ----------
+const cloud = require('./cloud.cjs');
+
+/** Everything the phone shows, in one object. Textbook paths become relative to the drive folder's Textbooks/. */
+async function snapshot() {
+  const P = profiles.paths();
+  const done = readState().done || {};
+  const day = (n) => localDate(new Date(Date.now() + n * 864e5));
+  const courses = await db.courses(P.db, P.textbooks, done);
+  const items = await db.items(P.db, P.textbooks, done, { from: day(-28), to: day(150) });
+  const details = (await Promise.all(courses.map((c) => db.course(P.db, P.textbooks, done, c.id)))).filter(Boolean);
+  const grades = {};
+  for (const c of courses) grades[c.code] = precheck.readGrades().byCourse[c.code] || (await db.gradesFromChecks(P.db, c.id));
+  const inbox = precheck.readInbox().items.slice(0, 300);
+  // A PC path means nothing on the phone: textbook PDFs become their copy in the drive folder (Textbooks/<class>/<file>,
+  // the same layout Kea mirrors), and any other path is left out.
+  const fix = (v) => {
+    if (typeof v === 'string' && /^[a-z]:[\\/]/i.test(v)) return /\.pdf$/i.test(v) ? `Textbooks/${path.basename(path.dirname(v))}/${path.basename(v)}` : null;
+    if (Array.isArray(v)) return v.map(fix);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fix(x)]));
+    return v;
+  };
+  return fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, courses, items, details, grades, inbox });
+}
+const syncSoon = (delay) => cloud.schedule(snapshot, delay);
+
 // ---------- Tell the window when a scan changes the classes ----------
 let watcher = null;
 function watch() {
@@ -36,7 +62,10 @@ function watch() {
     watcher = fs.watch(dir, (_e, name) => {
       if (!String(name || '').startsWith('academic_sync.db')) return;
       clearTimeout(timer);
-      timer = setTimeout(() => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed')), 800);
+      timer = setTimeout(() => {
+        BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
+        syncSoon();
+      }, 800);
     });
   } catch {}
 }
@@ -91,7 +120,10 @@ async function tick() {
   const every = Number(settings.get('scholar.inboxMinutes', 30)) || 0;
   if (every && !runner.status().running && Date.now() - lastInbox >= every * 60000 - 30000) {
     lastInbox = Date.now();
-    precheck.pollAnnouncements().catch((err) => console.error('Inbox check', err));
+    precheck
+      .pollAnnouncements()
+      .then((ok) => ok && syncSoon(5000))
+      .catch((err) => console.error('Inbox check', err));
   }
   try {
     if (settings.get('scholar.autoScan', true) === false || runner.status().running) return;
@@ -140,6 +172,7 @@ function register() {
     if (done) s.done[id] = new Date().toISOString();
     else delete s.done[id];
     writeState(s);
+    syncSoon();
     return true;
   });
   ipcMain.handle('scholar:importExisting', (_e, folder) => importExisting(folder));
@@ -219,6 +252,9 @@ function register() {
   try {
     runner.adoptStopped();
   } catch {}
+  ipcMain.handle('scholar:cloudDrives', () => ({ drives: cloud.drives(), target: cloud.target() }));
+  ipcMain.handle('scholar:syncNow', () => cloud.sync(snapshot));
+  syncSoon(90000);
   setTimeout(tick, 60000);
   setInterval(tick, 5 * 60000);
 }

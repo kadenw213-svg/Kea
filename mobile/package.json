@@ -1,0 +1,10 @@
+{
+  "name": "kea-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Kea for Android: your classes, inbox, grades and calendar, and scanning work to hand in.",
+  "scripts": {
+    "build": "vite build",
+    "apk": "node ../scripts/mobile-apk.cjs"
+  }
+}

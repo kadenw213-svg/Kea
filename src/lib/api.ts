@@ -131,6 +131,10 @@ export interface KeaApi {
     markInboxRead(ids?: string[]): Promise<boolean>;
     /** Look for new announcements now (no Claude). False when Kea isn't signed in. */
     checkInbox(): Promise<boolean>;
+    /** Cloud drives on this computer, and the folder Kea keeps the phone's copy in. */
+    cloudDrives(): Promise<{ drives: { id: string; label: string; path: string }[]; target: string | null }>;
+    /** Update the phone's copy now. */
+    syncNow(): Promise<{ dir: string; hash: string } | null>;
     /** Every class's assignment folders a file can be handed in to. */
     handInTargets(): Promise<{ code: string; ou: string; folders: { id: number; name: string; due: string | null; closed: boolean; submitted: boolean }[] }[]>;
     /** Open the folder's D2L hand-in page with the file in its upload box. The student presses Submit there. */

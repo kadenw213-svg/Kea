@@ -1,0 +1,13 @@
+{
+  "appId": "com.kea.scholar",
+  "appName": "Kea",
+  "webDir": "dist",
+  "android": {
+    "path": "android",
+    "backgroundColor": "#131314"
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": false },
+    "CapacitorCookies": { "enabled": false }
+  }
+}

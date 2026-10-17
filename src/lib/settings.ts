@@ -428,6 +428,21 @@ export const SECTIONS: Section[] = [
         options: [['15', '15 minutes'], ['30', '30 minutes'], ['60', 'Hour'], ['180', '3 hours'], ['0', 'Only with the daily check']].map(([value, label]) => ({ value, label })),
         help: 'A quick look at each class’s announcements, done by Kea itself (no Claude usage). New ones show in the Inbox and as a notification.'
       },
+      {
+        key: 'scholar.cloud',
+        label: 'Keep a copy for Kea on your phone in',
+        type: 'select',
+        default: 'onedrive',
+        options: [
+          { value: 'onedrive', label: 'OneDrive' },
+          { value: 'google', label: 'Google Drive' },
+          { value: 'dropbox', label: 'Dropbox' },
+          { value: 'custom', label: 'Another folder (below)' },
+          { value: 'off', label: 'Nowhere (phone reads the class site only)' }
+        ],
+        help: 'One tidy “Kea” folder: your classes, calendar and grades in a single file, plus your textbook chapters. Kea updates it when something changes and deletes anything that no longer belongs.'
+      },
+      { key: 'scholar.cloudPath', label: 'Other folder for the phone copy', type: 'text', default: '', advanced: true },
       { key: 'scholar.background', label: 'Keep checking when Kea’s window is closed', type: 'toggle', default: true, help: 'Closing the window leaves Kea in the notification area (by the clock), so the daily check and paused scans still run. Quit from its icon there.' },
       {
         key: 'scholar.scanTime',

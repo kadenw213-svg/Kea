@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, Square, RefreshCw, BookOpen, Bell, KeyRound, Activity, Clock } from 'lucide-react';
+import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, Square, RefreshCw, BookOpen, Bell, KeyRound, Activity, Clock, Smartphone } from 'lucide-react';
 import { api, ScholarSetup, SchoolInfo, ScholarRun, ScholarNews, ScholarPending } from '../../lib/api';
 import { toast } from '../../store';
 import { reloadScholar } from './scholarStore';
@@ -202,6 +202,47 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
   );
 }
 
+const APK = 'https://github.com/kadenw213-svg/kea/releases/latest/download/Kea-Android.apk';
+
+/** Kea on your phone: where its copy of your classes is, and how to get the app. */
+function PhoneCard() {
+  const [info, setInfo] = useState<{ target: string | null } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.scholar.cloudDrives().then(setInfo);
+  }, []);
+  return (
+    <div className="scan-now phone-card">
+      <Smartphone size={18} />
+      <div>
+        <b>Kea on your phone (Android)</b>
+        <div className="muted">
+          {info?.target ? (
+            <>
+              Your classes, calendar, grades and textbook chapters are kept in <span className="pn-select">{info.target}</span> for the phone app.
+            </>
+          ) : (
+            'Choose a drive for the phone copy in Settings → Scholar.'
+          )}{' '}
+          Install the app on your phone from <span className="pn-select">{APK}</span> (open it in the phone's browser and allow installing from it).
+        </div>
+      </div>
+      <button
+        className="btn sm"
+        disabled={busy || !info?.target}
+        onClick={async () => {
+          setBusy(true);
+          await api.scholar.syncNow().catch(() => null);
+          setBusy(false);
+          toast('The phone copy is up to date.', 'success');
+        }}
+      >
+        {busy ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Update now
+      </button>
+    </div>
+  );
+}
+
 /** Scans: what's running, what ran, and the news from your classes (what the daily email used to say). */
 export function ScansView() {
   const [run, setRun] = useState<(ScholarRun & { running: boolean }) | null>(null);
@@ -275,6 +316,7 @@ export function ScansView() {
           </button>
         </div>
       )}
+      <PhoneCard />
       {news.some((n) => !n.read) && (
         <p className="muted">
           <Bell size={13} /> New messages, grades and announcements are in the Inbox.

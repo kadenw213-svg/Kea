@@ -6,3 +6,11 @@ public/tesseract/
 
 # Private future plans (see ideas/README.md)
 ideas/
+
+# Kea for Android: generated files
+mobile/dist/
+mobile/android/local.properties
+mobile/android/.gradle/
+mobile/android/app/src/main/assets/public/
+mobile/android/app/src/main/assets/capacitor.config.json
+mobile/android/app/src/main/assets/capacitor.plugins.json

@@ -192,7 +192,8 @@ export function groupLinks(links: ScholarLink[]) {
 export const openLink = (url: string) => api.scholar.openLink(url);
 
 /** Links as clean buttons, in groups ("Videos", "Practice"...), with Answers buttons on worksheets. */
-export function LinkGroups({ links, compact = false }: { links: ScholarLink[]; compact?: boolean }) {
+export function LinkGroups({ links, compact = false, onOpen = openLink }: { links: ScholarLink[]; compact?: boolean; onOpen?: (url: string) => void }) {
+  const openLink = onOpen;
   const groups = useMemo(() => groupLinks(links), [links]);
   if (!groups.length) return null;
   return (

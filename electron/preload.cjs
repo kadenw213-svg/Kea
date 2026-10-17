@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('api', {
     checkInbox: () => ipcRenderer.invoke('scholar:checkInbox'),
     grades: (courseId, code) => ipcRenderer.invoke('scholar:grades', courseId, code),
     handInTargets: () => ipcRenderer.invoke('scholar:handInTargets'),
+    cloudDrives: () => ipcRenderer.invoke('scholar:cloudDrives'),
+    syncNow: () => ipcRenderer.invoke('scholar:syncNow'),
     handIn: (ou, folderId, file) => ipcRenderer.invoke('scholar:handIn', ou, folderId, file),
     openLink: (url) => ipcRenderer.invoke('scholar:openLink', url),
     resume: (task) => ipcRenderer.invoke('scholar:resume', task),

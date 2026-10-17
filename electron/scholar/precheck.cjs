@@ -326,7 +326,73 @@ async function pollAnnouncements() {
   const ous = Object.fromEntries(list.map((c) => [c.code, c.ou]));
   updateGrades(dir, ous);
   updateInbox(dir, ous);
+  await updateAlerts(list).catch((err) => console.error('Alerts', err));
   return true;
+}
+
+// ---------- Messages and replies: the class site's own alert menus ----------
+/**
+ * D2L's home page has alert menus: messages (the envelope) and updates (the bell: replies to your posts, feedback,
+ * new grades). Kea reads them the way the page does and turns each new entry into an Inbox item and a notification.
+ */
+const ALERT_KINDS = [
+  { cat: 1, kind: 'message', label: 'Message' },
+  { cat: 2, kind: 'update', label: 'Update' },
+  { cat: 0, kind: 'update', label: 'Update' }
+];
+
+/** Entries in an alert menu's HTML: { text, url, at }. */
+function parseAlerts(html, home) {
+  const out = [];
+  for (const m of String(html || '').matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)) {
+    const inner = m[1];
+    const text = plain(inner).replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+    if (!text || text.length < 4 || /no (new )?(alerts|messages|updates)/i.test(text)) continue;
+    const href = (inner.match(/href="([^"]+)"/i) || [])[1] || '';
+    const at = (inner.match(/data-date="([^"]+)"|title="([^"]*\d{4}[^"]*)"/i) || []).slice(1).find(Boolean) || '';
+    let url = '';
+    try {
+      url = href && !href.startsWith('javascript') ? new URL(href.replace(/&amp;/g, '&'), home).href : '';
+    } catch {}
+    out.push({ text, url, at });
+  }
+  return out;
+}
+
+async function updateAlerts(list) {
+  const home = browser.schoolInfo().home;
+  const homeOu = (home.match(/\/d2l\/home\/(\d+)/) || [])[1];
+  if (!home || !homeOu) return;
+  const box = readInbox();
+  const known = new Set(box.items.map((i) => i.id));
+  const fresh = [];
+  for (const k of ALERT_KINDS) {
+    const r = await browser
+      .fetchText(new URL(`/d2l/MiniBar/${homeOu}/ActivityFeed/GetAlertsDaylight?Category=${k.cat}&_d2l_prc%24headingLevel=2&_d2l_prc%24scope=&_d2l_prc%24hasActiveForm=false&isXhr=true&requestId=1`, home).href)
+      .catch(() => null);
+    if (!r || r.status !== 200) continue;
+    // D2L answers these with a small JSON wrapper around the menu's HTML.
+    let html = r.text;
+    try {
+      const j = JSON.parse(r.text.replace(/^while\(1\);/, ''));
+      html = j.Payload?.Html || j.Html || html;
+    } catch {}
+    for (const a of parseAlerts(html, home)) {
+      const id = `alert:${k.kind}:${crypto.createHash('sha1').update(a.text).digest('hex').slice(0, 16)}`;
+      if (known.has(id)) continue;
+      known.add(id);
+      const [first, ...rest] = a.text.split('\n');
+      const course = list.find((c) => a.text.includes(c.code))?.code || '';
+      fresh.push({ id, kind: 'news', course, title: first.slice(0, 160), body: rest.join('\n').trim() || first, at: a.at || new Date().toISOString(), url: a.url, read: !box.seeded });
+    }
+  }
+  if (!fresh.length) return;
+  box.items = [...fresh, ...box.items].sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 500);
+  fs.writeFileSync(inboxFile(), JSON.stringify({ ...box, seeded: true }));
+  if (box.seeded) {
+    const { Notification } = require('electron');
+    for (const n of fresh.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: n.course ? `${n.course}: ${n.title}` : n.title, body: n.body.slice(0, 200) }).show();
+  }
 }
 
 // ---------- Grades (from D2L directly) ----------
