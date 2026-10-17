@@ -196,6 +196,10 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
   border-radius: 2px;
 }
+/* Dark pages: the same soft dark paper as the PDF viewer (inverted, colours kept). */
+.st-reading-pages.dark .rp-page {
+  filter: invert(0.9) hue-rotate(180deg);
+}
 .st-read-btn {
   margin-left: auto;
   flex-shrink: 0;

@@ -1,10 +1,11 @@
 // The class textbook beside a practice exam or flashcards: opens at the question's chapter (and its section, when the
 // question's topic names one), so the student can look the answer up without leaving the quiz.
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { BookOpen, X } from 'lucide-react';
+import { BookOpen, Moon, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { loadPdf, PDFDocumentProxy } from '../../editors/pdf/pdfjs';
 import { findChapter, OutlineEntry, readOutline } from '../../lib/pdfTarget';
+import { useSetting, useSettings } from '../../lib/settings';
 
 export interface ReadingTarget {
   chapter: string;
@@ -110,6 +111,8 @@ export function ReadingPane({ file, target, onClose }: { file: string; target: R
   const [doc, setDoc] = useState<{ pdf: PDFDocumentProxy; outline: OutlineEntry[]; ratio: number } | null>(null);
   const [error, setError] = useState('');
   const [width, setWidth] = useState(0);
+  // Dark pages, the same choice as Kea's PDF viewer (toggling here changes it there too).
+  const dark = !!useSetting<boolean>('pdf.darkPages');
   const scroller = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let live = true;
@@ -147,11 +150,14 @@ export function ReadingPane({ file, target, onClose }: { file: string; target: R
           {target.chapter}
           {target.topic ? <span className="muted"> · {target.topic}</span> : null}
         </span>
+        <button className={`icon-btn sm ${dark ? 'active' : ''}`} title={dark ? 'Light pages' : 'Dark pages'} onClick={() => useSettings.getState().set({ 'pdf.darkPages': !dark })}>
+          <Moon size={15} />
+        </button>
         <button className="icon-btn sm" title="Close the reading" onClick={onClose}>
           <X size={15} />
         </button>
       </div>
-      <div className="st-reading-pages" ref={scroller}>
+      <div className={`st-reading-pages ${dark ? 'dark' : ''}`} ref={scroller}>
         {error ? <p className="muted">{error}</p> : !doc ? <div className="spinner" /> : Array.from({ length: doc.pdf.numPages }, (_, i) => <Page key={i} pdf={doc.pdf} n={i} width={width} ratio={doc.ratio} root={scroller.current} />)}
       </div>
     </aside>
