@@ -11,33 +11,75 @@ const path = require('path');
 const profiles = require('./profiles.cjs');
 const settings = require('../settings.cjs');
 
-/** Cloud drives found on this computer: { id, label, path }. */
-function drives() {
+/**
+ * OneDrive accounts signed in on this computer, from OneDrive's own settings (the OneDrive environment variables aren't
+ * always there for apps): [{ id, label, path, account }]. The account (email) shows which OneDrive it is, since two
+ * computers only see each other's files when they're signed in to the same one.
+ */
+function oneDrives() {
   const out = [];
-  const od = process.env.OneDriveConsumer || process.env.OneDrive;
-  if (od && fs.existsSync(od)) out.push({ id: 'onedrive', label: 'OneDrive', path: od });
+  try {
+    const raw = require('child_process').execSync('reg query "HKCU\\Software\\Microsoft\\OneDrive\\Accounts" /s', { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 });
+    let cur = null;
+    const accounts = [];
+    for (const line of raw.split(/\r?\n/)) {
+      const key = /\\Accounts\\([^\\]+)$/.exec(line.trim());
+      if (key) accounts.push((cur = { key: key[1] }));
+      const v = /^\s+(UserFolder|UserEmail|DisplayName)\s+REG_SZ\s+(.*)$/.exec(line);
+      if (v && cur) cur[v[1]] = v[2].trim();
+    }
+    for (const a of accounts) {
+      if (!a.UserFolder || !fs.existsSync(a.UserFolder)) continue;
+      const personal = a.key === 'Personal';
+      out.push({ id: personal ? 'onedrive' : `onedrive-${a.key.toLowerCase()}`, label: personal ? 'OneDrive' : `OneDrive (${a.DisplayName || 'work or school'})`, path: a.UserFolder, account: a.UserEmail || '' });
+    }
+  } catch {}
+  const env = process.env.OneDriveConsumer || process.env.OneDrive;
+  if (!out.length && env && fs.existsSync(env)) out.push({ id: 'onedrive', label: 'OneDrive', path: env, account: '' });
+  return out;
+}
+
+let found = { at: 0, list: [] };
+/** Cloud drives found on this computer: { id, label, path, account }. (Looked up at most once a minute.) */
+function drives() {
+  if (Date.now() - found.at < 60000) return found.list;
+  const out = oneDrives();
   // Google Drive for desktop: a drive letter with "My Drive", or the older folder in the home directory.
   for (const letter of 'DEFGHIJKLMNOPQRSTUVWXYZ') {
     const p = `${letter}:\\My Drive`;
     try {
       if (fs.existsSync(p)) {
-        out.push({ id: 'google', label: 'Google Drive', path: p });
+        out.push({ id: 'google', label: 'Google Drive', path: p, account: `${letter}: drive` });
         break;
       }
     } catch {}
   }
-  const gd = path.join(os.homedir(), 'Google Drive');
-  if (!out.some((d) => d.id === 'google') && fs.existsSync(gd)) out.push({ id: 'google', label: 'Google Drive', path: gd });
+  for (const gd of [path.join(os.homedir(), 'Google Drive', 'My Drive'), path.join(os.homedir(), 'My Drive'), path.join(os.homedir(), 'Google Drive')]) {
+    if (!out.some((d) => d.id === 'google') && fs.existsSync(gd)) out.push({ id: 'google', label: 'Google Drive', path: gd, account: '' });
+  }
   const db = path.join(os.homedir(), 'Dropbox');
-  if (fs.existsSync(db)) out.push({ id: 'dropbox', label: 'Dropbox', path: db });
+  if (fs.existsSync(db)) out.push({ id: 'dropbox', label: 'Dropbox', path: db, account: '' });
+  found = { at: Date.now(), list: out };
   return out;
+}
+
+/** The drive Kea syncs through ({ id, label, path, account }), or null when syncing is off or that drive isn't here. */
+function drive() {
+  const choice = settings.get('scholar.cloud', 'auto');
+  if (choice === 'off') return null;
+  if (choice === 'custom') {
+    const p = settings.get('scholar.cloudPath', '');
+    return p && fs.existsSync(p) ? { id: 'custom', label: 'Your folder', path: p, account: '' } : null;
+  }
+  const list = drives();
+  // Automatic: OneDrive if it's here, otherwise Google Drive.
+  if (choice === 'auto') return list.find((d) => d.id === 'onedrive') || list.find((d) => d.id === 'google') || list[0] || null;
+  return list.find((d) => d.id === choice) || null;
 }
 
 /** The folder Kea syncs into for the active profile, or null when syncing is off or the drive isn't there. */
 function target() {
-  const choice = settings.get('scholar.cloud', 'onedrive');
-  if (choice === 'off') return null;
-  const root = choice === 'custom' ? settings.get('scholar.cloudPath', '') : drives().find((d) => d.id === choice)?.path;
+  const root = drive()?.path;
   if (!root || !fs.existsSync(root)) return null;
   const name = (profiles.all().list.find((p) => p.id === profiles.active())?.name || profiles.active()).replace(/[<>:"/\\|?*]+/g, '').trim() || 'School';
   return path.join(root, 'Kea', name);
@@ -115,12 +157,12 @@ async function sync(build) {
     mirror(profiles.paths().textbooks, path.join(dir, 'Textbooks'));
     // Anything else in Kea's folder (left from an older version) goes too.
     // (phone.json is the phone's own file: what it checked off and read.)
-    // (PCs is where computers sharing these classes keep in step: pcsync.cjs.)
-    for (const e of fs.readdirSync(dir)) if (!['kea-data.json', 'Textbooks', 'phone.json', 'PCs'].includes(e)) fs.rmSync(path.join(dir, e), { recursive: true, force: true });
+    // (Devices is where computers sharing these classes keep in step: devices.cjs. An older version's PCs folder goes.)
+    for (const e of fs.readdirSync(dir)) if (!['kea-data.json', 'Textbooks', 'phone.json', 'Devices'].includes(e)) fs.rmSync(path.join(dir, e), { recursive: true, force: true });
     return { dir, hash: sha(body) };
   } finally {
     running = false;
   }
 }
 
-module.exports = { drives, target, sync, schedule, mirror };
+module.exports = { drives, drive, target, sync, schedule, mirror };

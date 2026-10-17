@@ -120,14 +120,18 @@ export interface KeaApi {
     installClaude(): Promise<{ code: number; out: string }>;
     signInClaude(): Promise<ClaudeAccount>;
     setupEngine(): Promise<boolean>;
-    /** On a computer that doesn't scan, the scanning one is asked instead: `relayed` names it. */
+    /** On a device that isn't the primary, the primary is asked instead: `relayed` names it. */
     run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe', arg?: string): Promise<boolean | { relayed: string; online: boolean }>;
-    /** Computers sharing these classes: which one scans, and when it was last heard from. */
-    pcStatus(): Promise<{ on: boolean; me?: string; role?: 'scanner' | 'follower' | 'none'; scanner?: { name: string; at: string; running: string | null } | null; others?: number; elsewhere?: PcShare[] }>;
-    /** Classes other computers share, found in every drive on this one, and what's missing when there are none. */
-    pcFind(): Promise<{ found: PcShare[]; notes: string[]; me: string }>;
-    /** Use one of those here (this computer follows the one that scans). */
-    pcJoin(choice: PcShare): Promise<{ ok: boolean; scanner?: boolean; from?: string; waiting?: string }>;
+    /** Your devices: the drive they sync through, which one is the primary, and what it's running. */
+    devices(): Promise<DevicesStatus>;
+    /** Classes other devices share, found in every drive on this one, and what's missing when there are none. */
+    devicesFind(): Promise<{ found: DeviceShare[]; notes: string[]; me: string }>;
+    /** Use one of those here (this device follows the primary). */
+    devicesJoin(choice: DeviceShare): Promise<{ ok: boolean; primary?: boolean; from?: string; waiting?: string }>;
+    /** Make a device (by id) the one that scans. */
+    makePrimary(id: string): Promise<DevicesStatus>;
+    /** Sync through this drive: 'auto', 'onedrive', 'google', another drive's id, 'custom' or 'off'. */
+    setDrive(choice: string): Promise<DevicesStatus>;
     /** Practice exams and flashcard decks, newest first. */
     studyList(): Promise<StudySet[]>;
     /** One set with its questions or cards. */
@@ -138,7 +142,7 @@ export interface KeaApi {
     studyAttempt(id: string, a: { score: number; total: number; n: number }): Promise<boolean>;
     studyKnown(id: string, known: number[]): Promise<boolean>;
     stop(): Promise<boolean>;
-    runStatus(): Promise<{ running: ScholarRun | null; queued: { task: string; arg: string }[] }>;
+    runStatus(): Promise<{ running: ScholarRun | null; queued: QueuedRun[] }>;
     activity(): Promise<ScholarRun[]>;
     news(): Promise<ScholarNews[]>;
     markNewsRead(ids?: string[]): Promise<boolean>;
@@ -352,18 +356,82 @@ export interface ClaudeAccount {
   method?: string;
   plan?: string;
 }
-/** A profile's classes shared through a drive by the computer that scans them. */
-export interface PcShare {
+/** A profile's classes shared through a drive by the device that scans them (its primary). */
+export interface DeviceShare {
   drive: string;
   label: string;
+  account: string;
   root: string;
   profile: string;
-  scanner: string;
+  primary: string;
   at: string;
-  /** This computer is the one scanning it. */
+  /** This device is the primary for it. */
   mine: boolean;
-  /** Its class database has fully arrived on this computer. */
+  /** Its class database has fully arrived on this device. */
   ready: boolean;
+}
+
+export interface CloudDrive {
+  id: string;
+  label: string;
+  path: string;
+  /** The signed-in account (OneDrive's email), or a drive letter. */
+  account: string;
+}
+
+export interface DeviceInfo {
+  id: string;
+  name: string;
+  at: string;
+  version: string;
+  drive: { label: string; account: string } | null;
+  primary: boolean;
+  me: boolean;
+  online: boolean;
+}
+
+/** A waiting run, with what it usually takes. */
+export interface QueuedRun {
+  task?: string;
+  arg: string;
+  label: string;
+  expectedMs: number;
+}
+
+/** What a run reports for its progress bar (also sent from the primary to the other devices). */
+export interface RunProgress {
+  label: string;
+  arg: string;
+  start: string;
+  phase?: 'check' | 'claude';
+  claudeStart?: string | null;
+  expectedMs?: number;
+  expectedTurns?: number;
+  turns?: number;
+  percent?: number | null;
+  batch?: { done: number; total: number } | null;
+  step?: string;
+}
+
+export interface DevicesStatus {
+  on: boolean;
+  me: { id: string; name: string };
+  drive: CloudDrive | null;
+  drives: CloudDrive[];
+  choice: string;
+  role: 'primary' | 'follower' | 'alone';
+  folder?: string;
+  primary: { id: string; name: string; at: string; online: boolean } | null;
+  devices: DeviceInfo[];
+  phone: { at: string } | null;
+  /** On a device that isn't the primary: what the primary is running now, and what's waiting. */
+  run: RunProgress | null;
+  queue: QueuedRun[];
+  pending?: ScholarPending | null;
+  elsewhere: DeviceShare[];
+  /** The primary's classes are still arriving: how much of the database is here. */
+  waiting: { since: string; have: number; of: number } | null;
+  pulledAt?: string | null;
 }
 
 export interface ScholarSetup {
@@ -386,6 +454,15 @@ export interface ScholarRun {
   steps: { at: string; message: string }[];
   /** Set when the run stopped at a Claude usage limit: when Kea continues it. */
   paused?: string;
+  phase?: 'check' | 'claude';
+  claudeStart?: string | null;
+  expectedMs?: number;
+  expectedTurns?: number;
+  turns?: number;
+  percent?: number | null;
+  /** Whether Claude was used (false: Kea's own check found nothing to do). */
+  claude?: boolean;
+  batch?: { id: string; done: number; total: number } | null;
 }
 export interface ScholarGrades {
   final: { shown: string; percent: number | null } | null;

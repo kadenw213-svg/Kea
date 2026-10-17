@@ -33,7 +33,7 @@ const TOOLS = [
   {
     name: 'kea_progress',
     description: 'Tell the user, in one short plain sentence, what the scan is doing now (shown quietly in Kea), e.g. "Reading BIO1112\'s Week 9 module".',
-    inputSchema: { type: 'object', properties: { message: { type: 'string', maxLength: 200 } }, required: ['message'] }
+    inputSchema: { type: 'object', properties: { message: { type: 'string', maxLength: 200 }, percent: { type: 'number', minimum: 0, maximum: 100, description: 'Roughly how far through the whole task you are (fills the progress bar), e.g. 40 after 2 of 5 modules.' } }, required: ['message'] }
   },
   {
     name: 'kea_notify',
@@ -85,7 +85,7 @@ function start(hooks) {
       case 'd2l_status':
         return browser.status();
       case 'kea_progress':
-        hooks.progress?.(String(a.message || '').slice(0, 200));
+        hooks.progress?.(String(a.message || '').slice(0, 200), Number(a.percent));
         return { ok: true };
       case 'kea_notify':
         hooks.notify?.({

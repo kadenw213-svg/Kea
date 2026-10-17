@@ -40,7 +40,8 @@ import { useSettings } from '../../lib/settings';
 import { toast, prompt } from '../../store';
 import { useScholar, reloadScholar, ScholarView } from './scholarStore';
 import { MenuButton } from '../Popover';
-import { SetupWizard, ScansView, FromAnotherComputer } from './Setup';
+import { SetupWizard } from './Setup';
+import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, setClassColor, setTypeColor, useColors } from './kinds';
 import { PracticeBox, ResourcesView, StudyPlayer } from './Study';
 import '../../styles/scholar.css';
@@ -1330,15 +1331,15 @@ function AddClass({ first }: { first: boolean }) {
         </button>
         <button className="add-card" onClick={() => setOther(true)}>
           <Monitor size={26} />
-          <div className="add-name">From another computer</div>
-          <div className="add-desc">Already use Kea on another PC? Bring its classes here through your OneDrive or Google Drive. Only that computer scans, so nothing uses your Claude plan twice.</div>
+          <div className="add-name">From another device</div>
+          <div className="add-desc">Already use Kea on another computer? Bring its classes here through your OneDrive or Google Drive. Only one device scans, so nothing uses your Claude plan twice.</div>
         </button>
       </div>
       {other && (
         <div className="gate">
-          <h2>Bring in classes from another computer</h2>
-          <p>Kea looks in every drive on this computer for the classes your other computer shares (it needs Kea 0.27 or later, open, with the same drive chosen in Settings → Scholar).</p>
-          <FromAnotherComputer onDone={() => useScholar.getState().set({ view: { name: 'week' } })} />
+          <h2>Bring in classes from another device</h2>
+          <p>Kea looks in OneDrive and Google Drive on this computer for the classes your other device shares. Both need the same drive account, and Kea open on the other one.</p>
+          <FromAnotherDevice onDone={() => useScholar.getState().set({ view: { name: 'week' } })} />
         </div>
       )}
       {gate && (

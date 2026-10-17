@@ -437,44 +437,34 @@ export const SECTIONS: Section[] = [
       },
       {
         key: 'scholar.cloud',
-        label: 'Keep a copy for your phone and other computers in',
-        type: 'select',
-        default: 'onedrive',
-        options: [
-          { value: 'onedrive', label: 'OneDrive' },
-          { value: 'google', label: 'Google Drive' },
-          { value: 'dropbox', label: 'Dropbox' },
-          { value: 'custom', label: 'Another folder (below)' },
-          { value: 'off', label: 'Nowhere (phone reads the class site only)' }
-        ],
-        help: 'One tidy “Kea” folder: your classes, calendar and grades in a single file, plus your textbook chapters. Kea updates it when something changes and deletes anything that no longer belongs.'
-      },
-      { key: 'scholar.cloudPath', label: 'Other folder for the phone copy', type: 'text', default: '', advanced: true },
-      {
-        key: 'scholar.pcSync',
-        label: 'Keep your other computers in step through that drive',
-        type: 'toggle',
-        default: true,
-        help: 'Kea on another PC signed in to the same drive shows the same classes, checkmarks, Inbox and study sets. Only one computer ever checks the class site or uses your Claude plan; the others ask it to, so nothing runs twice.'
-      },
-      {
-        key: 'scholar.pcRole',
-        label: 'This computer',
+        label: 'Sync your phone and other devices through',
         type: 'select',
         default: 'auto',
         options: [
-          { value: 'auto', label: 'Scans when it’s the first with your classes, or the scanning one has gone quiet' },
-          { value: 'main', label: 'Always does the scans' },
-          { value: 'viewer', label: 'Never scans (only shows what another computer found)' }
+          { value: 'auto', label: 'Automatic (OneDrive if it’s here, otherwise Google Drive)' },
+          { value: 'onedrive', label: 'OneDrive' },
+          { value: 'google', label: 'Google Drive' },
+          { value: 'custom', label: 'Another folder (below)' },
+          { value: 'off', label: 'Don’t sync' }
         ],
-        advanced: true
+        help: 'Everything goes in one “Kea” folder in that drive. Every device must use the same drive and account. Scans → Devices shows each device and which one scans.'
       },
+      { key: 'scholar.cloudPath', label: 'Other folder to sync through', type: 'text', default: '', advanced: true },
+      {
+        key: 'scholar.pcSync',
+        label: 'Keep your other computers in step',
+        type: 'toggle',
+        default: true,
+        advanced: true,
+        help: 'Kea on another computer with the same drive shows the same classes, checkmarks, Inbox and study sets. Only the primary device (Scans → Devices) ever checks the class site or uses your Claude plan.'
+      },
+      { key: 'scholar.deviceName', label: 'This device’s name', type: 'text', default: '', advanced: true, help: 'Shown to your other devices. Empty: the computer’s own name.' },
       {
         key: 'scholar.pcTakeover',
-        label: 'Take over scanning when the scanning computer hasn’t been on for',
+        label: 'If the primary hasn’t been on for a while, this device takes over scanning after',
         type: 'select',
-        default: '48',
-        options: [['12', '12 hours'], ['24', 'A day'], ['48', '2 days'], ['72', '3 days'], ['168', 'A week'], ['0', 'Never (only if I choose “Always does the scans”)']].map(([value, label]) => ({ value, label })),
+        default: '0',
+        options: [['0', 'Never (I choose the primary in Scans → Devices)'], ['24', 'A day'], ['48', '2 days'], ['72', '3 days'], ['168', 'A week']].map(([value, label]) => ({ value, label })),
         advanced: true
       },
       { key: 'scholar.background', label: 'Keep checking when Kea’s window is closed', type: 'toggle', default: true, help: 'Closing the window leaves Kea in the notification area (by the clock), so the class checks and paused scans still run. Quit from its icon there.' },

@@ -66,7 +66,7 @@ function mergePhone() {
 }
 
 /**
- * Another device's changes (the phone's phone.json, or another computer's — see pcsync.cjs): checkmarks, newest change
+ * Another device's changes (the phone's phone.json, or another computer's — see devices.cjs): checkmarks, newest change
  * winning, Inbox items read or deleted there, and study progress. Returns true when something changed here.
  */
 function applyMarks(phone) {
@@ -101,7 +101,7 @@ function applyMarks(phone) {
       changed = true;
     }
   }
-  if (phone.study && pcsync.mergeStudy(phone.study)) changed = true;
+  if (phone.study && devices.mergeStudy(phone.study)) changed = true;
   if (changed) BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
   return changed;
 }
@@ -141,13 +141,13 @@ async function snapshot() {
 }
 // The phone copy is written by the computer that scans; any other computer only sends its changes to that one.
 const syncSoon = (delay) => {
-  if (!pcsync.follower()) cloud.schedule(snapshot, delay);
-  pcsync.soon(delay);
+  if (!devices.follower()) cloud.schedule(snapshot, delay);
+  devices.soon(delay);
 };
 
 // ---------- Other computers (the same classes on more than one PC, scanned by only one of them) ----------
-const pcsync = require('./pcsync.cjs');
-pcsync.configure({ readState, writeState, applyMarks, syncSoon: (d) => syncSoon(d), ready: () => ready() });
+const devices = require('./devices.cjs');
+devices.configure({ readState, writeState, applyMarks, syncSoon: (d) => syncSoon(d), ready: () => ready() });
 
 // ---------- Tell the window when a scan changes the classes ----------
 let watcher = null;
@@ -217,7 +217,7 @@ async function ready() {
 let lastInbox = 0;
 async function tick() {
   // Another computer does the scanning (and takes in the phone's changes); this one only follows it.
-  if (pcsync.follower()) return;
+  if (devices.follower()) return;
   // What the phone changed (checkmarks, read messages) comes in through the drive folder.
   try {
     if (mergePhone()) syncSoon(5000);
@@ -313,21 +313,38 @@ function register() {
   ipcMain.handle('scholar:setupEngine', (e) => workspace.setupEngine(browser.schoolInfo().home, lines(e)));
 
   // Scans.
-  // On a computer that doesn't scan, the scanning one is asked to (through the drive), so nothing runs twice.
+  // On a device that isn't the primary, the primary is asked to (through the drive), so nothing runs twice.
   ipcMain.handle('scholar:run', (_e, task, arg) => {
-    if (task !== 'probe' && pcsync.follower()) return pcsync.relay({ task, arg: arg || '' });
+    if (task !== 'probe' && devices.follower()) return devices.relay({ task, arg: arg || '' });
     runner.run(task, arg || '', 'manual');
     return true;
   });
-  ipcMain.handle('scholar:pcStatus', () => pcsync.status());
-  ipcMain.handle('scholar:pcFind', () => pcsync.find());
-  ipcMain.handle('scholar:pcJoin', async (_e, choice) => {
+  // Your devices: which one scans, the drive they sync through, and bringing classes in on a new one.
+  const devicesChanged = () => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
+  ipcMain.handle('scholar:devices', () => devices.status());
+  ipcMain.handle('scholar:devicesFind', () => devices.find());
+  ipcMain.handle('scholar:devicesJoin', async (_e, choice) => {
     if (runner.status().running) throw new Error('A class scan is running here. Try again when it finishes.');
-    const r = await pcsync.join(choice);
+    const r = await devices.join(choice);
     watch();
     return r;
   });
-  ipcMain.handle('scholar:stop', () => (runner.stop(), true));
+  ipcMain.handle('scholar:makePrimary', (_e, id) => {
+    if (runner.status().running && id !== require('../settings.cjs').get('scholar.pcId')) throw new Error('A class scan is running on this device. Make another device the primary when it finishes (or stop it first).');
+    return devices.makePrimary(id);
+  });
+  ipcMain.handle('scholar:setDrive', async (_e, choice) => {
+    settings.set({ 'scholar.cloud': choice });
+    await devices.step();
+    watch();
+    devicesChanged();
+    return devices.status();
+  });
+  ipcMain.handle('scholar:stop', () => {
+    if (devices.follower()) return (devices.relay({ task: 'stop' }), true);
+    runner.stop();
+    return true;
+  });
   ipcMain.handle('scholar:runStatus', () => runner.status());
   ipcMain.handle('scholar:activity', () => runner.activity());
   ipcMain.handle('scholar:news', () => runner.news());
@@ -355,15 +372,15 @@ function register() {
     return true;
   });
   ipcMain.handle('scholar:checkInbox', () => {
-    if (!pcsync.follower()) return precheck.pollAnnouncements();
-    pcsync.relay({ task: 'inbox' });
+    if (!devices.follower()) return precheck.pollAnnouncements();
+    devices.relay({ task: 'inbox' });
     return true;
   });
   // Handing in a file: the folders it can go to, then D2L's own hand-in page with the file in its upload box.
   ipcMain.handle('scholar:handInTargets', async () => {
     let t = await precheck.handInTargets();
     // Nothing known yet: take a quick look at the class site first (no Claude).
-    if (!t.some((c) => c.folders.length) && !pcsync.follower()) {
+    if (!t.some((c) => c.folders.length) && !devices.follower()) {
       await precheck.pollAnnouncements().catch(() => false);
       t = await precheck.handInTargets();
     }
@@ -391,8 +408,8 @@ function register() {
   ipcMain.handle('scholar:studyMake', async (_e, req) => {
     const id = await study.request(req);
     // Made by the computer that scans (it has the class files); the set comes back here when it's ready.
-    if (pcsync.follower()) {
-      pcsync.relay({ task: 'practice', req: { ...req, id } });
+    if (devices.follower()) {
+      devices.relay({ task: 'practice', req: { ...req, id } });
       return id;
     }
     runner.run('practice', id, 'manual').then(() => {
@@ -408,7 +425,10 @@ function register() {
   ipcMain.handle('scholar:studyDelete', (_e, id) => study.remove(id));
   ipcMain.handle('scholar:studyAttempt', (_e, id, a) => study.saveAttempt(id, a));
   ipcMain.handle('scholar:studyKnown', (_e, id, known) => study.setKnown(id, known));
-  ipcMain.handle('scholar:resume', (_e, task) => (runner.pending() ? runner.resume() : runner.resumeLast(task || 'import')));
+  ipcMain.handle('scholar:resume', (_e, task) => {
+    if (devices.follower()) return (devices.relay({ task: 'resume', arg: task || '' }), true);
+    return runner.pending() ? runner.resume() : runner.resumeLast(task || 'import');
+  });
 
   // Developer aid (unpackaged builds only): read a page through the class-site browser.
   if (!require('electron').app.isPackaged) {
@@ -427,16 +447,16 @@ function register() {
   } catch {}
   ipcMain.handle('scholar:cloudDrives', () => ({ drives: cloud.drives(), target: cloud.target() }));
   ipcMain.handle('scholar:syncNow', async () => {
-    await pcsync.step();
-    return pcsync.follower() ? null : cloud.sync(snapshot);
+    await devices.step();
+    return devices.follower() ? null : cloud.sync(snapshot);
   });
   syncSoon(90000);
   // Phone and other computers' changes arrive within about a minute of the drive bringing them down.
-  setTimeout(() => pcsync.step(), 15000);
+  setTimeout(() => devices.step(), 15000);
   setInterval(async () => {
-    await pcsync.step();
+    await devices.step();
     try {
-      if (!pcsync.follower() && mergePhone()) syncSoon(5000);
+      if (!devices.follower() && mergePhone()) syncSoon(5000);
     } catch {}
   }, 60000);
   setTimeout(tick, 60000);

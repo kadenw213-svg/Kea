@@ -233,11 +233,37 @@ function adoptStopped() {
   setPending({ task: last.task, arg: last.arg || '', label: last.label, until: until.toISOString() });
 }
 
+// ---------- How long a run takes (for the progress bar and "about 4 min left") ----------
+// Typical length of a run that used Claude, before Kea has seen one of its own: minutes.
+const TYPICAL = { daily: 4, import: 25, sync: 6, study: 10, practice: 6, probe: 1 };
+const classOf = (arg) => (/^([A-Z]{2,5}\d{3,5})\b/.exec(String(arg || '').trim()) || [])[1] || '';
+// Old entries don't say whether Claude ran: a skip (Kea's own check found nothing) is short and says so.
+const usedClaude = (e) =>
+  e.claude !== undefined ? e.claude : !/no Claude usage|Dry run|one at a time|already has its textbook|already in Kea|^Skipped|isn’t signed in|aren’t set up|No classes to update/i.test(e.summary || '') && new Date(e.end) - new Date(e.start) > 20000;
+const median = (xs) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : 0);
+
+/** What a run of this task (for this class, when known) usually takes: { ms, turns }. Learned from past runs. */
+function estimate(task, arg) {
+  const typical = (TYPICAL[task] || 5) * 60000;
+  const took = (e) => new Date(e.end) - new Date(e.claudeStart || e.start);
+  // A run far longer than usual (an early all-classes scan, a usage-limit pause) would throw every bar off.
+  const past = readJson(activityFile(), []).filter((e) => e.task === task && e.ok && e.end && !e.paused && usedClaude(e) && took(e) < Math.max(6 * typical, 30 * 60000));
+  const code = classOf(arg);
+  const same = code ? past.filter((e) => classOf(e.arg) === code) : [];
+  const pick = same.length ? same : past;
+  const ms = median(pick.slice(0, 8).map(took)) || typical;
+  const turns = median(pick.filter((e) => e.turns).slice(0, 8).map((e) => e.turns)) || 0;
+  return { ms, turns };
+}
+
+// Runs split into one per class are a batch: "2 of 4" and one bar across all of them.
+const batches = new Map();
+
 /** Queue a run. Resolves when it finishes, with its summary. */
-function run(task, arg = '', why = 'manual') {
+function run(task, arg = '', why = 'manual', batch = null) {
   if (!TASKS[task]) throw new Error(`Unknown run: ${task}`);
   return new Promise((resolve) => {
-    queue.push({ task, arg, why, resolve, profile: profiles.active() });
+    queue.push({ task, arg, why, resolve, batch, profile: profiles.active() });
     next();
   });
 }
@@ -257,17 +283,25 @@ async function next() {
     return next();
   }
   const t = TASKS[job.task];
-  const entry = { id: `${Date.now()}`, task: job.task, label: t.label, arg: job.arg, why: job.why, start: new Date().toISOString(), end: null, ok: null, summary: '', steps: [] };
+  const est = estimate(job.task, job.arg);
+  const b = job.batch && batches.get(job.batch);
+  // phase: 'check' while Kea looks by itself, 'claude' once Claude is reading. turns: Claude's steps so far.
+  const entry = { id: `${Date.now()}`, task: job.task, label: t.label, arg: job.arg, why: job.why, start: new Date().toISOString(), end: null, ok: null, summary: '', steps: [], phase: 'check', claudeStart: null, expectedMs: est.ms, expectedTurns: est.turns, turns: 0, percent: null, claude: false, batch: b ? { id: job.batch, done: b.done, total: b.total } : null };
   current = { entry, child: null, server: null };
-  const step = (message) => {
+  const step = (message, percent) => {
     entry.steps.push({ at: new Date().toISOString(), message });
     if (entry.steps.length > 200) entry.steps.shift();
+    if (Number.isFinite(percent)) entry.percent = Math.max(0, Math.min(100, percent));
     send('scholar:run', { ...entry, running: true });
   };
   const finish = (ok, summary) => {
     entry.end = new Date().toISOString();
     entry.ok = ok;
     entry.summary = summary;
+    if (b) {
+      b.done++;
+      if (b.done >= b.total) batches.delete(job.batch);
+    }
     saveActivity(entry);
     send('scholar:run', { ...entry, running: false });
     send('scholar:changed');
@@ -291,7 +325,9 @@ async function next() {
       });
       if (pre.skip) return finish(pre.ok !== false, pre.skip);
       if (pre.split) {
-        for (const a of pre.split) run(job.task, a, job.why);
+        const id = `${entry.id}-batch`;
+        batches.set(id, { done: 0, total: pre.split.length, label: t.label });
+        for (const a of pre.split) run(job.task, a, job.why, id);
         return finish(true, pre.summary);
       }
       if (pre.prompt) prompt = pre.prompt;
@@ -313,6 +349,9 @@ async function next() {
     // Nor is the engine's source: its commands are listed in Kea's CLAUDE.md, and reading the code to find them was
     // the biggest waste in early runs.
     const args = ['-p', prompt, '--model', 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', '--permission-mode', 'dontAsk', '--allowedTools', ...t.tools, '--disallowedTools', 'Read(**/*.pdf)', 'Read(./src/**/*.py)'];
+    entry.phase = 'claude';
+    entry.claude = true;
+    entry.claudeStart = new Date().toISOString();
     step(`${t.label}…`);
     const child = spawn(claude, args, { cwd, env: workspace.engineEnv(uv), windowsHide: true });
     current.child = child;
@@ -328,7 +367,14 @@ async function next() {
         if (!line) continue;
         try {
           const ev = JSON.parse(line);
-          if (ev.type === 'result') result = ev;
+          if (ev.type === 'result') {
+            result = ev;
+            if (ev.num_turns) entry.turns = ev.num_turns;
+          } else if (ev.type === 'assistant') {
+            entry.turns++;
+            // The bar moves with each of Claude's steps (not every one: a run takes dozens).
+            if (entry.turns % 3 === 0) send('scholar:run', { ...entry, running: true });
+          }
         } catch {}
       }
     });
@@ -377,7 +423,8 @@ function stop() {
   if (current?.child) current.child.kill();
 }
 
-const status = () => ({ running: current ? { ...current.entry, running: true } : null, queued: queue.map((j) => ({ task: j.task, arg: j.arg })) });
+// Waiting runs carry their own estimate, so the time left covers the whole queue.
+const status = () => ({ running: current ? { ...current.entry, running: true } : null, queued: queue.map((j) => ({ task: j.task, arg: j.arg, label: TASKS[j.task].label, expectedMs: estimate(j.task, j.arg).ms })) });
 const activity = () => readJson(activityFile(), []);
 const news = () => readJson(newsFile(), []);
 function markNewsRead(ids) {
