@@ -147,8 +147,9 @@ async function decide(dir) {
   const stale = hours > 0 && Date.now() - new Date(s.at).getTime() > hours * 3600e3;
   const st = readJson(stateFile(), {});
   if (role === 'main' && (!s.forced || stale)) return claim(dir), 'scanner';
-  // Joining for the first time with newer classes than the drive has (this computer scanned more recently).
-  if (role !== 'viewer' && !st.pulledSha && hasDb && fs.statSync(P.db).mtimeMs > (s.db?.mtime || 0) + 60000) return claim(dir), 'scanner';
+  // Joining for the first time with newer classes than the drive has (this computer scanned more recently), unless the
+  // student chose to bring that computer's classes in here.
+  if (role !== 'viewer' && !st.pulledSha && !st.chosen && hasDb && fs.statSync(P.db).mtimeMs > (s.db?.mtime || 0) + 60000) return claim(dir), 'scanner';
   if (role === 'auto' && stale && hasDb && (await hooks.ready())) return claim(dir), 'scanner';
   return 'follower';
 }
@@ -375,6 +376,83 @@ function relay(req) {
   return { relayed: s.name, online };
 }
 
+// ---------- Bringing classes in on a new computer, by hand ----------
+/** The places a sync folder could be: every drive found on this computer, plus the chosen other folder. */
+function places() {
+  const out = cloud.drives().map((d) => ({ drive: d.id, label: d.label, root: d.path }));
+  const custom = settings.get('scholar.cloudPath', '');
+  if (custom && fs.existsSync(custom)) out.push({ drive: 'custom', label: custom, root: custom });
+  return out;
+}
+
+/**
+ * Look in every drive for classes another computer shares: each Kea/<profile>/PCs with who scans it and whether its
+ * class database has fully arrived. Also says what's missing when nothing is found, so the student knows what to fix.
+ */
+function find() {
+  const found = [];
+  const notes = [];
+  const drives = places();
+  if (!drives.length) notes.push('No OneDrive, Google Drive or Dropbox folder was found on this computer. Sign in to the same drive app as your other computer, let it finish syncing, then check again.');
+  for (const d of drives) {
+    const kea = path.join(d.root, 'Kea');
+    if (!fs.existsSync(kea)) {
+      notes.push(`${d.label}: no Kea folder yet. If your other computer uses ${d.label}, check that this computer is signed in to the same account and has finished syncing.`);
+      continue;
+    }
+    for (const name of fs.readdirSync(kea)) {
+      const dir = path.join(kea, name, 'PCs');
+      if (!fs.existsSync(path.join(kea, name)) || !fs.statSync(path.join(kea, name)).isDirectory()) continue;
+      const s = readJson(path.join(dir, 'scanner.json'), null);
+      if (!s?.id) {
+        notes.push(`${d.label}: “${name}” has a phone copy but no computer sharing it yet. Update Kea on your other computer to 0.27 or later and leave it open for a minute.`);
+        continue;
+      }
+      const db = path.join(dir, 'academic_sync.db');
+      let ready = false;
+      try {
+        ready = !!s.db && fs.statSync(db).size === s.db.size;
+      } catch {}
+      found.push({ drive: d.drive, label: d.label, root: d.root, profile: name, scanner: s.name, at: s.at, mine: s.id === me(), ready });
+    }
+  }
+  return { found, notes, me: myName() };
+}
+
+/**
+ * Use the classes shared in that folder on this computer: Kea syncs through that drive and profile from now on, this
+ * computer follows the one that scans (even if it has older classes of its own; those are kept aside), and the first
+ * copy is made right away. Says whether the classes came in, or what it's still waiting for.
+ */
+async function join({ drive, root, profile }) {
+  const patch = { 'scholar.pcSync': true, 'scholar.cloud': drive };
+  if (drive === 'custom') patch['scholar.cloudPath'] = root;
+  if (settings.get('scholar.pcRole', 'auto') === 'main') patch['scholar.pcRole'] = 'auto';
+  // A share this computer started by itself (under another drive or profile name) stops, so it doesn't keep scanning.
+  const old = folder();
+  if (old && path.resolve(old) !== path.resolve(root, 'Kea', profile, 'PCs') && scannerInfo(old)?.id === me()) {
+    fs.rmSync(old, { recursive: true, force: true });
+    try {
+      if (!fs.readdirSync(path.dirname(old)).length) fs.rmdirSync(path.dirname(old));
+    } catch {}
+  }
+  settings.set(patch);
+  // The drive folder is named after the profile, so this profile takes that name.
+  if (profiles.all().list.find((p) => p.id === profiles.active())?.name !== profile) profiles.rename(profiles.active(), profile);
+  const dir = folder();
+  if (!dir || !fs.existsSync(path.join(dir, 'scanner.json'))) throw new Error('That folder isn’t there any more. Check the drive is still syncing, then try again.');
+  const s = scannerInfo(dir);
+  if (s.id === me()) return { ok: true, scanner: true };
+  const st = readJson(stateFile(), {});
+  st.chosen = true;
+  writeJson(stateFile(), st);
+  while (busy) await new Promise((r) => setTimeout(r, 200));
+  await step();
+  const P = profiles.paths();
+  const got = readJson(stateFile(), {}).pulledSha === s.db?.sha && fs.existsSync(P.db);
+  return got ? { ok: true, from: s.name } : { ok: false, from: s.name, waiting: `Your classes from ${s.name} are still downloading from the drive. Leave Kea open; they appear by themselves within a few minutes.` };
+}
+
 /** For the Scans page: who scans, when it was last heard from, and what it's doing. */
 function status() {
   const dir = folder();
@@ -384,7 +462,12 @@ function status() {
   try {
     others = fs.readdirSync(dir).filter((x) => /^pc-.+\.json$/.test(x) && x !== `pc-${me()}.json`).length;
   } catch {}
-  return { on: true, me: myName(), role: !s ? 'none' : s.id === me() ? 'scanner' : 'follower', scanner: s ? { name: s.name, at: s.at, running: s.running || null } : null, others };
+  // Classes another computer shares elsewhere in the drives (most often: the same classes under another profile name).
+  let elsewhere = [];
+  try {
+    elsewhere = find().found.filter((x) => !x.mine && path.resolve(x.root, 'Kea', x.profile, 'PCs') !== path.resolve(dir));
+  } catch {}
+  return { on: true, me: myName(), role: !s ? 'none' : s.id === me() ? 'scanner' : 'follower', scanner: s ? { name: s.name, at: s.at, running: s.running || null } : null, others, elsewhere };
 }
 
-module.exports = { configure, follower, step, soon, relay, status, mergeStudy };
+module.exports = { configure, follower, step, soon, relay, status, mergeStudy, find, join };

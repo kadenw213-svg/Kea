@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, Square, RefreshCw, BookOpen, Bell, KeyRound, Activity, Clock, Smartphone, Monitor } from 'lucide-react';
-import { api, ScholarSetup, SchoolInfo, ScholarRun, ScholarNews, ScholarPending } from '../../lib/api';
+import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, Square, RefreshCw, BookOpen, Bell, KeyRound, Activity, Clock, Smartphone, Monitor, Search, Download } from 'lucide-react';
+import { api, ScholarSetup, SchoolInfo, ScholarRun, ScholarNews, ScholarPending, PcShare } from '../../lib/api';
 import { toast } from '../../store';
 import { reloadScholar } from './scholarStore';
 
@@ -253,14 +253,20 @@ function ComputersCard() {
     const off = api.scholar.onChanged(load);
     return () => (clearInterval(t), off());
   }, []);
-  if (!st?.on || st.role === 'none' || (st.role === 'scanner' && !st.others)) return null;
+  const other = st?.elsewhere?.[0];
+  if (!st?.on || (!other && (st.role === 'none' || (st.role === 'scanner' && !st.others)))) return null;
   return (
     <div className="scan-now phone-card">
       <Monitor size={18} />
       <div>
         <b>Your computers</b>
         <div className="muted">
-          {st.role === 'scanner' ? (
+          {other && st.role !== 'follower' ? (
+            <>
+              <b>{other.scanner}</b> shares classes as “{other.profile}” in {other.label}, separately from this computer. To use those here instead (so only one computer scans), open “Bring in classes from
+              another computer” below.
+            </>
+          ) : st.role === 'scanner' ? (
             <>
               This computer ({st.me}) does the scans for {st.others === 1 ? 'your other computer' : `your ${st.others} other computers`}. They show the same classes and send their checkmarks here.
             </>
@@ -273,6 +279,70 @@ function ComputersCard() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Bring in the classes another computer shares through a drive: looks in every drive on this computer, lists what it
+ * finds (or says what's missing), and makes this computer follow the one that scans.
+ */
+export function FromAnotherComputer({ onDone }: { onDone?: () => void }) {
+  const [res, setRes] = useState<Awaited<ReturnType<typeof api.scholar.pcFind>> | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const look = async () => {
+    setBusy('find');
+    try {
+      setRes(await api.scholar.pcFind());
+    } catch (err: any) {
+      toast(err.message, 'error');
+    }
+    setBusy(null);
+  };
+  const use = async (s: PcShare) => {
+    setBusy(s.root + s.profile);
+    try {
+      const r = await api.scholar.pcJoin(s);
+      if (r.scanner) toast('This computer is already the one that scans these classes.', 'success');
+      else if (r.ok) toast(`Your classes from ${r.from} are here. This computer now keeps in step with it and never scans by itself.`, 'success');
+      else toast(r.waiting || 'Still waiting for the drive.', 'success');
+      reloadScholar();
+      onDone?.();
+    } catch (err: any) {
+      toast(err.message, 'error');
+    }
+    setBusy(null);
+  };
+  return (
+    <div className="pc-import">
+      <button className="btn sm" onClick={look} disabled={!!busy}>
+        {busy === 'find' ? <Loader2 size={14} className="spin" /> : <Search size={14} />} {res ? 'Look again' : 'Look for my classes'}
+      </button>
+      {res && (
+        <div className="pc-import-list">
+          {res.found.map((s) => (
+            <div key={s.root + s.profile} className="scan-now">
+              <Monitor size={18} />
+              <div>
+                <b>{s.profile}</b>
+                <div className="muted">
+                  {s.mine ? 'Scanned by this computer' : `Scanned by ${s.scanner}`}, last on {timeAgo(s.at)} · {s.label}
+                  {!s.ready && !s.mine ? ' · still downloading from the drive (you can choose it now; it finishes by itself)' : ''}
+                </div>
+              </div>
+              <button className="btn sm" disabled={!!busy || s.mine} onClick={() => use(s)}>
+                {busy === s.root + s.profile ? <Loader2 size={14} className="spin" /> : <Download size={14} />} {s.mine ? 'This computer' : 'Use these classes'}
+              </button>
+            </div>
+          ))}
+          {!res.found.length && <p className="muted">No classes shared by another computer were found on {res.me}.</p>}
+          {res.notes.map((n) => (
+            <p key={n} className="muted small">
+              {n}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -355,6 +425,11 @@ export function ScansView() {
       )}
       <PhoneCard />
       <ComputersCard />
+      <details className="gate-adv">
+        <summary>Bring in classes from another computer</summary>
+        <p className="muted">Kea looks in OneDrive, Google Drive and Dropbox on this computer for classes your other computer shares, and keeps this one in step with it. Only that computer scans.</p>
+        <FromAnotherComputer onDone={load} />
+      </details>
       {news.some((n) => !n.read) && (
         <p className="muted">
           <Bell size={13} /> New messages, grades and announcements are in the Inbox.

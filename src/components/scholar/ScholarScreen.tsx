@@ -29,7 +29,8 @@ import {
   Clock,
   Award,
   Layers,
-  Trash2
+  Trash2,
+  Monitor
 } from 'lucide-react';
 import { inboxParts, kindOf } from './inboxFormat';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
@@ -39,7 +40,7 @@ import { useSettings } from '../../lib/settings';
 import { toast, prompt } from '../../store';
 import { useScholar, reloadScholar, ScholarView } from './scholarStore';
 import { MenuButton } from '../Popover';
-import { SetupWizard, ScansView } from './Setup';
+import { SetupWizard, ScansView, FromAnotherComputer } from './Setup';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, setClassColor, setTypeColor, useColors } from './kinds';
 import { PracticeBox, ResourcesView, StudyPlayer } from './Study';
 import '../../styles/scholar.css';
@@ -1298,6 +1299,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
 // ---------- Adding a class ----------
 function AddClass({ first }: { first: boolean }) {
   const [gate, setGate] = useState(false);
+  const [other, setOther] = useState(false);
   const bringIn = async () => {
     const folder = await api.openFolderDialog();
     if (!folder) return;
@@ -1326,7 +1328,19 @@ function AddClass({ first }: { first: boolean }) {
           <div className="add-name">From your school</div>
           <div className="add-desc">Kea keeps your assignments, tests, readings, announcements and a weekly textbook up to date from your class site.</div>
         </button>
+        <button className="add-card" onClick={() => setOther(true)}>
+          <Monitor size={26} />
+          <div className="add-name">From another computer</div>
+          <div className="add-desc">Already use Kea on another PC? Bring its classes here through your OneDrive or Google Drive. Only that computer scans, so nothing uses your Claude plan twice.</div>
+        </button>
       </div>
+      {other && (
+        <div className="gate">
+          <h2>Bring in classes from another computer</h2>
+          <p>Kea looks in every drive on this computer for the classes your other computer shares (it needs Kea 0.27 or later, open, with the same drive chosen in Settings → Scholar).</p>
+          <FromAnotherComputer onDone={() => useScholar.getState().set({ view: { name: 'week' } })} />
+        </div>
+      )}
       {gate && (
         <div className="gate">
           <h2>Connect your Claude account to scan your classes</h2>

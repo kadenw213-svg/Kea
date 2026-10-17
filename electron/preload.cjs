@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('api', {
     setupEngine: () => ipcRenderer.invoke('scholar:setupEngine'),
     run: (task, arg) => ipcRenderer.invoke('scholar:run', task, arg),
     pcStatus: () => ipcRenderer.invoke('scholar:pcStatus'),
+    pcFind: () => ipcRenderer.invoke('scholar:pcFind'),
+    pcJoin: (choice) => ipcRenderer.invoke('scholar:pcJoin', choice),
     stop: () => ipcRenderer.invoke('scholar:stop'),
     runStatus: () => ipcRenderer.invoke('scholar:runStatus'),
     activity: () => ipcRenderer.invoke('scholar:activity'),

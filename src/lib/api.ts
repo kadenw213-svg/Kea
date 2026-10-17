@@ -123,7 +123,11 @@ export interface KeaApi {
     /** On a computer that doesn't scan, the scanning one is asked instead: `relayed` names it. */
     run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe', arg?: string): Promise<boolean | { relayed: string; online: boolean }>;
     /** Computers sharing these classes: which one scans, and when it was last heard from. */
-    pcStatus(): Promise<{ on: boolean; me?: string; role?: 'scanner' | 'follower' | 'none'; scanner?: { name: string; at: string; running: string | null } | null; others?: number }>;
+    pcStatus(): Promise<{ on: boolean; me?: string; role?: 'scanner' | 'follower' | 'none'; scanner?: { name: string; at: string; running: string | null } | null; others?: number; elsewhere?: PcShare[] }>;
+    /** Classes other computers share, found in every drive on this one, and what's missing when there are none. */
+    pcFind(): Promise<{ found: PcShare[]; notes: string[]; me: string }>;
+    /** Use one of those here (this computer follows the one that scans). */
+    pcJoin(choice: PcShare): Promise<{ ok: boolean; scanner?: boolean; from?: string; waiting?: string }>;
     /** Practice exams and flashcard decks, newest first. */
     studyList(): Promise<StudySet[]>;
     /** One set with its questions or cards. */
@@ -348,6 +352,20 @@ export interface ClaudeAccount {
   method?: string;
   plan?: string;
 }
+/** A profile's classes shared through a drive by the computer that scans them. */
+export interface PcShare {
+  drive: string;
+  label: string;
+  root: string;
+  profile: string;
+  scanner: string;
+  at: string;
+  /** This computer is the one scanning it. */
+  mine: boolean;
+  /** Its class database has fully arrived on this computer. */
+  ready: boolean;
+}
+
 export interface ScholarSetup {
   uv: string | null;
   claude: string | null;

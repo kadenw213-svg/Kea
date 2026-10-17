@@ -320,6 +320,13 @@ function register() {
     return true;
   });
   ipcMain.handle('scholar:pcStatus', () => pcsync.status());
+  ipcMain.handle('scholar:pcFind', () => pcsync.find());
+  ipcMain.handle('scholar:pcJoin', async (_e, choice) => {
+    if (runner.status().running) throw new Error('A class scan is running here. Try again when it finishes.');
+    const r = await pcsync.join(choice);
+    watch();
+    return r;
+  });
   ipcMain.handle('scholar:stop', () => (runner.stop(), true));
   ipcMain.handle('scholar:runStatus', () => runner.status());
   ipcMain.handle('scholar:activity', () => runner.activity());
