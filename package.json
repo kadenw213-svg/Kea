@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "dist": "vite build && electron-builder --win",
     "dist:mac": "vite build && electron-builder --mac",
-    "release": "node scripts/release.cjs"
+    "release": "node scripts/release.cjs",
+    "postinstall": "node scripts/keep-out-of-onedrive.cjs"
   },
   "dependencies": {
     "electron-updater": "^6.3.9",
