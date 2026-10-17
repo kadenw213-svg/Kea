@@ -115,11 +115,12 @@ async function sync(build) {
     mirror(profiles.paths().textbooks, path.join(dir, 'Textbooks'));
     // Anything else in Kea's folder (left from an older version) goes too.
     // (phone.json is the phone's own file: what it checked off and read.)
-    for (const e of fs.readdirSync(dir)) if (!['kea-data.json', 'Textbooks', 'phone.json'].includes(e)) fs.rmSync(path.join(dir, e), { recursive: true, force: true });
+    // (PCs is where computers sharing these classes keep in step: pcsync.cjs.)
+    for (const e of fs.readdirSync(dir)) if (!['kea-data.json', 'Textbooks', 'phone.json', 'PCs'].includes(e)) fs.rmSync(path.join(dir, e), { recursive: true, force: true });
     return { dir, hash: sha(body) };
   } finally {
     running = false;
   }
 }
 
-module.exports = { drives, target, sync, schedule };
+module.exports = { drives, target, sync, schedule, mirror };

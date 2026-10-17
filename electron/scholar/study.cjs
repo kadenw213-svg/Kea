@@ -81,7 +81,7 @@ function saveAttempt(id, a) {
 
 function setKnown(id, known) {
   const cards = readJson(file('cards.json'), {});
-  cards[id] = { known: [...new Set(known)].sort((a, b) => a - b) };
+  cards[id] = { known: [...new Set(known)].sort((a, b) => a - b), at: new Date().toISOString() };
   writeJson(file('cards.json'), cards);
   return true;
 }
@@ -95,13 +95,14 @@ const clamp = (kind, n) => Math.max(SIZES[kind][0], Math.min(SIZES[kind][1], Mat
  * objectives and sections, the test's study focus and review documents, the textbook chapters' source and the class's
  * downloaded files), add the set to the index as "making", and return its id. The runner then starts `practice <id>`.
  */
-async function request({ kind, courseId, chapters = [], itemId = null, count }) {
+async function request({ id: given, kind, courseId, chapters = [], itemId = null, count }) {
   if (!['exam', 'cards'].includes(kind)) throw new Error('Unknown kind of study set.');
   const p = profiles.paths();
   const src = await db.practiceSources(p.db, p.textbooks, { courseId, chapters, itemId });
   if (!src) throw new Error('Kea couldn’t find that class.');
   if (!src.chapters.length && !src.item) throw new Error('Pick at least one chapter.');
-  const id = `${kind}-${Date.now().toString(36)}`;
+  // (Asked for on another computer: it named the set, so both list the same one.)
+  const id = typeof given === 'string' && /^(exam|cards)-[a-z0-9]+$/.test(given) ? given : `${kind}-${Date.now().toString(36)}`;
   const n = clamp(kind, count);
   const topic = src.item ? src.item.title : src.chapters.map((c) => (c.title ? `${c.label}: ${c.title}` : c.label)).join(', ');
   const title = `${kind === 'exam' ? 'Practice exam' : 'Flashcards'}: ${topic}`;
@@ -131,7 +132,7 @@ async function request({ kind, courseId, chapters = [], itemId = null, count }) 
     output: `data/study/out/${id}.json`
   };
   writeJson(path.join(p.workspace, 'data', 'study', 'requests', `${id}.json`), req);
-  const list = index();
+  const list = index().filter((e) => e.id !== id);
   list.push({ id, kind, title, courseId: src.course.id, courseCode: src.course.code, chapters: src.chapters.map((c) => c.label), itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: n, createdAt: new Date().toISOString(), status: 'making', source: 'claude' });
   saveIndex(list);
   return id;

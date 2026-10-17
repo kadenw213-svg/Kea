@@ -120,7 +120,10 @@ export interface KeaApi {
     installClaude(): Promise<{ code: number; out: string }>;
     signInClaude(): Promise<ClaudeAccount>;
     setupEngine(): Promise<boolean>;
-    run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe', arg?: string): Promise<boolean>;
+    /** On a computer that doesn't scan, the scanning one is asked instead: `relayed` names it. */
+    run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe', arg?: string): Promise<boolean | { relayed: string; online: boolean }>;
+    /** Computers sharing these classes: which one scans, and when it was last heard from. */
+    pcStatus(): Promise<{ on: boolean; me?: string; role?: 'scanner' | 'follower' | 'none'; scanner?: { name: string; at: string; running: string | null } | null; others?: number }>;
     /** Practice exams and flashcard decks, newest first. */
     studyList(): Promise<StudySet[]>;
     /** One set with its questions or cards. */

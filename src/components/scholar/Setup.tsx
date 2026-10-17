@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, Square, RefreshCw, BookOpen, Bell, KeyRound, Activity, Clock, Smartphone } from 'lucide-react';
+import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, Square, RefreshCw, BookOpen, Bell, KeyRound, Activity, Clock, Smartphone, Monitor } from 'lucide-react';
 import { api, ScholarSetup, SchoolInfo, ScholarRun, ScholarNews, ScholarPending } from '../../lib/api';
 import { toast } from '../../store';
 import { reloadScholar } from './scholarStore';
@@ -243,6 +243,40 @@ function PhoneCard() {
   );
 }
 
+/** Your other computers: which one does the scans (only one ever does), and what it's doing. */
+function ComputersCard() {
+  const [st, setSt] = useState<Awaited<ReturnType<typeof api.scholar.pcStatus>> | null>(null);
+  useEffect(() => {
+    const load = () => api.scholar.pcStatus().then(setSt);
+    load();
+    const t = setInterval(load, 30000);
+    const off = api.scholar.onChanged(load);
+    return () => (clearInterval(t), off());
+  }, []);
+  if (!st?.on || st.role === 'none' || (st.role === 'scanner' && !st.others)) return null;
+  return (
+    <div className="scan-now phone-card">
+      <Monitor size={18} />
+      <div>
+        <b>Your computers</b>
+        <div className="muted">
+          {st.role === 'scanner' ? (
+            <>
+              This computer ({st.me}) does the scans for {st.others === 1 ? 'your other computer' : `your ${st.others} other computers`}. They show the same classes and send their checkmarks here.
+            </>
+          ) : (
+            <>
+              Scans run on <b>{st.scanner?.name}</b>
+              {st.scanner?.running ? ` (now: ${st.scanner.running})` : ''}, last heard from {st.scanner ? timeAgo(st.scanner.at) : 'never'}. This computer shows what it finds and never scans by itself, so your Claude plan
+              isn’t used twice. The buttons above ask {st.scanner?.name} to run them.
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Scans: what's running, what ran, and the news from your classes (what the daily email used to say). */
 export function ScansView() {
   const [run, setRun] = useState<(ScholarRun & { running: boolean }) | null>(null);
@@ -269,7 +303,10 @@ export function ScansView() {
     ];
     return () => offs.forEach((f) => f());
   }, []);
-  const start = (task: 'daily' | 'sync' | 'study') => api.scholar.run(task).then(() => toast('Started in the background.', 'success'));
+  const start = (task: 'daily' | 'sync' | 'study') =>
+    api.scholar.run(task).then((r) =>
+      toast(typeof r === 'object' && r.relayed ? `Sent to ${r.relayed}, which does your scans${r.online ? '' : ' (it runs when that computer is next on)'}. The results come here.` : 'Started in the background.', 'success')
+    );
   return (
     <div className="sch-page">
       <h1 className="sch-title">Scans</h1>
@@ -317,6 +354,7 @@ export function ScansView() {
         </div>
       )}
       <PhoneCard />
+      <ComputersCard />
       {news.some((n) => !n.read) && (
         <p className="muted">
           <Bell size={13} /> New messages, grades and announcements are in the Inbox.

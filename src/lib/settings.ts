@@ -437,7 +437,7 @@ export const SECTIONS: Section[] = [
       },
       {
         key: 'scholar.cloud',
-        label: 'Keep a copy for Kea on your phone in',
+        label: 'Keep a copy for your phone and other computers in',
         type: 'select',
         default: 'onedrive',
         options: [
@@ -450,6 +450,33 @@ export const SECTIONS: Section[] = [
         help: 'One tidy “Kea” folder: your classes, calendar and grades in a single file, plus your textbook chapters. Kea updates it when something changes and deletes anything that no longer belongs.'
       },
       { key: 'scholar.cloudPath', label: 'Other folder for the phone copy', type: 'text', default: '', advanced: true },
+      {
+        key: 'scholar.pcSync',
+        label: 'Keep your other computers in step through that drive',
+        type: 'toggle',
+        default: true,
+        help: 'Kea on another PC signed in to the same drive shows the same classes, checkmarks, Inbox and study sets. Only one computer ever checks the class site or uses your Claude plan; the others ask it to, so nothing runs twice.'
+      },
+      {
+        key: 'scholar.pcRole',
+        label: 'This computer',
+        type: 'select',
+        default: 'auto',
+        options: [
+          { value: 'auto', label: 'Scans when it’s the first with your classes, or the scanning one has gone quiet' },
+          { value: 'main', label: 'Always does the scans' },
+          { value: 'viewer', label: 'Never scans (only shows what another computer found)' }
+        ],
+        advanced: true
+      },
+      {
+        key: 'scholar.pcTakeover',
+        label: 'Take over scanning when the scanning computer hasn’t been on for',
+        type: 'select',
+        default: '48',
+        options: [['12', '12 hours'], ['24', 'A day'], ['48', '2 days'], ['72', '3 days'], ['168', 'A week'], ['0', 'Never (only if I choose “Always does the scans”)']].map(([value, label]) => ({ value, label })),
+        advanced: true
+      },
       { key: 'scholar.background', label: 'Keep checking when Kea’s window is closed', type: 'toggle', default: true, help: 'Closing the window leaves Kea in the notification area (by the clock), so the class checks and paused scans still run. Quit from its icon there.' },
       {
         key: 'scholar.scanTime',

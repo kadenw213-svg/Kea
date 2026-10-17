@@ -62,6 +62,14 @@ function mergePhone() {
   } catch {
     return false;
   }
+  return applyMarks(phone);
+}
+
+/**
+ * Another device's changes (the phone's phone.json, or another computer's — see pcsync.cjs): checkmarks, newest change
+ * winning, Inbox items read or deleted there, and study progress. Returns true when something changed here.
+ */
+function applyMarks(phone) {
   const s = readState();
   let changed = false;
   for (const [id, e] of Object.entries(phone.done || {})) {
@@ -93,6 +101,7 @@ function mergePhone() {
       changed = true;
     }
   }
+  if (phone.study && pcsync.mergeStudy(phone.study)) changed = true;
   if (changed) BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
   return changed;
 }
@@ -130,7 +139,15 @@ async function snapshot() {
   const inboxDeleted = (precheck.readInbox().deletedKeys || []).slice(-1500);
   return fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, courses, items, details, grades, inbox, inboxDeleted, doneLog });
 }
-const syncSoon = (delay) => cloud.schedule(snapshot, delay);
+// The phone copy is written by the computer that scans; any other computer only sends its changes to that one.
+const syncSoon = (delay) => {
+  if (!pcsync.follower()) cloud.schedule(snapshot, delay);
+  pcsync.soon(delay);
+};
+
+// ---------- Other computers (the same classes on more than one PC, scanned by only one of them) ----------
+const pcsync = require('./pcsync.cjs');
+pcsync.configure({ readState, writeState, applyMarks, syncSoon: (d) => syncSoon(d), ready: () => ready() });
 
 // ---------- Tell the window when a scan changes the classes ----------
 let watcher = null;
@@ -199,6 +216,8 @@ async function ready() {
  */
 let lastInbox = 0;
 async function tick() {
+  // Another computer does the scanning (and takes in the phone's changes); this one only follows it.
+  if (pcsync.follower()) return;
   // What the phone changed (checkmarks, read messages) comes in through the drive folder.
   try {
     if (mergePhone()) syncSoon(5000);
@@ -294,7 +313,13 @@ function register() {
   ipcMain.handle('scholar:setupEngine', (e) => workspace.setupEngine(browser.schoolInfo().home, lines(e)));
 
   // Scans.
-  ipcMain.handle('scholar:run', (_e, task, arg) => (runner.run(task, arg || '', 'manual'), true));
+  // On a computer that doesn't scan, the scanning one is asked to (through the drive), so nothing runs twice.
+  ipcMain.handle('scholar:run', (_e, task, arg) => {
+    if (task !== 'probe' && pcsync.follower()) return pcsync.relay({ task, arg: arg || '' });
+    runner.run(task, arg || '', 'manual');
+    return true;
+  });
+  ipcMain.handle('scholar:pcStatus', () => pcsync.status());
   ipcMain.handle('scholar:stop', () => (runner.stop(), true));
   ipcMain.handle('scholar:runStatus', () => runner.status());
   ipcMain.handle('scholar:activity', () => runner.activity());
@@ -322,12 +347,16 @@ function register() {
     syncSoon(5000);
     return true;
   });
-  ipcMain.handle('scholar:checkInbox', () => precheck.pollAnnouncements());
+  ipcMain.handle('scholar:checkInbox', () => {
+    if (!pcsync.follower()) return precheck.pollAnnouncements();
+    pcsync.relay({ task: 'inbox' });
+    return true;
+  });
   // Handing in a file: the folders it can go to, then D2L's own hand-in page with the file in its upload box.
   ipcMain.handle('scholar:handInTargets', async () => {
     let t = await precheck.handInTargets();
     // Nothing known yet: take a quick look at the class site first (no Claude).
-    if (!t.some((c) => c.folders.length)) {
+    if (!t.some((c) => c.folders.length) && !pcsync.follower()) {
       await precheck.pollAnnouncements().catch(() => false);
       t = await precheck.handInTargets();
     }
@@ -354,6 +383,11 @@ function register() {
   ipcMain.handle('scholar:studyGet', (_e, id) => study.get(id));
   ipcMain.handle('scholar:studyMake', async (_e, req) => {
     const id = await study.request(req);
+    // Made by the computer that scans (it has the class files); the set comes back here when it's ready.
+    if (pcsync.follower()) {
+      pcsync.relay({ task: 'practice', req: { ...req, id } });
+      return id;
+    }
     runner.run('practice', id, 'manual').then(() => {
       const e = study.list().find((x) => x.id === id);
       if (!e) return;
@@ -385,12 +419,17 @@ function register() {
     runner.adoptStopped();
   } catch {}
   ipcMain.handle('scholar:cloudDrives', () => ({ drives: cloud.drives(), target: cloud.target() }));
-  ipcMain.handle('scholar:syncNow', () => cloud.sync(snapshot));
+  ipcMain.handle('scholar:syncNow', async () => {
+    await pcsync.step();
+    return pcsync.follower() ? null : cloud.sync(snapshot);
+  });
   syncSoon(90000);
-  // Phone changes arrive within about a minute of OneDrive bringing them down.
-  setInterval(() => {
+  // Phone and other computers' changes arrive within about a minute of the drive bringing them down.
+  setTimeout(() => pcsync.step(), 15000);
+  setInterval(async () => {
+    await pcsync.step();
     try {
-      if (mergePhone()) syncSoon(5000);
+      if (!pcsync.follower() && mergePhone()) syncSoon(5000);
     } catch {}
   }, 60000);
   setTimeout(tick, 60000);
