@@ -51,7 +51,7 @@ async function engineJson(args) {
 TASKS.daily.pre = async (job, step) => {
   if (/\bresume\b/.test(job.arg) || job.arg.trim()) return {};
   step('Checking your classes for anything new…');
-  const r = await precheck().run({ fullEveryDays: Number(settings().get('scholar.fullCheckDays', 3)) || 3 });
+  const r = await precheck().run({ fullEveryDays: Number(settings().get('scholar.fullCheckDays', '1')) || 1 });
   if (!r.setUp) return { skip: 'No class site is set up yet.', ok: false };
   if (!r.signedIn) return { skip: 'Kea isn’t signed in to your class site, so nothing was checked. Sign in under Add a class → From your school.', ok: false };
   for (const s of r.newShells) run('import', `${s.course_code} -- new class shell: ${JSON.stringify(s)}`, job.why);

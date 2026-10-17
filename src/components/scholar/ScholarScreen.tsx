@@ -608,7 +608,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
             </button>
           ))}
       </div>
-      <p className="sch-sub">One message per thing, as it happens: announcements, grades, feedback and class-site messages come straight from your class site every half hour. Anything that needs you comes from the daily check.</p>
+      <p className="sch-sub">One message per thing, as it happens: announcements, grades, feedback and class-site messages come straight from your class site (every half hour unless you change it in Settings → Scholar). Anything that needs you comes from the class check.</p>
       {!shown.length ? (
         <div className="sch-empty">
           <Inbox size={26} />

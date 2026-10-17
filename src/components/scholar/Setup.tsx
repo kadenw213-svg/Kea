@@ -273,7 +273,7 @@ export function ScansView() {
   return (
     <div className="sch-page">
       <h1 className="sch-title">Scans</h1>
-      <p className="sch-sub">Kea checks your classes every day by itself. You can also run a check now.</p>
+      <p className="sch-sub">Kea checks your classes by itself, every day unless you change it in Settings → Scholar. You can also run a check now.</p>
       <div className="scan-actions">
         <button className="btn sm" onClick={() => start('daily')} disabled={!!run}>
           <RefreshCw size={14} /> Check my classes now

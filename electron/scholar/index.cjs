@@ -193,8 +193,9 @@ async function ready() {
 }
 
 /**
- * Once a day after the chosen time (5:00 by default, like the scheduled task it replaces): the daily check (which
- * also imports any new class), then this week's textbook chapters; on the chosen weekday, the weekly update too.
+ * Once a day after the chosen time (5:00 by default, like the scheduled task it replaces): the class check (which
+ * also imports any new class) and the readings-and-links update, each as often as chosen (every day by default), then
+ * any textbook chapters still to write.
  */
 let lastInbox = 0;
 async function tick() {
@@ -214,7 +215,10 @@ async function tick() {
       .catch((err) => console.error('Inbox check', err));
   }
   try {
-    if (settings.get('scholar.autoScan', true) === false || runner.status().running) return;
+    // How often (days) the class check runs: every day unless the student chose otherwise; 0 = only when asked. (The
+    // older on/off switch, if it was turned off, still means off.)
+    const checkEvery = Number(settings.get('scholar.scanEvery', settings.get('scholar.autoScan', true) === false ? '0' : '1'));
+    if (!checkEvery || runner.status().running) return;
     // A run paused by a usage limit continues first, once the limit has reset; nothing else starts until then.
     const waiting = runner.pending();
     if (waiting) {
@@ -226,14 +230,23 @@ async function tick() {
     if (now.getHours() * 60 + now.getMinutes() < (h || 0) * 60 + (m || 0)) return;
     const s = readState();
     s.lastRuns = s.lastRuns || {};
-    if (s.lastRuns.daily === localDate()) return;
+    // Once a day at most, this decides what's due today.
+    const today = localDate();
+    if (s.lastRuns.daily === today) return;
     if (!(await ready())) return;
-    s.lastRuns.daily = localDate();
-    writeState(s);
-    await runner.run('daily', '', 'schedule');
+    const daysSince = (d) => (d ? Math.round((new Date(`${today}T12:00`) - new Date(`${d}T12:00`)) / 864e5) : Infinity);
     const weekday = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][now.getDay()];
-    if (settings.get('scholar.weeklyDay', 'sunday') === weekday) await runner.run('sync', '', 'schedule');
-    if (settings.get('scholar.studyPdfs', true) !== false) await runner.run('study', '', 'schedule');
+    const syncOn = settings.get('scholar.weeklyDay', 'daily');
+    const checkDue = daysSince(s.lastRuns.check || s.lastRuns.daily) >= checkEvery;
+    // The readings-and-links update: every day, or on its weekday (or once a week has gone by without one).
+    const syncDue = daysSince(s.lastRuns.sync) >= 1 && (syncOn === 'daily' || syncOn === weekday || daysSince(s.lastRuns.sync) >= 7);
+    s.lastRuns.daily = today;
+    if (checkDue) s.lastRuns.check = today;
+    if (syncDue) s.lastRuns.sync = today;
+    writeState(s);
+    if (checkDue) await runner.run('daily', '', 'schedule');
+    if (syncDue) await runner.run('sync', '', 'schedule');
+    if ((checkDue || syncDue) && settings.get('scholar.studyPdfs', true) !== false) await runner.run('study', '', 'schedule');
   } catch (err) {
     console.error('Scholar schedule', err);
   }

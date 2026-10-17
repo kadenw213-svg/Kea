@@ -419,14 +419,21 @@ export const SECTIONS: Section[] = [
     icon: 'GraduationCap',
     blurb: 'Your classes, their textbooks and calendar. Classes you add from your school are kept up to date by scans that run in the background through your own Claude account.',
     fields: [
-      { key: 'scholar.autoScan', label: 'Check my classes every day', type: 'toggle', default: true, help: 'New assignments, grades, feedback and announcements, and any new class (scanned in full). Kea checks first by itself and only uses your Claude plan for classes where something changed.' },
+      {
+        key: 'scholar.scanEvery',
+        label: 'Check my classes',
+        type: 'select',
+        default: '1',
+        options: [['1', 'Every day'], ['2', 'Every 2 days'], ['3', 'Every 3 days'], ['7', 'Once a week'], ['0', 'Only when I ask (Scans → Check my classes now)']].map(([value, label]) => ({ value, label })),
+        help: 'Anything that needs you, missed work, and any new class (scanned in full). Kea checks first by itself and only uses your Claude plan for classes where something changed.'
+      },
       {
         key: 'scholar.inboxMinutes',
-        label: 'Check for new announcements every',
+        label: 'Look for new announcements, grades, feedback and messages every',
         type: 'select',
         default: '30',
-        options: [['15', '15 minutes'], ['30', '30 minutes'], ['60', 'Hour'], ['180', '3 hours'], ['0', 'Only with the daily check']].map(([value, label]) => ({ value, label })),
-        help: 'A quick look at each class’s announcements, done by Kea itself (no Claude usage). New ones show in the Inbox and as a notification.'
+        options: [['15', '15 minutes'], ['30', '30 minutes'], ['60', 'Hour'], ['180', '3 hours'], ['720', '12 hours'], ['1440', 'Day'], ['0', 'Only with the class check']].map(([value, label]) => ({ value, label })),
+        help: 'A quick look done by Kea itself (no Claude usage). Each new thing shows in the Inbox as its own message, with a notification.'
       },
       {
         key: 'scholar.cloud',
@@ -443,10 +450,10 @@ export const SECTIONS: Section[] = [
         help: 'One tidy “Kea” folder: your classes, calendar and grades in a single file, plus your textbook chapters. Kea updates it when something changes and deletes anything that no longer belongs.'
       },
       { key: 'scholar.cloudPath', label: 'Other folder for the phone copy', type: 'text', default: '', advanced: true },
-      { key: 'scholar.background', label: 'Keep checking when Kea’s window is closed', type: 'toggle', default: true, help: 'Closing the window leaves Kea in the notification area (by the clock), so the daily check and paused scans still run. Quit from its icon there.' },
+      { key: 'scholar.background', label: 'Keep checking when Kea’s window is closed', type: 'toggle', default: true, help: 'Closing the window leaves Kea in the notification area (by the clock), so the class checks and paused scans still run. Quit from its icon there.' },
       {
         key: 'scholar.scanTime',
-        label: 'Daily check after',
+        label: 'Run the checks after',
         type: 'select',
         default: '05:00',
         options: ['03:00', '04:00', '05:00', '06:00', '07:00', '08:00', '12:00', '18:00'].map((t) => ({ value: t, label: new Date(`2000-01-01T${t}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })),
@@ -455,20 +462,19 @@ export const SECTIONS: Section[] = [
       { key: 'scholar.studyPdfs', label: "Write each week's textbook chapters", type: 'toggle', default: true, help: "Each class's chapters for the week ahead, written from what the class covers and its tests." },
       {
         key: 'scholar.weeklyDay',
-        label: 'Update readings and links every',
+        label: 'Update readings, links and class changes',
         type: 'select',
-        default: 'sunday',
-        advanced: true,
-        options: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map((d) => ({ value: d, label: d[0].toUpperCase() + d.slice(1) }))
+        default: 'daily',
+        options: [{ value: 'daily', label: 'Every day' }, ...['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map((d) => ({ value: d, label: `Every ${d[0].toUpperCase() + d.slice(1)}` }))],
+        help: 'Kea compares each class with last time by itself; Claude only reads a class when something moved or next week’s reading needs building, so checking daily rarely costs anything.'
       },
       {
         key: 'scholar.fullCheckDays',
-        label: 'Full check (messages and outside platforms like ALEKS) every',
+        label: 'Full check (outside platforms like ALEKS) every',
         type: 'select',
-        default: '3',
-        advanced: true,
+        default: '1',
         options: [['1', 'Day'], ['2', '2 days'], ['3', '3 days'], ['7', 'Week']].map(([value, label]) => ({ value, label })),
-        help: 'D2L’s messages and outside platforms’ gradebooks can’t be checked without Claude, so on other days only classes with something new are read.'
+        help: 'Outside platforms’ gradebooks can’t be checked without Claude, so on the other days only classes with something new are read. Every day uses a little more of your Claude plan.'
       }
     ]
   },
