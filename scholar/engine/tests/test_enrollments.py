@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from academic_sync.enrollments import find_new_shells
 
 
@@ -21,3 +23,13 @@ def test_new_accessible_class_shell_is_found_and_others_skipped():
     assert [(s.org_unit_id, s.course_code, s.section, s.term_code) for s in shells] == [
         ("700001", "BIO2101", "N1", "202730")]
     assert shells[0].home_url_path == "/d2l/home/700001"
+
+
+def test_finished_class_still_open_is_not_new():
+    # An "Incomplete" role keeps a finished class open (CanAccess true) long after it ended.
+    old = _item(452415, "S_PPCC_EMS1070EM6_202530")
+    old["Access"].update({"StartDate": "2025-03-16T06:00:00.000Z", "EndDate": "2025-05-26T06:00:00.000Z"})
+    coming = _item(700003, "S_PPCC_CHE1012N1_202730")
+    coming["Access"]["EndDate"] = "2027-05-10T06:00:00.000Z"
+    shells = find_new_shells([old, coming], set(), today=date(2026, 10, 17))
+    assert [s.org_unit_id for s in shells] == ["700003"]

@@ -278,6 +278,10 @@ function updateInbox(dir, ous = {}) {
   const box = readInbox();
   const known = new Map(box.items.map((i) => [i.id, i]));
   const deleted = new Set(box.deleted || []);
+  // A class seen for the first time brings its history in as already read, without notifications (only what's new
+  // from then on is news), and nothing older than two weeks ever counts as new.
+  const seenCourses = new Set(box.items.map((i) => i.course));
+  const isOld = (at) => !at || Date.now() - new Date(at).getTime() > 14 * 864e5;
   const home = browser.schoolInfo().home;
   const fresh = [];
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('-news.json'))) {
@@ -299,8 +303,9 @@ function updateInbox(dir, ous = {}) {
       const prev = known.get(id);
       const changed = prev && (prev.body !== body || prev.title !== n.Title);
       const url = home && n.Id && ou ? new URL(`/d2l/le/news/${ou}/${n.Id}/view?ou=${ou}`, home).href : '';
-      const item = { id, kind: 'announcement', course: code, title: n.Title || 'Announcement', body, at, url, read: prev ? prev.read && !changed : !box.seeded ? true : false, updated: !!changed };
-      if (!prev || changed) fresh.push(item);
+      const quiet = !box.seeded || !seenCourses.has(code) || isOld(at);
+      const item = { id, kind: 'announcement', course: code, title: n.Title || 'Announcement', body, at, url, read: prev ? prev.read && !changed : quiet, updated: !!changed };
+      if ((!prev && !quiet) || changed) fresh.push(item);
       known.set(id, item);
     }
   }
@@ -441,8 +446,12 @@ function updateGrades(dir, ous) {
         comment: (g.Comments?.Text || '').trim(),
         at: g.LastModified || null
       }));
+    // A class Kea is seeing for the first time: its grades so far are history, not news. Same for a grade first seen
+    // weeks after it was given. A real regrade or new feedback always counts.
+    const firstLook = !old.byCourse[code];
     for (const g of list) {
       const p = was.get(g.id);
+      if (!p && (firstLook || (g.at && Date.now() - new Date(g.at).getTime() > 14 * 864e5))) continue;
       if (!p || p.score !== g.score || p.comment !== g.comment) fresh.push({ code, g, updated: !!p });
     }
     const pct = final?.PointsDenominator ? Math.round((final.PointsNumerator / final.PointsDenominator) * 1000) / 10 : null;

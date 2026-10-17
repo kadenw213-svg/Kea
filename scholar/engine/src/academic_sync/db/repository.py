@@ -9,7 +9,9 @@ against a plain in-memory SQLite database.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -1060,6 +1062,7 @@ def record_digest_entry(
     content_hash: str,
     payload: dict[str, object],
     already_reported_on: date | None = None,
+    stable_hash: Callable[[str, dict[str, Any]], str | None] | None = None,
 ) -> str:
     """Record one observed announcement/grade/trigger. Returns "new",
     "updated" (same identity, different content -- e.g. a regraded score
@@ -1085,6 +1088,14 @@ def record_digest_entry(
         return "new"
     if row.content_hash == content_hash:
         return "seen"
+    # Same news, worded differently by a run (other highlights, a shortened comment): still "seen". The new hash is
+    # kept, so the next identical crawl matches outright.
+    if stable_hash is not None:
+        was = stable_hash(kind, dict(row.payload_json or {}))
+        if was is not None and was == stable_hash(kind, dict(payload)):
+            row.content_hash = content_hash
+            session.flush()
+            return "seen"
     row.content_hash = content_hash
     row.payload_json = {**payload, "is_update": True}
     row.emailed_on = None

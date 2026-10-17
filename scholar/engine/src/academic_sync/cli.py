@@ -1737,6 +1737,7 @@ def digest_ingest_cmd(
                 session, course_id=course.id, kind=entry.kind, external_id=entry.external_id,
                 content_hash=entry.content_hash, payload=entry.payload,
                 already_reported_on=crawl.captured_on if is_baseline else None,
+                stable_hash=digest_mod.stable_hash,
             )
             counts["baseline" if is_baseline and result == "new" else result] += 1
             if (

@@ -114,6 +114,24 @@ def test_reingest_unchanged_is_seen_and_changed_feedback_resurfaces(tmp_path):
     assert "See me in office hours." in html and "(updated)" in html
 
 
+def test_rewording_old_news_is_not_an_update(tmp_path):
+    # A later run quotes other highlights, trims a long comment with "…" and changes spacing: nothing really changed.
+    _setup(tmp_path)
+    day = TODAY.isoformat()
+    long = "Good work on the derivations. Next time show every step of the chain rule so I can give partial credit."
+    _ingest(tmp_path, {"course": "MAT1340", "captured_on": day,
+                       "announcements": [{"id": "a1", "title": "Exam 3 moved", "posted_on": day, "highlights": ["Exam 3 is now Oct 20."]}],
+                       "grades": [{"id": "g1", "title": "Exam 2", "score_percent": 72, "comment": long, "graded_on": day}]})
+    tomorrow = date(2026, 10, 7).isoformat()
+    again = _ingest(tmp_path, {"course": "MAT1340", "captured_on": tomorrow,
+                               "announcements": [{"id": "a1", "title": "Exam 3  moved", "posted_on": day, "highlights": ["Now on October 20."]}],
+                               "grades": [{"id": "g1", "title": "Exam 2", "score_percent": 72, "comment": long[:90] + "…", "graded_on": day}]})
+    assert again["updated"] == 0 and again["seen"] == 2
+    regraded = _ingest(tmp_path, {"course": "MAT1340", "captured_on": tomorrow,
+                                  "grades": [{"id": "g1", "title": "Exam 2", "score_percent": 80, "comment": long, "graded_on": day}]})
+    assert regraded["updated"] == 1
+
+
 def test_record_sent_prevents_double_send_same_day(tmp_path):
     _setup(tmp_path)
     _ingest(tmp_path, {"course": "MAT1340", "captured_on": TODAY.isoformat(),

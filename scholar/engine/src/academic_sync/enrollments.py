@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 # e.g. "S_PPCC_BIO1112175_202720": institution prefix, subject+number,
@@ -35,10 +36,15 @@ class NewShell:
     home_url_path: str  # e.g. "/d2l/home/665290"
 
 
-def find_new_shells(items: list[dict[str, Any]], registered_ids: set[str]) -> list[NewShell]:
+def find_new_shells(items: list[dict[str, Any]], registered_ids: set[str],
+                    today: date | None = None) -> list[NewShell]:
     """Class shells the student can open that aren't imported yet.
-    Past-term shells report `CanAccess: false` and are skipped, as are
-    orientation/cross-listed/non-class shells."""
+    Past-term shells usually report `CanAccess: false` and are skipped, as
+    are orientation/cross-listed/non-class shells. A shell whose end date
+    has passed is skipped too, even when it's still open (an "Incomplete"
+    role keeps a finished class accessible for months): it's last year's
+    class, not a new one."""
+    today = today or date.today()
     out: list[NewShell] = []
     for item in items:
         org = item.get("OrgUnit") or {}
@@ -51,6 +57,9 @@ def find_new_shells(items: list[dict[str, Any]], registered_ids: set[str]) -> li
         if subject in _NON_CLASS_SUBJECTS or not access.get("CanAccess", False):
             continue
         if not access.get("IsActive", True):
+            continue
+        end = (access.get("EndDate") or "")[:10]
+        if end and end < today.isoformat():
             continue
         out.append(NewShell(
             org_unit_id=ou,

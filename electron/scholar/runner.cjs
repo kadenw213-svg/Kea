@@ -70,6 +70,14 @@ TASKS.daily.pre = async (job, step) => {
 };
 
 TASKS.import.pre = async (job, step) => {
+  // Never scan a class that already ended (an old enrollment can stay open for months): it's last year's class.
+  const shell = /-- new class shell: (\{.*\})/s.exec(job.arg);
+  if (shell) {
+    try {
+      const end = JSON.parse(shell[1]).end_date;
+      if (end && end < new Date().toISOString().slice(0, 10)) return { skip: `Skipped ${JSON.parse(shell[1]).course_code}: that class ended on ${end}, so it isn't scanned.`, ok: true };
+    } catch {}
+  }
   if (job.arg.trim()) return {};
   step('Looking for classes Kea hasn’t scanned yet…');
   const r = await precheck().run({ fullEveryDays: 1e9 });

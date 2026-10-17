@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from academic_sync.chapter_topics import canonicalize_chapter_label, split_chapter_segments
 from academic_sync.config import REPO_ROOT
 from academic_sync.db import repository
-from academic_sync.db.orm import AcademicItemRow, StudyPdfRow
+from academic_sync.db.orm import AcademicItemRow, CourseRow, StudyPdfRow
 from academic_sync.models.domain import AcademicItem, ChapterTopic, Course
 from academic_sync.models.enums import ItemStatus, ItemType
 
@@ -149,6 +149,11 @@ def missing_terms(source_text: str, terms: list[str]) -> list[str]:
 # ---- due banners + bundle --------------------------------------------------------
 
 
+def _active_courses():  # type: ignore[no-untyped-def]
+    """Only classes still being taken get textbooks (an old class set inactive gets none)."""
+    return select(CourseRow.id).where(CourseRow.status == "active")
+
+
 def due_banners(session: Session, today: date, lookahead_days: int = 3,
                 lookback_days: int = 2) -> list[AcademicItem]:
     """Banners starting in [today - lookback, today + lookahead] that have
@@ -160,6 +165,7 @@ def due_banners(session: Session, today: date, lookahead_days: int = 3,
             AcademicItemRow.date >= today - timedelta(days=lookback_days),
             AcademicItemRow.date <= today + timedelta(days=lookahead_days),
             AcademicItemRow.status.not_in(_INACTIVE),
+            AcademicItemRow.course_id.in_(_active_courses()),
         ).order_by(AcademicItemRow.date)
     ).all()
     items = [repository.get_academic_item(session, i) for i in ids if i not in done]
@@ -187,6 +193,7 @@ def missing_banners(session: Session, course_id: str | None = None) -> list[tupl
         AcademicItemRow.item_type == ItemType.WEEKLY_READING.value,
         AcademicItemRow.status.not_in(_INACTIVE),
         AcademicItemRow.date.is_not(None),
+        AcademicItemRow.course_id.in_(_active_courses()),
     )
     if course_id:
         query = query.where(AcademicItemRow.course_id == course_id)

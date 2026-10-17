@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import date, time, timedelta
 from typing import Any
@@ -123,6 +124,32 @@ def content_hash(data: dict[str, Any]) -> str:
     return hashlib.sha256(
         json.dumps(data, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()[:16]
+
+
+def _norm(text: Any, keep: int = 80) -> str:
+    """Text as a dedupe key that survives rewording around the edges: case,
+    spacing, quotes and a trailing "…" cut don't matter, only the first
+    `keep` characters do."""
+    t = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+    t = re.sub(r"(\.\.\.|…)$", "", t).strip(" \"'“”‘’")
+    return t[:keep]
+
+
+def stable_hash(kind: str, payload: dict[str, Any]) -> str | None:
+    """What identifies an unchanged announcement, grade or message, from
+    the parts that don't depend on how a run worded its excerpts: an
+    announcement's title, a grade's score and the start of its feedback, a
+    message's subject. Used to compare with what's stored, so a run that
+    quotes different highlights (or shortens a long comment) doesn't
+    resend old news as "updated". None for kinds without one."""
+    if kind == KIND_ANNOUNCEMENT:
+        return content_hash({"t": _norm(payload.get("title"), 200)})
+    if kind == KIND_GRADE:
+        return content_hash({"s": payload.get("score_percent"), "x": _norm(payload.get("score_text"), 40),
+                             "c": _norm(payload.get("comment"))})
+    if kind == KIND_MESSAGE:
+        return content_hash({"s": _norm(payload.get("subject"), 200)})
+    return None
 
 
 @dataclass
