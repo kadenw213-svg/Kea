@@ -156,9 +156,11 @@ chapter list comes from the PDF's headings. So keep one level-1 heading per chap
   reading and the class's review documents. The vocabulary, objectives and study-focus lists stay internal: they feed
   the textbook, practice exams and flashcards, and are never shown as a wall of keywords.
 
-**Study material.** `/kea-practice <request>` writes a practice exam (exam-style questions with answers) or a
-flashcard deck, all at once, from the request Kea prepared. It runs only when the student asks. Kea shuffles and
-grades it itself, offline.
+**Study material.** `/kea-practice <brief>` writes a practice exam (exam-style questions with answers) or a
+flashcard deck, all at once, from the one brief Kea prepared: what the real tests cover first (the study focus you
+record on test items in scans, and their review sheets), then the chapters' notes. Recording each test's study focus
+and review links accurately during scans is what makes these sets match the real exam. It runs only when the student
+asks. Kea shuffles and grades it itself, offline.
 
 **Scope and safety.**
 - Only the class site, and for study PDFs, open educational sources (OpenStax, LibreTexts, Wikimedia Commons, a

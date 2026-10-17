@@ -27,9 +27,9 @@ const TASKS = {
   },
   // This week's textbook chapters (no class site needed; open educational sources for figures and checking facts).
   study: { prompt: (arg) => `/weekly-study-pdf ${arg || ''}`.trim(), tools: [...BASE, 'WebFetch', 'WebSearch', 'mcp__kea__kea_progress', 'mcp__kea__kea_notify'], label: 'Writing textbook chapters' },
-  // A practice exam or flashcard deck the student asked for: Kea's saved material, plus the review sheets the test links
-  // to (downloaded once; their text is kept for next time). Nothing else from the class site.
-  practice: { prompt: (arg) => require('./study.cjs').prompt(arg), tools: [...BASE, 'mcp__kea__kea_progress', 'mcp__kea__d2l_download', 'mcp__kea__d2l_status'], label: 'Making study material' }
+  // A practice exam or flashcard deck the student asked for, written from the brief Kea prepares (the tests' focus, the
+  // chapters' notes and review sheets Kea downloaded itself): Claude only reads that and writes.
+  practice: { prompt: (arg) => require('./study.cjs').prompt(arg), tools: [...BASE, 'mcp__kea__kea_progress'], label: 'Making study material' }
 };
 
 // ---------- Plain-code steps before a run (no Claude usage) ----------

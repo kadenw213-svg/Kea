@@ -128,6 +128,7 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
     course: src.course,
     item: src.item,
     chapters: src.chapters,
+    tests: src.tests || [],
     class_files: files,
     output: `data/study/out/${id}.json`
   };
@@ -139,11 +140,17 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
 }
 
 // ---------- Kea's brief: everything Claude needs, in one short file ----------
-// Claude used to open every chapter, textbook source and class file itself (converting PDFs on the way), which took
-// many slow steps. Kea now does that reading in plain code and hands Claude one brief, so a set takes a single pass.
-const BRIEF_BUDGET = 32000; // characters of class-file text in a brief (about 8k tokens; the whole brief stays one Read)
+// Kea does all the reading in plain code (no Claude usage) and hands Claude one brief, so a set is a single pass:
+//   1. What the real tests cover, as scraped from the class site (the instructor's study focus, the format), first.
+//   2. The tests' review sheets (FunSheets, study guides, answer keys), downloaded once by Kea and kept as text.
+//   3. Per-chapter notes, kept as plain text in `data/study/notes/<CODE>/<Chapter N>.md` and rebuilt only when
+//      what they're made from changes: objectives, vocabulary, sections, and that chapter's review material.
+const BRIEF_BUDGET = 40000; // characters of review-material text in a brief (about 10k tokens; it stays one Read)
 const REVIEWISH = /review|fun ?sheet|guided reading|study guide|practice|objective|worksheet|exam|quiz|key/i;
 const SKIP = /syllabus|calendar|schedule|announcement|consolidated_events|content_modules|dropbox|discussion|lab_handout/i;
+// Review links worth fetching for a test (not reference sheets like the periodic table, which every exam allows).
+const SHEET = /fun ?sheet|study guide|review|practice (exam|test|problems)|answer key|\bkey\b|worksheet/i;
+const NOT_SHEET = /periodic table|conversion|formula sheet|quiz(zes)?$|discussion|dropbox|syllabus/i;
 
 /** A text file squeezed for reading: page markers and runs of blank space gone, short broken lines rejoined. */
 function squeeze(text) {
@@ -162,75 +169,172 @@ function squeeze(text) {
     }, [])
     .join('\n');
 }
-
+const htmlText = (s) => String(s).replace(/<(script|style)[\s\S]*?<\/\1>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
 const chapterNum = (s) => (/(?:ch(?:apter)?\.?\s*)(\d+)/i.exec(s) || [])[1];
+const safeName = (s) => s.replace(/[<>:"/\\|?*]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+const mtime = (f) => {
+  try {
+    return fs.statSync(f).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
+
+/** A D2L content link as its file: the viewer page `/viewContent/<topic>/View` → the topic's direct download. */
+const directUrl = (url) => url.replace(/\/le\/content\/(\d+)\/viewContent\/(\d+)\/View.*$/, '/le/content/$1/topics/files/download/$2/DirectFileTopicDownload');
 
 /**
- * Write `data/study/requests/<id>.md`: the set to write, what the test covers, each chapter's objectives and
- * vocabulary, and the text of the class's review material for those chapters (PDFs converted by Kea first).
- * docText(file) converts one PDF or Word file. Returns the brief's path relative to the workspace.
+ * Download the tests' review sheets and keys that aren't here yet (Kea's own signed-in browser, no Claude), saved as
+ * `data/downloads/<CODE>/review/<label>.<pdf|docx|html>` with a text copy. Returns the paths of every sheet's text
+ * for these chapters, cached or new.
+ */
+async function fetchSheets(req, nums, docText, step) {
+  const ws = profiles.paths().workspace;
+  const dir = path.join(ws, 'data', 'downloads', req.course.code, 'review');
+  const seen = new Map();
+  for (const t of req.tests || [])
+    for (const l of t.review_links || []) {
+      if (!SHEET.test(l.label) || NOT_SHEET.test(l.label) || !/^https?:/.test(l.url)) continue;
+      const n = chapterNum(l.label);
+      if (n && !nums.has(n)) continue;
+      seen.set(safeName(l.label), l.url);
+    }
+  const have = (name) => ['pdf', 'docx', 'html'].map((x) => path.join(dir, `${name}.${x}`)).find((f) => fs.existsSync(f));
+  const missing = [...seen].filter(([name]) => !have(name)).slice(0, 16);
+  if (missing.length) {
+    const browser = require('./browser.cjs');
+    const signedIn = await browser
+      .status()
+      .then((s) => s.signedIn)
+      .catch(() => false);
+    let i = 0;
+    for (const [name, url] of signedIn ? missing : []) {
+      step(`Downloading ${name} from your class site (${++i} of ${missing.length})…`, 2 + Math.round((i / missing.length) * 5));
+      try {
+        const r = await browser.download(directUrl(url), `${req.course.code}/review/${name}.download`);
+        const full = path.join(ws, r.saved);
+        const head = fs.readFileSync(full).subarray(0, 5).toString('latin1');
+        const ext = head.startsWith('%PDF') ? 'pdf' : head.startsWith('PK') ? 'docx' : /html/i.test(r.contentType) ? 'html' : null;
+        if (!ext) {
+          fs.rmSync(full, { force: true });
+          continue;
+        }
+        const dest = path.join(dir, `${name}.${ext}`);
+        fs.renameSync(full, dest);
+        if (ext !== 'html') await docText(dest).catch(() => null);
+      } catch {}
+    }
+  }
+  return [...seen.keys()]
+    .map(have)
+    .filter(Boolean)
+    .map((f) => (/\.html$/.test(f) ? f : `${f}.txt`))
+    .filter((f) => fs.existsSync(f));
+}
+
+/** A text file's readable content (HTML stripped), squeezed. */
+const readText = (f) => {
+  const body = fs.readFileSync(f, 'utf8');
+  return squeeze(/\.html?$/i.test(f) ? htmlText(body) : body);
+};
+
+/** Trim each text to a fair share of `budget`: small ones whole, big ones cut to an equal share of what's left. */
+function share(texts, budget) {
+  let left = budget;
+  [...texts]
+    .sort((a, b) => a.text.length - b.text.length)
+    .forEach((t, k, all) => {
+      const cap = Math.floor(left / (all.length - k));
+      if (t.text.length > cap) t.text = `${t.text.slice(0, cap)}\n[… trimmed; the full text is in ${t.path}]`;
+      left -= t.text.length;
+    });
+  return texts;
+}
+
+/**
+ * Write `data/study/requests/<id>.md`, Kea's brief for one set, and return its workspace-relative path.
+ * docText(file) converts one PDF or Word file to text; step(message, percent) reports progress.
  */
 async function prepare(id, docText, step = () => {}) {
   const ws = profiles.paths().workspace;
+  const rel = (f) => path.relative(ws, f).replace(/\\/g, '/');
   const req = readJson(path.join(ws, 'data', 'study', 'requests', `${id}.json`), null);
   if (!req) throw new Error('The request for this set is missing.');
   const nums = new Set(req.chapters.map((c) => chapterNum(c.label)).filter(Boolean));
-  // Only material for these chapters (or for no chapter in particular) that looks like review.
+
+  // The class's own files for these chapters (or no chapter in particular) that look like review material.
   const wanted = (req.class_files || []).filter((f) => {
-    const name = path.basename(f.path);
-    if (SKIP.test(f.path) || !REVIEWISH.test(f.path)) return false;
-    const n = chapterNum(name);
+    if (SKIP.test(f.path) || !REVIEWISH.test(f.path) || /\/review\//.test(f.path)) return false;
+    const n = chapterNum(path.basename(f.path));
     return !n || nums.has(n);
   });
-  const texts = [];
   let i = 0;
   for (const f of wanted) {
-    i++;
     const full = path.join(ws, f.path);
-    let txt = /\.(pdf|docx)$/i.test(full) ? `${full}.txt` : full;
-    if (!fs.existsSync(txt) && /\.(pdf|docx)$/i.test(full)) {
-      step(`Reading ${path.basename(full)} (${i} of ${wanted.length})…`, Math.round((i / wanted.length) * 8));
+    i++;
+    if (/\.(pdf|docx)$/i.test(full) && !fs.existsSync(`${full}.txt`)) {
+      step(`Reading ${path.basename(full)} (${i} of ${wanted.length})…`, Math.round((i / wanted.length) * 2));
       await docText(full).catch(() => null);
     }
-    if (!fs.existsSync(txt)) continue;
-    let body = fs.readFileSync(txt, 'utf8');
-    if (/\.html?$/i.test(txt)) body = body.replace(/<(script|style)[\s\S]*?<\/\1>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
-    texts.push({ name: path.basename(f.path), path: f.path, text: squeeze(body) });
   }
-  // Share the budget fairly: small files whole, big ones trimmed to an equal share of what's left.
-  let left = BRIEF_BUDGET;
-  [...texts].sort((a, b) => a.text.length - b.text.length).forEach((t, k) => {
-    const share = Math.floor(left / (texts.length - k));
-    if (t.text.length > share) t.text = `${t.text.slice(0, share)}\n[… trimmed; the full text is in ${t.path}.txt]`;
-    left -= t.text.length;
+  const classTexts = wanted.map((f) => path.join(ws, /\.(pdf|docx)$/i.test(f.path) ? `${f.path}.txt` : f.path)).filter((f) => fs.existsSync(f));
+  const sheets = await fetchSheets(req, nums, docText, step);
+  step('Putting the chapters’ notes together…', 8);
+
+  // Per-chapter notes: one plain text file each, rebuilt when the database or that chapter's material is newer.
+  const sources = [...classTexts, ...sheets];
+  const general = sources.filter((f) => !chapterNum(path.basename(f)));
+  const notesDir = path.join(ws, 'data', 'study', 'notes', req.course.code);
+  fs.mkdirSync(notesDir, { recursive: true });
+  const dbTime = mtime(profiles.paths().db);
+  const notes = req.chapters.map((c) => {
+    const file = path.join(notesDir, `${safeName(c.label)}.md`);
+    const mine = sources.filter((f) => chapterNum(path.basename(f)) === chapterNum(c.label));
+    if (mtime(file) < Math.max(dbTime, ...mine.map(mtime))) {
+      const lines = [`# ${c.label}${c.title ? `: ${c.title}` : ''}`, ''];
+      if (c.summary) lines.push(c.summary, '');
+      if (c.sections?.length) lines.push(`Sections: ${c.sections.map((s) => (typeof s === 'string' ? s : s.title || s.label || JSON.stringify(s))).join('; ')}`, '');
+      if (c.objectives?.length) lines.push('## Objectives', ...c.objectives.map((o) => `- ${typeof o === 'string' ? o : o.text || JSON.stringify(o)}`), '');
+      if (c.vocabulary) lines.push('## Vocabulary', c.vocabulary, '');
+      for (const f of mine) lines.push(`## Review material: ${path.basename(f).replace(/\.txt$/, '')}`, readText(f), '');
+      fs.writeFileSync(file, lines.join('\n'));
+    }
+    const text = fs.readFileSync(file, 'utf8');
+    const at = text.indexOf('\n## Review material: ');
+    return { label: c.label, path: rel(file), head: at < 0 ? text : text.slice(0, at), review: at < 0 ? '' : text.slice(at + 1), source: c.textbook_source };
   });
-  const lines = [
-    `# Write ${req.count} ${req.kind === 'exam' ? 'practice exam questions' : 'flashcards'}: ${req.course.code} ${req.course.name}`,
-    '',
-    `Output file: ${req.output}`,
-    ''
-  ];
-  if (req.item) {
-    lines.push(`## The ${req.item.type || 'test'}: ${req.item.title}${req.item.date ? ` (${req.item.date})` : ''}`);
-    if (req.item.study_focus) lines.push('', 'What it covers (from the instructor):', String(Array.isArray(req.item.study_focus) ? req.item.study_focus.join('\n') : req.item.study_focus));
-    if (req.item.description) lines.push('', squeeze(req.item.description).slice(0, 3000));
-    if (req.item.review_links?.length) lines.push('', 'Review links on the class site:', ...req.item.review_links.map((l) => `- ${l.label}: ${l.url}`));
+
+  // The brief: the tests first, then each chapter (objectives and vocabulary whole; review text shares the budget).
+  const lines = [`# Write ${req.count} ${req.kind === 'exam' ? 'practice exam questions' : 'flashcards'}: ${req.course.code} ${req.course.name}`, '', `Output file: ${req.output}`, ''];
+  const tests = (req.tests || []).filter((t) => t.study_focus?.length || t.description);
+  if (tests.length) {
+    lines.push('## What the real tests cover (scraped from the class site: the top priority)', '');
+    for (const t of tests) {
+      lines.push(`### ${t.title}${t.date ? ` (${t.date})` : ''}${req.item?.id === t.id ? ': the test this set is for' : ''}`);
+      if (t.chapters?.length) lines.push(`Covers: ${t.chapters.join(', ')}`);
+      lines.push(...(t.study_focus || []).map((f) => `- ${f}`));
+      if (t.description) lines.push(squeeze(htmlText(t.description)).slice(0, 2000));
+      lines.push('');
+    }
+  }
+  const texts = share([...notes.filter((n) => n.review).map((n) => ({ key: n.label, path: n.path, text: n.review })), ...general.map((f) => ({ key: f, path: rel(f), text: readText(f) }))], BRIEF_BUDGET);
+  const textOf = (k) => texts.find((t) => t.key === k)?.text || '';
+  for (const n of notes) {
+    lines.push(n.head.replace(/^# /, '## ').replace(/^## (Objectives|Vocabulary)$/gm, '**$1**').trim());
+    if (n.source) lines.push(`(Kea's textbook chapter, only to check a fact: ${n.source})`);
+    const r = textOf(n.label);
+    if (r) lines.push('', r.replace(/^## /gm, '### ').trim());
     lines.push('');
   }
-  for (const c of req.chapters) {
-    lines.push(`## ${c.label}${c.title ? `: ${c.title}` : ''}`);
-    if (c.summary) lines.push(c.summary);
-    if (c.sections?.length) lines.push(`Sections: ${c.sections.map((s) => (typeof s === 'string' ? s : s.title || s.label || JSON.stringify(s))).join('; ')}`);
-    if (c.objectives?.length) lines.push('Objectives:', ...c.objectives.map((o) => `- ${typeof o === 'string' ? o : o.text || JSON.stringify(o)}`));
-    if (c.vocabulary) lines.push(`Vocabulary: ${c.vocabulary}`);
-    if (c.textbook_source) lines.push(`(Kea's textbook chapter, only if you must check a fact: ${c.textbook_source})`);
-    lines.push('');
+  const wide = general.map((f) => ({ name: path.basename(f).replace(/\.txt$/, ''), text: textOf(f) })).filter((t) => t.text);
+  if (wide.length) {
+    lines.push('## Class-wide review material', '');
+    for (const t of wide) lines.push(`### ${t.name}`, t.text, '');
   }
-  lines.push('## Class review material', texts.length ? '' : '(None downloaded for these chapters: write from the objectives and vocabulary.)', '');
-  for (const t of texts) lines.push(`### ${t.name}`, t.text, '');
-  const rel = `data/study/requests/${id}.md`;
-  fs.writeFileSync(path.join(ws, rel), lines.join('\n'));
-  return rel;
+  if (!sources.length) lines.push('(No review material has been downloaded for these chapters: write from the tests, objectives and vocabulary.)', '');
+  const out = `data/study/requests/${id}.md`;
+  fs.writeFileSync(path.join(ws, out), lines.join('\n'));
+  return out;
 }
 
 /** The runner's prompt for a set (a resumed run says so). */

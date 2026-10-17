@@ -17,25 +17,36 @@ Claude, so every question must stand on its own and grade correctly by its store
 
 ## 1. Read the brief, and only the brief
 
-Read the brief (one Read; it's short). It has the kind and count, the output file, what the test covers, every
-chapter's objectives and vocabulary, and the text of the class's review material for those chapters (guided
-readings, review sheets, FunSheets, study guides, the instructor's notes), already converted and trimmed by Kea.
+Read the brief (one Read; it's short). Kea built it from what the scans learned, in this order:
+1. **What the real tests cover**: each test on these chapters with the instructor's study focus, scraped from the
+   class site (format, allowed sheets, the exact problem types on each FunSheet).
+2. Each chapter's internal notes: summary, sections, objectives and vocabulary.
+3. The review material for those chapters, already converted and trimmed by Kea: FunSheets and their answer keys,
+   study guides, guided readings, past quiz notes.
 
-That is enough. Do **not** open the class files, the request JSON, the textbook sources or the class site, and don't
-browse or search. The only exceptions:
-- Open a textbook source (path in the brief) only to check one fact you are genuinely unsure of, and read only the
-  part you need (Grep it).
-- If the set is for a test and the brief says no review material was found, but its review links name a review
-  sheet or answer key, you may download that one file with `mcp__kea__d2l_download` (`path` =
-  `<CODE>/review/<label>.pdf`) and read the `text_file` it returns. At most two downloads.
+That is enough. Do **not** open the class files, the request JSON, the notes files, the textbook sources or the class
+site, and don't browse or search. The only exception: open a textbook source (path in the brief) only to check one
+fact you are genuinely unsure of, and read only the part you need (Grep it).
 
 Call `mcp__kea__kea_progress` once after reading, with `percent` 20 ("Writing 25 questions on Chapters 5–6").
 
-How to use the material, in this order of authority: the test's study focus and review material (every problem type
-and topic on a review sheet becomes a question in the same style and difficulty), then each chapter's objectives
-(each objective tested at least once in a set of 50 or more; spread fairly for smaller sets) and vocabulary (tested in
-context, not as bare definitions). The student never sees the vocabulary and objective lists. This set is where
-they're used.
+**Write for the real exam.** What the scans found about the tests is what will actually be on them, so it drives
+the set:
+- **At least 60% of the questions come straight from the tests' study focus and review sheets.** Every study-focus
+  line and every problem type on a FunSheet or study guide gets at least one question (for a set too small for all of
+  them, take the most exam-heavy ones first: calculations and the topics the focus repeats). Match their style,
+  numbers and difficulty, and check your answers against the answer keys when they're in the brief.
+- **Use the test's format.** If the focus says "essay, multiple choice, and calculation problems", mix exactly those
+  types in about that balance; if a test is matching or multiple choice only, write those.
+- When a set is for one test (the brief marks it "the test this set is for"), that test's focus comes first; other
+  tests on the same chapters fill in.
+- The rest (up to 40%) covers each chapter's objectives (each one at least once in a set of 50 or more) and vocabulary,
+  tested in context, not as bare definitions. With no test information in the brief, the objectives and review
+  material drive the whole set.
+- Set `source` on every question to where it came from ("FunSheet Ch 5", "Exam 3 focus", "Objective"), so the
+  balance can be checked.
+
+The student never sees the vocabulary and objective lists. This set is where they're used.
 
 ## 2. Exam-style questions (`kind: exam`)
 
@@ -59,8 +70,8 @@ Every question has:
 - `source`: where it came from: "FunSheet Ch 5", "Study focus", "Objective", "Textbook 5.3".
 
 Balance and difficulty:
-- Spread questions across the chapters in proportion to what the test covers (study focus first). For one chapter,
-  cover every section.
+- Spread questions across the chapters in proportion to what the tests' focus covers. For one chapter, cover every
+  section.
 - About 30% recall and recognition, 50% application (calculate, classify, predict, interpret), 20% harder multi-step
   or comparison questions, the hardest type the review sheets show.
 - Each question tests one thing and doesn't give away another question's answer. No duplicates or near-duplicates
@@ -75,8 +86,9 @@ Balance and difficulty:
   pressure?"), a structure, a formula's name, or a problem type ("How do you find the limiting reactant?").
 - `back`: the answer in 1 to 3 sentences, or a short procedure. Include the key fact the exam asks.
 - `chapter` on each card.
-- Cover every vocabulary term and every objective of the chapters, plus every item on the test's review sheets. Mix
-  term cards with how and why cards. No duplicates.
+- Start with what the tests will ask: a card for every study-focus point and every item on the review sheets
+  (formulas, problem types as "How do you…" cards, the facts the FunSheets drill). Then every vocabulary term and
+  objective of the chapters. Mix term cards with how and why cards. No duplicates.
 
 ## 4. Write the file and check it
 

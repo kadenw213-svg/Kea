@@ -327,7 +327,24 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
       reading_url: t.reading_url || null,
       textbook_source: sources.get(t.chapter_label) || null
     }));
-  return { course: { id: c.id, code: c.course_code, name: c.name }, item, chapters: out };
+  // Every test that covers these chapters, with what the instructor said it covers (scraped from the class site) and
+  // its review sheets: the questions should look like these tests.
+  const tests = rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} ORDER BY date`, [courseId])
+    .map((r) => ({ r, covered: json(r.covered_chapters_json, []), focus: json(r.study_focus_json, []) }))
+    .filter(({ r, covered, focus }) => (item && r.id === item.id) || ((focus.length || r.description) && covered.some((ch) => want.has(ch))))
+    .map(({ r, covered, focus }) => ({
+      id: r.id,
+      title: r.title,
+      type: r.item_type,
+      date: r.date,
+      chapters: covered,
+      study_focus: focus,
+      description: r.description || null,
+      review_links: [...json(r.weekly_links_json, []), ...[r.reference_url && { label: r.reference_url_label, url: r.reference_url }, r.resource_url && { label: r.resource_url_label, url: r.resource_url }].filter(Boolean)].map((l) => ({ label: l.label || '', url: l.url }))
+    }))
+    // The test the set is for first, then the ones that cover the most of these chapters.
+    .sort((a, b) => (b.id === item?.id) - (a.id === item?.id) || b.chapters.filter((ch) => want.has(ch)).length / b.chapters.length - a.chapters.filter((ch) => want.has(ch)).length / a.chapters.length);
+  return { course: { id: c.id, code: c.course_code, name: c.name }, item, chapters: out, tests };
 }
 
 module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn };
