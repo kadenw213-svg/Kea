@@ -24,8 +24,67 @@ function writeState(s) {
   fs.writeFileSync(p.state, JSON.stringify(s, null, 2));
 }
 
+/**
+ * Check an item off (or not). Every change is logged with its time, so the PC and the phone can merge their
+ * checkmarks: whichever change is newer wins.
+ */
+function setDone(s, id, on, at = new Date().toISOString()) {
+  s.done = s.done || {};
+  s.doneLog = s.doneLog || {};
+  s.doneLog[id] = { on: !!on, at };
+  if (on) s.done[id] = at;
+  else delete s.done[id];
+}
+
 // ---------- The copy in the student's cloud drive (for Kea on their phone) ----------
 const cloud = require('./cloud.cjs');
+
+/**
+ * Bring in what the phone changed (phone.json in the drive folder): checkmarks, newest change winning, and Inbox
+ * items read on the phone. Returns true when something changed here.
+ */
+let phoneSeen = 0;
+function mergePhone() {
+  const dir = cloud.target();
+  if (!dir) return false;
+  const file = path.join(dir, 'phone.json');
+  let st;
+  try {
+    st = fs.statSync(file);
+  } catch {
+    return false;
+  }
+  if (st.mtimeMs === phoneSeen) return false;
+  phoneSeen = st.mtimeMs;
+  let phone;
+  try {
+    phone = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return false;
+  }
+  const s = readState();
+  let changed = false;
+  for (const [id, e] of Object.entries(phone.done || {})) {
+    const cur = (s.doneLog || {})[id];
+    if (e && e.at && (!cur || e.at > cur.at)) {
+      setDone(s, id, e.on, e.at);
+      changed = true;
+    }
+  }
+  if (changed) writeState(s);
+  const read = (phone.read || []).filter(Boolean);
+  if (read.length) {
+    const unread = new Set(precheck.readInbox().items.filter((i) => !i.read).map((i) => i.id));
+    const scanUnread = new Set(runner.news().filter((n) => !n.read).map((n) => `scan:${n.id}`));
+    const mine = read.filter((id) => unread.has(id));
+    const scans = read.filter((id) => scanUnread.has(id)).map((id) => id.slice(5));
+    if (mine.length) precheck.markInboxRead(mine);
+    if (scans.length) runner.markNewsRead(scans);
+    if (mine.length || scans.length) changed = true;
+  }
+  if (changed) BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
+  return changed;
+}
 
 /** Everything the phone shows, in one object. Textbook paths become relative to the drive folder's Textbooks/. */
 async function snapshot() {
@@ -37,7 +96,14 @@ async function snapshot() {
   const details = (await Promise.all(courses.map((c) => db.course(P.db, P.textbooks, done, c.id)))).filter(Boolean);
   const grades = {};
   for (const c of courses) grades[c.code] = precheck.readGrades().byCourse[c.code] || (await db.gradesFromChecks(P.db, c.id));
-  const inbox = precheck.readInbox().items.slice(0, 300);
+  // The Inbox as the phone shows it: Kea's own items and what scans found, with what's been read on either side.
+  const inbox = [
+    ...precheck.readInbox().items,
+    ...runner.news().map((n) => ({ id: `scan:${n.id}`, kind: 'news', course: n.course || '', title: n.title, body: n.body, at: n.at, url: '', read: !!n.read }))
+  ]
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    .slice(0, 300);
+  const doneLog = readState().doneLog || {};
   // A PC path means nothing on the phone: textbook PDFs become their copy in the drive folder (Textbooks/<class>/<file>,
   // the same layout Kea mirrors), and any other path is left out.
   const fix = (v) => {
@@ -46,7 +112,7 @@ async function snapshot() {
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fix(x)]));
     return v;
   };
-  return fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, courses, items, details, grades, inbox });
+  return fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, courses, items, details, grades, inbox, doneLog });
 }
 const syncSoon = (delay) => cloud.schedule(snapshot, delay);
 
@@ -116,6 +182,12 @@ async function ready() {
  */
 let lastInbox = 0;
 async function tick() {
+  // What the phone changed (checkmarks, read messages) comes in through the drive folder.
+  try {
+    if (mergePhone()) syncSoon(5000);
+  } catch (err) {
+    console.error('Phone merge', err);
+  }
   // New announcements, every half hour or so (plain requests, no Claude), while nothing else is running.
   const every = Number(settings.get('scholar.inboxMinutes', 30)) || 0;
   if (every && !runner.status().running && Date.now() - lastInbox >= every * 60000 - 30000) {
@@ -168,11 +240,9 @@ function register() {
   ipcMain.handle('scholar:course', (_e, id) => db.course(p().db, p().textbooks, readState().done || {}, id));
   ipcMain.handle('scholar:setDone', (_e, id, done) => {
     const s = readState();
-    s.done = s.done || {};
-    if (done) s.done[id] = new Date().toISOString();
-    else delete s.done[id];
+    setDone(s, id, done);
     writeState(s);
-    syncSoon();
+    syncSoon(5000);
     return true;
   });
   ipcMain.handle('scholar:importExisting', (_e, folder) => importExisting(folder));
@@ -212,6 +282,7 @@ function register() {
   ipcMain.handle('scholar:markInboxRead', (_e, ids) => {
     precheck.markInboxRead(ids ? ids.filter((i) => !i.startsWith('scan:')) : null);
     runner.markNewsRead(ids ? ids.filter((i) => i.startsWith('scan:')).map((i) => i.slice(5)) : null);
+    syncSoon(5000);
     return true;
   });
   ipcMain.handle('scholar:checkInbox', () => precheck.pollAnnouncements());
@@ -255,6 +326,12 @@ function register() {
   ipcMain.handle('scholar:cloudDrives', () => ({ drives: cloud.drives(), target: cloud.target() }));
   ipcMain.handle('scholar:syncNow', () => cloud.sync(snapshot));
   syncSoon(90000);
+  // Phone changes arrive within about a minute of OneDrive bringing them down.
+  setInterval(() => {
+    try {
+      if (mergePhone()) syncSoon(5000);
+    } catch {}
+  }, 60000);
   setTimeout(tick, 60000);
   setInterval(tick, 5 * 60000);
 }

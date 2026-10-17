@@ -181,7 +181,7 @@ public class KeaPlugin extends Plugin {
     @PluginMethod
     public void pickFolder(PluginCall call) {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(call, i, "onFolder");
     }
 
@@ -192,7 +192,12 @@ public class KeaPlugin extends Plugin {
             return;
         }
         Uri tree = result.getData().getData();
-        getContext().getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            getContext().getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        } catch (SecurityException e) {
+            // A folder that can only be read: the phone still shows everything, its checkmarks just stay on the phone.
+            getContext().getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        }
         Store.plain(getContext()).edit().putString("tree", tree.toString()).apply();
         JSObject r = new JSObject();
         r.put("folder", tree.toString());
@@ -231,6 +236,35 @@ public class KeaPlugin extends Plugin {
                 r.put("text", out.toString("UTF-8"));
                 r.put("modified", f.lastModified());
                 call.resolve(r);
+            } catch (Exception e) {
+                call.reject(e.getMessage());
+            }
+        }).start();
+    }
+
+    /** Write the phone's own file in the folder (phone.json: what it checked off and read), for Kea on the PC. */
+    @PluginMethod
+    public void writeFile(PluginCall call) {
+        String name = call.getString("path", "phone.json");
+        String text = call.getString("text", "");
+        new Thread(() -> {
+            try {
+                String tree = Store.plain(getContext()).getString("tree", "");
+                if (tree.isEmpty()) {
+                    call.reject("No folder chosen");
+                    return;
+                }
+                DocumentFile dir = DocumentFile.fromTreeUri(getContext(), Uri.parse(tree));
+                DocumentFile f = dir == null ? null : dir.findFile(name);
+                if (f == null && dir != null) f = dir.createFile("application/json", name);
+                if (f == null) {
+                    call.reject("Couldn't write to the Kea folder");
+                    return;
+                }
+                try (OutputStream os = getContext().getContentResolver().openOutputStream(f.getUri(), "wt")) {
+                    os.write(text.getBytes("UTF-8"));
+                }
+                call.resolve();
             } catch (Exception e) {
                 call.reject(e.getMessage());
             }

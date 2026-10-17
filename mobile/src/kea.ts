@@ -16,6 +16,7 @@ interface KeaNative {
   checkNow(): Promise<{ count: number }>;
   phoneInbox(): Promise<{ items: ScholarInboxItem[] }>;
   pickFolder(): Promise<{ folder: string }>;
+  writeFile(o: { path: string; text: string }): Promise<void>;
   readFile(o: { path?: string }): Promise<{ text: string; modified: number }>;
   openFile(o: { path: string }): Promise<void>;
   scan(o?: { name?: string }): Promise<{ file: string; pages: number; name: string }>;
@@ -33,6 +34,8 @@ export interface KeaData {
   details: ScholarCourseDetail[];
   grades: Record<string, ScholarGrades | null>;
   inbox: ScholarInboxItem[];
+  /** The PC's checkmark changes, with their times (for merging with the phone's). */
+  doneLog?: Record<string, { on: boolean; at: string }>;
 }
 
 const CACHE = 'kea.data';
@@ -109,20 +112,49 @@ export async function folders(d: KeaData) {
 
 export const handInUrl = (home: string, ou: string, folder: number) => new URL(`/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${folder}&grpid=0&isprv=0&bp=0&ou=${ou}`, home).href;
 
-// ---------- What's checked off on the phone ----------
-const DONE = 'kea.done';
-export function phoneDone(): Record<string, string> {
+// ---------- Checkmarks and read messages, synced with the PC through the drive folder ----------
+// Every change is logged with its time; the PC does the same. Whichever side changed an item last wins.
+export type DoneLog = Record<string, { on: boolean; at: string }>;
+const DONE = 'kea.doneLog';
+const READ = 'kea.read';
+const load = <T,>(k: string, fallback: T): T => {
   try {
-    return JSON.parse(localStorage.getItem(DONE) || '{}');
+    return JSON.parse(localStorage.getItem(k) || 'null') ?? fallback;
   } catch {
-    return {};
+    return fallback;
   }
+};
+const store = (k: string, v: unknown) => {
+  try {
+    localStorage.setItem(k, JSON.stringify(v));
+  } catch {}
+};
+export const phoneDone = () => load<DoneLog>(DONE, {});
+export const phoneRead = () => load<string[]>(READ, []);
+
+let timer: any = null;
+/** Write phone.json for Kea on the PC (a moment after the last change, so a burst of taps is one write). */
+function syncOut() {
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    Kea.writeFile({ path: 'phone.json', text: JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000) }) }).catch(() => {});
+  }, 1500);
 }
 export function setPhoneDone(id: string, on: boolean) {
   const d = phoneDone();
-  if (on) d[id] = new Date().toISOString();
-  else delete d[id];
-  try {
-    localStorage.setItem(DONE, JSON.stringify(d));
-  } catch {}
+  d[id] = { on, at: new Date().toISOString() };
+  store(DONE, d);
+  syncOut();
+}
+export function setPhoneRead(ids: string[]) {
+  store(READ, [...new Set([...phoneRead(), ...ids])].slice(-2000));
+  syncOut();
+}
+
+/** An item's checkmark: the PC's, unless the phone changed it more recently. */
+export function doneOf(it: { id: string; done: string | null }, pcLog: DoneLog | undefined, mine: DoneLog): string | null {
+  const p = mine[it.id];
+  const pc = pcLog?.[it.id];
+  if (p && (!pc || p.at > pc.at)) return p.on ? p.at : null;
+  return it.done;
 }

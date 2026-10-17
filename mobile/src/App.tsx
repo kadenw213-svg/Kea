@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Award, BookOpen, CalendarDays, Camera, CheckCircle2, ChevronLeft, Circle, ExternalLink, FolderOpen, GraduationCap, Inbox, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Upload, X } from 'lucide-react';
 import type { ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 import { CATEGORIES, LinkGroups, TODO, categoryOf, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
-import { Kea, KeaData, cachedData, folders, handInUrl, loadData, phoneDone, setPhoneDone, watchClasses } from './kea';
+import { Kea, KeaData, cachedData, doneOf, folders, handInUrl, loadData, phoneDone, phoneRead, setPhoneDone, setPhoneRead, watchClasses } from './kea';
 
 // ---------- Dates ----------
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -68,12 +68,14 @@ export function App() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
-  // Items with the phone's own checkmarks added.
-  const items = useMemo(() => (data?.items || []).map((i) => (done[i.id] && !i.done ? { ...i, done: done[i.id] } : i)), [data, done]);
+  // Each item's checkmark: the PC's, unless the phone changed it more recently.
+  const items = useMemo(() => (data?.items || []).map((i) => ({ ...i, done: doneOf(i, data?.doneLog, done) })), [data, done]);
   const toggle = (it: ScholarItem) => {
-    setPhoneDone(it.id, !isDone(it));
+    // Graded or handed-in work counts as done already; a tap there still records the phone's own checkmark.
+    const on = !isDone(it);
+    setPhoneDone(it.id, on);
     setDone(phoneDone());
-    if (item?.id === it.id) setItem({ ...it, done: isDone(it) ? null : new Date().toISOString() });
+    if (item?.id === it.id) setItem({ ...it, done: on ? new Date().toISOString() : null, handIn: on ? it.handIn : null });
   };
   const inbox = useMemo(() => {
     const seen = new Set<string>();
@@ -86,14 +88,14 @@ export function App() {
       })
       .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   }, [phoneInbox, data]);
-  const [readIds, setReadIds] = useState<string[]>(() => JSON.parse(localStorage.getItem('kea.read') || '[]'));
+  const [readIds, setReadIds] = useState<string[]>(phoneRead);
   const unread = inbox.filter((i) => !i.read && !readIds.includes(i.id)).length;
+  // Read on the phone: remembered here and passed to the PC (read on the PC arrives in its copy).
   const markRead = (ids: string[]) => {
-    const next = [...new Set([...readIds, ...ids])].slice(-2000);
-    setReadIds(next);
-    try {
-      localStorage.setItem('kea.read', JSON.stringify(next));
-    } catch {}
+    const fresh = ids.filter((id) => !readIds.includes(id));
+    if (!fresh.length) return;
+    setPhoneRead(fresh);
+    setReadIds(phoneRead());
   };
   const missing = items.filter((i) => isMissing(i));
 
