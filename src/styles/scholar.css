@@ -1398,15 +1398,19 @@
   flex-direction: column;
   gap: 6px;
 }
+/* Each kind has its color (--k, set per message): a stripe down the left, the icon and its label. */
 .ib-item {
-  padding: 10px 14px;
+  --k: var(--text-3);
+  padding: 10px 14px 10px 13px;
   border: 1px solid var(--border);
+  border-left: 3px solid color-mix(in srgb, var(--k) 45%, transparent);
   border-radius: 12px;
   background: var(--surface);
   cursor: pointer;
 }
 .ib-item.unread {
-  border-left: 3px solid #e8eaed;
+  border-left-color: var(--k);
+  background: color-mix(in srgb, var(--k) 6%, var(--surface));
 }
 .ib-item.unread .ib-title {
   font-weight: 700;
@@ -1418,8 +1422,61 @@
   min-width: 0;
 }
 .ib-icon {
-  color: var(--text-3);
+  color: var(--k);
   display: grid;
+}
+.ib-kind {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--k);
+  background: color-mix(in srgb, var(--k) 14%, transparent);
+}
+.ib-score {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+}
+.ib-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 2px 23px;
+}
+.ib-item .ib-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--k) 40%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--k) 8%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.ib-item .ib-link:hover {
+  background: color-mix(in srgb, var(--k) 18%, transparent);
+}
+.ib-link svg {
+  flex-shrink: 0;
+  color: var(--k);
+}
+.ib-more {
+  font-size: 12px;
 }
 .ib-title {
   font-weight: 500;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Award, BookOpen, CalendarDays, Camera, CheckCircle2, ChevronLeft, Circle, ExternalLink, FolderOpen, GraduationCap, Inbox, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, Upload, X } from 'lucide-react';
 import type { ScholarInboxItem, ScholarItem } from '../../src/lib/api';
+import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
 import { CATEGORIES, LinkGroups, TODO, categoryOf, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
 import { Kea, KeaData, cachedData, doneOf, folders, handInUrl, inboxKey, loadData, phoneDeleted, phoneDone, phoneRead, setPhoneDeleted, setPhoneDone, setPhoneRead, watchClasses } from './kea';
 
@@ -282,28 +283,39 @@ function InboxView({ items, readIds, markRead, remove }: { items: ScholarInboxIt
       {!shown.length && <div className="empty">Nothing yet. New announcements, grades and messages land here, with a notification.</div>}
       {shown.map((i) => {
         const unread = !i.read && !readIds.includes(i.id);
+        const k = kindOf(i);
+        const parts = inboxParts(i);
         return (
-          <div key={i.id} className={`msg ${unread ? 'unread' : ''} ${open === i.id ? 'open' : ''}`} onClick={() => (setOpen(open === i.id ? null : i.id), markRead([i.id]))}>
+          <div key={i.id} className={`msg ${unread ? 'unread' : ''} ${open === i.id ? 'open' : ''}`} style={{ '--k': k.color } as React.CSSProperties} onClick={() => (setOpen(open === i.id ? null : i.id), markRead([i.id]))}>
             <div className="msg-head">
-              {i.kind === 'announcement' ? <Megaphone size={15} /> : i.kind === 'grade' ? <Award size={15} /> : <Mail size={15} />}
+              {i.kind === 'announcement' ? <Megaphone size={15} /> : i.kind === 'grade' || i.kind === 'feedback' ? <Award size={15} /> : i.kind === 'needs_you' || i.kind === 'attention' || i.kind === 'missed' ? <AlertTriangle size={15} /> : <Mail size={15} />}
+              <span className="msg-kind">{k.label}</span>
               {i.course && <b>{i.course}</b>}
-              <span className="msg-title">{i.title}</span>
-              <span className="muted small">{i.at ? ago(i.at) : ''}</span>
+              <span className="muted small msg-at">{i.at ? ago(i.at) : ''}</span>
             </div>
-            <div className="msg-body">{i.body}</div>
-            {open === i.id && (
-              <div className="msg-actions">
-                {i.url && (
+            <div className="msg-title">
+              {i.title}
+              {i.score && <span className="msg-score">{i.score}{i.percent != null ? ` · ${i.percent}%` : ''}</span>}
+            </div>
+            {parts.text && <div className="msg-body">{parts.text}</div>}
+            {parts.links.length > 0 && (
+              <div className="msg-links">
+                {(open === i.id ? parts.links : parts.links.slice(0, 2)).map((l) => (
                   <button
-                    className="btn"
+                    key={l.url}
                     onClick={(e) => {
                       e.stopPropagation();
-                      Kea.open({ url: i.url });
+                      markRead([i.id]);
+                      Kea.open({ url: l.url });
                     }}
                   >
-                    <ExternalLink size={14} /> Open on the class site
+                    <ExternalLink size={13} /> {l.label}
                   </button>
-                )}
+                ))}
+              </div>
+            )}
+            {open === i.id && (
+              <div className="msg-actions">
                 <button
                   className="btn"
                   onClick={(e) => {

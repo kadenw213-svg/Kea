@@ -9,7 +9,7 @@ const profiles = require('./profiles.cjs');
 const browser = require('./browser.cjs');
 const workspace = require('./workspace.cjs');
 const db = require('./db.cjs');
-const { compact } = require('./compact.cjs');
+const { compact, htmlToText } = require('./compact.cjs');
 
 const stateFile = () => path.join(profiles.paths().dir, 'precheck.json');
 const readState = () => {
@@ -299,12 +299,15 @@ function updateInbox(dir, ous = {}) {
       // Deleted by the student: it stays gone, even though the class site still lists it.
       if (deleted.has(id)) continue;
       const at = n.StartDate || n.CreatedDate || n.LastModifiedDate;
-      const body = plain(n.Body?.Html || n.Body?.Text);
+      // Shown with its links (as [text](address), which Kea turns into buttons); compared as plain text, the way older
+      // items were saved, so keeping links doesn't make every old announcement look edited.
+      const key = plain(n.Body?.Html || n.Body?.Text);
+      const body = n.Body?.Html ? htmlToText(n.Body.Html, home) : key;
       const prev = known.get(id);
-      const changed = prev && (prev.body !== body || prev.title !== n.Title);
+      const changed = prev && ((prev.bodyKey ?? prev.body) !== key || prev.title !== n.Title);
       const url = home && n.Id && ou ? new URL(`/d2l/le/news/${ou}/${n.Id}/view?ou=${ou}`, home).href : '';
       const quiet = !box.seeded || !seenCourses.has(code) || isOld(at);
-      const item = { id, kind: 'announcement', course: code, title: n.Title || 'Announcement', body, at, url, read: prev ? prev.read && !changed : quiet, updated: !!changed };
+      const item = { id, kind: 'announcement', course: code, title: n.Title || 'Announcement', body, bodyKey: key, at, url, read: prev ? prev.read && !changed : quiet, updated: !!changed };
       if ((!prev && !quiet) || changed) fresh.push(item);
       known.set(id, item);
     }
@@ -394,9 +397,11 @@ async function updateAlerts(list) {
       const id = `alert:${k.kind}:${crypto.createHash('sha1').update(a.text).digest('hex').slice(0, 16)}`;
       if (known.has(id)) continue;
       known.add(id);
+      // Grades and feedback already arrive as their own messages (from the gradebook, with the score and comment).
+      if (k.kind === 'update' && /\b(grade|graded|feedback|evaluat)/i.test(a.text)) continue;
       const [first, ...rest] = a.text.split('\n');
       const course = list.find((c) => a.text.includes(c.code))?.code || '';
-      fresh.push({ id, kind: 'news', course, title: first.slice(0, 160), body: rest.join('\n').trim() || first, at: a.at || new Date().toISOString(), url: a.url, read: !box.seeded });
+      fresh.push({ id, kind: k.kind, course, title: first.slice(0, 160), body: rest.join('\n').trim() || first, at: a.at || new Date().toISOString(), url: a.url, read: !box.seeded });
     }
   }
   if (!fresh.length) return;
@@ -452,21 +457,32 @@ function updateGrades(dir, ous) {
     for (const g of list) {
       const p = was.get(g.id);
       if (!p && (firstLook || (g.at && Date.now() - new Date(g.at).getTime() > 14 * 864e5))) continue;
-      if (!p || p.score !== g.score || p.comment !== g.comment) fresh.push({ code, g, updated: !!p });
+      // Each is its own message: the grade, and (separately) the instructor's feedback when it's new or changed.
+      if (!p || p.score !== g.score) fresh.push({ code, g, kind: 'grade', updated: !!p });
+      if (g.comment && (!p || p.comment !== g.comment)) fresh.push({ code, g, kind: 'feedback', updated: !!p?.comment });
     }
     const pct = final?.PointsDenominator ? Math.round((final.PointsNumerator / final.PointsDenominator) * 1000) / 10 : null;
     byCourse[code] = { final: final ? { shown: String(final.DisplayedGrade || '').trim(), percent: pct } : old.byCourse[code]?.final || null, items: list, url: home && ous[code] ? new URL(`/d2l/lms/grades/my_grades/main.d2l?ou=${ous[code]}`, home).href : '', checked: new Date().toISOString() };
   }
   fs.writeFileSync(gradesFile(), JSON.stringify({ byCourse, seeded: true }));
   if (!old.seeded || !fresh.length) return;
-  // New grades show in the Inbox like announcements.
+  // New grades and new feedback show in the Inbox as their own messages, like announcements.
   const box = readInbox();
-  for (const { code, g, updated } of fresh) {
-    box.items.unshift({ id: `grade:${code}:${g.id}:${g.score}`, kind: 'grade', course: code, title: `${updated ? 'Grade updated' : 'New grade'}: ${g.title}`, body: [g.score || g.shown, g.percent != null ? `(${g.percent}%)` : '', g.comment ? `\n\n${g.comment}` : ''].join(' ').trim(), at: g.at || new Date().toISOString(), url: byCourse[code].url, read: false });
+  const deleted = new Set(box.deleted || []);
+  const add = [];
+  for (const { code, g, kind, updated } of fresh) {
+    const shown = g.score || g.shown;
+    const item =
+      kind === 'grade'
+        ? { id: `grade:${code}:${g.id}:${g.score}`, kind, title: `${updated ? 'Grade updated' : 'Graded'}: ${g.title}`, body: '', score: shown, percent: g.percent }
+        : { id: `feedback:${code}:${g.id}:${hash(g.comment).slice(0, 12)}`, kind, title: `${updated ? 'Updated feedback' : 'Feedback'}: ${g.title}`, body: g.comment, score: shown, percent: g.percent };
+    if (deleted.has(item.id)) continue;
+    add.push({ ...item, course: code, at: g.at || new Date().toISOString(), url: byCourse[code].url, links: byCourse[code].url ? [{ label: 'Open grades', url: byCourse[code].url }] : [], read: false });
   }
+  box.items.unshift(...add);
   fs.writeFileSync(inboxFile(), JSON.stringify({ ...box, items: box.items.slice(0, 500) }));
   const { Notification } = require('electron');
-  for (const { code, g } of fresh.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${code}: new grade`, body: `${g.title}: ${g.score || g.shown}${g.percent != null ? ` (${g.percent}%)` : ''}` }).show();
+  for (const n of add.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.kind === 'grade' ? `${n.score}${n.percent != null ? ` (${n.percent}%)` : ''}` : n.body.slice(0, 200) }).show();
 }
 
 function markInboxRead(ids) {

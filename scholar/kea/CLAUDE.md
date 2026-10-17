@@ -123,13 +123,24 @@ uv run academic-sync record-sync <item_id> --event-id kea:<item_id> --calendar-i
   Then, for each CREATE or UPDATE in the plan, run the command above instead of `create_event` or `update_event`.
 - Skip `list_events` and fingerprint searches on Google Calendar: the local sync records are the source of truth.
 - Never delete anything (the same as invariant 10).
-- CONFLICT and REVIEW items: don't record them. List them in one `kea_notify` per course, titled "<CODE>: needs you",
-  with the plan's reason for each.
+- CONFLICT and REVIEW items: don't record them. Send each as its own `kea_notify` (`kind` "needs_you"), saying what
+  the student needs to check, with the plan's reason. Skip any already sent on an earlier run.
 
-**Email, Gmail and Drive.** There are none. Where a skill sends an email (the Daily Overview, a "Needs you" list),
-send the same content with `mcp__kea__kea_notify`: one per course, `course` set to its code, title
-"Daily Overview <CODE>", body the rendered text. Then record it as sent with the skill's usual command, using
-`kea:<date>` as the message id. If nothing is new for a course, notify nothing.
+**Email, Gmail and Drive.** There are none, and **there is no Daily Overview** (the student's choice: a daily block
+of everything sets them up to fail). The Inbox gets **one message per thing, as it happens**:
+- **Kea itself** posts every announcement, every D2L grade, every piece of D2L feedback (its own message, apart from
+  the grade) and every D2L message or reply, within half an hour. **Never send those.**
+- **You** send, with `mcp__kea__kea_notify`, one message for each thing only you can find, choosing its `kind`:
+  `needs_you` (something only the student can do or decide), `attention` (a zero, a major test under 60%, 2+ missing,
+  a steep drop: once, never repeated), `missed` (past due and not handed in, saying whether it's still open), and
+  `grade`/`feedback` only for outside platforms D2L doesn't show (e.g. ALEKS).
+- Each message: a title that says what happened ("Exam 2: 56%, under 60%", "Lab 7 report missed: still open until
+  Fri"), a short plain body (quote the instructor verbatim where it matters), and its pages in `links` as buttons
+  ("Submit", "Open feedback", "Open discussion"). **Never paste an address into the body**, never a list of unrelated
+  things, never "Coming up" or "Due today" (the calendar shows those).
+- Still run `digest-ingest` (it dedupes, so nothing is sent twice) and use `digest-render`'s JSON only to see what's
+  new; don't send its text. Then run `digest-record-sent --course <CODE> --message-id kea:<date>`. A quiet day sends
+  nothing.
 
 **Progress.** Call `mcp__kea__kea_progress` with one short, plain sentence at each major step ("Reading CHE1011's
 Module 6", "Writing BIO1112's Chapter 34 textbook chapter"), so the student can see what's happening. Write for a

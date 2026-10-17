@@ -97,6 +97,9 @@ function mergePhone() {
   return changed;
 }
 
+/** What a scan sent (kea_notify) as an Inbox item. Older scan messages (daily overviews) have no kind: "news". */
+const scanItem = (n) => ({ id: `scan:${n.id}`, kind: n.kind || 'news', course: n.course || '', title: n.title, body: n.body || '', at: n.at, url: n.links?.[0]?.url || '', links: n.links || [], read: !!n.read });
+
 /** Everything the phone shows, in one object. Textbook paths become relative to the drive folder's Textbooks/. */
 async function snapshot() {
   const P = profiles.paths();
@@ -110,7 +113,7 @@ async function snapshot() {
   // The Inbox as the phone shows it: Kea's own items and what scans found, with what's been read on either side.
   const inbox = [
     ...precheck.readInbox().items,
-    ...runner.news().map((n) => ({ id: `scan:${n.id}`, kind: 'news', course: n.course || '', title: n.title, body: n.body, at: n.at, url: '', read: !!n.read }))
+    ...runner.news().map(scanItem)
   ]
     .sort((a, b) => String(b.at).localeCompare(String(a.at)))
     .slice(0, 300);
@@ -289,7 +292,7 @@ function register() {
   // The Inbox: announcements (from D2L directly) and what scans found (messages, grades, deadlines).
   ipcMain.handle('scholar:inbox', () => {
     const own = precheck.readInbox().items;
-    const scans = runner.news().map((n) => ({ id: `scan:${n.id}`, kind: 'news', course: n.course || '', title: n.title, body: n.body, at: n.at, url: '', read: !!n.read }));
+    const scans = runner.news().map(scanItem);
     return [...own, ...scans].sort((a, b) => String(b.at).localeCompare(String(a.at)));
   });
   ipcMain.handle('scholar:markInboxRead', (_e, ids) => {

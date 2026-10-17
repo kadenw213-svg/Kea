@@ -8,7 +8,13 @@ user-invocable: true
 
 > **In Kea:** read `CLAUDE.md` → "Running inside Kea" first. It replaces Chrome with Kea's `mcp__kea__d2l_*` tools,
 > Google Calendar with `record-sync ... --calendar-id kea`, and email with `mcp__kea__kea_notify`, and runs are
-> unattended (no questions, no approval gates). Everything else below applies as written.
+> unattended (no questions, no approval gates).
+>
+> **In Kea there is no Daily Overview message.** Everything below about what the email contains now becomes separate
+> Inbox messages, one per thing (see `CLAUDE.md` → "Email, Gmail and Drive"): Kea already posts announcements, D2L
+> grades, D2L feedback and D2L messages itself, so you send only `needs_you`, `attention`, `missed`, and grades or
+> feedback from outside platforms, each with its links as buttons. No current-grade header, no "Coming up", no "Due
+> today", no portal-link footer. Crawl, ingest and record as written; just don't send the rendered overview.
 
 Arguments passed: `$ARGUMENTS` (may be empty, a course code, or `--date
 YYYY-MM-DD` for a manual re-run of a specific day).

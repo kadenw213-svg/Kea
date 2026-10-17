@@ -316,14 +316,18 @@ b.low {
   gap: 8px;
   margin-top: 10px;
 }
+/* Each kind has its color (--k): the left stripe, icon, label and buttons. */
 .msg {
+  --k: #9aa0a6;
   padding: 11px 12px;
   border: 1px solid var(--border);
+  border-left: 3px solid color-mix(in srgb, var(--k) 45%, transparent);
   border-radius: 12px;
   background: var(--surface);
 }
 .msg.unread {
-  border-left: 3px solid #e8eaed;
+  border-left-color: var(--k);
+  background: color-mix(in srgb, var(--k) 7%, var(--surface));
 }
 .msg.unread .msg-title {
   font-weight: 700;
@@ -334,14 +338,58 @@ b.low {
   gap: 7px;
   min-width: 0;
   color: var(--text-2);
+  font-size: 13px;
+}
+.msg-head svg {
+  color: var(--k);
+}
+.msg-kind {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--k);
+  background: color-mix(in srgb, var(--k) 15%, transparent);
+}
+.msg-at {
+  margin-left: auto;
 }
 .msg-title {
-  flex: 1;
-  min-width: 0;
+  margin-top: 4px;
   color: var(--text);
+}
+.msg-score {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: var(--surface-3);
+}
+.msg-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.msg-links button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 6px 11px;
+  border: 1px solid color-mix(in srgb, var(--k) 40%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--k) 9%, transparent);
+  color: var(--text);
+  font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.msg-links svg {
+  flex-shrink: 0;
+  color: var(--k);
 }
 .msg-body {
   margin-top: 5px;

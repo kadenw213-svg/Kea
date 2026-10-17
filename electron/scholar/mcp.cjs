@@ -38,8 +38,18 @@ const TOOLS = [
   {
     name: 'kea_notify',
     description:
-      "Tell the user something new about a class (replaces the daily email): new announcements, newly graded work and feedback, missed or due-today work. Shown in Kea and as a Windows notification. 'course' is the course code.",
-    inputSchema: { type: 'object', properties: { course: { type: 'string' }, title: { type: 'string', maxLength: 120 }, body: { type: 'string', maxLength: 4000 } }, required: ['title', 'body'] }
+      "Send the student ONE message about ONE thing, shown in Kea's Inbox (colored by kind) and as a notification. Never a daily summary or a list of unrelated things: send one message per thing. Announcements, D2L grades, D2L feedback and D2L messages reach the Inbox from Kea itself, so never send those. 'course' is the course code. Keep 'body' short plain text with no addresses in it: put each link in 'links' (shown as buttons).",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        course: { type: 'string' },
+        kind: { type: 'string', enum: ['needs_you', 'attention', 'missed', 'grade', 'feedback', 'message', 'update'], description: "needs_you: something only the student can do or decide. attention: a warning (a zero, a major test under 60%, a steep drop), once. missed: work past due and not handed in (say whether it's still open). grade/feedback: only from outside platforms (e.g. ALEKS) that D2L doesn't show. message/update: anything else worth knowing." },
+        title: { type: 'string', maxLength: 120, description: 'What happened, e.g. "Exam 2 graded: 56%" or "Discussion 3 reply missed (still open)".' },
+        body: { type: 'string', maxLength: 1500 },
+        links: { type: 'array', maxItems: 4, items: { type: 'object', properties: { label: { type: 'string', maxLength: 40, description: 'Button text, e.g. "Open feedback", "Submit", "Open discussion".' }, url: { type: 'string' } }, required: ['label', 'url'] } }
+      },
+      required: ['title', 'kind']
+    }
   }
 ];
 
@@ -78,7 +88,13 @@ function start(hooks) {
         hooks.progress?.(String(a.message || '').slice(0, 200));
         return { ok: true };
       case 'kea_notify':
-        hooks.notify?.({ course: a.course || '', title: String(a.title || '').slice(0, 120), body: String(a.body || '').slice(0, 4000) });
+        hooks.notify?.({
+          course: a.course || '',
+          kind: ['needs_you', 'attention', 'missed', 'grade', 'feedback', 'message', 'update'].includes(a.kind) ? a.kind : 'update',
+          title: String(a.title || '').slice(0, 120),
+          body: String(a.body || '').slice(0, 1500),
+          links: (Array.isArray(a.links) ? a.links : []).filter((l) => l && /^https?:\/\//i.test(l.url)).slice(0, 4).map((l) => ({ label: String(l.label || 'Open').slice(0, 40), url: String(l.url) }))
+        });
         return { ok: true };
       default:
         throw new Error(`Unknown tool: ${name}`);

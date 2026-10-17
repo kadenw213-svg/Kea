@@ -31,6 +31,7 @@ import {
   Layers,
   Trash2
 } from 'lucide-react';
+import { inboxParts, kindOf } from './inboxFormat';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
 import { openPaths } from '../../lib/open';
 import { setPdfTarget } from '../../lib/pdfTarget';
@@ -607,7 +608,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
             </button>
           ))}
       </div>
-      <p className="sch-sub">Announcements come straight from your class site every half hour. Messages, new grades and feedback come from the daily check.</p>
+      <p className="sch-sub">One message per thing, as it happens: announcements, grades, feedback and class-site messages come straight from your class site every half hour. Anything that needs you comes from the daily check.</p>
       {!shown.length ? (
         <div className="sch-empty">
           <Inbox size={26} />
@@ -615,16 +616,26 @@ function InboxView({ ctx }: { ctx: Ctx }) {
         </div>
       ) : (
         <div className="ib-list">
-          {shown.map((i) => (
-            <div key={i.id} className={`ib-item ${i.read ? '' : 'unread'} ${open === i.id ? 'open' : ''}`} onClick={() => (setOpen(open === i.id ? null : i.id), read(i))}>
+          {shown.map((i) => {
+            const k = kindOf(i);
+            const parts = inboxParts(i);
+            return (
+            <div key={i.id} className={`ib-item ${i.read ? '' : 'unread'} ${open === i.id ? 'open' : ''}`} style={{ '--k': k.color } as React.CSSProperties} onClick={() => (setOpen(open === i.id ? null : i.id), read(i))}>
               <div className="ib-head">
-                <span className="ib-icon">{i.kind === 'announcement' ? <Megaphone size={15} /> : i.kind === 'grade' ? <Award size={15} /> : <Mail size={15} />}</span>
+                <span className="ib-icon">{i.kind === 'announcement' ? <Megaphone size={15} /> : i.kind === 'grade' || i.kind === 'feedback' ? <Award size={15} /> : i.kind === 'needs_you' || i.kind === 'attention' || i.kind === 'missed' ? <AlertTriangle size={15} /> : <Mail size={15} />}</span>
+                <span className="ib-kind">{k.label}</span>
                 {i.course && (
                   <span className="sch-chip" style={{ borderColor: color(i.course), color: color(i.course) }}>
                     {i.course}
                   </span>
                 )}
                 <b className="ib-title">{i.title}</b>
+                {i.score && (
+                  <span className="ib-score">
+                    {i.score}
+                    {i.percent != null ? ` · ${i.percent}%` : ''}
+                  </span>
+                )}
                 {i.updated && <span className="ln-tag">Updated</span>}
                 <span className="muted ib-at">{i.at ? timeAgo(i.at) : ''}</span>
                 <button
@@ -639,20 +650,29 @@ function InboxView({ ctx }: { ctx: Ctx }) {
                   <Trash2 size={14} />
                 </button>
               </div>
-              <div className="ib-body">{i.body}</div>
-              {open === i.id && i.url && (
-                <button
-                  className="btn sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openLink(i.url);
-                  }}
-                >
-                  <ExternalLink size={13} /> Open on the class site
-                </button>
+              {parts.text && <div className="ib-body">{parts.text}</div>}
+              {parts.links.length > 0 && (
+                <div className="ib-links">
+                  {(open === i.id ? parts.links : parts.links.slice(0, 3)).map((l) => (
+                    <button
+                      key={l.url}
+                      className="ib-link"
+                      title={l.url}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        read(i);
+                        openLink(l.url);
+                      }}
+                    >
+                      <ExternalLink size={12} /> {l.label}
+                    </button>
+                  ))}
+                  {open !== i.id && parts.links.length > 3 && <span className="muted ib-more">+{parts.links.length - 3} more</span>}
+                </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

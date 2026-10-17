@@ -374,13 +374,21 @@ export interface ScholarGrades {
 }
 export interface ScholarInboxItem {
   id: string;
-  /** "announcement" and "grade" come from the class site directly; "news" from a scan (messages, deadlines). */
-  kind: 'announcement' | 'grade' | 'news';
+  /**
+   * One message about one thing. From the class site directly: announcement, grade, feedback, message, update. From a
+   * scan: needs_you, attention, missed (and grade/feedback from outside platforms). "news" is an old daily overview.
+   */
+  kind: 'announcement' | 'grade' | 'feedback' | 'message' | 'update' | 'needs_you' | 'attention' | 'missed' | 'news';
   course: string;
   title: string;
   body: string;
   at: string;
   url: string;
+  /** Buttons to show (the text itself has no addresses in it). */
+  links?: { label: string; url: string }[];
+  /** For grades and feedback: the score as shown, and its percent. */
+  score?: string;
+  percent?: number | null;
   read: boolean;
   updated?: boolean;
 }
