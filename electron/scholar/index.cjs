@@ -401,7 +401,8 @@ function register() {
   ipcMain.handle('scholar:studyList', () => {
     const running = runner.status();
     const busy = new Set([running.running, ...running.queued].filter((j) => j && j.task === 'practice').map((j) => String(j.arg).split(/\s+/)[0]));
-    study.settle((id) => busy.has(id));
+    // (Another device's sets are settled by the device making them.)
+    if (!devices.follower()) study.settle((id) => busy.has(id));
     return study.list();
   });
   ipcMain.handle('scholar:studyGet', (_e, id) => study.get(id));

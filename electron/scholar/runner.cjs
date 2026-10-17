@@ -136,7 +136,12 @@ TASKS.study.pre = async (job, step) => {
 
 TASKS.practice.pre = async (job, step) => {
   const study = require('./study.cjs');
-  step('Gathering the chapters, review sheets and what the test covers…');
+  step('Gathering the chapters, review sheets and what the test covers…', 1);
+  const id = String(job.arg || '').split(/\s+/)[0];
+  const uv = await workspace.findUv();
+  const cwd = profiles.paths().workspace;
+  await study.prepare(id, (file) => docText(uv, cwd, file), step);
+  step('Writing the set…', 10);
   return { prompt: study.prompt(job.arg), after: (ok) => study.ingest(job.arg, ok) };
 };
 
@@ -235,7 +240,7 @@ function adoptStopped() {
 
 // ---------- How long a run takes (for the progress bar and "about 4 min left") ----------
 // Typical length of a run that used Claude, before Kea has seen one of its own: minutes.
-const TYPICAL = { daily: 4, import: 25, sync: 6, study: 10, practice: 6, probe: 1 };
+const TYPICAL = { daily: 4, import: 25, sync: 6, study: 10, practice: 2, probe: 1 };
 const classOf = (arg) => (/^([A-Z]{2,5}\d{3,5})\b/.exec(String(arg || '').trim()) || [])[1] || '';
 // Old entries don't say whether Claude ran: a skip (Kea's own check found nothing) is short and says so.
 const usedClaude = (e) =>
@@ -244,6 +249,7 @@ const median = (xs) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.
 
 /** What a run of this task (for this class, when known) usually takes: { ms, turns }. Learned from past runs. */
 function estimate(task, arg) {
+  if (task === 'practice') return estimatePractice(arg);
   const typical = (TYPICAL[task] || 5) * 60000;
   const took = (e) => new Date(e.end) - new Date(e.claudeStart || e.start);
   // A run far longer than usual (an early all-classes scan, a usage-limit pause) would throw every bar off.
@@ -254,6 +260,20 @@ function estimate(task, arg) {
   const ms = median(pick.slice(0, 8).map(took)) || typical;
   const turns = median(pick.filter((e) => e.turns).slice(0, 8).map((e) => e.turns)) || 0;
   return { ms, turns };
+}
+
+// A study set's time grows with its size: learned as a fixed part plus time per question, from past sets.
+function estimatePractice(arg) {
+  const sizes = new Map(require('./study.cjs').list().map((e) => [e.id, e.count]));
+  const idOf = (a) => String(a || '').split(/\s+/)[0];
+  const n = sizes.get(idOf(arg)) || 50;
+  const per = readJson(activityFile(), [])
+    .filter((e) => e.task === 'practice' && e.ok && e.end && !e.paused && e.claudeStart && sizes.get(idOf(e.arg)))
+    .slice(0, 8)
+    .map((e) => (new Date(e.end) - new Date(e.claudeStart) - 40000) / sizes.get(idOf(e.arg)));
+  // Before any: about 40 s to read the brief, then about 2.5 s a question (Claude writes each with its answer).
+  const each = Math.max(1000, Math.min(15000, median(per) || 2500));
+  return { ms: 40000 + n * each, turns: 0 };
 }
 
 // Runs split into one per class are a batch: "2 of 4" and one bar across all of them.

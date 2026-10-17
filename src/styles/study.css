@@ -138,7 +138,84 @@
   inset: 0;
   z-index: 20;
   background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.st-player-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.st-main {
+  flex: 1;
+  min-width: 0;
   overflow-y: auto;
+}
+/* The textbook beside the quiz: the quiz keeps a readable column, the book takes the rest. */
+.st-reading {
+  flex: 1 1 55%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+.st-player.with-reading .st-main {
+  flex: 1 1 45%;
+}
+.st-reading-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 13px;
+}
+.st-reading-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-reading-pages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+}
+.rp-page {
+  display: block;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  border-radius: 2px;
+}
+.st-read-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.st-read-btn:hover,
+.st-read-btn.on {
+  color: var(--accent);
+}
+.st-read-btn.on {
+  background: var(--accent-soft);
+}
+@media (max-width: 760px) {
+  .st-player.with-reading .st-player-body {
+    flex-direction: column;
+  }
+  .st-reading {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
 }
 .st-player-head {
   position: sticky;
@@ -399,3 +476,5 @@
   font-size: 13px;
   margin: 0 0 10px;
 }
+
+.st-progress { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; max-width: 360px; font-size: 12px; }

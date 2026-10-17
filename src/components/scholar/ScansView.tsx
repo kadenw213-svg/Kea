@@ -16,7 +16,7 @@ const ago = (iso?: string | null) => {
   if (s < 86400) return `${Math.round(s / 3600)} h ago`;
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
-const span = (ms: number) => {
+export const span = (ms: number) => {
   const m = Math.round(ms / 60000);
   if (m < 1) return 'under a minute';
   if (m < 60) return `${m} min`;
@@ -28,7 +28,7 @@ const classOf = (arg?: string) => /^([A-Z]{2,5}\d{3,5})\b/.exec(String(arg || ''
  * How far a run is (0–1) and roughly how long is left, from what runs like it took before (time and Claude's steps),
  * what Claude says (percent), the rest of its batch and the queue behind it.
  */
-function progressOf(r: RunProgress, queue: QueuedRun[], now: number) {
+export function progressOf(r: RunProgress, queue: QueuedRun[], now: number) {
   const exp = r.expectedMs || 5 * 60000;
   let f: number;
   let left: number;
@@ -53,7 +53,7 @@ function progressOf(r: RunProgress, queue: QueuedRun[], now: number) {
   return { overall: Math.max(0.02, Math.min(0.99, overall)), left, all: left + queued };
 }
 
-function useNow(on: boolean) {
+export function useNow(on: boolean) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!on) return;
@@ -63,7 +63,7 @@ function useNow(on: boolean) {
   return now;
 }
 
-function Bar({ value, tone }: { value: number; tone?: 'amber' }) {
+export function Bar({ value, tone }: { value: number; tone?: 'amber' }) {
   return (
     <div className={`kbar ${tone || ''}`} role="progressbar" aria-valuenow={Math.round(value * 100)} aria-valuemin={0} aria-valuemax={100}>
       <i style={{ width: `${Math.round(value * 1000) / 10}%` }} />
@@ -424,6 +424,36 @@ function History({ activity }: { activity: ScholarRun[] }) {
       )}
     </section>
   );
+}
+
+/**
+ * The run in progress and the queue behind it, live: this device's, or (on a device that isn't the primary) the
+ * primary's, read from the drive every few seconds. Off when `on` is false.
+ */
+export function useLiveRun(on = true) {
+  const [run, setRun] = useState<ScholarRun | null>(null);
+  const [queue, setQueue] = useState<QueuedRun[]>([]);
+  const [dev, setDev] = useState<DevicesStatus | null>(null);
+  useEffect(() => {
+    if (!on) return;
+    let live = true;
+    const load = () =>
+      Promise.all([api.scholar.runStatus(), api.scholar.devices().catch(() => null)]).then(([st, d]) => {
+        if (!live) return;
+        setRun(st.running);
+        setQueue(st.queued);
+        setDev(d);
+      });
+    load();
+    const off = api.scholar.onRun((r) => {
+      setRun(r.running ? r : null);
+      api.scholar.runStatus().then((s) => live && setQueue(s.queued));
+    });
+    const t = setInterval(load, 5000);
+    return () => ((live = false), off(), clearInterval(t));
+  }, [on]);
+  if (run) return { run: { ...run, step: run.steps[run.steps.length - 1]?.message || '' } as RunProgress, queue };
+  return dev?.role === 'follower' ? { run: dev.run, queue: dev.queue || [] } : { run: null as RunProgress | null, queue };
 }
 
 /** Scans: what's happening now (with a progress bar and time left), your devices, and what ran before. */

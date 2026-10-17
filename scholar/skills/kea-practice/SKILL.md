@@ -6,45 +6,36 @@ user-invocable: true
 
 # /kea-practice: a practice exam or flashcard deck
 
-> **In Kea:** read `CLAUDE.md` first. This run is unattended: never ask, never wait. Everything comes from the
-> request, the files it names, and at most the review sheets the test links to (step 1). No web.
+> **In Kea:** this run is unattended: never ask, never wait. **Be fast.** The student is watching a progress bar and
+> expects about a minute or two. Kea has already done all the reading for you.
 
-Arguments: `$ARGUMENTS` = the request file (`data/study/requests/<id>.json`), optionally followed by `resume`.
+Arguments: `$ARGUMENTS` = Kea's brief (`data/study/requests/<id>.md`), optionally followed by `resume`.
 
 You write the **whole set in one go**. Kea saves it, shuffles question order and choice order every time the student
 takes it, samples shorter practice exams from it, and grades it itself. Students re-take sets many times with no
 Claude, so every question must stand on its own and grade correctly by its stored answer alone.
 
-## 1. Read the request and its sources
+## 1. Read the brief, and only the brief
 
-The request (Read it) has:
-- `kind`: `exam` (questions) or `cards` (flashcards); `count`: how many to write.
-- `course`, and `item` when the set is for a specific test or assignment: its `title`, `type`, `study_focus` (what the
-  instructor said the test covers) and `review_links`.
-- `chapters`: each with `summary`, `sections`, `objectives`, `vocabulary`, and `textbook_source`, the Typst source of
-  Kea's textbook chapter (plain text: Read it).
-- `class_files`: text copies of the class's downloaded files (review sheets, FunSheets, study guides, handouts,
-  syllabus) under `data/downloads/<CODE>/`.
-- `output`: where to write the set.
+Read the brief (one Read; it's short). It has the kind and count, the output file, what the test covers, every
+chapter's objectives and vocabulary, and the text of the class's review material for those chapters (guided
+readings, review sheets, FunSheets, study guides, the instructor's notes), already converted and trimmed by Kea.
 
-Then read what the questions come from, in this order of authority:
-1. **The test's own review material.** Every `study_focus` line. Every class file whose name matches a review link
-   label, a chapter, or words like review, FunSheet, guided reading, study guide, practice, objectives, worksheet.
-   A file marked `needs_text` has no text copy yet: run `uv run academic-sync doc-text <path>` and read the `.txt` it
-   writes. If the item's `review_links` name a review sheet or its answer key ("Chapter 5 FunSheet", "… key", a
-   study guide or practice test) that isn't among `class_files`, download it once with `mcp__kea__d2l_download`
-   (`path` = `<CODE>/review/<label>.pdf`) and read the `text_file` it returns. A content link like
-   `/d2l/le/content/<ou>/viewContent/<topicId>/View` is D2L's viewer page; download the file itself from
-   `/d2l/le/content/<ou>/topics/files/download/<topicId>/DirectFileTopicDownload`. Skip links to
-   pages that aren't documents (quiz lists, the class home) and reference sheets (periodic table, conversion chart).
-   Never open other class-site pages. **Use 100% of this material:** every problem type and topic on a review sheet
-   becomes at least one question, in the same style and difficulty, and answer keys are used to check your answers.
-2. **Each chapter's objectives and vocabulary.** Every objective is tested by at least one question (for a set of 50
-   or more), and key vocabulary is tested in context, not as bare definitions.
-3. **The textbook chapter source**, for accurate facts, worked-example style and the course's notation.
-4. `data/downloads/<CODE>/raw_notes.md`, if present, for how the instructor tests (format, emphasis).
+That is enough. Do **not** open the class files, the request JSON, the textbook sources or the class site, and don't
+browse or search. The only exceptions:
+- Open a textbook source (path in the brief) only to check one fact you are genuinely unsure of, and read only the
+  part you need (Grep it).
+- If the set is for a test and the brief says no review material was found, but its review links name a review
+  sheet or answer key, you may download that one file with `mcp__kea__d2l_download` (`path` =
+  `<CODE>/review/<label>.pdf`) and read the `text_file` it returns. At most two downloads.
 
-The student never sees the vocabulary and objective lists. This set is where they're used.
+Call `mcp__kea__kea_progress` once after reading, with `percent` 20 ("Writing 25 questions on Chapters 5–6").
+
+How to use the material, in this order of authority: the test's study focus and review material (every problem type
+and topic on a review sheet becomes a question in the same style and difficulty), then each chapter's objectives
+(each objective tested at least once in a set of 50 or more; spread fairly for smaller sets) and vocabulary (tested in
+context, not as bare definitions). The student never sees the vocabulary and objective lists. This set is where
+they're used.
 
 ## 2. Exam-style questions (`kind: exam`)
 
@@ -89,7 +80,8 @@ Balance and difficulty:
 
 ## 4. Write the file and check it
 
-Write `output` (inside `data/`) as JSON:
+Write `output` (inside `data/`) as JSON, **in one Write** (for more than 60 items, two parts: Write the first half,
+then Edit to append the rest, calling `mcp__kea__kea_progress` with `percent` 55 in between):
 
 ```json
 { "questions": [
@@ -102,15 +94,14 @@ Write `output` (inside `data/`) as JSON:
 ```
 
 or, for flashcards, `{ "cards": [ { "front": "…", "back": "…", "chapter": "Chapter 5" } ] }`. `answer` indexes are
-0-based. For a large set, write it in parts (Write the first part, then Edit to append), not one huge write.
+0-based. Work each answer in your head as you write it; don't draft the set twice.
 
-Then run `uv run academic-sync practice-check <output> --count <count>` and fix every problem it lists, until it says
-`"ok": true`. Call `mcp__kea__kea_progress` at the start ("Writing 50 practice questions for CHE1011 Chapters 5–6")
-and when you check the file.
+Then call `mcp__kea__kea_progress` with `percent` 90 and run `uv run academic-sync practice-check <output> --count
+<count>` once. If it lists problems, fix just those with Edit and check again. Kea drops any malformed item itself, so
+never rewrite the whole file.
 
 With `resume`: if `output` already exists, keep its questions, add the rest, and check again.
 
 ## 5. Report
 
-One line: how many questions or cards, the chapters covered, and which review sheets were used (or that none were
-found).
+One line: how many questions or cards, the chapters covered, and which review material was used.

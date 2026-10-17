@@ -6,6 +6,8 @@ import { api, ScholarCourse, ScholarCourseDetail, StudyCard, StudyKind, StudyQue
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
 import { useScholar } from './scholarStore';
+import { Bar, progressOf, span, useLiveRun, useNow } from './ScansView';
+import { ReadingButton, ReadingContext, ReadingPane, ReadingTarget } from './ReadingPane';
 import '../../styles/study.css';
 
 // ---------- Shared state ----------
@@ -51,7 +53,7 @@ const madeOn = (at: string) => new Date(at).toLocaleDateString(undefined, { mont
 async function make(kind: StudyKind, courseId: string, count: number, target: { itemId?: string; chapters?: string[] }) {
   try {
     await api.scholar.studyMake({ kind, courseId, count, ...target });
-    toast(`Making your ${kind === 'exam' ? 'practice exam' : 'flashcards'}. Kea lets you know when it's ready (usually a few minutes).`, 'success');
+    toast(`Making your ${kind === 'exam' ? 'practice exam' : 'flashcards'}. It's usually ready in a minute or two.`, 'success');
   } catch (err: any) {
     toast(err.message, 'error');
   }
@@ -81,6 +83,37 @@ function MakeButton({ kind, disabled, onMake, label }: { kind: StudyKind; disabl
   );
 }
 
+/** A set being made: a bar with the time left, or its place in line. */
+function MakingProgress({ id }: { id: string }) {
+  const { run, queue } = useLiveRun();
+  const mine = run && run.arg.split(/\s+/)[0] === id ? run : null;
+  const now = useNow(!!mine);
+  if (mine) {
+    const p = progressOf(mine, [], now);
+    return (
+      <div className="st-progress">
+        <Bar value={p.overall} />
+        <span className="muted">
+          {mine.phase === 'claude' ? `About ${span(p.left)} left` : mine.step || 'Getting ready…'} · {Math.round(p.overall * 100)}%
+        </span>
+      </div>
+    );
+  }
+  const at = queue.findIndex((q) => q.arg.split(/\s+/)[0] === id);
+  if (at >= 0) {
+    const wait = (run ? progressOf(run, [], now).left : 0) + queue.slice(0, at).reduce((n, q) => n + (q.expectedMs || 0), 0) + (queue[at].expectedMs || 0);
+    return (
+      <div className="st-progress">
+        <Bar value={0.02} />
+        <span className="muted">
+          Waiting for {at + (run ? 1 : 0)} scan{at + (run ? 1 : 0) === 1 ? '' : 's'} ahead · ready in about {span(wait)}
+        </span>
+      </div>
+    );
+  }
+  return null;
+}
+
 function SetRow({ s, showCourse = false }: { s: StudySet; showCourse?: boolean }) {
   const [sure, setSure] = useState(false);
   const Icon = s.kind === 'exam' ? ClipboardList : Layers;
@@ -108,6 +141,7 @@ function SetRow({ s, showCourse = false }: { s: StudySet; showCourse?: boolean }
         <div className="muted st-meta">
           {s.kind === 'exam' ? 'Practice exam' : 'Flashcards'} · {meta}
         </div>
+        {s.status === 'making' && <MakingProgress id={s.id} />}
       </div>
       {s.status === 'ready' && (
         <button className="btn sm tonal" onClick={() => openStudySet(s.id)}>
@@ -253,24 +287,37 @@ const sortLabels = (picked: string[], d: ScholarCourseDetail | null) => (d ? d.c
 // ---------- Taking a set ----------
 export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
   const [set, setSet] = useState<StudySetFull | null>(null);
+  // The class's textbook chapters, so each question can open its reading beside the quiz.
+  const [pdfs, setPdfs] = useState<Map<string, string>>(new Map());
+  const [reading, setReading] = useState<ReadingTarget | null>(null);
   useEffect(() => {
-    api.scholar.studyGet(id).then((s) => (s ? setSet(s) : onClose()));
+    api.scholar.studyGet(id).then((s) => {
+      if (!s) return onClose();
+      setSet(s);
+      api.scholar.course(s.courseId).then((c) => setPdfs(new Map((c?.chapters || []).filter((ch) => ch.pdf).map((ch) => [ch.label, ch.pdf!.file]))));
+    });
   }, [id]);
   useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && (reading ? setReading(null) : onClose());
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, []);
+  }, [reading]);
+  const file = reading && pdfs.get(reading.chapter);
   return (
-    <div className="st-player">
-      <div className="st-player-head">
-        <button className="icon-btn" onClick={onClose} title="Close (Esc)">
-          <X size={18} />
-        </button>
-        <div className="st-player-title">{set?.title || ''}</div>
+    <ReadingContext.Provider value={{ has: (ch) => !!ch && pdfs.has(ch), open: setReading, current: reading }}>
+      <div className={`st-player ${file ? 'with-reading' : ''}`}>
+        <div className="st-player-head">
+          <button className="icon-btn" onClick={onClose} title="Close (Esc)">
+            <X size={18} />
+          </button>
+          <div className="st-player-title">{set?.title || ''}</div>
+        </div>
+        <div className="st-player-body">
+          <div className="st-main">{!set ? <div className="spinner" /> : set.kind === 'exam' ? <Exam set={set} /> : <Cards set={set} />}</div>
+          {file && reading && <ReadingPane file={file} target={reading} onClose={() => setReading(null)} />}
+        </div>
       </div>
-      {!set ? <div className="spinner" /> : set.kind === 'exam' ? <Exam set={set} /> : <Cards set={set} />}
-    </div>
+    </ReadingContext.Provider>
   );
 }
 
@@ -427,7 +474,7 @@ function Exam({ set }: { set: StudySetFull }) {
           <span className="muted">
             {answered} of {run.length} answered
           </span>
-          <button className="btn primary" onClick={() => (setSubmitted(true), document.querySelector('.st-player')?.scrollTo({ top: 0, behavior: 'smooth' }))}>
+          <button className="btn primary" onClick={() => (setSubmitted(true), document.querySelector('.st-main')?.scrollTo({ top: 0, behavior: 'smooth' }))}>
             Finish and see my score
           </button>
         </div>
@@ -444,6 +491,7 @@ function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf, onChe
       <div className="st-q-head">
         <span className="st-num">{num}</span>
         <div className="st-stem">{q.q}</div>
+        <ReadingButton chapter={q.chapter} topic={q.topic} />
       </div>
       {(q.type === 'mc' || q.type === 'multi') && (
         <div className="st-choices">
@@ -584,6 +632,7 @@ function Cards({ set }: { set: StudySetFull }) {
             <button className="icon-btn" onClick={() => move(1)} disabled={pos >= deck.length - 1} title="Next (→)">
               <ArrowRight size={18} />
             </button>
+            <ReadingButton chapter={card.chapter} />
           </div>
         </>
       ) : (

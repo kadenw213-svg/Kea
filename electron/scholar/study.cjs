@@ -138,10 +138,105 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
   return id;
 }
 
+// ---------- Kea's brief: everything Claude needs, in one short file ----------
+// Claude used to open every chapter, textbook source and class file itself (converting PDFs on the way), which took
+// many slow steps. Kea now does that reading in plain code and hands Claude one brief, so a set takes a single pass.
+const BRIEF_BUDGET = 32000; // characters of class-file text in a brief (about 8k tokens; the whole brief stays one Read)
+const REVIEWISH = /review|fun ?sheet|guided reading|study guide|practice|objective|worksheet|exam|quiz|key/i;
+const SKIP = /syllabus|calendar|schedule|announcement|consolidated_events|content_modules|dropbox|discussion|lab_handout/i;
+
+/** A text file squeezed for reading: page markers and runs of blank space gone, short broken lines rejoined. */
+function squeeze(text) {
+  return String(text)
+    .replace(/^--- page \d+ ---$/gm, '')
+    .replace(/_{3,}/g, '___')
+    .replace(/[ \t]+/g, ' ')
+    .split(/\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .reduce((out, l) => {
+      const last = out[out.length - 1];
+      if (last != null && last.length < 60 && !/[.:?!]$/.test(last) && !/^[-•▪*]|^\d+[.)]/.test(l)) out[out.length - 1] = `${last} ${l}`;
+      else out.push(l);
+      return out;
+    }, [])
+    .join('\n');
+}
+
+const chapterNum = (s) => (/(?:ch(?:apter)?\.?\s*)(\d+)/i.exec(s) || [])[1];
+
+/**
+ * Write `data/study/requests/<id>.md`: the set to write, what the test covers, each chapter's objectives and
+ * vocabulary, and the text of the class's review material for those chapters (PDFs converted by Kea first).
+ * docText(file) converts one PDF or Word file. Returns the brief's path relative to the workspace.
+ */
+async function prepare(id, docText, step = () => {}) {
+  const ws = profiles.paths().workspace;
+  const req = readJson(path.join(ws, 'data', 'study', 'requests', `${id}.json`), null);
+  if (!req) throw new Error('The request for this set is missing.');
+  const nums = new Set(req.chapters.map((c) => chapterNum(c.label)).filter(Boolean));
+  // Only material for these chapters (or for no chapter in particular) that looks like review.
+  const wanted = (req.class_files || []).filter((f) => {
+    const name = path.basename(f.path);
+    if (SKIP.test(f.path) || !REVIEWISH.test(f.path)) return false;
+    const n = chapterNum(name);
+    return !n || nums.has(n);
+  });
+  const texts = [];
+  let i = 0;
+  for (const f of wanted) {
+    i++;
+    const full = path.join(ws, f.path);
+    let txt = /\.(pdf|docx)$/i.test(full) ? `${full}.txt` : full;
+    if (!fs.existsSync(txt) && /\.(pdf|docx)$/i.test(full)) {
+      step(`Reading ${path.basename(full)} (${i} of ${wanted.length})…`, Math.round((i / wanted.length) * 8));
+      await docText(full).catch(() => null);
+    }
+    if (!fs.existsSync(txt)) continue;
+    let body = fs.readFileSync(txt, 'utf8');
+    if (/\.html?$/i.test(txt)) body = body.replace(/<(script|style)[\s\S]*?<\/\1>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+    texts.push({ name: path.basename(f.path), path: f.path, text: squeeze(body) });
+  }
+  // Share the budget fairly: small files whole, big ones trimmed to an equal share of what's left.
+  let left = BRIEF_BUDGET;
+  [...texts].sort((a, b) => a.text.length - b.text.length).forEach((t, k) => {
+    const share = Math.floor(left / (texts.length - k));
+    if (t.text.length > share) t.text = `${t.text.slice(0, share)}\n[… trimmed; the full text is in ${t.path}.txt]`;
+    left -= t.text.length;
+  });
+  const lines = [
+    `# Write ${req.count} ${req.kind === 'exam' ? 'practice exam questions' : 'flashcards'}: ${req.course.code} ${req.course.name}`,
+    '',
+    `Output file: ${req.output}`,
+    ''
+  ];
+  if (req.item) {
+    lines.push(`## The ${req.item.type || 'test'}: ${req.item.title}${req.item.date ? ` (${req.item.date})` : ''}`);
+    if (req.item.study_focus) lines.push('', 'What it covers (from the instructor):', String(Array.isArray(req.item.study_focus) ? req.item.study_focus.join('\n') : req.item.study_focus));
+    if (req.item.description) lines.push('', squeeze(req.item.description).slice(0, 3000));
+    if (req.item.review_links?.length) lines.push('', 'Review links on the class site:', ...req.item.review_links.map((l) => `- ${l.label}: ${l.url}`));
+    lines.push('');
+  }
+  for (const c of req.chapters) {
+    lines.push(`## ${c.label}${c.title ? `: ${c.title}` : ''}`);
+    if (c.summary) lines.push(c.summary);
+    if (c.sections?.length) lines.push(`Sections: ${c.sections.map((s) => (typeof s === 'string' ? s : s.title || s.label || JSON.stringify(s))).join('; ')}`);
+    if (c.objectives?.length) lines.push('Objectives:', ...c.objectives.map((o) => `- ${typeof o === 'string' ? o : o.text || JSON.stringify(o)}`));
+    if (c.vocabulary) lines.push(`Vocabulary: ${c.vocabulary}`);
+    if (c.textbook_source) lines.push(`(Kea's textbook chapter, only if you must check a fact: ${c.textbook_source})`);
+    lines.push('');
+  }
+  lines.push('## Class review material', texts.length ? '' : '(None downloaded for these chapters: write from the objectives and vocabulary.)', '');
+  for (const t of texts) lines.push(`### ${t.name}`, t.text, '');
+  const rel = `data/study/requests/${id}.md`;
+  fs.writeFileSync(path.join(ws, rel), lines.join('\n'));
+  return rel;
+}
+
 /** The runner's prompt for a set (a resumed run says so). */
 const prompt = (arg) => {
   const id = String(arg || '').split(/\s+/)[0];
-  return `/kea-practice data/study/requests/${id}.json${/\bresume\b/.test(arg) ? ' resume' : ''}`;
+  return `/kea-practice data/study/requests/${id}.md${/\bresume\b/.test(arg) ? ' resume' : ''}`;
 };
 
 // ---------- Checking what Claude wrote ----------
@@ -196,12 +291,12 @@ function ingest(arg, ok) {
   return update(id, { status: 'ready', count: items.length, error: undefined, readyAt: new Date().toISOString() });
 }
 
-/** A set Kea was making when it closed (or whose run failed to start) shouldn't spin forever. */
+/** A set Kea was making when it closed (or whose run failed to start) shouldn't spin forever: fail it once no run is making it. */
 function settle(isRunning) {
   const list = index();
   let changed = false;
   for (const e of list) {
-    if (e.status === 'making' && !isRunning(e.id) && Date.now() - new Date(e.createdAt).getTime() > 6 * 3600e3) {
+    if (e.status === 'making' && !isRunning(e.id) && Date.now() - new Date(e.createdAt).getTime() > 2 * 60e3) {
       e.status = 'failed';
       e.error = 'It never finished. Try again.';
       changed = true;
@@ -210,4 +305,4 @@ function settle(isRunning) {
   if (changed) saveIndex(list);
 }
 
-module.exports = { list, get, remove, saveAttempt, setKnown, request, prompt, ingest, settle, cleanQuestion, cleanCard };
+module.exports = { list, get, remove, saveAttempt, setKnown, request, prepare, prompt, ingest, settle, cleanQuestion, cleanCard };
