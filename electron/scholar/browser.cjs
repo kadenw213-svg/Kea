@@ -41,9 +41,13 @@ function setHome(home) {
 function forgetLogin() {
   const s = readSchool();
   delete s.login;
+  // Forgetting also means "don't save it again" until the user ticks the box on a new sign-in.
+  s.remember = false;
   writeSchool(s);
   return schoolInfo();
 }
+/** Save the login the user signs in with in Kea's window: when they said so at setup (the default), any time. */
+const wantsRemember = () => rememberNext || readSchool().remember !== false;
 
 const hostOf = (u) => {
   try {
@@ -76,7 +80,8 @@ function getWindow() {
     return { action: 'deny' };
   });
   win.on('close', (e) => {
-    // Closing the sign-in window just hides it again (the session stays).
+    // Closing the sign-in window just hides it again (the session stays), unless Kea is quitting.
+    if (global.keaQuitting) return;
     e.preventDefault();
     win.hide();
   });
@@ -228,6 +233,8 @@ async function request(url) {
   if (hostOf(url) && hostOf(url) !== hostOf(s.home) && !/^https:\/\//i.test(url)) throw new Error('Only https addresses can be fetched.');
   const ses = session.fromPartition(partition());
   let res = await ses.fetch(url, { redirect: 'follow' });
+  // Refused while signed in: a page students can't see, not a sign-in problem.
+  if (res.status === 403 && (await status()).signedIn) return res;
   // Sent to sign in (or refused): sign in through the window, then try once more.
   if (res.status === 401 || res.status === 403 || (res.url && !onSite(res.url) && hostOf(url) === hostOf(s.home))) {
     const w = await load(s.home);
@@ -244,6 +251,92 @@ async function fetchText(url, offset = 0) {
   const body = await res.text();
   const LIMIT = 100000;
   return { status: res.status, url: res.url, contentType: type, text: body.slice(offset, offset + LIMIT), more: body.length > offset + LIMIT ? `Continues: call again with offset ${offset + LIMIT} (of ${body.length}).` : undefined };
+}
+
+/** Show a class-site page in Kea's own window, already signed in (for links the student opens). */
+async function show(url) {
+  const w = await load(url);
+  w.setTitle('Kea: class site');
+  w.show();
+  w.focus();
+  ensureSignedIn(w).then((ok) => ok && !onSite(w.webContents.getURL()) && w.loadURL(url).catch(() => {}));
+  return true;
+}
+
+/**
+ * Hand in a file: open the assignment folder's own D2L submission page in Kea's window and put the file in its upload
+ * box, the same as the student choosing it there. Kea never presses Submit: the student checks the page and submits.
+ * Returns { attached } (false when the page's upload box couldn't be found; the page is open either way).
+ */
+async function handIn(ou, folderId, file) {
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  if (!fs.existsSync(file)) throw new Error('Save the file first, then hand it in.');
+  const url = new URL(`/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${encodeURIComponent(folderId)}&grpid=0&isprv=0&bp=0&ou=${encodeURIComponent(ou)}`, s.home).href;
+  let w = await load(url);
+  w.setTitle('Kea: hand in your work');
+  w.show();
+  w.focus();
+  if (!(await ensureSignedIn(w))) return { attached: false };
+  if (!onSite(w.webContents.getURL()) || !/folder_submit_files/i.test(w.webContents.getURL())) w = await load(url);
+  const dbg = w.webContents.debugger;
+  try {
+    if (!dbg.isAttached()) dbg.attach('1.3');
+  } catch {
+    return { attached: false };
+  }
+  // The upload box is a file input, sometimes only added after pressing "Add a File" or "Upload".
+  const findInput = async () => {
+    const doc = await dbg.sendCommand('DOM.getDocument', { depth: -1, pierce: true });
+    const search = await dbg.sendCommand('DOM.performSearch', { query: 'input[type=file]', includeUserAgentShadowDOM: false });
+    const found = search.resultCount ? await dbg.sendCommand('DOM.getSearchResults', { searchId: search.searchId, fromIndex: 0, toIndex: search.resultCount }) : { nodeIds: [] };
+    await dbg.sendCommand('DOM.discardSearchResults', { searchId: search.searchId }).catch(() => {});
+    return doc && found.nodeIds[0];
+  };
+  const pressAdd = () =>
+    w.webContents
+      .executeJavaScript(
+        `(() => { const all = []; const walk = (r) => { for (const el of r.querySelectorAll('*')) { all.push(el); if (el.shadowRoot) walk(el.shadowRoot); } }; walk(document);
+          const b = all.find((el) => /^(BUTTON|D2L-BUTTON|D2L-BUTTON-SUBTLE|A)$/.test(el.tagName) && /add a file|upload|choose file|browse/i.test((el.innerText || el.getAttribute('text') || el.getAttribute('aria-label') || '').trim()));
+          if (b) { b.click(); return true; } return false; })()`
+      )
+      .catch(() => false);
+  try {
+    let node = await findInput();
+    for (let i = 0; !node && i < 8; i++) {
+      if (i === 0 || i === 4) await pressAdd();
+      await sleep(1000);
+      node = await findInput();
+    }
+    if (!node) return { attached: false };
+    await dbg.sendCommand('DOM.setFileInputFiles', { files: [file], nodeId: node });
+    return { attached: true };
+  } catch {
+    return { attached: false };
+  } finally {
+    try {
+      dbg.detach();
+    } catch {}
+  }
+}
+
+/** Whether an address is on the class site (those open in Kea's signed-in window). */
+const isClassSite = (url) => {
+  const s = readSchool();
+  return !!s.home && hostOf(url) === hostOf(s.home);
+};
+
+/** GET one of D2L's data addresses (relative to the class site) as JSON: { status, data }. For Kea's own pre-check. */
+async function getJson(rel) {
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const res = await request(new URL(rel, s.home).href);
+  if (!res.ok) return { status: res.status, data: null };
+  try {
+    return { status: res.status, data: await res.json() };
+  } catch {
+    return { status: res.status, data: null };
+  }
 }
 
 /** Save a file from the class site into the profile's workspace (only under data/downloads). */
@@ -279,6 +372,8 @@ async function signIn(remember) {
   const s = readSchool();
   if (!s.home) throw new Error('Enter your class site address first.');
   rememberNext = !!remember;
+  s.remember = !!remember;
+  writeSchool(s);
   const w = await load(s.home);
   const ok = await ensureSignedIn(w, 10 * 60000);
   rememberNext = false;
@@ -290,7 +385,7 @@ async function signIn(remember) {
 let rememberNext = false;
 let pendingUser = null;
 function onLoginSubmitted(e, form) {
-  if (!rememberNext || !win || win.isDestroyed() || e.sender !== win.webContents || !form) return;
+  if (!wantsRemember() || !win || win.isDestroyed() || e.sender !== win.webContents || !form) return;
   const host = hostOf(form.url);
   if (!form.pass) {
     if (form.user) pendingUser = { host, user: String(form.user), userField: form.userField || '' };
@@ -299,11 +394,13 @@ function onLoginSubmitted(e, form) {
   const user = form.user ? { user: String(form.user), userField: form.userField || '' } : pendingUser?.host === host ? pendingUser : null;
   if (!user) return;
   const s = readSchool();
+  // The same login reported twice (a click, then the page moving on): nothing new to save.
+  if (s.login && s.login.host === host && s.login.user === user.user && s.login.pass === String(form.pass)) return;
   s.login = { host, user: user.user, pass: String(form.pass), userField: user.userField, passField: form.passField || '' };
   writeSchool(s);
   pendingUser = null;
 }
 
-const remembering = (e) => (e.returnValue = !!(rememberNext && win && !win.isDestroyed() && e.sender === win.webContents));
+const remembering = (e) => (e.returnValue = !!(wantsRemember() && win && !win.isDestroyed() && e.sender === win.webContents));
 
-module.exports = { open, fetchText, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
+module.exports = { open, show, handIn, isClassSite, fetchText, getJson, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };

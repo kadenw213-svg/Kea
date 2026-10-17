@@ -29,6 +29,77 @@ const TASKS = {
   study: { prompt: (arg) => `/weekly-study-pdf ${arg || ''}`.trim(), tools: [...BASE, 'WebFetch', 'WebSearch', 'mcp__kea__kea_progress', 'mcp__kea__kea_notify'], label: 'Writing textbook chapters' }
 };
 
+// ---------- Plain-code steps before a run (no Claude usage) ----------
+// Each may answer { skip: summary } (nothing for Claude to do), { prompt, after(ok) } (run Claude with this prompt),
+// or { split: [args] } (queue one run per class or chapter instead: each starts with a small, fresh conversation,
+// which costs far less than one long one, and a usage-limit stop loses at most one of them).
+const precheck = () => require('./precheck.cjs');
+const settings = () => require('../settings.cjs');
+const db = () => require('./db.cjs');
+
+async function engineJson(args) {
+  const uv = await workspace.findUv();
+  const cwd = profiles.paths().workspace;
+  const r = await workspace.runHidden(uv, ['run', 'academic-sync', ...args], { cwd, env: workspace.engineEnv(uv) });
+  const at = r.out.search(/[[{]/);
+  return at < 0 ? null : JSON.parse(r.out.slice(at));
+}
+
+TASKS.daily.pre = async (job, step) => {
+  if (/\bresume\b/.test(job.arg) || job.arg.trim()) return {};
+  step('Checking your classes for anything new…');
+  const r = await precheck().run({ fullEveryDays: Number(settings().get('scholar.fullCheckDays', 3)) || 3 });
+  if (!r.setUp) return { skip: 'No class site is set up yet.', ok: false };
+  if (!r.signedIn) return { skip: 'Kea isn’t signed in to your class site, so nothing was checked. Sign in under Add a class → From your school.', ok: false };
+  for (const s of r.newShells) run('import', `${s.course_code} -- new class shell: ${JSON.stringify(s)}`, job.why);
+  const codes = Object.keys(r.changed);
+  const shells = r.newShells.length ? ` Found ${r.newShells.length} new class${r.newShells.length > 1 ? 'es' : ''} to scan: ${r.newShells.map((s) => s.course_code).join(', ')}.` : '';
+  if (!codes.length) {
+    r.commit();
+    return { skip: `Nothing new in ${r.quiet.join(', ') || 'your classes'}. Checked by Kea itself, so no Claude usage.${shells}`, ok: true };
+  }
+  const what = codes.map((c) => `${c}: ${r.changed[c].join('; ')}`).join('\n');
+  step(`Something new in ${codes.join(', ')}: reading it…`);
+  return {
+    prompt: `/daily-overview only ${codes.join(' ')} -- Kea pre-check: ${r.dir.replace(/\\/g, '/')}\n\nWhat Kea saw change since its last check:\n${what}${r.quiet.length ? `\n\nNothing changed in: ${r.quiet.join(', ')} (skip them).` : ''}`,
+    after: (ok) => ok && r.commit()
+  };
+};
+
+TASKS.import.pre = async (job, step) => {
+  if (job.arg.trim()) return {};
+  step('Looking for classes Kea hasn’t scanned yet…');
+  const r = await precheck().run({ fullEveryDays: 1e9 });
+  if (!r.signedIn) return { skip: 'Kea isn’t signed in to your class site, so it couldn’t look for classes.', ok: false };
+  if (!r.newShells.length) return { skip: 'Every class you’re enrolled in is already in Kea.', ok: true };
+  return { split: r.newShells.map((s) => `${s.course_code} -- new class shell: ${JSON.stringify(s)}`), summary: `Scanning ${r.newShells.length} new class${r.newShells.length > 1 ? 'es' : ''}, one at a time: ${r.newShells.map((s) => s.course_code).join(', ')}.` };
+};
+
+TASKS.sync.pre = async (job) => {
+  if (job.arg.trim()) return {};
+  const codes = (await db().watchList(profiles.paths().db)).map((c) => c.code);
+  if (!codes.length) return { skip: 'No classes to update yet.', ok: true };
+  return { split: codes, summary: `Updating ${codes.length} classes, one at a time: ${codes.join(', ')}.` };
+};
+
+TASKS.study.pre = async (job, step) => {
+  if (job.arg.trim()) return {};
+  step('Checking which weeks need a textbook chapter…');
+  const due = await engineJson(['study-pdf-due']).catch(() => null);
+  if (!Array.isArray(due)) return {};
+  if (!due.length) return { skip: 'Every week starting soon already has its textbook chapter.', ok: true };
+  if (due.length === 1) return { prompt: `/weekly-study-pdf ${due[0].banner_id}` };
+  const name = (b) => `${b.course?.code || b.course?.course_code || b.course || ''} ${b.week?.display || ''}`.trim();
+  return { split: due.map((b) => b.banner_id), summary: `Writing ${due.length} weeks' chapters, one at a time: ${due.map(name).join(', ')}.` };
+};
+
+/** A downloaded PDF or Word file's text, written next to it by the engine (`doc-text`). */
+async function docText(uv, cwd, file) {
+  const r = await workspace.runHidden(uv, ['run', 'academic-sync', 'doc-text', file], { cwd, env: workspace.engineEnv(uv) });
+  const at = r.out.indexOf('{');
+  return at < 0 ? null : JSON.parse(r.out.slice(at));
+}
+
 let current = null;
 const queue = [];
 
@@ -163,7 +234,23 @@ async function next() {
     const uv = await workspace.findUv();
     if (!claude || !uv) return finish(false, 'Class scans aren’t set up yet (Claude Code and uv are needed).');
     const cwd = workspace.prepare();
-    const server = await mcp.start({ progress: step, notify: (n) => addNews(n) });
+    let prompt = t.prompt(job.arg);
+    let after = null;
+    if (t.pre) {
+      // A failing pre-check never blocks a run: it falls back to the full run Claude would have done anyway.
+      const pre = await t.pre(job, step).catch((err) => {
+        step(`Kea's own check didn't work (${String(err?.message || err).slice(0, 120)}), so this is a full check.`);
+        return {};
+      });
+      if (pre.skip) return finish(pre.ok !== false, pre.skip);
+      if (pre.split) {
+        for (const a of pre.split) run(job.task, a, job.why);
+        return finish(true, pre.summary);
+      }
+      if (pre.prompt) prompt = pre.prompt;
+      after = pre.after || null;
+    }
+    const server = await mcp.start({ progress: step, notify: (n) => addNews(n), docText: (file) => docText(uv, cwd, file) });
     current.server = server;
     // One connection file per run: a finished run's cleanup must never delete the next run's file.
     const cfg = path.join(cwd, 'data', `kea-mcp-${entry.id}.json`);
@@ -173,7 +260,8 @@ async function next() {
     const out = fs.createWriteStream(log, { flags: 'a' });
     out.write(`\n=== ${entry.start} ${job.task} ${job.arg} (${job.why}) ===\n`);
     // Scans always run on Opus (the user's choice: accuracy over usage), whatever Claude Code's own default is.
-    const args = ['-p', t.prompt(job.arg), '--model', 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', '--permission-mode', 'dontAsk', '--allowedTools', ...t.tools];
+    // PDFs are never read directly (every page would go to Claude as a picture): downloads come with a text copy.
+    const args = ['-p', prompt, '--model', 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', '--permission-mode', 'dontAsk', '--allowedTools', ...t.tools, '--disallowedTools', 'Read(**/*.pdf)'];
     step(`${t.label}…`);
     const child = spawn(claude, args, { cwd, env: workspace.engineEnv(uv), windowsHide: true });
     current.child = child;
@@ -208,8 +296,12 @@ async function next() {
         setPending({ task: job.task, arg: job.arg, label: t.label, until: until.toISOString() });
         if (Notification.isSupported()) new Notification({ title: 'Class scan paused', body: `Your Claude usage limit was reached. Kea continues where it stopped at ${at}.` }).show();
         finish(false, `Paused: your Claude usage limit was reached. Everything found so far is saved, and Kea continues where it stopped at ${at}.`);
-      } else if (result && !result.is_error) finish(true, text.trim().slice(0, 4000) || 'Done.');
-      else finish(false, result?.result ? String(result.result).slice(0, 2000) : code === null ? 'Stopped.' : `The scan ended early (code ${code}). Details are in the scan log.`);
+      } else if (result && !result.is_error) {
+        try {
+          after?.(true);
+        } catch {}
+        finish(true, text.trim().slice(0, 4000) || 'Done.');
+      } else finish(false, result?.result ? String(result.result).slice(0, 2000) : code === null ? 'Stopped.' : `The scan ended early (code ${code}). Details are in the scan log.`);
     });
   } catch (err) {
     finish(false, String(err?.message || err));

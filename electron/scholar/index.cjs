@@ -7,6 +7,7 @@ const db = require('./db.cjs');
 const browser = require('./browser.cjs');
 const workspace = require('./workspace.cjs');
 const runner = require('./runner.cjs');
+const precheck = require('./precheck.cjs');
 const settings = require('../settings.cjs');
 
 // ---------- Kea's own state for a profile (what's checked off) ----------
@@ -84,7 +85,14 @@ async function ready() {
  * Once a day after the chosen time (5:00 by default, like the scheduled task it replaces): the daily check (which
  * also imports any new class), then this week's textbook chapters; on the chosen weekday, the weekly update too.
  */
+let lastInbox = 0;
 async function tick() {
+  // New announcements, every half hour or so (plain requests, no Claude), while nothing else is running.
+  const every = Number(settings.get('scholar.inboxMinutes', 30)) || 0;
+  if (every && !runner.status().running && Date.now() - lastInbox >= every * 60000 - 30000) {
+    lastInbox = Date.now();
+    precheck.pollAnnouncements().catch((err) => console.error('Inbox check', err));
+  }
   try {
     if (settings.get('scholar.autoScan', true) === false || runner.status().running) return;
     // A run paused by a usage limit continues first, once the limit has reset; nothing else starts until then.
@@ -161,10 +169,51 @@ function register() {
   ipcMain.handle('scholar:news', () => runner.news());
   ipcMain.handle('scholar:markNewsRead', (_e, ids) => runner.markNewsRead(ids));
   ipcMain.handle('scholar:pending', () => runner.pending());
+
+  // The Inbox: announcements (from D2L directly) and what scans found (messages, grades, deadlines).
+  ipcMain.handle('scholar:inbox', () => {
+    const own = precheck.readInbox().items;
+    const scans = runner.news().map((n) => ({ id: `scan:${n.id}`, kind: 'news', course: n.course || '', title: n.title, body: n.body, at: n.at, url: '', read: !!n.read }));
+    return [...own, ...scans].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  });
+  ipcMain.handle('scholar:markInboxRead', (_e, ids) => {
+    precheck.markInboxRead(ids ? ids.filter((i) => !i.startsWith('scan:')) : null);
+    runner.markNewsRead(ids ? ids.filter((i) => i.startsWith('scan:')).map((i) => i.slice(5)) : null);
+    return true;
+  });
+  ipcMain.handle('scholar:checkInbox', () => precheck.pollAnnouncements());
+  // Handing in a file: the folders it can go to, then D2L's own hand-in page with the file in its upload box.
+  ipcMain.handle('scholar:handInTargets', async () => {
+    let t = await precheck.handInTargets();
+    // Nothing known yet: take a quick look at the class site first (no Claude).
+    if (!t.some((c) => c.folders.length)) {
+      await precheck.pollAnnouncements().catch(() => false);
+      t = await precheck.handInTargets();
+    }
+    return t;
+  });
+  ipcMain.handle('scholar:handIn', (_e, ou, folderId, file) => browser.handIn(ou, folderId, file));
+  // Grades: Kea's own check of the class site, or what the daily checks recorded before that ran.
+  ipcMain.handle('scholar:grades', async (_e, courseId, code) => precheck.readGrades().byCourse[code] || (await db.gradesFromChecks(p().db, courseId)));
+  // Links: class-site pages open in Kea's signed-in window; everything else in the web browser.
+  ipcMain.handle('scholar:openLink', (_e, url) => {
+    if (!/^https?:\/\//i.test(String(url))) return false;
+    if (browser.isClassSite(url)) return browser.show(url);
+    require('electron').shell.openExternal(url);
+    return true;
+  });
   ipcMain.handle('scholar:resume', (_e, task) => (runner.pending() ? runner.resume() : runner.resumeLast(task || 'import')));
 
   // Developer aid (unpackaged builds only): read a page through the class-site browser.
-  if (!require('electron').app.isPackaged) ipcMain.handle('scholar:debugOpen', (_e, url) => browser.open(url));
+  if (!require('electron').app.isPackaged) {
+    ipcMain.handle('scholar:debugOpen', (_e, url) => browser.open(url));
+    // The pre-check on its own, without starting Claude or saving a new baseline.
+    ipcMain.handle('scholar:debugPrecheck', async () => {
+      const r = await precheck.run();
+      const { commit, ...rest } = r;
+      return rest;
+    });
+  }
 
   watch();
   try {

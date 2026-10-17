@@ -126,6 +126,19 @@ export interface KeaApi {
     activity(): Promise<ScholarRun[]>;
     news(): Promise<ScholarNews[]>;
     markNewsRead(ids?: string[]): Promise<boolean>;
+    /** Announcements (straight from the class site) and what scans found, newest first. */
+    inbox(): Promise<ScholarInboxItem[]>;
+    markInboxRead(ids?: string[]): Promise<boolean>;
+    /** Look for new announcements now (no Claude). False when Kea isn't signed in. */
+    checkInbox(): Promise<boolean>;
+    /** Every class's assignment folders a file can be handed in to. */
+    handInTargets(): Promise<{ code: string; ou: string; folders: { id: number; name: string; due: string | null; closed: boolean; submitted: boolean }[] }[]>;
+    /** Open the folder's D2L hand-in page with the file in its upload box. The student presses Submit there. */
+    handIn(ou: string, folderId: number, file: string): Promise<{ attached: boolean }>;
+    /** A class's overall grade and graded items, or null before anything is known. */
+    grades(courseId: string, code: string): Promise<ScholarGrades | null>;
+    /** Open a link: class-site pages in Kea's signed-in window, anything else in the web browser. */
+    openLink(url: string): Promise<boolean>;
     /** A run paused by a Claude usage limit, waiting to continue. */
     pending(): Promise<ScholarPending | null>;
     /** Continue the paused run now, or the last stopped run of a task. */
@@ -339,6 +352,24 @@ export interface ScholarRun {
   /** Set when the run stopped at a Claude usage limit: when Kea continues it. */
   paused?: string;
 }
+export interface ScholarGrades {
+  final: { shown: string; percent: number | null } | null;
+  items: { id: string; title: string; score: string; percent: number | null; shown: string; comment: string; at: string | null }[];
+  url: string;
+  checked: string | null;
+}
+export interface ScholarInboxItem {
+  id: string;
+  /** "announcement" and "grade" come from the class site directly; "news" from a scan (messages, deadlines). */
+  kind: 'announcement' | 'grade' | 'news';
+  course: string;
+  title: string;
+  body: string;
+  at: string;
+  url: string;
+  read: boolean;
+  updated?: boolean;
+}
 export interface ScholarPending {
   task: string;
   arg: string;
@@ -381,6 +412,12 @@ export interface ScholarItem {
   end: string | null;
   due: string | null;
   module: string | null;
+  /** Room or place ("PPSC Rampart Range Campus, E112", "Online"). */
+  location: string | null;
+  /** The location is the class's usual room for this kind of meeting, not one this item names itself. */
+  locationUsual: boolean;
+  instructor: string | null;
+  contact: string | null;
   description: string | null;
   sourceWording: string | null;
   links: ScholarLink[];
@@ -392,6 +429,8 @@ export interface ScholarItem {
   tentative: boolean;
   /** When it was checked off, or null. */
   done: string | null;
+  /** What the class site says: graded or handed in, confirmed not handed in, or null when Kea can't tell. */
+  handIn: 'graded' | 'submitted' | 'not_submitted' | null;
   readings: ScholarReading[];
 }
 export interface ScholarCourse {
@@ -424,6 +463,9 @@ export interface ScholarCourseDetail {
   name: string;
   term: string;
   instructor: string | null;
+  contact: string | null;
+  campus: string | null;
+  delivery: string | null;
   url: string | null;
   start: string | null;
   end: string | null;

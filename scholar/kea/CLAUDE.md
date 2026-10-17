@@ -24,6 +24,36 @@ The skills in `.claude/skills/` were written for Claude Code driving Chrome and 
 | checking whether D2L is signed in | `mcp__kea__d2l_status` |
 
 - Screenshots aren't available. A page whose content is only an image: record it with `unresolved-add`. Don't guess it.
+
+**Be light: go straight to what you need, never crawl.** The student's Claude plan pays for every page you read, and
+the class site should see a student's normal traffic, not a robot's.
+- Prefer D2L's data API (`mcp__kea__d2l_fetch` on `/d2l/api/...`) over opening pages: one call returns a whole area as
+  data. Open a page only for what the API doesn't give (an instructions page, an outside platform's view).
+- **Use saved links.** Every class's portal links (`portal-link-list --course <CODE> --json`) and every item's saved
+  `reference_url` / `resource_url` go straight to the right page. Open those directly. Never click or browse through
+  menus to find something a saved link already reaches, and save every new area you do find (`portal-link-set`) so the
+  next run goes straight there.
+- Open each page once per run. Don't re-open pages listed as Inspected in `completeness` unless a missing piece needs
+  them.
+- **Never read a PDF directly** (the Read tool refuses: it would send every page as a picture). `mcp__kea__d2l_download`
+  returns a `text_file` beside each PDF or .docx: read that. Only the images it lists under `pages_without_text`
+  (scanned pages) are worth viewing. For a PDF already on disk, run `uv run academic-sync doc-text <file>`.
+
+**Kea's pre-check.** Before a daily check, Kea itself asks D2L's API for every class's announcements, grades, assignment
+folders, quizzes and content list, compares them with its last check, and starts you only for classes where
+something changed. Then the arguments look like `only CHE1011 BIO1112 -- Kea pre-check: data/digests/kea-precheck/<date>`,
+followed by what changed.
+- Check only the listed classes. For every other class, run `digest-record-sent --course <CODE> --skipped`.
+- The pre-check folder holds the API answers Kea already fetched: `<CODE>-news.json`, `-grades.json`, `-final.json`,
+  `-dropbox.json`, `-quizzes.json`, `-content.json`, plus `summary.json`. Use them instead of fetching the same data
+  again. Fetch only what they don't cover (an announcement's own page, an outside platform's gradebook, messages).
+- New class shells are already found and queued by Kea (Step 1b is done). Skip enrollment checks.
+
+**One class per run.** Kea runs first scans, weekly updates and textbook chapters one class (or one week) at a time.
+When the arguments name one class, work on that class only. When they include `-- new class shell: {...}`, it is a
+class nobody has registered yet: register it with `course add` from those fields (`--code`, `--section`, `--name`,
+`--term` written the way the other classes' terms are, `--start`, `--end`, `--d2l-id` = `org_unit_id`, `--d2l-url` = the
+class site address + `home_url_path`), then run the full first-time import for that one class.
 - **Signing in is Kea's job.** Never type, ask for, or look for a password. Kea signs in by itself when a page needs
   it, or asks the student. If a tool answers that it isn't signed in, call `mcp__kea__kea_notify` (title "Kea needs you
   to sign in to your class site") and stop the run.

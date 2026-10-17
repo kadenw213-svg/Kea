@@ -21,7 +21,7 @@ const TOOLS = [
   },
   {
     name: 'd2l_download',
-    description: "Save a file from the class site (a syllabus PDF, a handout, a .docx) into this workspace, under data/downloads/. 'path' is relative to data/downloads, e.g. 'BIO1112/syllabus.pdf'. Returns where it was saved.",
+    description: "Save a file from the class site (a syllabus PDF, a handout, a .docx) into this workspace, under data/downloads/. 'path' is relative to data/downloads, e.g. 'BIO1112/syllabus.pdf'. Returns where it was saved; for a PDF or .docx also the path of its extracted text (read that, never the PDF) and images of any pages that have no text.",
     inputSchema: { type: 'object', properties: { url: { type: 'string' }, path: { type: 'string' } }, required: ['url', 'path'] }
   },
   {
@@ -54,8 +54,23 @@ function start(hooks) {
         return browser.open(a.url, a.offset || 0);
       case 'd2l_fetch':
         return browser.fetchText(a.url, a.offset || 0);
-      case 'd2l_download':
-        return browser.download(a.url, a.path);
+      case 'd2l_download': {
+        const saved = await browser.download(a.url, a.path);
+        // PDFs and Word files come with their text, so the file itself never has to be read as page pictures.
+        if (/\.(pdf|docx)$/i.test(saved.saved) && hooks.docText) {
+          try {
+            const t = await hooks.docText(saved.saved);
+            if (t) {
+              saved.text_file = t.text_file;
+              saved.pages = t.pages;
+              saved.chars = t.chars;
+              saved.read = `Read ${t.text_file} for this file's text (PDFs can't be read directly).`;
+              if (t.pages_without_text?.length) saved.pages_without_text = t.pages_without_text;
+            }
+          } catch {}
+        }
+        return saved;
+      }
       case 'd2l_status':
         return browser.status();
       case 'kea_progress':

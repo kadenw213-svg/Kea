@@ -53,7 +53,8 @@ import { loadPdf, PasswordError, getTextRects, PDFDocumentProxy, TextItemRect } 
 import { readOutline, takePdfTarget, findChapter, OutlineEntry } from '../../lib/pdfTarget';
 import type { Annotation, Box, DocState, PageInfo, PageRef, TextAnn, Tool, ImageAnn } from './types';
 import { DEFAULTS } from './types';
-import { setting } from '../../lib/settings';
+import { setting, useSettings } from '../../lib/settings';
+import { HandInButton } from '../../components/scholar/HandIn';
 import { PageView, ToolStyle, measureTextAnn } from './PageView';
 import { Thumbnails } from './Thumbnails';
 import { SignatureModal } from './SignatureModal';
@@ -1366,6 +1367,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
 
         <div className="tb-spacer" />
 
+        {tab.path && setting('scholar.enabled') !== false && <HandInButton path={tab.path} dirty={tab.dirty} />}
         <button className={`icon-btn ${searchOpen ? 'active' : ''}`} title="Find (Ctrl+F)" onClick={() => (setSearchOpen((o) => !o), setTimeout(() => searchInput.current?.focus(), 0))}>
           <Search size={18} />
         </button>
@@ -1374,7 +1376,13 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
             <ClipboardList size={18} />
           </button>
         )}
-        <button className={`icon-btn ${darkPages ? 'active' : ''}`} title="Dark pages (view only)" onClick={() => setDarkPages((d) => !d)}>
+        <button className={`icon-btn ${darkPages ? 'active' : ''}`} title="Dark pages (view only)" onClick={() =>
+            setDarkPages((d) => {
+              // Remembered, so the next PDF opens the same way.
+              useSettings.getState().set({ 'pdf.darkPages': !d });
+              return !d;
+            })
+          }>
           <Moon size={18} />
         </button>
         <div className="tb-sep" />

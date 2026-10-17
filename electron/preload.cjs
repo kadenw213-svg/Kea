@@ -71,6 +71,13 @@ contextBridge.exposeInMainWorld('api', {
     news: () => ipcRenderer.invoke('scholar:news'),
     markNewsRead: (ids) => ipcRenderer.invoke('scholar:markNewsRead', ids),
     pending: () => ipcRenderer.invoke('scholar:pending'),
+    inbox: () => ipcRenderer.invoke('scholar:inbox'),
+    markInboxRead: (ids) => ipcRenderer.invoke('scholar:markInboxRead', ids),
+    checkInbox: () => ipcRenderer.invoke('scholar:checkInbox'),
+    grades: (courseId, code) => ipcRenderer.invoke('scholar:grades', courseId, code),
+    handInTargets: () => ipcRenderer.invoke('scholar:handInTargets'),
+    handIn: (ou, folderId, file) => ipcRenderer.invoke('scholar:handIn', ou, folderId, file),
+    openLink: (url) => ipcRenderer.invoke('scholar:openLink', url),
     resume: (task) => ipcRenderer.invoke('scholar:resume', task),
     onResume: (cb) => {
       const h = (_e, p) => cb(p);

@@ -419,7 +419,16 @@ export const SECTIONS: Section[] = [
     icon: 'GraduationCap',
     blurb: 'Your classes, their textbooks and calendar. Classes you add from your school are kept up to date by scans that run in the background through your own Claude account.',
     fields: [
-      { key: 'scholar.autoScan', label: 'Check my classes every day', type: 'toggle', default: true, help: 'New assignments, grades, feedback and announcements, and any new class (scanned in full). Uses a little of your Claude plan each day.' },
+      { key: 'scholar.autoScan', label: 'Check my classes every day', type: 'toggle', default: true, help: 'New assignments, grades, feedback and announcements, and any new class (scanned in full). Kea checks first by itself and only uses your Claude plan for classes where something changed.' },
+      {
+        key: 'scholar.inboxMinutes',
+        label: 'Check for new announcements every',
+        type: 'select',
+        default: '30',
+        options: [['15', '15 minutes'], ['30', '30 minutes'], ['60', 'Hour'], ['180', '3 hours'], ['0', 'Only with the daily check']].map(([value, label]) => ({ value, label })),
+        help: 'A quick look at each class’s announcements, done by Kea itself (no Claude usage). New ones show in the Inbox and as a notification.'
+      },
+      { key: 'scholar.background', label: 'Keep checking when Kea’s window is closed', type: 'toggle', default: true, help: 'Closing the window leaves Kea in the notification area (by the clock), so the daily check and paused scans still run. Quit from its icon there.' },
       {
         key: 'scholar.scanTime',
         label: 'Daily check after',
@@ -436,6 +445,15 @@ export const SECTIONS: Section[] = [
         default: 'sunday',
         advanced: true,
         options: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map((d) => ({ value: d, label: d[0].toUpperCase() + d.slice(1) }))
+      },
+      {
+        key: 'scholar.fullCheckDays',
+        label: 'Full check (messages and outside platforms like ALEKS) every',
+        type: 'select',
+        default: '3',
+        advanced: true,
+        options: [['1', 'Day'], ['2', '2 days'], ['3', '3 days'], ['7', 'Week']].map(([value, label]) => ({ value, label })),
+        help: 'D2L’s messages and outside platforms’ gradebooks can’t be checked without Claude, so on other days only classes with something new are read.'
       }
     ]
   },

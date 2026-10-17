@@ -228,9 +228,6 @@ export function ScansView() {
     ];
     return () => offs.forEach((f) => f());
   }, []);
-  useEffect(() => {
-    if (news.some((n) => !n.read)) api.scholar.markNewsRead();
-  }, [news]);
   const start = (task: 'daily' | 'sync' | 'study') => api.scholar.run(task).then(() => toast('Started in the background.', 'success'));
   return (
     <div className="sch-page">
@@ -278,24 +275,10 @@ export function ScansView() {
           </button>
         </div>
       )}
-      {news.length > 0 && (
-        <section>
-          <h2 className="sch-h2">
-            <Bell size={13} /> From your classes
-          </h2>
-          <div className="sch-list">
-            {news.slice(0, 40).map((n) => (
-              <div key={n.id} className="news-item" onClick={() => setOpen(open === n.id ? null : n.id)}>
-                <div className="news-head">
-                  {n.course && <span className="sch-chip">{n.course}</span>}
-                  <b>{n.title}</b>
-                  <span className="muted">{timeAgo(n.at)}</span>
-                </div>
-                <div className={`news-body ${open === n.id ? 'open' : ''}`}>{n.body}</div>
-              </div>
-            ))}
-          </div>
-        </section>
+      {news.some((n) => !n.read) && (
+        <p className="muted">
+          <Bell size={13} /> New messages, grades and announcements are in the Inbox.
+        </p>
       )}
       <section>
         <h2 className="sch-h2">Recent scans</h2>

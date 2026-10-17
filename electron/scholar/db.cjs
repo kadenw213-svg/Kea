@@ -103,7 +103,68 @@ async function courses(file, textbooks, done) {
   });
 }
 
-function itemOut(r, course, banner, readings, done) {
+// ---------- What's been handed in ----------
+const norm = (s) =>
+  String(s || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\b(the|a|an)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * Evidence per class of what the student handed in: grades the daily checks recorded, and what Kea's pre-check
+ * learned from D2L (graded items, assignment folders with or without a submission). Map course id → [{t, state}].
+ */
+function evidence(db, file) {
+  const out = new Map();
+  const add = (courseId, title, state) => {
+    const t = norm(title);
+    if (!t) return;
+    if (!out.has(courseId)) out.set(courseId, []);
+    out.get(courseId).push({ t, state });
+  };
+  for (const r of rows(db, "SELECT course_id, payload_json FROM digest_entries WHERE kind = 'grade'")) add(r.course_id, json(r.payload_json, {}).title, 'graded');
+  // Grades read from outside platforms (ALEKS and the like) during weekly checks.
+  for (const r of rows(db, 'SELECT course_id, title, is_missing FROM grade_snapshots')) add(r.course_id, r.title, r.is_missing ? 'not_submitted' : 'graded');
+  try {
+    const sub = JSON.parse(fs.readFileSync(path.join(path.dirname(file), '..', '..', 'submissions.json'), 'utf8'));
+    const ids = new Map(rows(db, 'SELECT id, course_code FROM courses').map((c) => [c.course_code, c.id]));
+    for (const [code, list] of Object.entries(sub.byCourse || {})) for (const x of list) if (ids.has(code)) add(ids.get(code), x.title, x.state);
+  } catch {}
+  return out;
+}
+
+/** An item's hand-in state from the evidence: 'graded', 'submitted', 'not_submitted' or null (unknown). */
+function handIn(r, ev) {
+  const list = ev.get(r.course_id);
+  if (!list) return null;
+  const t = norm(r.title);
+  if (t.length < 3) return null;
+  const exact = list.filter((x) => x.t === t);
+  const close = exact.length ? exact : list.filter((x) => Math.min(x.t.length, t.length) >= 6 && (x.t.includes(t) || t.includes(x.t)));
+  if (!close.length) return null;
+  return close.find((x) => x.state === 'graded')?.state || close.find((x) => x.state === 'submitted')?.state || 'not_submitted';
+}
+
+/** Class meetings, where a room is worth showing. */
+const MEETING = new Set(['lecture', 'lab', 'recitation', 'seminar', 'exam', 'final_exam', 'lab_practical']);
+
+/**
+ * Where each class usually meets, by kind of meeting: the room most of its lectures (or labs) name. A meeting with no
+ * room of its own shows this one, marked as the usual room, never as if the class had said so.
+ */
+function usualRooms(db) {
+  const out = new Map();
+  for (const r of rows(db, `SELECT course_id, item_type, platform_location AS loc, COUNT(*) AS n FROM academic_items WHERE ${ACTIVE} AND platform_location IS NOT NULL AND platform_location NOT IN ('', 'Online') GROUP BY course_id, item_type, platform_location ORDER BY n DESC`)) {
+    const key = `${r.course_id}|${r.item_type}`;
+    if (!out.has(key)) out.set(key, r.loc);
+  }
+  return out;
+}
+
+function itemOut(r, course, banner, readings, done, rooms, ev) {
   const covered = json(r.covered_chapters_json, []);
   let chapters = [...new Set([...covered, ...chaptersIn(`${r.title} ${r.module_label || ''}`)])];
   // An assignment with no chapter of its own reads that week's chapters.
@@ -120,6 +181,13 @@ function itemOut(r, course, banner, readings, done) {
     end: hhmm(r.end_time),
     due: hhmm(r.due_time),
     module: r.module_label,
+    ...(() => {
+      const own = r.platform_location && r.platform_location !== 'Online' ? r.platform_location : null;
+      const usual = !own && MEETING.has(r.item_type) ? rooms?.get(`${r.course_id}|${r.item_type}`) || null : null;
+      return { location: own || usual || (r.platform_location === 'Online' ? 'Online' : null), locationUsual: !!usual };
+    })(),
+    instructor: course?.instructor || null,
+    contact: course?.instructor_contact || null,
     description: r.description,
     sourceWording: r.source_wording,
     links: [
@@ -135,6 +203,7 @@ function itemOut(r, course, banner, readings, done) {
     optional: !!r.is_optional,
     tentative: !!r.is_tentative || !!r.is_inferred_date,
     done: done[r.id] || null,
+    handIn: ev ? handIn(r, ev) : null,
     // Only the class's own chapters ("Inner Fish CH 6" is a side book, not the course's Chapter 6).
     readings: chapters
       .filter((ch) => !readings.titles.size || readings.titles.has(ch) || readings.pdfs.has(ch))
@@ -157,10 +226,12 @@ async function items(file, textbooks, done, { from, to, courseId }) {
   const readings = new Map();
   const reads = (c) => readings.get(c.id) || readings.set(c.id, readingsFor(db, c.id, c.course_code, textbooks)).get(c.id);
   const banners = list.filter((r) => r.item_type === 'weekly_reading');
+  const rooms = usualRooms(db);
+  const ev = evidence(db, file);
   return list.map((r) => {
     const c = byId.get(r.course_id);
     const banner = banners.find((b) => b.course_id === r.course_id && b.date <= r.date && (b.date_range_end || b.date) >= r.date);
-    return itemOut(r, c, banner, reads(c), done);
+    return itemOut(r, c, banner, reads(c), done, rooms, ev);
   });
 }
 
@@ -185,7 +256,31 @@ async function course(file, textbooks, done, id) {
     .sort((a, b) => chapterNumber(a.label) - chapterNumber(b.label));
   const weeks = rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type = 'weekly_reading' AND ${ACTIVE} ORDER BY date`, [id]).map((r) => itemOut(r, c, null, readings, done));
   const portal = rows(db, 'SELECT kind, label, url FROM course_portal_links WHERE course_id = ? ORDER BY kind, label', [id]);
-  return { id: c.id, code: c.course_code, name: c.name, term: c.term, instructor: c.instructor, url: c.d2l_url, start: c.start_date, end: c.end_date, chapters, weeks, portal };
+  return { id: c.id, code: c.course_code, name: c.name, term: c.term, instructor: c.instructor, contact: c.instructor_contact, campus: c.campus, delivery: c.delivery_format, url: c.d2l_url, start: c.start_date, end: c.end_date, chapters, weeks, portal };
 }
 
-module.exports = { courses, items, course, chaptersIn };
+/**
+ * A class's grades as the daily checks recorded them (until Kea's own grade check has run): the latest overall
+ * percent and every graded item with its score and the instructor's comment.
+ */
+async function gradesFromChecks(file, courseId) {
+  const db = await open(file);
+  if (!db) return null;
+  const overall = rows(db, 'SELECT overall_percent, letter_grade FROM course_grade_snapshots WHERE course_id = ? ORDER BY captured_at DESC LIMIT 1', [courseId])[0];
+  const seen = new Map();
+  for (const r of rows(db, "SELECT external_id, payload_json, first_seen FROM digest_entries WHERE course_id = ? AND kind = 'grade' ORDER BY first_seen", [courseId])) {
+    const g = json(r.payload_json, {});
+    seen.set(String(r.external_id), { id: String(r.external_id), title: g.title, score: g.score_text || '', percent: g.score_percent ?? null, shown: '', comment: g.comment || '', at: g.graded_on || r.first_seen });
+  }
+  if (!overall && !seen.size) return null;
+  return { final: overall ? { shown: overall.letter_grade || '', percent: overall.overall_percent } : null, items: [...seen.values()].reverse(), url: '', checked: null };
+}
+
+/** The real classes Kea's pre-check watches on D2L: active, not self-study, with their org unit id. */
+async function watchList(file) {
+  const db = await open(file);
+  if (!db) return [];
+  return rows(db, "SELECT course_code AS code, d2l_identifier AS ou FROM courses WHERE status = 'active' AND COALESCE(is_synthetic, 0) = 0 AND d2l_identifier IS NOT NULL AND d2l_identifier != '' ORDER BY course_code");
+}
+
+module.exports = { courses, items, course, watchList, gradesFromChecks, chaptersIn };

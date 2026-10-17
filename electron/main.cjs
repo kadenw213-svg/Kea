@@ -189,6 +189,10 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
     rendererReady = false;
+    // Kea's hidden class-site window keeps the app alive, so closing the last window decides here: stay in the
+    // notification area for class checks, or quit for real.
+    if (backgroundWanted()) ensureTray();
+    else app.quit();
   });
 
   // Developer aid: KEA_CAPTURE=path.png captures a screenshot after load, then exits.
@@ -215,6 +219,48 @@ function createWindow() {
       if (level >= 2) console.log(`[renderer] ${message} (${source}:${line})`);
     });
   }
+}
+
+// ---------- Running in the background (class checks while the window is closed) ----------
+let tray = null;
+const startHidden = process.argv.includes('--background');
+/** Stay running after the window closes: only when Scholar's checks are on and a class site is set up. */
+function backgroundWanted() {
+  if (process.env.KEA_CAPTURE || settings.get('scholar.background', true) === false || settings.get('scholar.enabled', true) === false) return false;
+  try {
+    return !!require('./scholar/browser.cjs').schoolInfo().home;
+  } catch {
+    return false;
+  }
+}
+function showWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return createWindow();
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+function ensureTray() {
+  if (tray && !tray.isDestroyed()) return;
+  const { Tray, nativeImage } = require('electron');
+  const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'build', 'icon.png')).resize({ width: 16, height: 16 });
+  tray = new Tray(icon);
+  tray.setToolTip('Kea: checking your classes in the background');
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open Kea', click: showWindow },
+      { type: 'separator' },
+      { label: 'Quit Kea', click: () => app.quit() }
+    ])
+  );
+  tray.on('click', showWindow);
+}
+/** Start quietly when the user signs in to Windows, so the morning check runs even if Kea wasn't opened. */
+function applyLoginItem() {
+  if (!app.isPackaged) return;
+  const on = backgroundWanted();
+  try {
+    app.setLoginItemSettings({ openAtLogin: on, args: ['--background'] });
+  } catch {}
 }
 
 app.whenReady().then(() => {
@@ -273,7 +319,11 @@ app.whenReady().then(() => {
     return new Response(res.body, { status: res.status, headers });
   });
 
-  createWindow();
+  // Started by Windows at sign-in: stay in the notification area until the user opens Kea.
+  if (startHidden && backgroundWanted() && !pendingOpen.length) ensureTray();
+  else createWindow();
+  applyLoginItem();
+  settings.onChange(applyLoginItem);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -289,12 +339,14 @@ app.on('open-file', (e, filePath) => {
 // Anything that quits the app (updates, shutdown) must not be blocked by the unsaved-work prompt.
 app.on('before-quit', () => {
   allowClose = true;
+  // Lets the hidden class-site window close too (it normally only hides).
+  global.keaQuitting = true;
   // Don't leave a voice talking after Kea closes.
   require('./tts.cjs').stop();
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin' && !backgroundWanted()) app.quit();
 });
 
 // ---------- Recent files ----------

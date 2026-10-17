@@ -2097,5 +2097,52 @@ def study_pdf_preview_cmd(
                 paths.append(str(path))
     print(json.dumps(paths))
 
+
+@app.command("doc-text")
+def doc_text_cmd(
+    path: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+) -> None:
+    """Write a downloaded PDF's or Word file's text next to it as `<file>.txt`,
+    one `--- page N ---` marker per PDF page, and print a JSON summary. Read
+    that text file instead of the PDF: reading a PDF directly sends every page
+    as a picture, which is many times larger. Pages with no text (a scanned
+    handout) are rendered to `<file>.page-N.png`, the only pages worth
+    viewing as images."""
+    suffix = path.suffix.lower()
+    out = path.with_name(path.name + ".txt")
+    images: list[str] = []
+    pages = 0
+    if suffix == ".pdf":
+        import pymupdf
+
+        parts = []
+        with pymupdf.open(path) as doc:
+            pages = doc.page_count
+            for i, page in enumerate(doc, start=1):
+                text = page.get_text("text").strip()
+                if len(text) < 20:
+                    img = path.with_name(f"{path.name}.page-{i}.png")
+                    page.get_pixmap(dpi=110).save(img)
+                    images.append(str(img))
+                    text = f"(no text on this page: view {img.name})"
+                parts.append(f"--- page {i} ---\n{text}")
+        out.write_text("\n\n".join(parts), encoding="utf-8")
+    elif suffix == ".docx":
+        import docx
+
+        d = docx.Document(str(path))
+        lines = [p.text for p in d.paragraphs]
+        for table in d.tables:
+            for row in table.rows:
+                cells = [c.text.strip().replace("\n", " ") for c in row.cells]
+                lines.append(" | ".join(cells))
+        out.write_text("\n".join(lines).strip(), encoding="utf-8")
+    else:
+        console.print("[red]doc-text reads .pdf and .docx files.[/red]")
+        raise typer.Exit(code=1)
+    text = out.read_text(encoding="utf-8")
+    print(json.dumps({"text_file": str(out), "pages": pages, "chars": len(text), "pages_without_text": images}))
+
+
 if __name__ == "__main__":
     app()

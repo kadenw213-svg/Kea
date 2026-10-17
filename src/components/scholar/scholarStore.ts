@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { useTabs } from '../../store';
 
 /** What the Scholar tab shows. */
-export type ScholarView = { name: 'week' } | { name: 'calendar' } | { name: 'class'; courseId: string } | { name: 'library' } | { name: 'add' } | { name: 'scans' };
+export type ScholarView = { name: 'week' } | { name: 'inbox' } | { name: 'calendar' } | { name: 'class'; courseId: string } | { name: 'library' } | { name: 'add' } | { name: 'scans' };
 
 interface ScholarStore {
   view: ScholarView;
