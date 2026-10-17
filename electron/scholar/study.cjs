@@ -214,7 +214,9 @@ async function fetchSheets(req, nums, docText, step) {
         const r = await browser.download(directUrl(url), `${req.course.code}/review/${name}.download`);
         const full = path.join(ws, r.saved);
         const head = fs.readFileSync(full).subarray(0, 5).toString('latin1');
-        const ext = head.startsWith('%PDF') ? 'pdf' : head.startsWith('PK') ? 'docx' : /html/i.test(r.contentType) ? 'html' : null;
+        // (An HTML answer is a D2L page topic, unless it's the sign-in page.)
+        const page = /html/i.test(r.contentType) && !/type=["']?password|sign in|log in/i.test(fs.readFileSync(full, 'utf8'));
+        const ext = head.startsWith('%PDF') ? 'pdf' : head.startsWith('PK') ? 'docx' : page ? 'html' : null;
         if (!ext) {
           fs.rmSync(full, { force: true });
           continue;
