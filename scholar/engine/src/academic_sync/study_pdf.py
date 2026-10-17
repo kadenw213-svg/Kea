@@ -215,6 +215,25 @@ def missing_banners(session: Session, course_id: str | None = None) -> list[tupl
     return out
 
 
+ONLY_FILE = "kea-only.json"
+
+
+def remember_only(work: Path, labels: list[str]) -> None:
+    """Kea: the chapters this week's PDF writes (the week's others already
+    have PDFs), so check/build/record use them even when called without
+    --only."""
+    work.mkdir(parents=True, exist_ok=True)
+    (work / ONLY_FILE).write_text(json.dumps(labels), encoding="utf-8")
+
+
+def remembered_only(work: Path) -> list[str] | None:
+    try:
+        labels = json.loads((work / ONLY_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return [str(x) for x in labels] if isinstance(labels, list) and labels else None
+
+
 def topic_summary(session: Session, course_id: str, label: str) -> str | None:
     row = repository.find_chapter_topic(session, course_id, label)
     return getattr(row, "summary", None) if row else None
@@ -349,6 +368,7 @@ def build_bundle(session: Session, banner: AcademicItem,
             "summary": topic_summary(session, course.id, label) if label else None,
         })
     if write_only is not None:
+        remember_only(work_dir(course, banner), write_only)
         keep = {canonicalize_chapter_label(x) for x in write_only}
         chapters = [c for c in chapters if c["label"] and canonicalize_chapter_label(c["label"]) in keep]
         segments = [(label, text) for label, text in segments
@@ -376,11 +396,16 @@ def build_bundle(session: Session, banner: AcademicItem,
     }
 
 
-def week_terms(session: Session, banner: AcademicItem) -> list[str]:
-    """Every vocabulary term saved for the banner's chapters."""
+def week_terms(session: Session, banner: AcademicItem,
+               only: list[str] | None = None) -> list[str]:
+    """Every vocabulary term saved for the banner's chapters (or just
+    `only`, the chapters this week's PDF writes)."""
     topics = _topics_by_label(session, banner.course_id)
+    keep = {canonicalize_chapter_label(x) for x in only} if only else None
     terms: list[str] = []
     for label, _ in week_segments(session, banner):
+        if keep is not None and (not label or canonicalize_chapter_label(label) not in keep):
+            continue
         topic = topics.get(canonicalize_chapter_label(label)) if label else None
         if topic:
             terms.extend(t for t in vocab_terms(topic) if t not in terms)
@@ -417,14 +442,15 @@ def get_record(session: Session, banner_id: str) -> StudyPdfRow | None:
 
 
 def record(session: Session, banner: AcademicItem, *, file_path: Path | None,
-           source_path: Path | None, pages: int | None, skipped_reason: str | None) -> None:
+           source_path: Path | None, pages: int | None, skipped_reason: str | None,
+           chapters: list[str] | None = None) -> None:
     assert banner.date is not None
     row = get_record(session, banner.id)
     if row is None:
         row = StudyPdfRow(course_id=banner.course_id, banner_item_id=banner.id,
                           week_start=banner.date)
         session.add(row)
-    row.chapters_json = [label for label, _ in week_segments(session, banner) if label]
+    row.chapters_json = chapters or [label for label, _ in week_segments(session, banner) if label]
     row.file_path = str(file_path) if file_path else None
     row.source_path = str(source_path) if source_path else None
     row.page_count = pages

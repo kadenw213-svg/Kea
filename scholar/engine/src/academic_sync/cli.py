@@ -1998,6 +1998,12 @@ def chapter_summary_set_cmd(
     print(json.dumps({"ok": True, "chapter": chapter}))
 
 
+def _study_work(session, banner_item) -> Path:  # type: ignore[no-untyped-def]
+    course = repository.get_course(session, banner_item.course_id)
+    assert course is not None
+    return study_pdf_mod.work_dir(course, banner_item)
+
+
 def _study_source(session, banner_item, source: Path | None) -> Path:  # type: ignore[no-untyped-def]
     if source is not None:
         return source
@@ -2018,7 +2024,8 @@ def study_pdf_check_cmd(
     with session_scope() as session:
         item = _banner_or_exit(session, banner)
         path = _study_source(session, item, source)
-        terms = study_pdf_mod.week_terms(session, item)
+        only = study_pdf_mod.remembered_only(_study_work(session, item))
+        terms = study_pdf_mod.week_terms(session, item, only)
     missing = study_pdf_mod.missing_terms(path.read_text(encoding="utf-8"), terms)
     print(json.dumps({"terms": len(terms), "missing": missing}))
     if missing:
@@ -2042,12 +2049,15 @@ def study_pdf_build_cmd(
     with session_scope() as session:
         item = _banner_or_exit(session, banner)
         path = _study_source(session, item, source)
-        terms = study_pdf_mod.week_terms(session, item)
+        # Kea's missing-chapters mode: only the chapters chosen for this week
+        # (remembered by study-pdf-due --only) are named, checked and recorded.
+        only = study_pdf_mod.remembered_only(_study_work(session, item))
+        terms = study_pdf_mod.week_terms(session, item, only)
         missing = study_pdf_mod.missing_terms(path.read_text(encoding="utf-8"), terms)
         if missing and not allow_missing:
             print(json.dumps({"built": False, "missing": missing}))
             raise typer.Exit(code=1)
-        bundle = study_pdf_mod.build_bundle(session, item)
+        bundle = study_pdf_mod.build_bundle(session, item, only)
         output = Path(bundle["output_path"])
         try:
             pages = study_pdf_mod.compile_pdf(path, output)
@@ -2055,7 +2065,7 @@ def study_pdf_build_cmd(
             print(json.dumps({"built": False, "error": str(exc)}))
             raise typer.Exit(code=1) from exc
         study_pdf_mod.record(session, item, file_path=output, source_path=path,
-                             pages=pages, skipped_reason=None)
+                             pages=pages, skipped_reason=None, chapters=only)
     warning = None
     if pages < study_pdf_mod.MIN_PAGES or pages > study_pdf_mod.MAX_PAGES:
         warning = f"{pages} pages; target is 10-15"
