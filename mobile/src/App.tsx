@@ -481,9 +481,12 @@ function Scan({ data }: { data: KeaData }) {
   );
 }
 
+const TEST = new Set(['exam', 'final_exam', 'lab_practical', 'quiz']);
+
 function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): void }) {
   const quick = primaryLink(it);
   const instructions = [it.description, it.sourceWording].find((t) => t && t.trim() !== it.title.trim()) || '';
+  const format = it.studyFocus.find((f) => /^(exam |test |quiz )?format\b/i.test(f));
   return (
     <div className="sheet-bg" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ borderTopColor: typeColor(it.type) }}>
@@ -505,6 +508,7 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           {whenOf(it) ? `, ${whenOf(it).toLowerCase()}` : ''}
           {it.location ? ` · ${it.location}` : ''}
         </p>
+        {format && <p className="muted small">{format.replace(/^(exam |test |quiz )?format:\s*/i, 'Format: ')}</p>}
         <div className="actions">
           {TODO.has(it.type) && (
             <button className="btn" onClick={() => ctx.toggle(it)}>
@@ -519,24 +523,18 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
         </div>
         {it.readings.length > 0 && (
           <>
-            <h2>Reading</h2>
+            <h2>{TEST.has(it.type) ? 'Covers' : 'Reading'}</h2>
             {it.readings.map((r) => (
               <button key={r.chapter} className="card link" disabled={!r.pdf} onClick={() => r.pdf && Kea.openFile({ path: r.pdf.file }).catch(alertLine)}>
-                <BookOpen size={16} /> {r.chapter}
-                {r.title ? `: ${r.title}` : ''}
-                {!r.pdf && <span className="muted small"> (not written yet)</span>}
+                <BookOpen size={16} />
+                <span>
+                  {r.chapter}
+                  {r.title ? `: ${r.title}` : ''}
+                  {!r.pdf && <span className="muted small"> (being written)</span>}
+                  {r.summary && <span className="muted small block">{r.summary}</span>}
+                </span>
               </button>
             ))}
-          </>
-        )}
-        {it.studyFocus.length > 0 && (
-          <>
-            <h2>Study</h2>
-            <ul>
-              {it.studyFocus.map((f) => (
-                <li key={f}>{f}</li>
-              ))}
-            </ul>
           </>
         )}
         {instructions && (

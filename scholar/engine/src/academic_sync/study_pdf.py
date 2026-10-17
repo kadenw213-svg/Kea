@@ -21,7 +21,7 @@ import shutil
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -166,6 +166,69 @@ def due_banners(session: Session, today: date, lookahead_days: int = 3,
     return [i for i in items if i is not None]
 
 
+def chapters_in_pdfs(session: Session, course_id: str) -> dict[str, list[str]]:
+    """Every chapter that already has a built study PDF, any week, with the
+    file names it's in."""
+    out: dict[str, list[str]] = {}
+    for row in session.scalars(select(StudyPdfRow).where(
+            StudyPdfRow.course_id == course_id, StudyPdfRow.file_path.is_not(None))):
+        for label in row.chapters_json:
+            out.setdefault(canonicalize_chapter_label(label), []).append(Path(row.file_path or "").name)
+    return out
+
+
+def missing_banners(session: Session, course_id: str | None = None) -> list[tuple[AcademicItem, list[str]]]:
+    """Kea: every saved chapter with no study PDF yet, whatever its date, as
+    the first unbuilt banner that teaches it -- (banner, chapters to write).
+    A chapter spanning several weeks is claimed by its first week only, so
+    each chapter is written once."""
+    done = set(session.scalars(select(StudyPdfRow.banner_item_id)))
+    query = select(AcademicItemRow.id).where(
+        AcademicItemRow.item_type == ItemType.WEEKLY_READING.value,
+        AcademicItemRow.status.not_in(_INACTIVE),
+        AcademicItemRow.date.is_not(None),
+    )
+    if course_id:
+        query = query.where(AcademicItemRow.course_id == course_id)
+    out: list[tuple[AcademicItem, list[str]]] = []
+    claimed: dict[str, set[str]] = {}
+    built: dict[str, dict[str, list[str]]] = {}
+    for item_id in session.scalars(query.order_by(AcademicItemRow.date)).all():
+        if item_id in done:
+            continue
+        banner = repository.get_academic_item(session, item_id)
+        if banner is None:
+            continue
+        cid = banner.course_id
+        if cid not in built:
+            built[cid] = chapters_in_pdfs(session, cid)
+            claimed[cid] = set()
+        topics = _topics_by_label(session, cid)
+        new: list[str] = []
+        for label, _ in week_segments(session, banner):
+            key = canonicalize_chapter_label(label) if label else None
+            if key and key in topics and key not in built[cid] and key not in claimed[cid] and label not in new:
+                new.append(label)
+        if new:
+            claimed[cid].update(canonicalize_chapter_label(x) for x in new)
+            out.append((banner, new))
+    return out
+
+
+def topic_summary(session: Session, course_id: str, label: str) -> str | None:
+    row = repository.find_chapter_topic(session, course_id, label)
+    return getattr(row, "summary", None) if row else None
+
+
+def set_topic_summary(session: Session, course_id: str, label: str, summary: str) -> bool:
+    row = repository.find_chapter_topic(session, course_id, label)
+    if row is None:
+        return False
+    row.summary = summary.strip()
+    session.flush()
+    return True
+
+
 def _topics_by_label(session: Session, course_id: str) -> dict[str, ChapterTopic]:
     return {
         canonicalize_chapter_label(t.chapter_label): t
@@ -206,7 +269,7 @@ def _week_items(session: Session, banner: AcademicItem) -> list[AcademicItem]:
         (i for i in repository.list_items_for_course(session, banner.course_id)
          if _active(i) and i.item_type not in _SKIP_TYPES
          and i.date is not None and start <= i.date <= end),
-        key=lambda i: (i.date, i.start_time or i.due_time or date.min),
+        key=lambda i: (i.date, i.start_time or i.due_time or time.min),
     )
 
 
@@ -256,8 +319,11 @@ def week_display(banner: AcademicItem) -> str:
     return f"{start:%b} {start.day} - {end:%b} {end.day}, {end.year}"
 
 
-def build_bundle(session: Session, banner: AcademicItem) -> dict[str, Any]:
-    """Everything the writer needs for one week, as plain JSON."""
+def build_bundle(session: Session, banner: AcademicItem,
+                 write_only: list[str] | None = None) -> dict[str, Any]:
+    """Everything the writer needs for one week, as plain JSON. With
+    `write_only` (Kea's missing-chapters mode), only those chapters are
+    written: the others already have PDFs, from any week."""
     course = repository.get_course(session, banner.course_id)
     assert course is not None and banner.date is not None
     topics = _topics_by_label(session, course.id)
@@ -280,7 +346,13 @@ def build_bundle(session: Session, banner: AcademicItem) -> dict[str, Any]:
             "added_objectives": topic.added_objectives if topic else [],
             "reading_url": topic.reading_url if topic else None,
             "already_in_pdfs": covered.get(canonicalize_chapter_label(label), []) if label else [],
+            "summary": topic_summary(session, course.id, label) if label else None,
         })
+    if write_only is not None:
+        keep = {canonicalize_chapter_label(x) for x in write_only}
+        chapters = [c for c in chapters if c["label"] and canonicalize_chapter_label(c["label"]) in keep]
+        segments = [(label, text) for label, text in segments
+                    if label and canonicalize_chapter_label(label) in keep]
     filename = pdf_filename(segments, topics)
     wd = work_dir(course, banner)
     return {
@@ -298,6 +370,9 @@ def build_bundle(session: Session, banner: AcademicItem) -> dict[str, Any]:
         "output_path": str(default_output_dir() / course.course_code / filename),
         "work_dir": str(wd),
         "source_path": str(wd / "main.typ"),
+        # Kea: a week already over gets no "This Week" section (its dates are history).
+        "week_is_past": (banner.date_range_end or banner.date) < date.today(),
+        "write_only": write_only,
     }
 
 

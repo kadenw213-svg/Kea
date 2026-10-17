@@ -26,7 +26,10 @@ const TASKS = {
     label: 'Connection test'
   },
   // This week's textbook chapters (no class site needed; open educational sources for figures and checking facts).
-  study: { prompt: (arg) => `/weekly-study-pdf ${arg || ''}`.trim(), tools: [...BASE, 'WebFetch', 'WebSearch', 'mcp__kea__kea_progress', 'mcp__kea__kea_notify'], label: 'Writing textbook chapters' }
+  study: { prompt: (arg) => `/weekly-study-pdf ${arg || ''}`.trim(), tools: [...BASE, 'WebFetch', 'WebSearch', 'mcp__kea__kea_progress', 'mcp__kea__kea_notify'], label: 'Writing textbook chapters' },
+  // A practice exam or flashcard deck the student asked for: Kea's saved material, plus the review sheets the test links
+  // to (downloaded once; their text is kept for next time). Nothing else from the class site.
+  practice: { prompt: (arg) => require('./study.cjs').prompt(arg), tools: [...BASE, 'mcp__kea__kea_progress', 'mcp__kea__d2l_download', 'mcp__kea__d2l_status'], label: 'Making study material' }
 };
 
 // ---------- Plain-code steps before a run (no Claude usage) ----------
@@ -82,15 +85,30 @@ TASKS.sync.pre = async (job) => {
   return { split: codes, summary: `Updating ${codes.length} classes, one at a time: ${codes.join(', ')}.` };
 };
 
+// Every chapter gets written, not only the coming week's: with no argument (the daily schedule) or `missing [CODE]`
+// (after a class's first scan, or the Textbook tab's button), each chapter with no textbook yet is written in the first
+// week that teaches it, one week per run; then the weeks starting soon (reviews before tests).
 TASKS.study.pre = async (job, step) => {
-  if (job.arg.trim()) return {};
-  step('Checking which weeks need a textbook chapter…');
-  const due = await engineJson(['study-pdf-due']).catch(() => null);
-  if (!Array.isArray(due)) return {};
-  if (!due.length) return { skip: 'Every week starting soon already has its textbook chapter.', ok: true };
-  if (due.length === 1) return { prompt: `/weekly-study-pdf ${due[0].banner_id}` };
-  const name = (b) => `${b.course?.code || b.course?.course_code || b.course || ''} ${b.week?.display || ''}`.trim();
-  return { split: due.map((b) => b.banner_id), summary: `Writing ${due.length} weeks' chapters, one at a time: ${due.map(name).join(', ')}.` };
+  const arg = job.arg.trim();
+  const m = /^missing(?:\s+(\S+))?$/.exec(arg);
+  if (arg && !m) return {};
+  step('Checking which chapters still need writing…');
+  const missing = (await engineJson(['study-pdf-due', '--missing', ...(m?.[1] ? ['--course', m[1]] : [])]).catch(() => null)) || [];
+  const due = m ? [] : (await engineJson(['study-pdf-due']).catch(() => null)) || [];
+  const runs = [
+    ...missing.map((b) => ({ b, arg: `${b.banner_id} only ${(b.write_only || []).join(', ')}` })),
+    ...due.filter((b) => !missing.some((x) => x.banner_id === b.banner_id)).map((b) => ({ b, arg: b.banner_id }))
+  ];
+  if (!runs.length) return { skip: m ? 'Every chapter already has its textbook.' : 'Every chapter already has its textbook, and every week starting soon is ready.', ok: true };
+  if (runs.length === 1) return { prompt: `/weekly-study-pdf ${runs[0].arg}` };
+  const chapters = missing.reduce((n, b) => n + (b.write_only || []).length, 0);
+  return { split: runs.map((r) => r.arg), summary: `Writing ${chapters ? `${chapters} chapter${chapters === 1 ? '' : 's'}` : `${runs.length} weeks' chapters`}, one week at a time.` };
+};
+
+TASKS.practice.pre = async (job, step) => {
+  const study = require('./study.cjs');
+  step('Gathering the chapters, review sheets and what the test covers…');
+  return { prompt: study.prompt(job.arg), after: (ok) => study.ingest(job.arg, ok) };
 };
 
 /** A downloaded PDF or Word file's text, written next to it by the engine (`doc-text`). */
@@ -282,7 +300,13 @@ async function next() {
       }
     });
     child.stderr.on('data', (d) => out.write(d));
-    child.on('error', (err) => (out.end(), finish(false, `Couldn’t start Claude Code: ${err.message}`)));
+    child.on('error', (err) => {
+      out.end();
+      try {
+        after?.(false);
+      } catch {}
+      finish(false, `Couldn’t start Claude Code: ${err.message}`);
+    });
     child.on('close', (code) => {
       out.write(`\n=== exit ${code} ===\n`);
       out.end();
@@ -300,8 +324,15 @@ async function next() {
         try {
           after?.(true);
         } catch {}
+        // A class's first scan is followed by its whole textbook (one week per run).
+        if (job.task === 'import' && job.arg.trim() && !/\bresume\b/.test(job.arg) && settings().get('scholar.studyPdfs', true) !== false) run('study', `missing ${job.arg.trim().split(/\s+/)[0]}`, job.why);
         finish(true, text.trim().slice(0, 4000) || 'Done.');
-      } else finish(false, result?.result ? String(result.result).slice(0, 2000) : code === null ? 'Stopped.' : `The scan ended early (code ${code}). Details are in the scan log.`);
+      } else {
+        try {
+          after?.(false);
+        } catch {}
+        finish(false, result?.result ? String(result.result).slice(0, 2000) : code === null ? 'Stopped.' : `The scan ended early (code ${code}). Details are in the scan log.`);
+      }
     });
   } catch (err) {
     finish(false, String(err?.message || err));

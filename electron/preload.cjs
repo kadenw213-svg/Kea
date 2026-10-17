@@ -81,6 +81,12 @@ contextBridge.exposeInMainWorld('api', {
     handIn: (ou, folderId, file) => ipcRenderer.invoke('scholar:handIn', ou, folderId, file),
     openLink: (url) => ipcRenderer.invoke('scholar:openLink', url),
     resume: (task) => ipcRenderer.invoke('scholar:resume', task),
+    studyList: () => ipcRenderer.invoke('scholar:studyList'),
+    studyGet: (id) => ipcRenderer.invoke('scholar:studyGet', id),
+    studyMake: (req) => ipcRenderer.invoke('scholar:studyMake', req),
+    studyDelete: (id) => ipcRenderer.invoke('scholar:studyDelete', id),
+    studyAttempt: (id, a) => ipcRenderer.invoke('scholar:studyAttempt', id, a),
+    studyKnown: (id, known) => ipcRenderer.invoke('scholar:studyKnown', id, known),
     onResume: (cb) => {
       const h = (_e, p) => cb(p);
       ipcRenderer.on('scholar:resume', h);

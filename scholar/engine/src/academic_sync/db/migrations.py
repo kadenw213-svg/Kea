@@ -296,6 +296,14 @@ def _0019_add_study_pdfs_table(session: Session) -> None:
     pass
 
 
+def _0020_add_chapter_summary(session: Session) -> None:
+    # 2026-10-16 (Kea): a short student-facing chapter description, written
+    # with the chapter's study PDF. Additive column only.
+    topics = {row[1] for row in session.execute(text("PRAGMA table_info(chapter_topics)"))}
+    if "summary" not in topics:
+        session.execute(text("ALTER TABLE chapter_topics ADD COLUMN summary VARCHAR"))
+
+
 MIGRATIONS: list[MigrationFn] = [
     _0001_initial_schema,
     _0002_add_item_reference_urls,
@@ -316,6 +324,7 @@ MIGRATIONS: list[MigrationFn] = [
     _0017_add_daily_digest_tables,
     _0018_add_study_depth_fields,
     _0019_add_study_pdfs_table,
+    _0020_add_chapter_summary,
 ]
 
 

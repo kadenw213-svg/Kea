@@ -517,3 +517,8 @@ b.low {
   color: var(--text-3);
   margin: 12px 0 4px;
 }
+
+.block {
+  display: block;
+  margin-top: 2px;
+}

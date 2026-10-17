@@ -121,6 +121,15 @@ export interface KeaApi {
     signInClaude(): Promise<ClaudeAccount>;
     setupEngine(): Promise<boolean>;
     run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe', arg?: string): Promise<boolean>;
+    /** Practice exams and flashcard decks, newest first. */
+    studyList(): Promise<StudySet[]>;
+    /** One set with its questions or cards. */
+    studyGet(id: string): Promise<StudySetFull | null>;
+    /** Ask Claude for a new set (for a test or assignment, or for chapters). Resolves with its id once queued. */
+    studyMake(req: { kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number }): Promise<string>;
+    studyDelete(id: string): Promise<boolean>;
+    studyAttempt(id: string, a: { score: number; total: number; n: number }): Promise<boolean>;
+    studyKnown(id: string, known: number[]): Promise<boolean>;
     stop(): Promise<boolean>;
     runStatus(): Promise<{ running: ScholarRun | null; queued: { task: string; arg: string }[] }>;
     activity(): Promise<ScholarRun[]>;
@@ -392,9 +401,44 @@ export interface ProfileList {
   active: string;
   list: { id: string; name: string; created: string }[];
 }
+export type StudyKind = 'exam' | 'cards';
+export interface StudySet {
+  id: string;
+  kind: StudyKind;
+  title: string;
+  courseId: string;
+  courseCode: string;
+  chapters: string[];
+  itemId: string | null;
+  itemTitle: string | null;
+  count: number;
+  createdAt: string;
+  status: 'making' | 'ready' | 'failed';
+  source: 'claude' | 'library';
+  error?: string;
+  attempts: number;
+  /** Best score as a fraction (0–1), or null before any attempt. */
+  best: number | null;
+  last: { at: string; score: number; total: number; n: number } | null;
+  known: number;
+}
+export type StudyQuestion =
+  | { type: 'mc'; q: string; choices: string[]; answer: number; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  | { type: 'multi'; q: string; choices: string[]; answer: number[]; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  | { type: 'tf'; q: string; answer: boolean; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  | { type: 'num'; q: string; answer: number; tolerance: number; unit: string | null; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  | { type: 'short'; q: string; answer: string; explain: string; chapter: string | null; topic: string | null; source: string | null };
+export interface StudyCard {
+  front: string;
+  back: string;
+  chapter: string | null;
+}
+export type StudySetFull = Omit<StudySet, 'known' | 'attempts' | 'best' | 'last'> & { questions?: StudyQuestion[]; cards?: StudyCard[]; known: number[] };
 export interface ScholarReading {
   chapter: string;
   title: string | null;
+  /** A two-or-three-sentence description of the chapter. */
+  summary?: string | null;
   /** The chapter's study PDF in the class textbook, when one has been made. */
   pdf: { file: string; pages: number | null; title: string } | null;
 }
@@ -454,6 +498,7 @@ export interface ScholarCourse {
 export interface ScholarChapter {
   label: string;
   title: string | null;
+  summary: string | null;
   sections: string[];
   objectives: string[];
   vocabulary: string;

@@ -272,6 +272,7 @@
 }
 .sch-nopdf {
   font-size: 12px;
+  white-space: nowrap;
 }
 
 /* Calendar */

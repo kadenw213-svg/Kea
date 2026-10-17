@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { useTabs } from '../../store';
 
 /** What the Scholar tab shows. */
-export type ScholarView = { name: 'week' } | { name: 'inbox' } | { name: 'calendar' } | { name: 'class'; courseId: string } | { name: 'library' } | { name: 'add' } | { name: 'scans' };
+export type ScholarView = { name: 'week' } | { name: 'inbox' } | { name: 'calendar' } | { name: 'class'; courseId: string } | { name: 'library' } | { name: 'add' } | { name: 'scans' } | { name: 'resources' };
 
 interface ScholarStore {
   view: ScholarView;
@@ -10,6 +10,8 @@ interface ScholarStore {
   itemId: string | null;
   /** Bumped when classes change (after a scan or a checkmark), so views reload. */
   version: number;
+  /** The practice exam or flashcard deck being taken, if any. */
+  study: string | null;
   set(p: Partial<ScholarStore>): void;
 }
 
@@ -17,6 +19,7 @@ export const useScholar = create<ScholarStore>((set) => ({
   view: { name: 'week' },
   itemId: null,
   version: 0,
+  study: null,
   set: (p) => set(p)
 }));
 

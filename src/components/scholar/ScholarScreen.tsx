@@ -27,7 +27,8 @@ import {
   RefreshCw,
   RotateCcw,
   Clock,
-  Award
+  Award,
+  Layers
 } from 'lucide-react';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
 import { openPaths } from '../../lib/open';
@@ -38,6 +39,7 @@ import { useScholar, reloadScholar, ScholarView } from './scholarStore';
 import { MenuButton } from '../Popover';
 import { SetupWizard, ScansView } from './Setup';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, setClassColor, setTypeColor, useColors } from './kinds';
+import { PracticeBox, ResourcesView, StudyPlayer } from './Study';
 import '../../styles/scholar.css';
 
 // ---------- Dates ----------
@@ -112,7 +114,7 @@ async function openReading(r: ScholarReading) {
 
 // ---------- The screen ----------
 export function ScholarScreen() {
-  const { view, version, set } = useScholar();
+  const { view, version, set, study } = useScholar();
   const [profiles, setProfiles] = useState<ProfileList | null>(null);
   const [hasData, setHasData] = useState<boolean | null>(null);
   const [courses, setCourses] = useState<ScholarCourse[]>([]);
@@ -175,7 +177,7 @@ export function ScholarScreen() {
       <div className="center-fill">
         <div className="spinner" />
       </div>
-    ) : (!hasData && !['scans', 'library', 'inbox'].includes(view.name)) || view.name === 'add' ? (
+    ) : (!hasData && !['scans', 'library', 'inbox', 'resources'].includes(view.name)) || view.name === 'add' ? (
       <AddClass first={!hasData} />
     ) : view.name === 'inbox' ? (
       <InboxView ctx={ctx} />
@@ -185,6 +187,8 @@ export function ScholarScreen() {
       <ClassView ctx={ctx} courseId={view.courseId} />
     ) : view.name === 'library' ? (
       <LibraryView />
+    ) : view.name === 'resources' ? (
+      <ResourcesView courses={courses} />
     ) : view.name === 'scans' ? (
       <ScansView />
     ) : (
@@ -233,6 +237,9 @@ export function ScholarScreen() {
         <button className={`sch-link ${view.name === 'calendar' ? 'on' : ''}`} onClick={() => go({ name: 'calendar' })} disabled={!hasData}>
           <CalendarDays size={17} /> Calendar
         </button>
+        <button className={`sch-link ${view.name === 'resources' ? 'on' : ''}`} onClick={() => go({ name: 'resources' })} disabled={!hasData}>
+          <Layers size={17} /> My resources
+        </button>
         <div className="sch-head">Classes</div>
         {courses.map((c) => (
           <button key={c.id} className={`sch-link sch-course ${view.name === 'class' && view.courseId === c.id ? 'on' : ''}`} onClick={() => go({ name: 'class', courseId: c.id })} title={c.name}>
@@ -260,6 +267,7 @@ export function ScholarScreen() {
       </nav>
       <main className="sch-main">{main}</main>
       {item && <ItemPanel ctx={ctx} item={item} onClose={() => setItem(null)} />}
+      {study && <StudyPlayer id={study} onClose={() => set({ study: null })} />}
     </div>
   );
 }
@@ -498,7 +506,7 @@ function ReadingCard({ ctx, b, showCourse = true }: { ctx: Ctx; b: ScholarItem; 
                 <b>{r.chapter}</b>
                 {r.title ? `: ${r.title}` : ''}
               </span>
-              {!r.pdf && <span className="muted sch-nopdf">No textbook chapter yet</span>}
+              {!r.pdf && <span className="muted sch-nopdf">Textbook chapter being written</span>}
             </span>
             {r.pdf && (
               <button
@@ -961,7 +969,7 @@ function ClassView({ ctx, courseId }: { ctx: Ctx; courseId: string }) {
             ['textbook', 'Textbook'],
             ['calendar', 'Calendar'],
             ['grades', 'Grades'],
-            ['study', 'Study']
+            ['study', 'Practice']
           ] as const
         ).map(([id, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
@@ -1042,13 +1050,7 @@ function ClassView({ ctx, courseId }: { ctx: Ctx; courseId: string }) {
           </div>
         ))}
       {tab === 'calendar' && <CalendarView ctx={ctx} courseId={c.id} />}
-      {tab === 'study' && (
-        <div className="sch-empty">
-          <Lock size={26} />
-          <div>Flashcards, practice quizzes and chapter reviews for this class are coming soon.</div>
-          <div className="muted">They're written from your class's own chapters and what its tests cover, once your Claude account is connected.</div>
-        </div>
-      )}
+      {tab === 'study' && <ResourcesView courses={ctx.courses} courseId={c.id} />}
     </div>
   );
 }
@@ -1068,11 +1070,8 @@ function Textbook({ c }: { c: ScholarCourseDetail }) {
                 {ch.label}
                 {ch.title ? `: ${ch.title}` : ''}
               </div>
-              <div className="muted tb-meta">
-                {ch.pdf ? `${ch.pdf.pages || '?'} pages` : 'Not written yet'}
-                {ch.sections.length ? ` · ${ch.sections.length} sections` : ''}
-                {ch.objectives.length ? ` · ${ch.objectives.length} objectives` : ''}
-              </div>
+              {ch.summary && <div className="rd-summary">{ch.summary}</div>}
+              <div className="muted tb-meta">{ch.pdf ? `${ch.pdf.pages || '?'} pages` : 'Being written'}</div>
             </div>
             {ch.pdf && (
               <button
@@ -1088,37 +1087,12 @@ function Textbook({ c }: { c: ScholarCourseDetail }) {
           </div>
           {open === ch.label && (
             <div className="tb-detail">
-              {ch.sections.length > 0 && (
-                <>
-                  <div className="tb-h">Sections</div>
-                  <ul>
-                    {ch.sections.map((s) => (
-                      <li key={s}>{s}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              {ch.objectives.length > 0 && (
-                <>
-                  <div className="tb-h">What to know</div>
-                  <ul>
-                    {ch.objectives.map((o) => (
-                      <li key={o}>{o}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              {ch.vocabulary && (
-                <>
-                  <div className="tb-h">Key terms</div>
-                  <p>{ch.vocabulary}</p>
-                </>
-              )}
               {ch.readingUrl && (
                 <button className="btn sm" onClick={() => openLink(ch.readingUrl!)}>
                   <ExternalLink size={13} /> {ch.readingLabel || 'Class reading'}
                 </button>
               )}
+              <PracticeBox courseId={c.id} chapters={[ch.label]} title={`Practice ${ch.label}`} />
             </div>
           )}
         </div>
@@ -1132,6 +1106,10 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
   const links = useMemo(() => [...it.links, ...it.weeklyLinks], [it]);
   // (Some items' only description is their own title: nothing more to say.)
   const instructions = [it.description, it.sourceWording].find((t) => t && t.trim() !== it.title.trim()) || '';
+  // What a test is like ("Exam format: essay, multiple choice…"); the rest of its study focus stays internal and goes
+  // into practice exams and flashcards instead of a wall of topics here.
+  const format = it.studyFocus.find((f) => /^(exam |test |quiz )?format\b/i.test(f));
+  const practice = TEST.has(it.type) || (it.readings.length > 0 && TODO.has(it.type) && !['administrative_deadline', 'other_deadline'].includes(it.type));
   const missing = isMissing(it);
   const quick = primaryLink(it);
   const cat = categoryOf(it.type);
@@ -1211,48 +1189,31 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           </button>
         )}
       </div>
+      {format && <p className="pn-format">{format.replace(/^(exam |test |quiz )?format:\s*/i, 'Format: ')}</p>}
       {it.readings.length > 0 && (
         <section>
-          <div className="tb-h">Reading</div>
+          <div className="tb-h">{TEST.has(it.type) ? 'Covers' : 'Reading'}</div>
           {it.readings.map((r) => (
-            <div key={r.chapter} className="sch-chapter">
-              <span>
-                <b>{r.chapter}</b>
-                {r.title ? `: ${r.title}` : ''}
-              </span>
-              {r.pdf ? (
-                <button className="btn sm tonal" onClick={() => openReading(r)}>
-                  <BookOpen size={14} /> Read
-                </button>
-              ) : (
-                <span className="muted sch-nopdf">Not written yet</span>
-              )}
+            <div key={r.chapter} className="sch-reading">
+              <div className="sch-chapter">
+                <span>
+                  <b>{r.chapter}</b>
+                  {r.title ? `: ${r.title}` : ''}
+                </span>
+                {r.pdf ? (
+                  <button className="btn sm tonal" onClick={() => openReading(r)}>
+                    <BookOpen size={14} /> Read
+                  </button>
+                ) : (
+                  <span className="muted sch-nopdf">Being written</span>
+                )}
+              </div>
+              {r.summary && <div className="rd-summary">{r.summary}</div>}
             </div>
           ))}
         </section>
       )}
-      {it.covered.length > 0 && (
-        <section>
-          <div className="tb-h">Covers</div>
-          <div className="pn-tags">
-            {it.covered.map((c) => (
-              <span key={c} className="ln-tag">
-                {c}
-              </span>
-            ))}
-          </div>
-        </section>
-      )}
-      {it.studyFocus.length > 0 && (
-        <section>
-          <div className="tb-h">Study</div>
-          <ul>
-            {it.studyFocus.map((f) => (
-              <li key={f}>{f}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {practice && <PracticeBox courseId={it.courseId} itemId={it.id} />}
       {instructions && (
         <section>
           <div className="tb-h">Instructions</div>

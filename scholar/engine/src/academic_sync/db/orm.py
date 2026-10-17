@@ -189,6 +189,9 @@ class ChapterTopicRow(Base):
     reading_label: Mapped[str | None] = mapped_column(default=None)
     added_vocabulary: Mapped[str | None] = mapped_column(default=None)
     added_objectives_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # A two-or-three-sentence description of the chapter for the student (Kea
+    # shows it instead of the vocabulary/objective lists, which stay internal).
+    summary: Mapped[str | None] = mapped_column(default=None)
     source_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     source_wording: Mapped[str | None] = mapped_column(default=None)
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=_now)

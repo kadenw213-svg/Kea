@@ -68,8 +68,10 @@ function readingsFor(db, courseId, code, textbooks) {
     if (!file) continue;
     for (const ch of json(r.chapters_json, [])) pdfs.set(ch, { file, pages: r.page_count, title: path.basename(file, '.pdf') });
   }
-  const titles = new Map(rows(db, 'SELECT chapter_label, title FROM chapter_topics WHERE course_id = ?', [courseId]).map((t) => [t.chapter_label, t.title]));
-  return { pdfs, titles };
+  const topics = rows(db, 'SELECT * FROM chapter_topics WHERE course_id = ?', [courseId]);
+  const titles = new Map(topics.map((t) => [t.chapter_label, t.title]));
+  const summaries = new Map(topics.filter((t) => t.summary).map((t) => [t.chapter_label, t.summary]));
+  return { pdfs, titles, summaries };
 }
 
 /** Classes in the profile, with what's coming up. */
@@ -208,7 +210,7 @@ function itemOut(r, course, banner, readings, done, rooms, ev) {
     readings: chapters
       .filter((ch) => !readings.titles.size || readings.titles.has(ch) || readings.pdfs.has(ch))
       .sort((a, b) => chapterNumber(a) - chapterNumber(b))
-      .map((ch) => ({ chapter: ch, title: readings.titles.get(ch) || null, pdf: readings.pdfs.get(ch) || null }))
+      .map((ch) => ({ chapter: ch, title: readings.titles.get(ch) || null, summary: readings.summaries?.get(ch) || null, pdf: readings.pdfs.get(ch) || null }))
   };
 }
 
@@ -246,6 +248,7 @@ async function course(file, textbooks, done, id) {
     .map((t) => ({
       label: t.chapter_label,
       title: t.title,
+      summary: t.summary || null,
       sections: json(t.sections_json, []),
       objectives: [...json(t.objectives_json, []), ...json(t.added_objectives_json, [])],
       vocabulary: [t.vocabulary, t.added_vocabulary].filter(Boolean).join('; '),
@@ -283,4 +286,48 @@ async function watchList(file) {
   return rows(db, "SELECT course_code AS code, d2l_identifier AS ou FROM courses WHERE status = 'active' AND COALESCE(is_synthetic, 0) = 0 AND d2l_identifier IS NOT NULL AND d2l_identifier != '' ORDER BY course_code");
 }
 
-module.exports = { courses, items, course, watchList, gradesFromChecks, chaptersIn };
+/**
+ * What a practice exam or flashcard deck is written from (Kea's request to Claude): the class, the test or assignment
+ * it's for (its study focus and review documents), and each chapter's internal material: vocabulary, objectives,
+ * sections and the textbook chapter's source. The student never sees the vocabulary and objective lists; Claude uses
+ * them, with the review documents, to cover everything the course tests.
+ */
+async function practiceSources(file, textbooks, { courseId, chapters = [], itemId = null }) {
+  const db = await open(file);
+  if (!db) return null;
+  let item = null;
+  let labels = [...chapters];
+  if (itemId) {
+    const r = rows(db, 'SELECT * FROM academic_items WHERE id = ?', [itemId])[0];
+    if (r) {
+      courseId = r.course_id;
+      const c0 = rows(db, 'SELECT * FROM courses WHERE id = ?', [courseId])[0];
+      const banner = rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type = 'weekly_reading' AND ${ACTIVE} AND date <= ? AND COALESCE(date_range_end, date) >= ?`, [courseId, r.date, r.date])[0];
+      const o = itemOut(r, c0, banner, readingsFor(db, courseId, c0.course_code, textbooks), {}, null, null);
+      item = { id: o.id, title: o.title, type: o.type, date: o.date, points: o.points, description: o.description, study_focus: o.studyFocus, review_links: [...o.links, ...o.weeklyLinks].map((l) => ({ label: l.label, url: l.url })) };
+      if (!labels.length) labels = o.readings.map((x) => x.chapter);
+    }
+  }
+  const c = rows(db, 'SELECT * FROM courses WHERE id = ?', [courseId])[0];
+  if (!c) return null;
+  const sources = new Map();
+  for (const s of rows(db, 'SELECT chapters_json, source_path, file_path FROM study_pdfs WHERE course_id = ? AND source_path IS NOT NULL', [courseId]))
+    for (const ch of json(s.chapters_json, [])) if (fs.existsSync(s.source_path)) sources.set(ch, s.source_path);
+  const want = new Set(labels);
+  const out = rows(db, 'SELECT * FROM chapter_topics WHERE course_id = ?', [courseId])
+    .filter((t) => want.has(t.chapter_label))
+    .sort((a, b) => chapterNumber(a.chapter_label) - chapterNumber(b.chapter_label))
+    .map((t) => ({
+      label: t.chapter_label,
+      title: t.title,
+      summary: t.summary || null,
+      sections: json(t.sections_json, []),
+      objectives: [...json(t.objectives_json, []), ...json(t.added_objectives_json, [])],
+      vocabulary: [t.vocabulary, t.added_vocabulary].filter(Boolean).join('; '),
+      reading_url: t.reading_url || null,
+      textbook_source: sources.get(t.chapter_label) || null
+    }));
+  return { course: { id: c.id, code: c.course_code, name: c.name }, item, chapters: out };
+}
+
+module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn };

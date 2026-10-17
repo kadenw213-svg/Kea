@@ -87,6 +87,15 @@ student, not an engineer.
 textbook folder). Students read them in Kea, where highlighting a word or idea opens Wikipedia's explanation, and the
 chapter list comes from the PDF's headings. So keep one level-1 heading per chapter, named "Chapter N — Title"
 (Kea opens a reading at the heading that matches its chapter number).
+- Kea writes **every** chapter of a class (after its first scan, and daily for anything still missing), one week per
+  run, as `/weekly-study-pdf <banner id> only <chapters>`. Weeks already over get no "This Week" section.
+- Each chapter written gets a short student-facing summary (`chapter-summary-set`). Students see that summary, the
+  reading and the class's review documents. The vocabulary, objectives and study-focus lists stay internal: they feed
+  the textbook, practice exams and flashcards, and are never shown as a wall of keywords.
+
+**Study material.** `/kea-practice <request>` writes a practice exam (exam-style questions with answers) or a
+flashcard deck, all at once, from the request Kea prepared. It runs only when the student asks. Kea shuffles and
+grades it itself, offline.
 
 **Scope and safety.**
 - Only the class site, and for study PDFs, open educational sources (OpenStax, LibreTexts, Wikimedia Commons, a

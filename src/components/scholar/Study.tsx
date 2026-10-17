@@ -1,0 +1,599 @@
+// Study materials: practice exams and flashcard decks. Claude writes a whole set at once, only when the student asks;
+// Kea keeps it and shuffles, samples and grades it here, as often as the student likes, with no Claude involved.
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, ArrowRight, Check, ClipboardList, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Plus } from 'lucide-react';
+import { api, ScholarCourse, ScholarCourseDetail, StudyCard, StudyKind, StudyQuestion, StudySet, StudySetFull } from '../../lib/api';
+import { toast } from '../../store';
+import { MenuButton } from '../Popover';
+import { useScholar } from './scholarStore';
+import '../../styles/study.css';
+
+// ---------- Shared state ----------
+/** Every set, reloaded when Kea says something changed (a set finished) and while one is being made. */
+export function useStudySets() {
+  const version = useScholar((s) => s.version);
+  const [sets, setSets] = useState<StudySet[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => api.scholar.studyList().then((s) => live && setSets(s));
+    load();
+    const offs = [api.scholar.onRun(() => load()), api.scholar.onChanged(load)];
+    return () => {
+      live = false;
+      offs.forEach((f) => f());
+    };
+  }, [version]);
+  return sets;
+}
+
+/** Whether new sets can be made: Claude signed in and the engine installed (checked once per session). */
+let canMakeCache: Promise<boolean> | null = null;
+function useCanMake() {
+  const [ok, setOk] = useState<boolean | null>(null);
+  useEffect(() => {
+    canMakeCache =
+      canMakeCache ||
+      api.scholar
+        .check()
+        .then((c) => !!(c.claude && c.account?.loggedIn && c.engineReady))
+        .catch(() => false);
+    canMakeCache.then(setOk);
+  }, []);
+  return ok;
+}
+
+export const openStudySet = (id: string) => useScholar.getState().set({ study: id });
+
+const SIZES: Record<StudyKind, number[]> = { exam: [25, 50, 100], cards: [30, 60, 100] };
+const pct = (f: number | null) => (f == null ? '' : `${Math.round(f * 100)}%`);
+const madeOn = (at: string) => new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+async function make(kind: StudyKind, courseId: string, count: number, target: { itemId?: string; chapters?: string[] }) {
+  try {
+    await api.scholar.studyMake({ kind, courseId, count, ...target });
+    toast(`Making your ${kind === 'exam' ? 'practice exam' : 'flashcards'}. Kea lets you know when it's ready (usually a few minutes).`, 'success');
+  } catch (err: any) {
+    toast(err.message, 'error');
+  }
+}
+
+function MakeButton({ kind, disabled, onMake, label }: { kind: StudyKind; disabled: boolean; onMake(n: number): void; label?: string }) {
+  return (
+    <MenuButton
+      title={disabled ? 'Connect your Claude account in Scans to make study material' : undefined}
+      button={() => (
+        <button className="btn sm" disabled={disabled}>
+          {kind === 'exam' ? <ClipboardList size={14} /> : <Layers size={14} />} {label || (kind === 'exam' ? 'Practice exam' : 'Flashcards')}
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <div className="st-menu-label">{kind === 'exam' ? 'Exam-style questions, with answers' : 'Cards'}</div>
+          {SIZES[kind].map((n) => (
+            <button key={n} className="menu-item" onClick={() => (close(), onMake(n))}>
+              {n} {kind === 'exam' ? 'questions' : 'cards'}
+            </button>
+          ))}
+        </>
+      )}
+    </MenuButton>
+  );
+}
+
+function SetRow({ s, showCourse = false }: { s: StudySet; showCourse?: boolean }) {
+  const [sure, setSure] = useState(false);
+  const Icon = s.kind === 'exam' ? ClipboardList : Layers;
+  const meta =
+    s.status === 'making'
+      ? 'Being made…'
+      : s.status === 'failed'
+        ? s.error || 'Didn’t work'
+        : [
+            `${s.count} ${s.kind === 'exam' ? 'questions' : 'cards'}`,
+            `made ${madeOn(s.createdAt)}`,
+            s.kind === 'exam' && s.best != null ? `best ${pct(s.best)} (${s.attempts} tr${s.attempts === 1 ? 'y' : 'ies'})` : '',
+            s.kind === 'cards' && s.known ? `${s.known} known` : ''
+          ]
+            .filter(Boolean)
+            .join(' · ');
+  return (
+    <div className={`st-row ${s.status}`}>
+      {s.status === 'making' ? <Loader2 size={16} className="spin" /> : s.status === 'failed' ? <AlertTriangle size={16} /> : <Icon size={16} />}
+      <div className="st-text">
+        <div className="st-title">
+          {showCourse && <span className="st-code">{s.courseCode}</span>}
+          {s.itemTitle || s.title.replace(/^(Practice exam|Flashcards): /, '')}
+        </div>
+        <div className="muted st-meta">
+          {s.kind === 'exam' ? 'Practice exam' : 'Flashcards'} · {meta}
+        </div>
+      </div>
+      {s.status === 'ready' && (
+        <button className="btn sm tonal" onClick={() => openStudySet(s.id)}>
+          {s.kind === 'exam' ? 'Take' : 'Study'}
+        </button>
+      )}
+      {s.status !== 'making' &&
+        (sure ? (
+          <button className="btn sm danger" onClick={() => api.scholar.studyDelete(s.id).then(() => useScholar.getState().set({ version: useScholar.getState().version + 1 }))} onMouseLeave={() => setSure(false)}>
+            Delete?
+          </button>
+        ) : (
+          <button className="icon-btn sm" title="Delete" onClick={() => setSure(true)}>
+            <Trash2 size={14} />
+          </button>
+        ))}
+    </div>
+  );
+}
+
+/**
+ * Practice for one test or assignment, or for chapters: the sets already made for it (with scores), and buttons to make
+ * another practice exam or deck.
+ */
+export function PracticeBox({ courseId, itemId, chapters, title = 'Practice' }: { courseId: string; itemId?: string; chapters?: string[]; title?: string }) {
+  const sets = useStudySets();
+  const canMake = useCanMake();
+  const key = (chapters || []).join('|');
+  const mine = (sets || []).filter((s) => s.courseId === courseId && (itemId ? s.itemId === itemId : !s.itemId && s.chapters.join('|') === key));
+  const target = itemId ? { itemId } : { chapters };
+  return (
+    <section className="st-box">
+      <div className="tb-h">{title}</div>
+      {mine.length > 0 && (
+        <div className="st-list">
+          {mine.map((s) => (
+            <SetRow key={s.id} s={s} />
+          ))}
+        </div>
+      )}
+      <div className="st-make">
+        <MakeButton kind="exam" disabled={canMake === false} label={mine.some((s) => s.kind === 'exam') ? 'Another practice exam' : undefined} onMake={(n) => make('exam', courseId, n, target)} />
+        <MakeButton kind="cards" disabled={canMake === false} label={mine.some((s) => s.kind === 'cards') ? 'More flashcards' : undefined} onMake={(n) => make('cards', courseId, n, target)} />
+      </div>
+      {!mine.length && <div className="muted st-hint">Written once from your chapters and the class's review sheets, then shuffled into a new exam every time you take it.</div>}
+    </section>
+  );
+}
+
+// ---------- My resources ----------
+export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[]; courseId?: string }) {
+  const sets = useStudySets();
+  const [filter, setFilter] = useState<string>(courseId || '');
+  const shown = (sets || []).filter((s) => !filter || s.courseId === filter);
+  const byCourse = new Map<string, StudySet[]>();
+  for (const s of shown) byCourse.set(s.courseId, [...(byCourse.get(s.courseId) || []), s]);
+  return (
+    <div className={courseId ? '' : 'sch-page'}>
+      {!courseId && (
+        <>
+          <h1 className="sch-title">My resources</h1>
+          <p className="sch-sub">Your practice exams and flashcards. Each one is saved here: take it again any time and Kea shuffles it into a new exam.</p>
+        </>
+      )}
+      <Maker courses={courses} courseId={courseId || filter} />
+      {!courseId && courses.length > 1 && (
+        <div className="st-seg st-filter">
+          <button className={!filter ? 'on' : ''} onClick={() => setFilter('')}>
+            All
+          </button>
+          {courses.map((c) => (
+            <button key={c.id} className={filter === c.id ? 'on' : ''} onClick={() => setFilter(c.id)}>
+              {c.code}
+            </button>
+          ))}
+        </div>
+      )}
+      {sets === null ? (
+        <div className="spinner" />
+      ) : !shown.length ? (
+        <div className="sch-empty">Nothing made yet. Make a practice exam or flashcards above, or from any test or textbook chapter.</div>
+      ) : (
+        [...byCourse.entries()].map(([cid, list]) => (
+          <section key={cid}>
+            {!courseId && <h2 className="sch-h2">{courses.find((c) => c.id === cid)?.code || list[0].courseCode}</h2>}
+            <div className="st-list">
+              {list.map((s) => (
+                <SetRow key={s.id} s={s} />
+              ))}
+            </div>
+          </section>
+        ))
+      )}
+    </div>
+  );
+}
+
+/** Make a set for any chapters of a class. */
+function Maker({ courses, courseId }: { courses: ScholarCourse[]; courseId: string }) {
+  const canMake = useCanMake();
+  const [cid, setCid] = useState(courseId || courses[0]?.id || '');
+  const [detail, setDetail] = useState<ScholarCourseDetail | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  useEffect(() => setCid(courseId || courses[0]?.id || ''), [courseId, courses]);
+  useEffect(() => {
+    setPicked([]);
+    if (cid) api.scholar.course(cid).then(setDetail);
+  }, [cid]);
+  if (!courses.length) return null;
+  const toggle = (l: string) => setPicked((p) => (p.includes(l) ? p.filter((x) => x !== l) : [...p, l]));
+  return (
+    <section className="st-maker">
+      <div className="st-maker-head">
+        <Plus size={15} /> <b>Make new</b>
+        {!courseId && (
+          <select value={cid} onChange={(e) => setCid(e.target.value)}>
+            {courses.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.code}
+              </option>
+            ))}
+          </select>
+        )}
+        <span className="muted">Pick chapters:</span>
+      </div>
+      <div className="st-chips">
+        {(detail?.chapters || []).map((ch) => (
+          <button key={ch.label} className={`st-chip ${picked.includes(ch.label) ? 'on' : ''}`} onClick={() => toggle(ch.label)} title={ch.title || ''}>
+            {picked.includes(ch.label) && <Check size={12} />} {ch.label.replace('Chapter ', 'Ch ')}
+          </button>
+        ))}
+      </div>
+      <div className="st-make">
+        <MakeButton kind="exam" disabled={canMake === false || !picked.length} onMake={(n) => make('exam', cid, n, { chapters: sortLabels(picked, detail) })} />
+        <MakeButton kind="cards" disabled={canMake === false || !picked.length} onMake={(n) => make('cards', cid, n, { chapters: sortLabels(picked, detail) })} />
+        {canMake === false && <span className="muted st-hint">Making new material needs your Claude account (set it up in Scans). Saved sets work without it.</span>}
+      </div>
+    </section>
+  );
+}
+const sortLabels = (picked: string[], d: ScholarCourseDetail | null) => (d ? d.chapters.map((c) => c.label).filter((l) => picked.includes(l)) : picked);
+
+// ---------- Taking a set ----------
+export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
+  const [set, setSet] = useState<StudySetFull | null>(null);
+  useEffect(() => {
+    api.scholar.studyGet(id).then((s) => (s ? setSet(s) : onClose()));
+  }, [id]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, []);
+  return (
+    <div className="st-player">
+      <div className="st-player-head">
+        <button className="icon-btn" onClick={onClose} title="Close (Esc)">
+          <X size={18} />
+        </button>
+        <div className="st-player-title">{set?.title || ''}</div>
+      </div>
+      {!set ? <div className="spinner" /> : set.kind === 'exam' ? <Exam set={set} /> : <Cards set={set} />}
+    </div>
+  );
+}
+
+function shuffle<T>(a: T[]): T[] {
+  const b = [...a];
+  for (let i = b.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [b[i], b[j]] = [b[j], b[i]];
+  }
+  return b;
+}
+
+/** A question as shown: choices in a fresh order, with the stored answer mapped to it. */
+interface Shown {
+  q: StudyQuestion;
+  order: number[]; // shown position → original choice index
+}
+type Answer = number | number[] | boolean | string | null;
+
+function parseNumber(s: string): number | null {
+  const t = s
+    .trim()
+    .replace(/,/g, '')
+    .replace(/\s*[x×*]\s*10\s*\^\s*/i, 'e')
+    .replace(/[^\d.eE+\-]/g, '');
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Right or wrong (short answers are marked by the student: null until then). */
+function grade(s: Shown, a: Answer, self?: boolean): boolean | null {
+  const q = s.q;
+  if (q.type === 'mc') return typeof a === 'number' && s.order[a] === q.answer;
+  if (q.type === 'multi') {
+    if (!Array.isArray(a)) return false;
+    const got = a.map((i) => s.order[i]).sort();
+    return got.length === q.answer.length && got.every((x, i) => x === q.answer[i]);
+  }
+  if (q.type === 'tf') return a === q.answer;
+  if (q.type === 'num') {
+    const n = typeof a === 'string' ? parseNumber(a) : null;
+    return n != null && Math.abs(n - q.answer) <= q.tolerance + 1e-12;
+  }
+  return self ?? null;
+}
+
+function Exam({ set }: { set: StudySetFull }) {
+  const all = set.questions || [];
+  const [n, setN] = useState(Math.min(all.length, 25));
+  const [instant, setInstant] = useState(false);
+  const [run, setRun] = useState<Shown[] | null>(null);
+  const [answers, setAnswers] = useState<Answer[]>([]);
+  const [selfMarks, setSelfMarks] = useState<(boolean | undefined)[]>([]);
+  const [checked, setChecked] = useState<boolean[]>([]);
+  const [submitted, setSubmitted] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const start = () => {
+    const picked = shuffle(all).slice(0, n);
+    setRun(picked.map((q) => ({ q, order: 'choices' in q ? shuffle(q.choices.map((_, i) => i)) : [] })));
+    setAnswers(picked.map(() => null));
+    setSelfMarks([]);
+    setChecked([]);
+    setSubmitted(false);
+    setSaved(false);
+  };
+  const results = useMemo(() => (run ? run.map((s, i) => grade(s, answers[i], selfMarks[i])) : []), [run, answers, selfMarks]);
+  const score = results.filter((r) => r === true).length;
+  const unmarked = results.filter((r) => r === null).length;
+  // Save the attempt once everything is marked (short answers need the student's own mark).
+  useEffect(() => {
+    if (submitted && !saved && run && unmarked === 0) {
+      setSaved(true);
+      api.scholar.studyAttempt(set.id, { score, total: run.length, n: run.length });
+    }
+  }, [submitted, unmarked, saved]);
+
+  if (!run) {
+    const counts = [10, 25, 50, all.length].filter((x, i, a) => x <= all.length && a.indexOf(x) === i);
+    return (
+      <div className="st-setup">
+        <h2>{all.length} questions in this set</h2>
+        <p className="muted">Each practice exam takes a fresh random selection, with the choices in a new order.</p>
+        <div className="st-setup-row">
+          <span>Questions</span>
+          <div className="st-seg">
+            {counts.map((c) => (
+              <button key={c} className={n === c ? 'on' : ''} onClick={() => setN(c)}>
+                {c === all.length ? `All ${c}` : c}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="st-setup-row">
+          <span>Answers</span>
+          <div className="st-seg">
+            <button className={!instant ? 'on' : ''} onClick={() => setInstant(false)}>
+              At the end, like an exam
+            </button>
+            <button className={instant ? 'on' : ''} onClick={() => setInstant(true)}>
+              After each question
+            </button>
+          </div>
+        </div>
+        <button className="btn primary" onClick={start}>
+          Start
+        </button>
+      </div>
+    );
+  }
+
+  const setAnswer = (i: number, a: Answer) => !submitted && !checked[i] && setAnswers((p) => p.map((x, k) => (k === i ? a : x)));
+  const answered = answers.filter((a) => a !== null && a !== '' && !(Array.isArray(a) && !a.length)).length;
+  return (
+    <div className="st-exam">
+      {submitted && (
+        <div className="st-score">
+          <div className="st-score-big">{unmarked ? `${score}/${run.length - unmarked}` : `${Math.round((score / run.length) * 100)}%`}</div>
+          <div>
+            <b>
+              {score} of {run.length} right
+            </b>
+            {unmarked > 0 && <div className="muted">Mark your {unmarked} written answer{unmarked === 1 ? '' : 's'} below to finish.</div>}
+          </div>
+          <button className="btn tonal" onClick={start}>
+            <RotateCcw size={14} /> New practice exam
+          </button>
+        </div>
+      )}
+      {run.map((s, i) => (
+        <QuestionCard
+          key={i}
+          num={i + 1}
+          s={s}
+          answer={answers[i]}
+          setAnswer={(a) => setAnswer(i, a)}
+          reveal={submitted || !!checked[i]}
+          result={results[i]}
+          onSelf={(ok) => setSelfMarks((p) => {
+            const c = [...p];
+            c[i] = ok;
+            return c;
+          })}
+          onCheck={instant && !checked[i] && !submitted ? () => setChecked((p) => {
+            const c = [...p];
+            c[i] = true;
+            return c;
+          }) : undefined}
+        />
+      ))}
+      {!submitted && (
+        <div className="st-submit">
+          <span className="muted">
+            {answered} of {run.length} answered
+          </span>
+          <button className="btn primary" onClick={() => (setSubmitted(true), document.querySelector('.st-player')?.scrollTo({ top: 0, behavior: 'smooth' }))}>
+            Finish and see my score
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf, onCheck }: { num: number; s: Shown; answer: Answer; setAnswer(a: Answer): void; reveal: boolean; result: boolean | null; onSelf(ok: boolean): void; onCheck?: () => void }) {
+  const q = s.q;
+  const state = !reveal ? '' : result === true ? 'right' : result === false ? 'wrong' : 'mark';
+  return (
+    <div className={`st-q ${state}`}>
+      <div className="st-q-head">
+        <span className="st-num">{num}</span>
+        <div className="st-stem">{q.q}</div>
+      </div>
+      {(q.type === 'mc' || q.type === 'multi') && (
+        <div className="st-choices">
+          {s.order.map((orig, pos) => {
+            const on = q.type === 'mc' ? answer === pos : Array.isArray(answer) && answer.includes(pos);
+            const correct = q.type === 'mc' ? q.answer === orig : q.answer.includes(orig);
+            return (
+              <button
+                key={pos}
+                className={`st-choice ${on ? 'on' : ''} ${reveal && correct ? 'correct' : ''} ${reveal && on && !correct ? 'incorrect' : ''}`}
+                onClick={() => (q.type === 'mc' ? setAnswer(pos) : setAnswer(on ? (answer as number[]).filter((x) => x !== pos) : [...((answer as number[]) || []), pos]))}
+              >
+                <span className="st-letter">{String.fromCharCode(65 + pos)}</span>
+                <span>{q.choices[orig]}</span>
+              </button>
+            );
+          })}
+          {q.type === 'multi' && !reveal && <div className="muted st-hint">Select all that apply.</div>}
+        </div>
+      )}
+      {q.type === 'tf' && (
+        <div className="st-choices row">
+          {[true, false].map((v) => (
+            <button key={String(v)} className={`st-choice ${answer === v ? 'on' : ''} ${reveal && q.answer === v ? 'correct' : ''} ${reveal && answer === v && q.answer !== v ? 'incorrect' : ''}`} onClick={() => setAnswer(v)}>
+              {v ? 'True' : 'False'}
+            </button>
+          ))}
+        </div>
+      )}
+      {q.type === 'num' && (
+        <div className="st-num-in">
+          <input value={typeof answer === 'string' ? answer : ''} onChange={(e) => setAnswer(e.target.value)} placeholder="Your answer" disabled={reveal} inputMode="decimal" />
+          {q.unit && <span className="muted">{q.unit}</span>}
+          {reveal && (
+            <span className="st-correct-val">
+              Answer: {q.answer}
+              {q.unit ? ` ${q.unit}` : ''}
+            </span>
+          )}
+        </div>
+      )}
+      {q.type === 'short' && <textarea className="st-short" value={typeof answer === 'string' ? answer : ''} onChange={(e) => setAnswer(e.target.value)} placeholder="Write your answer" disabled={reveal} rows={3} />}
+      {onCheck && (
+        <button className="btn sm" onClick={onCheck}>
+          Check
+        </button>
+      )}
+      {reveal && (
+        <div className="st-explain">
+          {q.type === 'short' && (
+            <div className="st-model">
+              <b>Model answer:</b> {q.answer}
+            </div>
+          )}
+          <div>{q.explain}</div>
+          {q.type === 'short' && (
+            <div className="st-self">
+              <span className="muted">Did you get it?</span>
+              <button className={`btn sm ${result === true ? 'tonal' : ''}`} onClick={() => onSelf(true)}>
+                <Check size={13} /> Yes
+              </button>
+              <button className={`btn sm ${result === false ? 'tonal' : ''}`} onClick={() => onSelf(false)}>
+                <X size={13} /> No
+              </button>
+            </div>
+          )}
+          {(q.chapter || q.topic) && <div className="muted st-src">{[q.chapter, q.topic, q.source].filter(Boolean).join(' · ')}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Cards({ set }: { set: StudySetFull }) {
+  const cards = set.cards || [];
+  const [known, setKnown] = useState<number[]>(set.known || []);
+  const [onlyLearning, setOnlyLearning] = useState(false);
+  const [order, setOrder] = useState<number[]>(() => cards.map((_, i) => i));
+  const [pos, setPos] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const deck = order.filter((i) => !onlyLearning || !known.includes(i));
+  const idx = deck[Math.min(pos, deck.length - 1)];
+  const card: StudyCard | undefined = cards[idx];
+  const move = (d: number) => {
+    setFlipped(false);
+    setPos((p) => Math.max(0, Math.min(deck.length - 1, p + d)));
+  };
+  const mark = (isKnown: boolean) => {
+    const next = isKnown ? [...new Set([...known, idx])] : known.filter((x) => x !== idx);
+    setKnown(next);
+    api.scholar.studyKnown(set.id, next);
+    setFlipped(false);
+    if (!onlyLearning || !isKnown) setPos((p) => Math.min(deck.length - 1, p + 1));
+  };
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if (e.key === ' ' || e.key === 'Enter') (e.preventDefault(), setFlipped((f) => !f));
+      if (e.key === 'ArrowRight') move(1);
+      if (e.key === 'ArrowLeft') move(-1);
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  });
+  return (
+    <div className="st-cards">
+      <div className="st-cards-bar">
+        <span className="muted">
+          {deck.length ? `${Math.min(pos, deck.length - 1) + 1} / ${deck.length}` : 'All known'} · {known.length} of {cards.length} known
+        </span>
+        <button className="btn sm" onClick={() => (setOrder(shuffle(cards.map((_, i) => i))), setPos(0), setFlipped(false))}>
+          <Shuffle size={13} /> Shuffle
+        </button>
+        <button className={`btn sm ${onlyLearning ? 'tonal' : ''}`} onClick={() => (setOnlyLearning(!onlyLearning), setPos(0), setFlipped(false))}>
+          Only ones I'm learning
+        </button>
+      </div>
+      {card ? (
+        <>
+          <button className={`st-card ${flipped ? 'flipped' : ''}`} onClick={() => setFlipped(!flipped)} title="Click or press Space to flip">
+            <div className="st-card-side">{flipped ? card.back : card.front}</div>
+            <div className="muted st-card-foot">
+              {flipped ? 'Answer' : 'Click to flip'}
+              {card.chapter ? ` · ${card.chapter}` : ''}
+              {known.includes(idx) ? ' · Known' : ''}
+            </div>
+          </button>
+          <div className="st-cards-nav">
+            <button className="icon-btn" onClick={() => move(-1)} disabled={pos === 0} title="Previous (←)">
+              <ArrowLeft size={18} />
+            </button>
+            <button className="btn" onClick={() => mark(false)}>
+              Still learning
+            </button>
+            <button className="btn primary" onClick={() => mark(true)}>
+              <Check size={14} /> I know it
+            </button>
+            <button className="icon-btn" onClick={() => move(1)} disabled={pos >= deck.length - 1} title="Next (→)">
+              <ArrowRight size={18} />
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="sch-empty">
+          You know every card in this deck.
+          <button className="btn sm" onClick={() => (setKnown([]), api.scholar.studyKnown(set.id, []), setOnlyLearning(false))}>
+            Start over
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

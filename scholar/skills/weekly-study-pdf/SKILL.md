@@ -38,6 +38,20 @@ titled with, so the PDF never trails the class; each with label, title, `section
 Also read `data/downloads/<CODE>/raw_notes.md` for course context (instructor emphasis,
 lab topics, how the course is run).
 
+**Kea's missing-chapters mode.** Kea writes every chapter of a class, not only the coming
+week's: `uv run academic-sync study-pdf-due --missing [--course <CODE>]` lists, for every
+chapter with no PDF yet, the first unbuilt week that teaches it. Kea then runs this skill as
+`/weekly-study-pdf <banner id> only <labels>`. In that case run
+`uv run academic-sync study-pdf-due --banner <id> --only "<labels>"`: the bundle's
+`chapters` (and `pdf_title`) hold only the chapters to write. The week's other chapters
+already have PDFs; don't teach them again (mention them in one line if the new chapter
+builds on them). Always build a full PDF in this mode: never a review, never a skip.
+
+**Weeks already over** (`week_is_past` true): leave out the `= This Week` section and the
+`#due` lines (those dates are history). Keep each chapter's exam-style material: tests
+still to come that cover it (from `tests_next_3_weeks`, or the course's later exams) go in
+`#exam` notes.
+
 ## 2. Build, review, or skip
 
 - **New chapters** (any chapter with empty `already_in_pdfs`): build the full PDF.
@@ -186,7 +200,23 @@ uv run academic-sync study-pdf-preview --banner <id> --pages 5,9  # chosen pages
 The PDF lands at `output_path` (KEA_TEXTBOOK_DIR/<CODE>/<chapters>.pdf, the class textbook in Kea).
 Rebuilding the same banner overwrites it in place.
 
-## 7. Report
+## 7. Chapter summaries
+
+For each chapter the PDF teaches, save the short description students see in Kea. They
+see this, a link to the reading and the class's review documents; never the vocabulary or
+objective lists, which stay internal (Kea uses them for flashcards and practice exams).
+
+```
+uv run academic-sync chapter-summary-set --course <CODE> --chapter "<label>" --summary "<text>"
+```
+
+Two or three plain sentences (at most about 60 words): what the chapter teaches and the
+main skills or ideas the course tests from it. No lists of terms, no "In this chapter".
+Example: "How gases, liquids and solids differ, and the gas laws that predict pressure,
+volume and temperature. Most exam questions are gas-law calculations and choosing which
+intermolecular force explains a boiling point."
+
+## 8. Report
 
 One line per PDF: course, file name, pages, figure count, and anything thin (a chapter with
 no saved objectives, a figure you couldn't find). Unattended runs end there.

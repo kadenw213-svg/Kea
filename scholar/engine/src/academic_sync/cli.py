@@ -1873,6 +1873,11 @@ def study_pdf_due_cmd(
     lookahead: Annotated[int, typer.Option("--lookahead", help="Days ahead a banner may start.")] = 3,
     lookback: Annotated[int, typer.Option("--lookback", help="Days back a banner may have started.")] = 2,
     banner: Annotated[str | None, typer.Option("--banner", help="Just this banner, due or not.")] = None,
+    missing: Annotated[bool, typer.Option("--missing", help="Kea: every chapter with no PDF yet, any "
+                                          "date, as the first unbuilt week that teaches it.")] = False,
+    course: Annotated[str | None, typer.Option("--course", help="With --missing: one course.")] = None,
+    only: Annotated[str | None, typer.Option("--only", help="With --banner: comma-separated chapter "
+                                             "labels to write (the rest already have PDFs).")] = None,
 ) -> None:
     """JSON list of weekly banners that need a study PDF -- starting within
     [today - lookback, today + lookahead] with no PDF built or skipped yet --
@@ -1882,12 +1887,115 @@ def study_pdf_due_cmd(
     output path/filename). See .claude/skills/weekly-study-pdf/SKILL.md."""
     day = date.fromisoformat(on) if on else date.today()
     with session_scope() as session:
+        if missing:
+            cid = _resolve_course_or_exit(session, course).id if course else None
+            bundles = [study_pdf_mod.build_bundle(session, b, new)
+                       for b, new in study_pdf_mod.missing_banners(session, cid)]
+            print(json.dumps(bundles, indent=1))
+            return
         if banner:
             banners = [_banner_or_exit(session, banner)]
         else:
             banners = study_pdf_mod.due_banners(session, day, lookahead, lookback)
-        bundles = [study_pdf_mod.build_bundle(session, b) for b in banners]
+        write_only = [x.strip() for x in only.split(",") if x.strip()] if only else None
+        bundles = [study_pdf_mod.build_bundle(session, b, write_only) for b in banners]
     print(json.dumps(bundles, indent=1))
+
+
+@app.command("practice-check")
+def practice_check_cmd(
+    path: Annotated[Path, typer.Argument(help="The practice set JSON (data/study/out/<id>.json).")],
+    count: Annotated[int | None, typer.Option("--count", help="How many were asked for.")] = None,
+) -> None:
+    """Kea: check a practice exam or flashcard set before finishing -- every
+    question has a usable answer, choices are shuffle-safe, no duplicates.
+    Prints the problems as JSON (exit 1 when there are any)."""
+    problems: list[str] = []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as err:
+        print(json.dumps({"ok": False, "problems": [f"not readable JSON: {err}"]}))
+        raise typer.Exit(code=1) from None
+    seen: set[str] = set()
+    bad_choice = ("all of the above", "none of the above", "both a and b", "a and b", "b and c",
+                  "a and c", "a, b", "a, b, and c")
+    if "cards" in data:
+        items = data["cards"] if isinstance(data["cards"], list) else []
+        for n, c in enumerate(items, 1):
+            front = str(c.get("front", "")).strip() if isinstance(c, dict) else ""
+            back = str(c.get("back", "")).strip() if isinstance(c, dict) else ""
+            if not front or not back:
+                problems.append(f"card {n}: needs a front and a back")
+            elif front.lower() in seen:
+                problems.append(f"card {n}: duplicate front")
+            seen.add(front.lower())
+    else:
+        items = data.get("questions") if isinstance(data.get("questions"), list) else []
+        for n, q in enumerate(items, 1):
+            if not isinstance(q, dict):
+                problems.append(f"question {n}: not an object")
+                continue
+            kind, stem = q.get("type"), str(q.get("q", "")).strip()
+            where = f"question {n} ({kind})"
+            if not stem:
+                problems.append(f"{where}: empty stem")
+            elif stem.lower() in seen:
+                problems.append(f"{where}: duplicate stem")
+            seen.add(stem.lower())
+            if not str(q.get("explain", "")).strip():
+                problems.append(f"{where}: no explanation")
+            if kind in ("mc", "multi"):
+                choices = q.get("choices")
+                if not isinstance(choices, list) or len(choices) < 3 or not all(str(c).strip() for c in choices):
+                    problems.append(f"{where}: needs 3-6 non-empty choices")
+                    continue
+                if len({str(c).strip().lower() for c in choices}) != len(choices):
+                    problems.append(f"{where}: repeated choice")
+                for c in choices:
+                    low = str(c).strip().lower().rstrip(".")
+                    if low in bad_choice or low.startswith(("both ", "all of", "none of", "neither ")):
+                        problems.append(f"{where}: choice '{c}' breaks when Kea shuffles choices")
+                ans = q.get("answer")
+                answers = [ans] if kind == "mc" else ans if isinstance(ans, list) else []
+                if (kind == "mc" and not isinstance(ans, int)) or not answers or any(
+                        not isinstance(a, int) or not 0 <= a < len(choices) for a in answers):
+                    problems.append(f"{where}: answer must be a choice index (0-based)"
+                                    + (" list" if kind == "multi" else ""))
+            elif kind == "tf":
+                if not isinstance(q.get("answer"), bool):
+                    problems.append(f"{where}: answer must be true or false")
+            elif kind == "num":
+                try:
+                    float(q.get("answer"))
+                except (TypeError, ValueError):
+                    problems.append(f"{where}: answer must be a number")
+            elif kind == "short":
+                if not str(q.get("answer", "")).strip():
+                    problems.append(f"{where}: needs a model answer")
+            else:
+                problems.append(f"{where}: type must be mc, multi, tf, num or short")
+    if count and len(items) < count * 0.9:
+        problems.append(f"only {len(items)} of the {count} asked for")
+    print(json.dumps({"ok": not problems, "count": len(items), "problems": problems[:80]}, indent=1))
+    if problems:
+        raise typer.Exit(code=1)
+
+
+@app.command("chapter-summary-set")
+def chapter_summary_set_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    chapter: Annotated[str, typer.Option("--chapter", help='e.g. "Chapter 5" or "Module 2".')],
+    summary: Annotated[str, typer.Option("--summary", help="Two or three plain sentences: what the "
+                                         "chapter teaches and why it matters in the course.")],
+) -> None:
+    """Kea: save the short chapter description students see (instead of the
+    vocabulary and objective lists, which stay internal)."""
+    with session_scope() as session:
+        cid = _resolve_course_or_exit(session, course).id
+        if not study_pdf_mod.set_topic_summary(session, cid, chapter, summary):
+            console.print(f"[red]No saved chapter '{chapter}' for {course}.[/red]")
+            raise typer.Exit(code=1)
+    print(json.dumps({"ok": True, "chapter": chapter}))
 
 
 def _study_source(session, banner_item, source: Path | None) -> Path:  # type: ignore[no-untyped-def]

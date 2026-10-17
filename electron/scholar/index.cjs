@@ -306,6 +306,30 @@ function register() {
     require('electron').shell.openExternal(url);
     return true;
   });
+  // Study materials: practice exams and flashcards, made by Claude only when asked, then taken offline.
+  const study = require('./study.cjs');
+  ipcMain.handle('scholar:studyList', () => {
+    const running = runner.status();
+    const busy = new Set([running.running, ...running.queued].filter((j) => j && j.task === 'practice').map((j) => String(j.arg).split(/\s+/)[0]));
+    study.settle((id) => busy.has(id));
+    return study.list();
+  });
+  ipcMain.handle('scholar:studyGet', (_e, id) => study.get(id));
+  ipcMain.handle('scholar:studyMake', async (_e, req) => {
+    const id = await study.request(req);
+    runner.run('practice', id, 'manual').then(() => {
+      const e = study.list().find((x) => x.id === id);
+      if (!e) return;
+      const { Notification } = require('electron');
+      const body = e.status === 'ready' ? `${e.count} ${e.kind === 'exam' ? 'questions' : 'cards'}, ready in My resources.` : e.error || 'It didn’t work. Try again.';
+      if (Notification.isSupported()) new Notification({ title: e.status === 'ready' ? e.title : `Couldn’t make ${e.title}`, body }).show();
+      BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
+    });
+    return id;
+  });
+  ipcMain.handle('scholar:studyDelete', (_e, id) => study.remove(id));
+  ipcMain.handle('scholar:studyAttempt', (_e, id, a) => study.saveAttempt(id, a));
+  ipcMain.handle('scholar:studyKnown', (_e, id, known) => study.setKnown(id, known));
   ipcMain.handle('scholar:resume', (_e, task) => (runner.pending() ? runner.resume() : runner.resumeLast(task || 'import')));
 
   // Developer aid (unpackaged builds only): read a page through the class-site browser.
