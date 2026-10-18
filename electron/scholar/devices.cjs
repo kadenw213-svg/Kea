@@ -228,6 +228,7 @@ async function lead(dir) {
       try {
         if (r.task === 'stop') runner.stop();
         else if (r.task === 'resume') runner.pending() ? runner.resume() : runner.resumeLast(r.arg || 'import');
+        else if (r.task === 'banks') hooks.banks?.();
         else if (r.task === 'inbox') precheck.pollAnnouncements().then((ok) => ok && hooks.syncSoon(5000)).catch(() => {});
         else if (r.task === 'practice') {
           const { id, ready } = await require('./study.cjs').request(r.req || {});

@@ -182,9 +182,10 @@ function Page({ pdf, n, width, ratio, root }: { pdf: PDFDocumentProxy; n: number
       const dpr = window.devicePixelRatio || 1;
       const vp = page.getViewport({ scale: (width / vp1.width) * dpr });
       const c = ref.current;
-      c.width = vp.width;
-      c.height = vp.height;
-      task = page.render({ canvasContext: c.getContext('2d')!, viewport: vp });
+      // Exactly the pixels it covers on screen, so it isn't rescaled (and blurred).
+      c.width = Math.round(width * dpr);
+      c.height = Math.round(width * ratio * dpr);
+      task = page.render({ canvasContext: c.getContext('2d')!, viewport: vp, transform: [c.width / vp.width, 0, 0, c.height / vp.height, 0, 0] });
       task.promise.catch(() => {});
     });
     return () => {

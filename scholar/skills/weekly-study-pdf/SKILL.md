@@ -110,7 +110,6 @@ Template pieces (all in `src/academic_sync/study_pdf_template.typ`):
 | `#pitfall[...]` | a mistake students really make (sign errors, unit slips, confused look-alike terms). |
 | `#fig("img/x.png", caption: [...], credit: "...")` | a figure. `credit` is required for anything downloaded. |
 | `#due([Mon Oct 19, 11:59 pm], [<real title>], kind: "quiz")[note]` | one item in This Week. |
-| `#selfcheck(([Q], [A]), ...)` | end-of-chapter exam-style questions with answers. |
 | `#table(...)` | comparisons (phyla traits, gas laws, log rules). Header row first. |
 
 ### Structure
@@ -121,8 +120,8 @@ Template pieces (all in `src/academic_sync/study_pdf_template.typ`):
    never add an item that isn't in the bundle.
 2. One chapter after another. For each section: teach the idea, then show how it works,
    then show how it's tested. End each chapter with a summary table where the material is
-   comparative, and a `#selfcheck` of 8-12 questions in the style the course tests (MC
-   stems, calculations, short explanations).
+   comparative. **No self-check or practice-question section:** Kea keeps a 50-question bank for every chapter
+   (the student presses Quiz me beside the textbook), so the pages go to teaching.
 3. If a test is this week, finish with `= Exam Prep: <test title>`: what it covers, the
    problem types, and the facts to memorize, as tight lists.
 
@@ -141,8 +140,6 @@ is the floor, not the target. A student who reads only this PDF should be able t
   buffers, IV solutions…): what happens, written as the chemistry, not just named.
 - **Notation the exams use is taught explicitly**, with a line on reading it (phase labels (s), (l), (g), (aq);
   significant figures in each answer; units carried through every step).
-- **Self-check: 8 to 12 questions per chapter** that together touch every problem type and every test focus line,
-  at the difficulty of the real tests or a little above, each with a worked answer.
 - **Final pass:** re-read each chapter as the student the night before the exam. If any question you can imagine
   from the focus lines would send them to another source, add what's missing.
 

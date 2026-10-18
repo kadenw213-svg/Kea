@@ -30,7 +30,9 @@ import {
   Award,
   Layers,
   Trash2,
-  Monitor
+  Monitor,
+  ClipboardCheck,
+  ShieldAlert
 } from 'lucide-react';
 import { inboxParts, kindOf } from './inboxFormat';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
@@ -44,6 +46,8 @@ import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, setClassColor, setTypeColor, useColors } from './kinds';
 import { PracticeBox, ResourcesView, StudyPlayer } from './Study';
+import { quizChapter } from './QuizMe';
+import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
 import '../../styles/scholar.css';
 
 // ---------- Dates ----------
@@ -176,12 +180,13 @@ export function ScholarScreen() {
     reloadScholar();
   };
   const activeProfile = profiles?.list.find((p) => p.id === profiles.active);
+  const [account] = useAccount();
   const main =
     hasData === null ? (
       <div className="center-fill">
         <div className="spinner" />
       </div>
-    ) : (!hasData && !['scans', 'library', 'inbox', 'resources'].includes(view.name)) || view.name === 'add' ? (
+    ) : (!hasData && !['scans', 'library', 'inbox', 'resources', 'account'].includes(view.name)) || view.name === 'add' ? (
       <AddClass first={!hasData} />
     ) : view.name === 'inbox' ? (
       <InboxView ctx={ctx} />
@@ -195,6 +200,12 @@ export function ScholarScreen() {
       <ResourcesView courses={courses} />
     ) : view.name === 'scans' ? (
       <ScansView />
+    ) : view.name === 'account' ? (
+      <div className="sch-page">
+        <h1 className="sch-title">Your account</h1>
+        <p className="sch-sub">School mode needs an account with a verified email.</p>
+        <AccountCard />
+      </div>
     ) : (
       <WeekView ctx={ctx} />
     );
@@ -204,9 +215,12 @@ export function ScholarScreen() {
       <nav className="sch-nav">
         <MenuButton
           button={() => (
-            <button className="sch-profile" title="Switch profile">
-              <span className="sch-avatar">{(activeProfile?.name || 'S')[0]}</span>
-              <span className="sch-profile-name">{activeProfile?.name || 'School'}</span>
+            <button className="sch-profile" title="Your account and profiles">
+              {account ? <Avatar account={account} size={26} /> : <span className="sch-avatar">{(activeProfile?.name || 'S')[0]}</span>}
+              <span className="sch-profile-name">
+                {account?.name || activeProfile?.name || 'School'}
+                <VerifiedBadge account={account} size={13} />
+              </span>
               <ChevronDown size={14} />
             </button>
           )}
@@ -219,6 +233,9 @@ export function ScholarScreen() {
                 </button>
               ))}
               <div className="menu-sep" />
+              <button className="menu-item" onClick={() => (close(), go({ name: 'account' }))}>
+                <Avatar account={account} size={16} /> {account ? 'Your account' : 'Set up your account'}
+              </button>
               <button className="menu-item" onClick={() => (close(), newProfile())}>
                 <Plus size={15} /> New profile…
               </button>
@@ -269,7 +286,18 @@ export function ScholarScreen() {
           <Library size={17} /> Library
         </button>
       </nav>
-      <main className="sch-main">{main}</main>
+      <main className="sch-main">
+        {hasData && account !== undefined && !account?.verified && view.name !== 'account' && (
+          <div className="acct-banner">
+            <ShieldAlert size={16} />
+            <span>School mode now needs a Kea account with a verified email. Class checks are paused until you add one.</span>
+            <button className="btn sm primary" onClick={() => go({ name: 'account' })}>
+              Set up your account
+            </button>
+          </div>
+        )}
+        {main}
+      </main>
       {item && <ItemPanel ctx={ctx} item={item} onClose={() => setItem(null)} />}
       {study && <StudyPlayer id={study} onClose={() => set({ study: null })} />}
     </div>
@@ -1143,6 +1171,18 @@ function Textbook({ c }: { c: ScholarCourseDetail }) {
                 <BookOpen size={14} /> Read
               </button>
             )}
+            {ch.pdf && (
+              <button
+                className="btn sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  quizChapter(c.id, ch.label);
+                }}
+                title="Quiz yourself on this chapter's saved questions"
+              >
+                <ClipboardCheck size={14} /> Quiz me
+              </button>
+            )}
           </div>
           {open === ch.label && (
             <div className="tb-detail">
@@ -1319,7 +1359,19 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
 }
 
 // ---------- Adding a class ----------
+/** Before school mode: an account with a verified email. */
+function AccountStep() {
+  return (
+    <div className="acct-step">
+      <h3>First, your Kea account</h3>
+      <p className="muted">School mode needs an account with a verified email. Use the email of your Claude account (or a OneDrive or Google account signed in here), and Kea verifies it at once.</p>
+      <AccountCard />
+    </div>
+  );
+}
+
 function AddClass({ first }: { first: boolean }) {
+  const [account] = useAccount();
   const [gate, setGate] = useState(false);
   const [other, setOther] = useState(false);
   const bringIn = async () => {
@@ -1360,7 +1412,7 @@ function AddClass({ first }: { first: boolean }) {
         <div className="gate">
           <h2>Bring in classes from another device</h2>
           <p>Kea looks in OneDrive and Google Drive on this computer for the classes your other device shares. Both need the same drive account, and Kea open on the other one.</p>
-          <FromAnotherDevice onDone={() => useScholar.getState().set({ view: { name: 'week' } })} />
+          {account?.verified ? <FromAnotherDevice onDone={() => useScholar.getState().set({ view: { name: 'week' } })} /> : <AccountStep />}
         </div>
       )}
       {gate && (
@@ -1379,7 +1431,11 @@ function AddClass({ first }: { first: boolean }) {
             </li>
             <li>Without Claude, this stays off rather than guessing. Library classes work without it.</li>
           </ul>
-          <SetupWizard onDone={() => useScholar.getState().set({ view: { name: 'scans' } })} />
+          {account?.verified ? (
+            <SetupWizard onDone={() => useScholar.getState().set({ view: { name: 'scans' } })} />
+          ) : (
+            <AccountStep />
+          )}
           <details className="gate-adv">
             <summary>Already use the Class Calendar Import skills?</summary>
             <p>Bring in the classes, readings and study PDFs they've already made. Your original folder isn't changed.</p>

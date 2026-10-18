@@ -14,10 +14,11 @@ import { css } from '@codemirror/lang-css';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
 import { xml } from '@codemirror/lang-xml';
-import { Save, Search, WrapText, Minus, Plus, MoreVertical, Printer, Undo2, Redo2 } from 'lucide-react';
+import { Save, Search, WrapText, Minus, Plus, MoreVertical, Printer, Undo2, Redo2, FileType } from 'lucide-react';
 import { undo, redo } from '@codemirror/commands';
 import type { Tab } from '../../store';
-import { editorRegistry, setDirty } from '../../store';
+import { editorRegistry, setDirty, toast, useTabs } from '../../store';
+import { openPaths } from '../../lib/open';
 import { bytesToText, escapeHtml, clamp } from '../../lib/util';
 import { saveTabFile } from '../../lib/save';
 import { extOf, baseName } from '../../lib/fileTypes';
@@ -198,6 +199,22 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
       saveAs
     );
   };
+  // A plain text file becomes Markdown (.md), which opens in the document editor, so bold, headings and lists show
+  // formatted and stay that way when saved. The text is kept as is (any Markdown already in it starts working).
+  const toMarkdown = async () => {
+    if (!tab.path) return;
+    const to = tab.path.replace(/\.txt$/i, '') + '.md';
+    try {
+      await api.writeFile(tab.path, await build());
+      await api.renameFile(tab.path, to);
+      setDirty(tab.id, false);
+      useTabs.getState().closeTab(tab.id);
+      await openPaths([to]);
+      toast(`Now ${baseName(tab.name)}.md: format it like a document; it saves as Markdown.`, 'success');
+    } catch (err: any) {
+      toast(err?.message || 'Kea couldn’t rename the file.', 'error');
+    }
+  };
   const print = async () => {
     const text = viewRef.current!.state.doc.toString();
     await api.printHtml(
@@ -293,6 +310,11 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
           <Plus size={16} />
         </button>
         <div className="tb-spacer" />
+        {tab.path && extOf(tab.path) === 'txt' && (
+          <button className="btn sm" onClick={toMarkdown} title="Turn this into a Markdown file (.md) so you can use bold, headings and lists">
+            <FileType size={15} /> Make .md
+          </button>
+        )}
         <div className="tb-end">
         <LookupButton />
         <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => save(false)} title="Save (Ctrl+S)">
@@ -314,6 +336,11 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
               <button className="menu-item" onClick={() => (print(), close())}>
                 <Printer size={16} /> Print… <span className="kbd">Ctrl+P</span>
               </button>
+              {tab.path && extOf(tab.path) === 'txt' && (
+                <button className="menu-item" onClick={() => (close(), toMarkdown())}>
+                  <FileType size={16} /> Turn into Markdown (.md) for formatting
+                </button>
+              )}
             </>
           )}
         </MenuButton>

@@ -105,6 +105,40 @@ async function courses(file, textbooks, done) {
   });
 }
 
+/**
+ * Every chapter with a textbook in the classes still running: [{ courseId, label }]. Chapters on the soonest coming
+ * tests come first (those are the ones to practise now), then the rest in class and chapter order.
+ */
+async function textbookChapters(file, textbooks) {
+  const db = await open(file);
+  if (!db) return [];
+  const today = new Date().toISOString().slice(0, 10);
+  const out = [];
+  const soon = new Map(); // "courseId|label" → date of the first coming test on it
+  for (const c of rows(db, "SELECT * FROM courses WHERE status = 'active' AND course_code != 'MESSAGES' ORDER BY course_code")) {
+    if (c.end_date && String(c.end_date).slice(0, 10) < today) continue;
+    const { pdfs } = readingsFor(db, c.id, c.course_code, textbooks);
+    for (const label of [...pdfs.keys()].sort((a, b) => chapterNumber(a) - chapterNumber(b))) out.push({ courseId: c.id, label });
+    for (const t of rows(db, `SELECT date, covered_chapters_json FROM academic_items WHERE course_id = ? AND item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} AND date >= ? ORDER BY date`, [c.id, today]))
+      for (const label of json(t.covered_chapters_json, [])) if (!soon.has(`${c.id}|${label}`)) soon.set(`${c.id}|${label}`, t.date);
+  }
+  const when = (x) => soon.get(`${x.courseId}|${x.label}`) || '9999';
+  return out.map((x, i) => ({ x, i })).sort((a, b) => when(a.x).localeCompare(when(b.x)) || a.i - b.i).map(({ x }) => x);
+}
+
+/** Which class and chapters a textbook PDF is (matched by its file name): { courseId, code, chapters } or null. */
+async function textbookOf(file, textbooks, pdf) {
+  const db = await open(file);
+  if (!db) return null;
+  const name = path.basename(String(pdf)).toLowerCase();
+  for (const c of rows(db, "SELECT * FROM courses WHERE status = 'active' AND course_code != 'MESSAGES'")) {
+    const { pdfs } = readingsFor(db, c.id, c.course_code, textbooks);
+    const chapters = [...pdfs].filter(([, p]) => path.basename(p.file).toLowerCase() === name).map(([label]) => label);
+    if (chapters.length) return { courseId: c.id, code: c.course_code, chapters: chapters.sort((a, b) => chapterNumber(a) - chapterNumber(b)) };
+  }
+  return null;
+}
+
 // ---------- What's been handed in ----------
 const norm = (s) =>
   String(s || '')
@@ -350,4 +384,4 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
   return { course: { id: c.id, code: c.course_code, name: c.name }, item, chapters: out, tests };
 }
 
-module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn };
+module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf };

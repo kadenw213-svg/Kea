@@ -107,6 +107,7 @@ import { toggleVoice } from '../../components/VoiceTyping';
 import { Mic } from 'lucide-react';
 
 import { odtToHtml, rtfToHtml, docToHtml } from './otherFormats';
+import { markdownToHtml, jsonToMarkdown } from './markdown';
 import { jsonToDocx } from './docxExport';
 import { saveTabFile, exportFile, SaveFormat } from '../../lib/save';
 import { extOf, baseName } from '../../lib/fileTypes';
@@ -175,6 +176,7 @@ export default function DocEditor({ tab, active }: { tab: Tab; active: boolean }
           setHtml(d.html, d.meta);
         }
         else if (ext === 'odt') setHtml(await odtToHtml(tab.data));
+        else if (ext === 'md' || ext === 'markdown') setHtml(markdownToHtml(bytesToText(tab.data)));
         else if (ext === 'rtf' || head.startsWith('{\\rtf')) setHtml(rtfToHtml(bytesToText(tab.data)));
         else if (ext === 'doc' && tab.data[0] === 0xd0 && tab.data[1] === 0xcf) {
           setHtml(docToHtml(tab.data));
@@ -416,6 +418,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     const docx: SaveFormat = { name: 'Word document', ext: 'docx', build: () => jsonToDocx(editor!.getJSON() as any, metaRef.current, baseName(tab.name)) };
     const html: SaveFormat = { name: 'Web page', ext: 'html', build: async () => textToBytes(printableHtml(editor!, tab.name, false, metaRef.current)) };
     const ext = tab.path ? extOf(tab.path) : '';
+    if (ext === 'md' || ext === 'markdown') return [{ name: 'Markdown', ext, build: async () => textToBytes(jsonToMarkdown(editor!.getJSON() as any)) }, docx, html];
     return ext === 'html' || ext === 'htm' ? [{ ...html, ext }, docx] : [docx, html];
   };
 

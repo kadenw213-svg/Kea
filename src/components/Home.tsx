@@ -30,8 +30,6 @@ import {
   Loader2,
   ExternalLink,
   GraduationCap,
-  CalendarDays,
-  Library
 } from 'lucide-react';
 import { api, DirEntry, DriveInfo, FileMeta, HomeSettings, KnownFolder } from '../lib/api';
 import { newFile, openPaths, openWithDialog } from '../lib/open';
@@ -373,20 +371,10 @@ export function HomeScreen({ visible }: { visible: boolean }) {
               <span className="muted">Your classes, their textbooks and your calendar, kept up to date for you.</span>
             </div>
             <div className="scholar-row">
-              <button className="scholar-card" onClick={() => openScholar({ name: 'week' })}>
+              <button className="scholar-card wide" onClick={() => openScholar({ name: 'week' })}>
                 <GraduationCap size={26} />
-                <span className="scholar-name">Classes</span>
-                <span className="scholar-desc">Each class with its textbook, readings and what's due</span>
-              </button>
-              <button className="scholar-card" onClick={() => openScholar({ name: 'calendar' })}>
-                <CalendarDays size={26} />
-                <span className="scholar-name">Calendar</span>
-                <span className="scholar-desc">Assignments and tests that open their readings, ready to check off</span>
-              </button>
-              <button className="scholar-card" onClick={() => openScholar({ name: 'library' })}>
-                <Library size={26} />
-                <span className="scholar-name">Library</span>
-                <span className="scholar-desc">Free, complete courses you can add and study at your own pace</span>
+                <span className="scholar-name">Open this week</span>
+                <span className="scholar-desc">What's due, your readings and textbooks, the calendar and the Library, all in Scholar</span>
               </button>
             </div>
           </section>

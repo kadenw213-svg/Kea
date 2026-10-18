@@ -476,6 +476,15 @@ export const SECTIONS: Section[] = [
         options: ['03:00', '04:00', '05:00', '06:00', '07:00', '08:00', '12:00', '18:00'].map((t) => ({ value: t, label: new Date(`2000-01-01T${t}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })),
         help: 'If Kea is closed then, the check runs the next time it opens.'
       },
+      { key: 'scholar.questionBanks', label: 'Keep a question bank for every chapter', type: 'toggle', default: true, help: 'Each chapter with a textbook gets saved practice questions (Quiz me in the textbook), and more are written when you run low. Written once, then free to take on every device.' },
+      {
+        key: 'scholar.bankSize',
+        label: 'Questions per chapter',
+        type: 'select',
+        default: '50',
+        options: ['25', '50', '75', '100'].map((n) => ({ value: n, label: n })),
+        advanced: true
+      },
       { key: 'scholar.studyPdfs', label: "Write each week's textbook chapters", type: 'toggle', default: true, help: "Each class's chapters for the week ahead, written from what the class covers and its tests." },
       {
         key: 'scholar.weeklyDay',

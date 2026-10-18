@@ -271,4 +271,7 @@ function register({ log }) {
   ipcMain.handle('google:open-in-browser', (_e, p) => shell.openPath(p));
 }
 
-module.exports = { register };
+/** The Google account signed in to Kea, if any (its email). */
+const signedInEmail = () => loadSession()?.email || null;
+
+module.exports = { register, signedInEmail };

@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   readFile: (p) => ipcRenderer.invoke('file:read', p),
   writeFile: (p, data) => ipcRenderer.invoke('file:write', p, data),
   fileExists: (p) => ipcRenderer.invoke('file:exists', p),
+  renameFile: (from, to) => ipcRenderer.invoke('file:rename', from, to),
   showInFolder: (p) => ipcRenderer.invoke('shell:show-in-folder', p),
   getRecent: () => ipcRenderer.invoke('recent:get'),
   addRecent: (p) => ipcRenderer.invoke('recent:add', p),
@@ -42,6 +43,14 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('present:closed', fn);
       return () => ipcRenderer.removeListener('present:closed', fn);
     }
+  },
+  account: {
+    get: () => ipcRenderer.invoke('account:get'),
+    suggest: () => ipcRenderer.invoke('account:suggest'),
+    save: (a) => ipcRenderer.invoke('account:save', a),
+    verify: () => ipcRenderer.invoke('account:verify'),
+    avatar: (clear) => ipcRenderer.invoke('account:avatar', !!clear),
+    signOut: () => ipcRenderer.invoke('account:signOut')
   },
   scholar: {
     profiles: () => ipcRenderer.invoke('scholar:profiles'),
@@ -91,6 +100,8 @@ contextBridge.exposeInMainWorld('api', {
     studyGet: (id) => ipcRenderer.invoke('scholar:studyGet', id),
     studyMake: (req) => ipcRenderer.invoke('scholar:studyMake', req),
     studySaved: (req) => ipcRenderer.invoke('scholar:studySaved', req),
+    textbookOf: (file) => ipcRenderer.invoke('scholar:textbookOf', file),
+    studyBanks: () => ipcRenderer.invoke('scholar:studyBanks'),
     studyDelete: (id) => ipcRenderer.invoke('scholar:studyDelete', id),
     studyAttempt: (id, a) => ipcRenderer.invoke('scholar:studyAttempt', id, a),
     studyKnown: (id, known) => ipcRenderer.invoke('scholar:studyKnown', id, known),

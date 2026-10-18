@@ -3,6 +3,8 @@ export type EditorKind = 'pdf' | 'doc' | 'sheet' | 'slides' | 'code' | 'image' |
 const EXT_KIND: Record<string, EditorKind> = {
   pdf: 'pdf',
   docx: 'doc', docm: 'doc', dotx: 'doc', html: 'doc', htm: 'doc', rtf: 'doc', doc: 'doc', odt: 'doc',
+  // Markdown opens as a document (formatting shown, saved back as Markdown).
+  md: 'doc', markdown: 'doc',
   xlsx: 'sheet', xlsm: 'sheet', xls: 'sheet', ods: 'sheet', csv: 'sheet', tsv: 'sheet',
   png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image', bmp: 'image', svg: 'image', ico: 'image',
   pptx: 'slides', pptm: 'slides', potx: 'slides', ppsx: 'slides', ppt: 'unsupported', odp: 'unsupported',

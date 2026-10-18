@@ -138,9 +138,13 @@ export interface KeaApi {
     studyGet(id: string): Promise<StudySetFull | null>;
     /** Ask Claude for a new set (for a test or assignment, or for chapters). Resolves with its id once queued. */
     /** mode: 'mix' reuses up to 60% saved questions and has Claude write the rest; 'saved' uses saved ones only (ready at once); 'new' writes them all. */
-    studyMake(req: { kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number; mode?: 'mix' | 'saved' | 'new' }): Promise<string>;
+    studyMake(req: { id?: string; kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number; mode?: 'mix' | 'saved' | 'new' }): Promise<string>;
     /** How many saved questions (or cards) a set on these chapters, or for this test, could reuse. */
     studySaved(req: { kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null }): Promise<{ count: number }>;
+    /** Which class and chapters a textbook PDF is (for Quiz me), or null. */
+    textbookOf(file: string): Promise<{ courseId: string; code: string; chapters: string[] } | null>;
+    /** Write question banks for chapters that have none (on the primary); false when Claude isn't connected. */
+    studyBanks(): Promise<boolean>;
     studyDelete(id: string): Promise<boolean>;
     /** items: how each question went, [key, right] (right null for an unmarked written answer). */
     studyAttempt(id: string, a: { score: number; total: number; n: number; items?: [string, boolean | null][] }): Promise<boolean>;
@@ -222,6 +226,8 @@ export interface KeaApi {
   readFile(p: string): Promise<FileEntry>;
   writeFile(p: string, data: Uint8Array): Promise<boolean>;
   fileExists(p: string): Promise<boolean>;
+  /** Rename a file in place; fails if the new name is taken. */
+  renameFile(from: string, to: string): Promise<boolean>;
   showInFolder(p: string): Promise<void>;
   getRecent(): Promise<RecentEntry[]>;
   addRecent(p: string): Promise<RecentEntry[]>;
@@ -259,6 +265,7 @@ export interface KeaApi {
   downloadUpdate(): Promise<boolean>;
   installUpdate(): void;
   onUpdateState(cb: (s: UpdateState) => void): () => void;
+  account: AccountApi;
   ai: AiApi;
 }
 
@@ -304,6 +311,26 @@ export interface AiState {
   presets: { tier: AiTier; contextSize: number; maxTokens: number }[];
   models: AiModelState[];
 }
+/** The Kea account (needed for school mode): verified when the email is signed in on this computer. */
+export interface KeaAccount {
+  email: string;
+  name: string;
+  avatar: string | null;
+  verified: boolean;
+  verifiedBy: string | null;
+  /** Kea's creator. */
+  owner: boolean;
+}
+export interface AccountApi {
+  get(): Promise<KeaAccount | null>;
+  /** Emails signed in on this computer (Claude, OneDrive, Google), to pick from. */
+  suggest(): Promise<string[]>;
+  save(a: { email: string; name: string }): Promise<KeaAccount | null>;
+  verify(): Promise<KeaAccount>;
+  avatar(clear?: boolean): Promise<KeaAccount | null>;
+  signOut(): Promise<boolean>;
+}
+
 export interface AiGenerateRequest {
   system?: string;
   history?: { role: 'user' | 'assistant'; text: string }[];
@@ -544,6 +571,8 @@ export type StudyQuestion = QuestionBase &
   | { type: 'tf'; q: string; answer: boolean; explain: string; chapter: string | null; topic: string | null; source: string | null }
   | { type: 'num'; q: string; answer: number; tolerance: number; unit: string | null; explain: string; chapter: string | null; topic: string | null; source: string | null }
   | { type: 'short'; q: string; answer: string; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  /** Fill in the blank ("____" in q): a word or two; `accept` lists other forms that count (a symbol, a synonym). */
+  | { type: 'blank'; q: string; answer: string; accept?: string[]; explain: string; chapter: string | null; topic: string | null; source: string | null }
   );
 /** How a question has gone, across every set and device. */
 export interface StudyHistory {

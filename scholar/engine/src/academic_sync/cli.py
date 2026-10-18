@@ -2031,8 +2031,16 @@ def practice_check_cmd(
             elif kind == "short":
                 if not str(q.get("answer", "")).strip():
                     problems.append(f"{where}: needs a model answer")
+            elif kind == "blank":
+                ans = str(q.get("answer", "")).strip()
+                if not ans or len(ans.split()) > 3:
+                    problems.append(f"{where}: a blank's answer is one to three words")
+                if "__" not in stem:
+                    problems.append(f"{where}: a blank needs ____ in the question where the answer goes")
+                if "accept" in q and not isinstance(q["accept"], list):
+                    problems.append(f"{where}: accept must be a list of other forms that count")
             else:
-                problems.append(f"{where}: type must be mc, multi, tf, num or short")
+                problems.append(f"{where}: type must be mc, multi, tf, num, short or blank")
     if count and len(items) < count * 0.9:
         problems.append(f"only {len(items)} of the {count} asked for")
     print(json.dumps({"ok": not problems, "count": len(items), "problems": problems[:80]}, indent=1))

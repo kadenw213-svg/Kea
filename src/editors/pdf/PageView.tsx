@@ -113,15 +113,23 @@ function PageViewInner(p: Props) {
           try {
             const page = await p.doc!.getPage(p.pageRef.index + 1);
             if (cancelled) return;
+            // The bitmap is exactly as many pixels as the page covers on screen (rounded, never floored), and pdf.js
+            // stretches its drawing to fill it, so the browser never rescales it (rescaling by even one pixel blurs
+            // the whole page at zooms like 75%, 125% or fit width). Very large zooms are capped to keep memory sane.
             const dpr = window.devicePixelRatio || 1;
             let rs = p.scale * dpr;
-            const maxPixels = 12_000_000;
+            const maxPixels = 25_000_000;
             if (p.width * p.height * rs * rs > maxPixels) rs = Math.sqrt(maxPixels / (p.width * p.height));
             const vp = page.getViewport({ scale: rs, rotation: p.rotation });
             const off = document.createElement('canvas');
-            off.width = Math.floor(vp.width);
-            off.height = Math.floor(vp.height);
-            task = page.render({ canvasContext: off.getContext('2d', { willReadFrequently: false })!, viewport: vp });
+            const capped = rs < p.scale * dpr - 1e-6;
+            off.width = capped ? Math.round(vp.width) : Math.round(cssW * dpr);
+            off.height = capped ? Math.round(vp.height) : Math.round(cssH * dpr);
+            task = page.render({
+              canvasContext: off.getContext('2d', { willReadFrequently: false })!,
+              viewport: vp,
+              transform: [off.width / vp.width, 0, 0, off.height / vp.height, 0, 0]
+            });
             await task.promise;
             if (cancelled) return;
             // Hand the finished bitmap to the visible canvas without another copy.

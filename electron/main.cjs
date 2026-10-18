@@ -272,6 +272,7 @@ app.whenReady().then(() => {
   require('./google.cjs').register({ log });
   require('./cite.cjs').register({ log });
   require('./wiki.cjs').register();
+  require('./account.cjs').register();
   require('./scholar/index.cjs').register();
   require('./dict.cjs').register();
   // Quizzes were removed in v0.15.0: clear the per-file quiz progress they kept.
@@ -432,6 +433,13 @@ ipcMain.handle('file:write', (_e, p, data) => {
   } finally {
     fs.rm(tmp, { force: true }, () => {});
   }
+});
+
+// Renaming a file in place (a .txt turned into .md): never over another file.
+ipcMain.handle('file:rename', (_e, from, to) => {
+  if (fs.existsSync(to)) throw new Error(`${path.basename(to)} already exists in that folder.`);
+  fs.renameSync(from, to);
+  return true;
 });
 
 ipcMain.handle('file:exists', (_e, p) => {

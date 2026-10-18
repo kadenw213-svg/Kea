@@ -8,6 +8,7 @@ import { MenuButton } from '../Popover';
 import { useScholar } from './scholarStore';
 import { Bar, progressOf, span, useLiveRun, useNow } from './ScansView';
 import { ReadingButton, ReadingContext, ReadingPane, ReadingTarget } from './ReadingPane';
+import { judgeBlank } from '../../lib/blank';
 import '../../styles/study.css';
 
 // ---------- Shared state ----------
@@ -390,9 +391,13 @@ function parseNumber(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Right or wrong (short answers are marked by the student: null until then). */
-function grade(s: Shown, a: Answer, self?: boolean): boolean | null {
+/**
+ * Right or wrong (short answers are marked by the student: null until then; a blank is marked by judgeBlank, null while
+ * it decides, and the student can overrule it).
+ */
+function grade(s: Shown, a: Answer, self?: boolean, judged?: boolean): boolean | null {
   const q = s.q;
+  if (q.type === 'blank') return self ?? judged ?? null;
   if (q.type === 'mc') return typeof a === 'number' && s.order[a] === q.answer;
   if (q.type === 'multi') {
     if (!Array.isArray(a)) return false;
@@ -436,6 +441,7 @@ function Exam({ set }: { set: StudySetFull }) {
   const [run, setRun] = useState<Shown[] | null>(null);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [selfMarks, setSelfMarks] = useState<(boolean | undefined)[]>([]);
+  const [judged, setJudged] = useState<(boolean | undefined)[]>([]);
   const [checked, setChecked] = useState<boolean[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -445,11 +451,27 @@ function Exam({ set }: { set: StudySetFull }) {
     setRun(picked.map((q) => ({ q, order: 'choices' in q ? shuffle(q.choices.map((_, i) => i)) : [] })));
     setAnswers(picked.map(() => null));
     setSelfMarks([]);
+    setJudged([]);
     setChecked([]);
     setSubmitted(false);
     setSaved(false);
   };
-  const results = useMemo(() => (run ? run.map((s, i) => grade(s, answers[i], selfMarks[i])) : []), [run, answers, selfMarks]);
+  const results = useMemo(() => (run ? run.map((s, i) => grade(s, answers[i], selfMarks[i], judged[i])) : []), [run, answers, selfMarks, judged]);
+  // Blanks are marked as they're revealed: Kea's own matching, then the local model for anything it can't place.
+  useEffect(() => {
+    if (!run) return;
+    run.forEach((s, i) => {
+      const q = s.q;
+      if (q.type !== 'blank' || judged[i] !== undefined || !(submitted || checked[i])) return;
+      judgeBlank(typeof answers[i] === 'string' ? (answers[i] as string) : '', q.answer, q.accept || [], q.q).then((ok) =>
+        setJudged((p) => {
+          const c = [...p];
+          c[i] = ok;
+          return c;
+        })
+      );
+    });
+  }, [run, submitted, checked]);
   const score = results.filter((r) => r === true).length;
   const unmarked = results.filter((r) => r === null).length;
   // Save the attempt once everything is marked (short answers need the student's own mark).
@@ -598,6 +620,18 @@ function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf, onChe
               Answer: {q.answer}
               {q.unit ? ` ${q.unit}` : ''}
             </span>
+          )}
+        </div>
+      )}
+      {q.type === 'blank' && (
+        <div className="st-num-in">
+          <input value={typeof answer === 'string' ? answer : ''} onChange={(e) => setAnswer(e.target.value)} placeholder="A word or two" disabled={reveal} autoCapitalize="off" spellCheck={false} />
+          {reveal && result === null && <span className="muted">Checking…</span>}
+          {reveal && result !== null && <span className="st-correct-val">Answer: {q.answer}</span>}
+          {reveal && result === false && (
+            <button className="btn sm" onClick={() => onSelf(true)} title="Kea marked this wrong, but it means the same thing">
+              <Check size={13} /> I was right
+            </button>
           )}
         </div>
       )}

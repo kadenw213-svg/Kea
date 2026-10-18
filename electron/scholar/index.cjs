@@ -147,7 +147,7 @@ const syncSoon = (delay) => {
 
 // ---------- Other computers (the same classes on more than one PC, scanned by only one of them) ----------
 const devices = require('./devices.cjs');
-devices.configure({ readState, writeState, applyMarks, syncSoon: (d) => syncSoon(d), ready: () => ready() });
+devices.configure({ readState, writeState, applyMarks, syncSoon: (d) => syncSoon(d), ready: () => ready(), banks: () => keepBanks() });
 
 // ---------- Tell the window when a scan changes the classes ----------
 let watcher = null;
@@ -206,7 +206,7 @@ const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() 
 /** Whether class scans can run for this profile: Claude signed in, the engine installed, a class site saved. */
 async function ready() {
   const c = await workspace.check();
-  return !!(c.claude && c.uv && c.account.loggedIn && c.engineReady && browser.schoolInfo().home);
+  return !!(c.claude && c.uv && c.account.loggedIn && c.engineReady && browser.schoolInfo().home && require('../account.cjs').verified());
 }
 
 /**
@@ -251,7 +251,8 @@ async function tick() {
     s.lastRuns = s.lastRuns || {};
     // Once a day at most, this decides what's due today.
     const today = localDate();
-    if (s.lastRuns.daily === today) return;
+    // (Once today's checks are done, chapters short of questions get them, one at a time.)
+    if (s.lastRuns.daily === today) return keepBanks();
     if (!(await ready())) return;
     const daysSince = (d) => (d ? Math.round((new Date(`${today}T12:00`) - new Date(`${d}T12:00`)) / 864e5) : Infinity);
     const weekday = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][now.getDay()];
@@ -266,8 +267,40 @@ async function tick() {
     if (checkDue) await runner.run('daily', '', 'schedule');
     if (syncDue) await runner.run('sync', '', 'schedule');
     if ((checkDue || syncDue) && settings.get('scholar.studyPdfs', true) !== false) await runner.run('study', '', 'schedule');
+    keepBanks();
   } catch (err) {
     console.error('Scholar schedule', err);
+  }
+}
+
+// ---------- Question banks ----------
+// Every chapter with a textbook keeps a bank of saved questions (50 by default), and gets more when the student runs
+// low. Made by the primary only, one chapter at a time, each bank written once and then reused on every device.
+let banking = false;
+async function keepBanks() {
+  if (banking || devices.follower() || settings.get('scholar.questionBanks', true) === false || !require('../account.cjs').verified()) return;
+  if (!(await workspace.check().then((c) => c.account?.loggedIn).catch(() => false))) return;
+  banking = true;
+  try {
+    const study = require('./study.cjs');
+    for (let n = 0; n < 200; n++) {
+      const p = profiles.paths();
+      const need = study.bankNeed(await db.textbookChapters(p.db, p.textbooks), Number(settings.get('scholar.bankSize', 50)) || 50);
+      if (!need) break;
+      const { id } = await study.request(need);
+      BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
+      const done = await runner.run('practice', id, 'schedule');
+      BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
+      // Dropped (a usage-limit pause, a profile switch) or failed: try again on the next check.
+      if (!done || study.list().find((e) => e.id === id)?.status !== 'ready') {
+        if (!done) study.remove(id);
+        break;
+      }
+    }
+  } catch (err) {
+    console.error('Question banks', err);
+  } finally {
+    banking = false;
   }
 }
 
@@ -315,8 +348,10 @@ function register() {
   // Scans.
   // On a device that isn't the primary, the primary is asked to (through the drive), so nothing runs twice.
   ipcMain.handle('scholar:run', (_e, task, arg) => {
+    // School mode needs a Kea account with a verified email.
+    if (!require('../account.cjs').verified()) throw new Error('Set up your Kea account with a verified email first (Scholar → your name → Your account).');
     if (task !== 'probe' && devices.follower()) return devices.relay({ task, arg: arg || '' });
-    runner.run(task, arg || '', 'manual');
+    runner.run(task, arg || '', 'manual').then(() => task === 'study' && keepBanks());
     return true;
   });
   // Your devices: which one scans, the drive they sync through, and bringing classes in on a new one.
@@ -429,8 +464,21 @@ function register() {
     return id;
   });
   ipcMain.handle('scholar:studySaved', (_e, req) => study.saved(req));
+  // The textbook PDF open in a tab: which class and chapters it is, for its Quiz me button.
+  ipcMain.handle('scholar:textbookOf', (_e, file) => db.textbookOf(p().db, p().textbooks, file));
+  // A chapter with no saved questions yet: write its bank now (on the primary). False when Claude isn't available.
+  ipcMain.handle('scholar:studyBanks', async () => {
+    if (devices.follower()) return (devices.relay({ task: 'banks', arg: '' }), true);
+    const ok = await workspace.check().then((c) => !!c.account?.loggedIn).catch(() => false);
+    if (ok) keepBanks();
+    return ok;
+  });
   ipcMain.handle('scholar:studyDelete', (_e, id) => study.remove(id));
-  ipcMain.handle('scholar:studyAttempt', (_e, id, a) => study.saveAttempt(id, a));
+  ipcMain.handle('scholar:studyAttempt', (_e, id, a) => {
+    study.saveAttempt(id, a);
+    setTimeout(keepBanks, 5000); // running low on a chapter's questions: more get written
+    return true;
+  });
   ipcMain.handle('scholar:studyKnown', (_e, id, known) => study.setKnown(id, known));
   ipcMain.handle('scholar:resume', (_e, task) => {
     if (devices.follower()) return (devices.relay({ task: 'resume', arg: task || '' }), true);

@@ -9,6 +9,10 @@ user-invocable: true
 > **In Kea:** this run is unattended: never ask, never wait. **Be fast.** The student is watching a progress bar and
 > expects about a minute or two. Kea has already done all the reading for you.
 
+**Question banks.** When the brief's title says "Question bank", the set is that chapter's standing bank (Quiz me
+beside its textbook, the questions practice exams draw on): cover every section of the chapter, every objective and
+every review-sheet problem type, not just the test focus.
+
 Arguments: `$ARGUMENTS` = Kea's brief (`data/study/requests/<id>.md`), optionally followed by `resume`.
 
 You write the **whole set in one go**. Kea saves it, shuffles question order and choice order every time the student
@@ -72,6 +76,12 @@ notes and review sheets: "multiple choice, calculation problems and short essays
 - `num`: a calculation with a numeric answer: `answer` (number), `tolerance` (absolute; fit it to sensible
   rounding, such as 0.01 for an answer of 2.45), `unit`. The stem gives every value needed. Chemistry, math and
   physics sets should be at least 30% `num` when the course's tests are calculation-heavy.
+- `blank`: fill in the blank. The stem has `____` where the answer goes, and the answer is one or two words (a term,
+  a name, a symbol, a short number with its unit): `answer`, plus `accept`, a list of other forms a teacher would take
+  ("NaCl" for "sodium chloride", "ATP" for "adenosine triphosphate", a common synonym). Kea forgives spelling
+  slips, capitals and plurals itself and has a local model judge the rest, so list only real alternatives. The stem
+  must make one answer clearly right. Use blanks for recall of terms and facts instead of easy `mc`: about 20% of an
+  exam set (more for vocabulary-heavy chapters), unless the course's tests are multiple choice only.
 - `short`: a short written answer or explanation (essay-style courses, "explain why"). `answer` is a model answer
   in 1 to 4 sentences, with the points a grader would look for. The student marks their own answer against it.
 
@@ -117,6 +127,7 @@ then Edit to append the rest, calling `mcp__kea__kea_progress` with `percent` 55
   { "type": "multi", "q": "Select all that apply: …", "choices": ["…", "…", "…", "…", "…"], "answer": [0, 3], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "tf", "q": "…", "answer": false, "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "blank", "q": "The pressure of a gas is inversely proportional to its volume at constant temperature; this is ____ law.", "answer": "Boyle's", "accept": ["Boyle"], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "short", "q": "…", "answer": "…", "explain": "…", "chapter": "…", "topic": "…", "source": "…" }
 ] }
 ```

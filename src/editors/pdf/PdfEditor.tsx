@@ -55,6 +55,7 @@ import type { Annotation, Box, DocState, PageInfo, PageRef, TextAnn, Tool, Image
 import { DEFAULTS } from './types';
 import { setting, useSettings } from '../../lib/settings';
 import { HandInButton } from '../../components/scholar/HandIn';
+import { QuizMeButton } from '../../components/scholar/QuizMe';
 import { PageView, ToolStyle, measureTextAnn } from './PageView';
 import { Thumbnails } from './Thumbnails';
 import { SignatureModal } from './SignatureModal';
@@ -1367,6 +1368,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
 
         <div className="tb-spacer" />
 
+        {tab.path && setting('scholar.enabled') !== false && <QuizMeButton path={tab.path} />}
         {tab.path && setting('scholar.enabled') !== false && <HandInButton path={tab.path} dirty={tab.dirty} />}
         <button className={`icon-btn ${searchOpen ? 'active' : ''}`} title="Find (Ctrl+F)" onClick={() => (setSearchOpen((o) => !o), setTimeout(() => searchInput.current?.focus(), 0))}>
           <Search size={18} />

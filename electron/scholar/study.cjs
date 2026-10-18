@@ -204,7 +204,7 @@ const REUSE = 0.6;
  * files, and the questions that already exist so it writes different ones). Adds the set to the index and returns
  * { id, ready }: ready when no Claude run is needed. `pick` (keys) repeats another device's choice of saved items.
  */
-async function request({ id: given, kind, courseId, chapters = [], itemId = null, count, mode = 'mix', pick: picked = null }) {
+async function request({ id: given, kind, courseId, chapters = [], itemId = null, count, mode = 'mix', pick: picked = null, bank = false }) {
   if (!['exam', 'cards'].includes(kind)) throw new Error('Unknown kind of study set.');
   const p = profiles.paths();
   const src = await db.practiceSources(p.db, p.textbooks, { courseId, chapters, itemId });
@@ -220,8 +220,8 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
   if (mode === 'saved' && !reuse.length) throw new Error('There are no saved questions on these chapters yet.');
   const fresh = mode === 'saved' ? 0 : n - reuse.length;
   const topic = src.item ? src.item.title : src.chapters.map((c) => (c.title ? `${c.label}: ${c.title}` : c.label)).join(', ');
-  const title = `${kind === 'exam' ? 'Practice exam' : 'Flashcards'}: ${topic}`;
-  const entry = { id, kind, title, courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
+  const title = `${bank ? 'Question bank' : kind === 'exam' ? 'Practice exam' : 'Flashcards'}: ${topic}`;
+  const entry = { id, kind, title, ...(bank ? { bank: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
   const list = index().filter((e) => e.id !== id);
   if (!fresh) {
     writeJson(file('sets', `${id}.json`), kind === 'cards' ? { cards: reuse } : { questions: reuse });
@@ -244,12 +244,41 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
     // What already exists on these chapters: Claude writes different questions (they're shown in the brief).
     existing: all.map((it) => ({ k: it.k, chapter: it.chapter || null, topic: it.topic || null, text: String(it.q ?? it.front).slice(0, 140) })),
     reuse,
+    bank,
     output: `data/study/out/${id}.json`
   };
   writeJson(path.join(p.workspace, 'data', 'study', 'requests', `${id}.json`), req);
   list.push({ ...entry, status: 'making', source: 'claude' });
   saveIndex(list);
   return { id, ready: false, pick: reuse.map((it) => it.k) };
+}
+
+// ---------- Question banks: every chapter with a textbook keeps saved questions ready ----------
+// Each chapter with a textbook gets a bank of saved questions (50 by default) so practice is ready without asking, and
+// when the student is running out (fewer than BANK_LOW they haven't seen or last got wrong), Kea adds BANK_MORE new
+// ones. Banks are ordinary sets (bank: true), written one at a time by the primary. Library classes can't make more,
+// so their authors ship 100 per chapter instead.
+const BANK_LOW = 10;
+const BANK_MORE = 25;
+
+/**
+ * The next chapter whose bank needs questions, as a request for request(), or null. `size` is the bank's target;
+ * `chapters` lists { courseId, label } for every chapter with a textbook. Nothing while a bank is being made.
+ */
+function bankNeed(chapters, size = 50) {
+  const all = index();
+  if (all.some((e) => e.bank && e.status === 'making')) return null;
+  const h = history();
+  for (const { courseId, label } of chapters) {
+    const have = catalog('exam', courseId, [label]);
+    // (A chapter whose last bank failed waits a day before trying again.)
+    const failed = all.find((e) => e.bank && e.courseId === courseId && e.chapters?.[0] === label && e.status === 'failed' && Date.now() - Date.parse(e.createdAt) < 864e5);
+    if (failed) continue;
+    if (have.length < size) return { kind: 'exam', courseId, chapters: [label], count: Math.max(SIZES.exam[0], size - have.length), mode: 'new', bank: true };
+    const left = have.filter((it) => !h[it.k] || h[it.k].lastRight === false).length;
+    if (left < BANK_LOW) return { kind: 'exam', courseId, chapters: [label], count: BANK_MORE, mode: 'new', bank: true };
+  }
+  return null;
 }
 
 // ---------- Kea's brief: everything Claude needs, in one short file ----------
@@ -448,7 +477,7 @@ async function prepare(id, docText, step = () => {}) {
   const { notes, general, sources } = await chapterNotes(req, docText, step);
 
   // The brief: the tests first, then each chapter (objectives and vocabulary whole; review text shares the budget).
-  const lines = [`# Write ${req.count} new ${req.kind === 'exam' ? 'practice exam questions' : 'flashcards'}: ${req.course.code} ${req.course.name}`, '', `Output file: ${req.output}`, ''];
+  const lines = [`# Write ${req.count} new ${req.kind === 'exam' ? 'practice exam questions' : 'flashcards'}${req.bank ? ' for the chapter’s Question bank' : ''}: ${req.course.code} ${req.course.name}`, '', `Output file: ${req.output}`, ''];
   const tests = (req.tests || []).filter((t) => t.study_focus?.length || t.description);
   if (tests.length) {
     lines.push('## What the real tests cover (scraped from the class site: the top priority)', '');
@@ -528,6 +557,10 @@ function cleanQuestion(q) {
     return { ...base, answer, tolerance: Number.isFinite(tol) && tol >= 0 ? tol : Math.abs(answer) * 0.01, unit: str(q.unit) || null };
   }
   if (q.type === 'short') return str(q.answer) ? { ...base, answer: str(q.answer) } : null;
+  if (q.type === 'blank') {
+    const accept = Array.isArray(q.accept) ? q.accept.map(str).filter(Boolean) : [];
+    return str(q.answer) && /_{2,}/.test(base.q) ? { ...base, answer: str(q.answer), ...(accept.length ? { accept } : {}) } : null;
+  }
   return null;
 }
 
@@ -577,4 +610,4 @@ function settle(isRunning) {
   if (changed) saveIndex(list);
 }
 
-module.exports = { list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard };
+module.exports = { list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard };
