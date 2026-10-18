@@ -117,18 +117,23 @@ TASKS.sync.pre = async (job, step) => {
 // Every chapter gets written, not only the coming week's: with no argument (the daily schedule) or `missing [CODE]`
 // (after a class's first scan, or the Textbook tab's button), each chapter with no textbook yet is written in the first
 // week that teaches it, one week per run; then the weeks starting soon (reviews before tests).
+// `rewrite <CODE> <label>[, <label>…]` (the Textbook tab's Rewrite button) writes chapters again under the current
+// guidelines, each in the week it was first written in, so the new PDF replaces the old one.
 TASKS.study.pre = async (job, step) => {
   const arg = job.arg.trim();
   const m = /^missing(?:\s+(\S+))?$/.exec(arg);
-  if (arg && !m) return {};
-  step('Checking which chapters still need writing…');
-  const missing = (await engineJson(['study-pdf-due', '--missing', ...(m?.[1] ? ['--course', m[1]] : [])]).catch(() => null)) || [];
-  const due = m ? [] : (await engineJson(['study-pdf-due']).catch(() => null)) || [];
+  const re = /^rewrite\s+(\S+)\s+(.+)$/.exec(arg);
+  if (arg && !m && !re) return {};
+  step(re ? 'Finding the chapters to rewrite…' : 'Checking which chapters still need writing…');
+  const missing = re
+    ? (await engineJson(['study-pdf-due', '--course', re[1], '--rewrite', re[2]]).catch(() => null)) || []
+    : (await engineJson(['study-pdf-due', '--missing', ...(m?.[1] ? ['--course', m[1]] : [])]).catch(() => null)) || [];
+  const due = m || re ? [] : (await engineJson(['study-pdf-due']).catch(() => null)) || [];
   const runs = [
     ...missing.map((b) => ({ b, arg: `${b.banner_id} only ${(b.write_only || []).join(', ')}` })),
     ...due.filter((b) => !missing.some((x) => x.banner_id === b.banner_id)).map((b) => ({ b, arg: b.banner_id }))
   ];
-  if (!runs.length) return { skip: m ? 'Every chapter already has its textbook.' : 'Every chapter already has its textbook, and every week starting soon is ready.', ok: true };
+  if (!runs.length) return { skip: re ? 'Kea couldn’t find the week that teaches that chapter.' : m ? 'Every chapter already has its textbook.' : 'Every chapter already has its textbook, and every week starting soon is ready.', ok: re ? false : true };
   // The chapters' notes (guided readings, review sheets and keys, every test's focus) as plain text, so the writer
   // teaches everything the instructor will ask. The same files practice sets use; Kea fetches and converts, no Claude.
   const uv = await workspace.findUv();

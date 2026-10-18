@@ -1927,6 +1927,9 @@ def study_pdf_due_cmd(
     course: Annotated[str | None, typer.Option("--course", help="With --missing: one course.")] = None,
     only: Annotated[str | None, typer.Option("--only", help="With --banner: comma-separated chapter "
                                              "labels to write (the rest already have PDFs).")] = None,
+    rewrite: Annotated[str | None, typer.Option("--rewrite", help="Kea: with --course, comma-separated "
+                                                "chapter labels to write again, each as the week it was "
+                                                "first written in.")] = None,
 ) -> None:
     """JSON list of weekly banners that need a study PDF -- starting within
     [today - lookback, today + lookahead] with no PDF built or skipped yet --
@@ -1940,6 +1943,13 @@ def study_pdf_due_cmd(
             cid = _resolve_course_or_exit(session, course).id if course else None
             bundles = [study_pdf_mod.build_bundle(session, b, new)
                        for b, new in study_pdf_mod.missing_banners(session, cid)]
+            print(json.dumps(bundles, indent=1))
+            return
+        if rewrite:
+            cid = _resolve_course_or_exit(session, course).id if course else None
+            labels = [x.strip() for x in rewrite.split(",") if x.strip()]
+            bundles = [study_pdf_mod.build_bundle(session, b, [label])
+                       for b, label in study_pdf_mod.rewrite_banners(session, cid, labels)]
             print(json.dumps(bundles, indent=1))
             return
         if banner:

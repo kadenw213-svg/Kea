@@ -52,7 +52,9 @@ chapter with no PDF yet, the first unbuilt week that teaches it. Kea then runs t
 `uv run academic-sync study-pdf-due --banner <id> --only "<labels>"`: the bundle's
 `chapters` (and `pdf_title`) hold only the chapters to write. The week's other chapters
 already have PDFs; don't teach them again (mention them in one line if the new chapter
-builds on them). Always build a full PDF in this mode: never a review, never a skip.
+builds on them). Always build a full PDF in this mode: never a review, never a skip. When the student presses **Rewrite** in Kea,
+the chapter's `already_in_pdfs` names its old PDF, which this one replaces: write it fresh to the current guidelines
+(you may Read the old `main.typ` in `work_dir` to keep what was good, but meet every rule in this file).
 
 **Weeks already over** (`week_is_past` true): leave out the `= This Week` section and the
 `#due` lines (those dates are history). Keep each chapter's exam-style material: tests
@@ -119,10 +121,30 @@ Template pieces (all in `src/academic_sync/study_pdf_template.typ`):
    never add an item that isn't in the bundle.
 2. One chapter after another. For each section: teach the idea, then show how it works,
    then show how it's tested. End each chapter with a summary table where the material is
-   comparative, and a `#selfcheck` of 5-8 questions in the style the course tests (MC
+   comparative, and a `#selfcheck` of 8-12 questions in the style the course tests (MC
    stems, calculations, short explanations).
 3. If a test is this week, finish with `= Exam Prep: <test title>`: what it covers, the
    problem types, and the facts to memorize, as tight lists.
+
+### The quality bar: beat what the course requires, by a margin
+
+The required list (objectives, vocabulary, guided-reading blanks, FunSheet problem types, every test's study focus)
+is the floor, not the target. A student who reads only this PDF should be able to answer anything on those lists
+*and* the slightly harder versions an instructor writes for an exam. For every required item:
+- **Answer it outright, then go one step further:** the why behind it, the condition where it stops being true, and
+  how it connects to the item next to it (Henry's law → why divers get the bends; Le Chatelier → why a catalyst
+  doesn't shift equilibrium).
+- **Every problem type gets two worked examples:** one typical, matching the FunSheet or homework, and one with a
+  twist the exam could add (a unit conversion first, a missing value to find, a reversed question, a real-world
+  setting). Numbers differ from the review sheets so the student learns the method, not the answer.
+- **Every application the course names gets a concrete example** (fermentation, ocean acidification, blood
+  buffers, IV solutions…): what happens, written as the chemistry, not just named.
+- **Notation the exams use is taught explicitly**, with a line on reading it (phase labels (s), (l), (g), (aq);
+  significant figures in each answer; units carried through every step).
+- **Self-check: 8 to 12 questions per chapter** that together touch every problem type and every test focus line,
+  at the difficulty of the real tests or a little above, each with a worked answer.
+- **Final pass:** re-read each chapter as the student the night before the exam. If any question you can imagine
+  from the focus lines would send them to another source, add what's missing.
 
 ### Depth (the most important part)
 
@@ -148,8 +170,8 @@ Template pieces (all in `src/academic_sync/study_pdf_template.typ`):
   notation. When unsure of a detail the course might test, check it (WebFetch a reliable
   open source: OpenStax, LibreTexts, the chapter's `reading_url` if public) rather than
   guessing.
-- **Length:** 10-15 pages (about 4,500-7,500 words plus figures). Two heavy chapters may
-  run up to 18-20 pages. Don't pad a thin chapter to reach the target.
+- **Length:** 10-15 pages (about 4,500-7,500 words plus figures); a single heavy chapter may run to 18,
+  two heavy chapters up to 20. Meeting the quality bar comes first; never pad a thin chapter to reach the target.
 
 ### Images (4-8 per PDF, each one earning its place)
 
@@ -192,7 +214,8 @@ uv run academic-sync study-pdf-check --banner <id>
 It lists any saved vocabulary terms the text never uses. Teach each one properly where it
 belongs, then re-run until the list is empty. Then re-read your map from step 3 and confirm,
 item by item, that each objective, guided-reading blank, FunSheet problem type and test
-study-focus line is taught, not just mentioned. Fix any gap before building.
+study-focus line is taught, not just mentioned, to the quality bar in step 4 (problem types with two worked
+examples, applications with a concrete example). Fix any gap before building.
 
 ## 6. Build and look at it
 

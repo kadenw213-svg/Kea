@@ -222,6 +222,34 @@ def missing_banners(session: Session, course_id: str | None = None) -> list[tupl
     return out
 
 
+
+def rewrite_banners(session: Session, course_id: str | None, labels: list[str]) -> list[tuple[AcademicItem, str]]:
+    """Kea's rewrite: for each chapter, the banner of the PDF that teaches it
+    alone (else any PDF with it, else the first week that teaches it), so
+    the new PDF replaces the old one in place."""
+    rows = session.scalars(select(StudyPdfRow).where(
+        StudyPdfRow.file_path.is_not(None),
+        *([StudyPdfRow.course_id == course_id] if course_id else []))).all()
+    out: list[tuple[AcademicItem, str]] = []
+    for label in labels:
+        key = canonicalize_chapter_label(label)
+        has = [r for r in rows if key in {canonicalize_chapter_label(x) for x in r.chapters_json}]
+        has.sort(key=lambda r: len(r.chapters_json))
+        banner = repository.get_academic_item(session, has[0].banner_item_id) if has else None
+        if banner is None and course_id:
+            for item_id in session.scalars(select(AcademicItemRow.id).where(
+                    AcademicItemRow.item_type == ItemType.WEEKLY_READING.value,
+                    AcademicItemRow.course_id == course_id,
+                    AcademicItemRow.date.is_not(None)).order_by(AcademicItemRow.date)):
+                b = repository.get_academic_item(session, item_id)
+                if b and any(lb and canonicalize_chapter_label(lb) == key for lb, _ in week_segments(session, b)):
+                    banner = b
+                    break
+        if banner is not None:
+            out.append((banner, label))
+    return out
+
+
 ONLY_FILE = "kea-only.json"
 
 

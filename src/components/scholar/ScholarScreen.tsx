@@ -1152,11 +1152,32 @@ function Textbook({ c }: { c: ScholarCourseDetail }) {
                 </button>
               )}
               <PracticeBox courseId={c.id} chapters={[ch.label]} title={`Practice ${ch.label}`} />
+              {ch.pdf && <RewriteButton code={c.code} chapter={ch.label} />}
             </div>
           )}
         </div>
       ))}
     </div>
+  );
+}
+
+/** Write a chapter's textbook again under Kea's current guidelines (Claude, on the device that scans); asks once first. */
+function RewriteButton({ code, chapter }: { code: string; chapter: string }) {
+  const [sure, setSure] = useState(false);
+  const go = async () => {
+    if (!sure) return setSure(true);
+    setSure(false);
+    try {
+      await api.scholar.run('study', `rewrite ${code} ${chapter}`);
+      toast(`Rewriting ${chapter}. It takes about 5 minutes; follow it under Scans. The new chapter replaces this one.`, 'success');
+    } catch (err: any) {
+      toast(err?.message || 'Kea couldn’t start the rewrite.', 'error');
+    }
+  };
+  return (
+    <button className="btn sm" onClick={go} onBlur={() => setSure(false)} title="Write this chapter again with Kea’s latest guidelines, using your class’s review sheets and test focus. Uses your Claude account.">
+      <RefreshCw size={13} /> {sure ? 'Rewrite with Claude? Click again' : 'Rewrite chapter'}
+    </button>
   );
 }
 

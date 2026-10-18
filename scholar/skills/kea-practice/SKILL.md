@@ -30,6 +30,10 @@ fact you are genuinely unsure of, and read only the part you need (Grep it).
 
 Call `mcp__kea__kea_progress` once after reading, with `percent` 20 ("Writing 25 questions on Chapters 5–6").
 
+**Aim a little above the course.** Questions match the real tests' style and are at their difficulty or slightly
+harder (an extra step, a unit conversion, a reversed question), so the real exam feels easy. Explanations teach the
+method or reason, not just the answer, so a missed question is learned.
+
 **Write for the real exam.** What the scans found about the tests is what will actually be on them, so it drives
 the set:
 - **At least 60% of the questions come straight from the tests' study focus and review sheets.** Every study-focus
@@ -49,7 +53,10 @@ the set:
 **Saved questions.** Kea keeps every question the student has had, and a new set reuses some of them. The brief
 ends with "Already saved for these chapters": write the number of **new** items in the title line, all different
 from those (other problems, other numbers and angles, topics and problem types the saved ones miss). Don't
-rewrite a saved question in new words; Kea drops repeats.
+rewrite a saved question in new words; Kea drops repeats. **Calculations are the exception:** a saved
+calculation's format with new numbers (and a new answer) is a new question, and a good one, since the exam tests
+the method. Vary the numbers enough that the answer can't be remembered, and where you can, change which quantity
+is asked for too.
 
 The student never sees the vocabulary and objective lists. This set is where they're used.
 
@@ -83,8 +90,8 @@ Balance and difficulty:
   section.
 - About 30% recall and recognition, 50% application (calculate, classify, predict, interpret), 20% harder multi-step
   or comparison questions, the hardest type the review sheets show.
-- Each question tests one thing and doesn't give away another question's answer. No duplicates or near-duplicates
-  (the same question with new numbers is fine for calculation types if you change what's asked).
+- Each question tests one thing and doesn't give away another question's answer. No duplicates or near-duplicates,
+  except calculations: the same problem format with new numbers is fine (better still if what's asked changes too).
 - Plain text only, no LaTeX or Markdown. Use Unicode: x², x³, √, ≤, ≥, ≠, ±, π, Δ, →, ⇌, °, subscripts like H₂O and
   CO₂, superscripts like Na⁺ and SO₄²⁻, and fractions like (x + 1)/(x − 2).
 - Be accurate: check every answer by working it, and keep the explanation's numbers consistent with the answer.
