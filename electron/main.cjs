@@ -215,8 +215,10 @@ function createWindow() {
         app.quit();
       }, Number(process.env.KEA_CAPTURE_DELAY || 4000));
     });
-    mainWindow.webContents.on('console-message', (_e, level, message, line, source) => {
-      if (level >= 2) console.log(`[renderer] ${message} (${source}:${line})`);
+    // (Newer Electron passes one details object; older ones passed the parts as arguments.)
+    mainWindow.webContents.on('console-message', (e, level, message, line, source) => {
+      const d = e && typeof e.message === 'string' ? { level: { warning: 2, error: 3 }[e.level] ?? 0, message: e.message, line: e.lineNumber, source: e.sourceId } : { level, message, line, source };
+      if (d.level >= 2) console.log(`[renderer] ${d.message} (${d.source}:${d.line})`);
     });
   }
 }

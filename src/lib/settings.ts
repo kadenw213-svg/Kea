@@ -505,6 +505,31 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'sites',
+    label: 'Class sites',
+    icon: 'Globe',
+    blurb: 'Kea’s own window for your class site and the pages it links to.',
+    fields: [
+      { key: 'sites.dark', label: 'Dark mode on class sites', type: 'toggle', default: true, help: 'D2L Brightspace, Canvas, Blackboard, Moodle, Schoology, Google Classroom and publisher sites open dark in Kea’s class-site window. Photos and videos keep their colours; pages that are already dark are left alone.' },
+      { key: 'sites.darkStrength', label: 'Darkness', type: 'range', default: 0.9, min: 0.7, max: 1, step: 0.02, when: (v) => v['sites.dark'] !== false },
+      { key: 'sites.darkBrightness', label: 'Brightness', type: 'range', default: 1, min: 0.7, max: 1.3, step: 0.05, when: (v) => v['sites.dark'] !== false },
+      { key: 'sites.darkContrast', label: 'Contrast', type: 'range', default: 1, min: 0.7, max: 1.4, step: 0.05, when: (v) => v['sites.dark'] !== false },
+      { key: 'sites.darkWarmth', label: 'Warmth (less blue light)', type: 'range', default: 0, min: 0, max: 0.4, step: 0.05, when: (v) => v['sites.dark'] !== false },
+      { key: 'sites.darkDocs', label: 'Darken documents and PDFs shown in the page', type: 'toggle', default: false, when: (v) => v['sites.dark'] !== false, help: 'Off keeps handouts and PDFs white, the way they print.' },
+      ...([
+        ['d2l', 'D2L Brightspace'],
+        ['canvas', 'Canvas'],
+        ['blackboard', 'Blackboard'],
+        ['moodle', 'Moodle'],
+        ['schoology', 'Schoology'],
+        ['classroom', 'Google Classroom'],
+        ['publishers', 'Publisher sites (Pearson, McGraw Hill, Cengage, ALEKS, zyBooks…)'],
+        ['other', 'Every other site']
+      ] as const).map(([id, label]) => ({ key: `sites.dark.${id}`, label: `Dark: ${label}`, type: 'toggle' as const, default: true, advanced: true, when: (v: any) => v['sites.dark'] !== false })),
+      { key: 'sites.adblock', label: 'Block ads and trackers', type: 'toggle', default: true, help: 'Uses the same filter lists as uBlock Origin (EasyList, EasyPrivacy), updated weekly. uBlock Origin itself can’t run inside Kea.' }
+    ]
+  },
+  {
     id: 'lookup',
     label: 'Encyclopedia',
     icon: 'BookOpen',

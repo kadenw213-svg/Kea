@@ -1,7 +1,7 @@
 {
   "name": "kea",
   "productName": "Kea",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "description": "Kea: your classes, textbooks and calendar, with a clean offline office suite for PDFs, documents, spreadsheets and slides.",
   "author": "kadenw213-svg",
   "license": "MIT",
@@ -18,6 +18,7 @@
     "postinstall": "node scripts/keep-out-of-onedrive.cjs"
   },
   "dependencies": {
+    "@ghostery/adblocker-electron": "^2.18.2",
     "electron-updater": "^6.3.9",
     "markdown-it": "^14.3.3",
     "node-llama-cpp": "^3.21.1",
@@ -72,7 +73,7 @@
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
     "docx": "^9.1.1",
-    "electron": "^33.2.1",
+    "electron": "^44.5.0",
     "electron-builder": "^25.1.8",
     "exceljs": "^4.4.0",
     "harper.js": "2.10.0",

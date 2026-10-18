@@ -72,8 +72,10 @@ function getWindow() {
     height: 820,
     title: 'Kea: sign in to your class site',
     autoHideMenuBar: true,
-    webPreferences: { partition: partition(), sandbox: true, contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, 'browser-preload.cjs') }
+    // (The preload also runs in frames, for dark mode inside embedded pages.)
+    webPreferences: { partition: partition(), sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'browser-preload.cjs') }
   });
+  prepareSession(session.fromPartition(partition()));
   // Pages can't open more windows: links that would, load here instead.
   win.webContents.setWindowOpenHandler(({ url }) => {
     win.loadURL(url).catch(() => {});
@@ -87,6 +89,49 @@ function getWindow() {
   });
   return win;
 }
+
+// ---------- The class-site browser: a current Chrome, ads blocked, dark mode ----------
+// Sites check the browser by its name: Kea's window is current Chromium, so it says it's Chrome (without "Electron"
+// or "Kea", which school sites read as an old or unsupported browser).
+const chromeAgent = () => {
+  const os = (/\(([^)]+)\)/.exec(require('electron').app.userAgentFallback) || [])[1] || 'Windows NT 10.0; Win64; x64';
+  // (Chrome itself reports only its major version.)
+  return `Mozilla/5.0 (${os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome.split('.')[0]}.0.0.0 Safari/537.36`;
+};
+const prepared = new WeakSet();
+function prepareSession(ses) {
+  if (prepared.has(ses)) return;
+  prepared.add(ses);
+  ses.setUserAgent(chromeAgent());
+  require('./adblock.cjs').enable(ses);
+}
+
+/** Dark mode for class sites, from Kea's settings (Settings → Class sites). */
+function darkSettings() {
+  const settings = require('../settings.cjs');
+  const g = (k, d) => settings.get(`sites.${k}`, d);
+  const sites = {};
+  for (const id of ['d2l', 'canvas', 'blackboard', 'moodle', 'schoology', 'classroom', 'publishers', 'other']) sites[id] = g(`dark.${id}`, id !== 'other' || g('dark.other', true));
+  return {
+    on: g('dark', true) !== false,
+    strength: Number(g('darkStrength', 0.9)),
+    brightness: Number(g('darkBrightness', 1)),
+    contrast: Number(g('darkContrast', 1)),
+    sepia: Number(g('darkWarmth', 0)),
+    docs: g('darkDocs', false) === true,
+    sites
+  };
+}
+ipcMain.on('class-site:dark', (e) => (e.returnValue = darkSettings()));
+require('../settings.cjs').onChange(() => {
+  if (!win || win.isDestroyed()) return;
+  const d = darkSettings();
+  for (const f of win.webContents.mainFrame.framesInSubtree) {
+    try {
+      f.send('class-site:dark', d);
+    } catch {}
+  }
+});
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -232,6 +277,7 @@ async function request(url) {
   if (!s.home) throw new Error('No class site is set up yet.');
   if (hostOf(url) && hostOf(url) !== hostOf(s.home) && !/^https:\/\//i.test(url)) throw new Error('Only https addresses can be fetched.');
   const ses = session.fromPartition(partition());
+  prepareSession(ses);
   let res = await ses.fetch(url, { redirect: 'follow' });
   // Refused while signed in: a page students can't see, not a sign-in problem.
   if (res.status === 403 && (await status()).signedIn) return res;
@@ -361,6 +407,7 @@ async function status() {
   if (!s.home) return { setUp: false, signedIn: false };
   try {
     const ses = session.fromPartition(partition());
+    prepareSession(ses);
     const res = await ses.fetch(new URL('/d2l/api/lp/1.0/users/whoami', s.home).href, { redirect: 'manual' });
     return { setUp: true, signedIn: res.status === 200, home: s.home };
   } catch {
