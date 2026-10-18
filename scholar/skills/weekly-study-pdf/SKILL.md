@@ -35,6 +35,13 @@ titled with, so the PDF never trails the class; each with label, title, `section
 `tests_next_3_weeks` (with `covered_chapters` / `study_focus`), `pdf_title`, `work_dir`,
 `source_path` (where `main.typ` goes) and `output_path`.
 
+**Kea's chapter notes (read the one for each chapter you write):**
+`data/study/notes/<CODE>/<Chapter N>.md`. Kea builds them before this run, from what the scans saved: the
+chapter's objectives and vocabulary, the text of its review material (the instructor's **guided reading**, a
+fill-in outline of exactly what students must know; **FunSheets** and their answer keys, the problems the exams
+copy), and **Tests on this chapter**: every test that covers it, any date, the final included, with the
+instructor's study focus. This is what the course will actually ask, so the chapter must teach all of it.
+
 Also read `data/downloads/<CODE>/raw_notes.md` for course context (instructor emphasis,
 lab topics, how the course is run).
 
@@ -72,6 +79,10 @@ still to come that cover it (from `tests_next_3_weeks`, or the course's later ex
   own concept/section structure for that chapter number.
 - Map **every** objective (sourced and added) to the section that teaches it, and every
   vocabulary term to where it is first explained. Nothing may be left unmapped.
+- From the chapter notes, map too: every blank and question of the guided reading (a student filling it in from
+  this PDF must find every answer, in plain words), every problem type on the FunSheets (each gets a fully worked
+  example, solved the way the answer key solves it), and every study-focus line of every test on the chapter
+  (taught where it belongs and flagged with `#exam[...]`).
 - Pick the week's problem types (MAT/CHE: every type the homework and tests use) and
   plan at least one fully worked example for each.
 
@@ -179,8 +190,9 @@ uv run academic-sync study-pdf-check --banner <id>
 ```
 
 It lists any saved vocabulary terms the text never uses. Teach each one properly where it
-belongs, then re-run until the list is empty. Then re-read your objective map from step 3
-and confirm each objective is taught, not just mentioned.
+belongs, then re-run until the list is empty. Then re-read your map from step 3 and confirm,
+item by item, that each objective, guided-reading blank, FunSheet problem type and test
+study-focus line is taught, not just mentioned. Fix any gap before building.
 
 ## 6. Build and look at it
 

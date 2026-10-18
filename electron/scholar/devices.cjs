@@ -230,8 +230,9 @@ async function lead(dir) {
         else if (r.task === 'resume') runner.pending() ? runner.resume() : runner.resumeLast(r.arg || 'import');
         else if (r.task === 'inbox') precheck.pollAnnouncements().then((ok) => ok && hooks.syncSoon(5000)).catch(() => {});
         else if (r.task === 'practice') {
-          const id = await require('./study.cjs').request(r.req || {});
-          runner.run('practice', id, 'manual').then(() => soon(3000));
+          const { id, ready } = await require('./study.cjs').request(r.req || {});
+          if (ready) soon(1000);
+          else runner.run('practice', id, 'manual').then(() => soon(3000));
         } else if (runner.TASKS[r.task] && r.task !== 'probe') runner.run(r.task, r.arg || '', 'manual').then(() => soon(3000));
       } catch (err) {
         console.error('Devices request', err);
@@ -336,7 +337,8 @@ async function follow(dir) {
   const theirs = readJson(path.join(dir, 'shared', 'study', 'index.json'), null);
   if (theirs) {
     const ids = new Set(theirs.map((e) => e.id));
-    const waiting = [...before.values()].filter((e) => !ids.has(e.id) && e.status === 'making' && ago(e.createdAt) < 6 * 3600e3);
+    // (A set from saved questions is ready here at once; it stays until the primary's copy of it arrives.)
+    const waiting = [...before.values()].filter((e) => !ids.has(e.id) && (e.status === 'making' || e.source === 'saved') && ago(e.createdAt) < 6 * 3600e3);
     const list = [...theirs, ...waiting];
     if (JSON.stringify(list) !== JSON.stringify([...before.values()])) {
       writeJson(path.join(study, 'index.json'), list);

@@ -129,6 +129,16 @@ TASKS.study.pre = async (job, step) => {
     ...due.filter((b) => !missing.some((x) => x.banner_id === b.banner_id)).map((b) => ({ b, arg: b.banner_id }))
   ];
   if (!runs.length) return { skip: m ? 'Every chapter already has its textbook.' : 'Every chapter already has its textbook, and every week starting soon is ready.', ok: true };
+  // The chapters' notes (guided readings, review sheets and keys, every test's focus) as plain text, so the writer
+  // teaches everything the instructor will ask. The same files practice sets use; Kea fetches and converts, no Claude.
+  const uv = await workspace.findUv();
+  const cwd = profiles.paths().workspace;
+  for (const code of new Set(runs.map((r) => r.b.course?.code).filter(Boolean))) {
+    step(`Gathering ${code}'s review sheets and test focus…`);
+    await require('./study.cjs')
+      .notesFor(code, (file) => docText(uv, cwd, file), step)
+      .catch((err) => console.error('Chapter notes', err));
+  }
   if (runs.length === 1) return { prompt: `/weekly-study-pdf ${runs[0].arg}` };
   const chapters = missing.reduce((n, b) => n + (b.write_only || []).length, 0);
   return { split: runs.map((r) => r.arg), summary: `Writing ${chapters ? `${chapters} chapter${chapters === 1 ? '' : 's'}` : `${runs.length} weeks' chapters`}, one week at a time.` };

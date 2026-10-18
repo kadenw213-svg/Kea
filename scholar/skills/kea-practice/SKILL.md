@@ -46,6 +46,11 @@ the set:
 - Set `source` on every question to where it came from ("FunSheet Ch 5", "Exam 3 focus", "Objective"), so the
   balance can be checked.
 
+**Saved questions.** Kea keeps every question the student has had, and a new set reuses some of them. The brief
+ends with "Already saved for these chapters": write the number of **new** items in the title line, all different
+from those (other problems, other numbers and angles, topics and problem types the saved ones miss). Don't
+rewrite a saved question in new words; Kea drops repeats.
+
 The student never sees the vocabulary and objective lists. This set is where they're used.
 
 ## 2. Exam-style questions (`kind: exam`)
@@ -66,7 +71,11 @@ notes and review sheets: "multiple choice, calculation problems and short essays
 Every question has:
 - `explain`: why the answer is right, in 1 to 3 sentences. For calculations, the worked solution, each step. For
   `mc`, also why the most tempting wrong choice is wrong.
-- `chapter`: the chapter label it tests ("Chapter 5"); `topic`: the section or objective in a few words.
+- `chapter`: the chapter label it tests ("Chapter 5"); `topic`: the idea it tests in a few words, using the
+  textbook's own term ("Boyle's law", "molarity").
+- `section`: the textbook section that teaches the answer, exactly as the chapter's `Sections:` line in the brief
+  writes it ("5.1 The Gaseous State"). Kea opens the textbook there when the student taps the book icon, so pick the
+  section a student should read to answer it.
 - `source`: where it came from: "FunSheet Ch 5", "Study focus", "Objective", "Textbook 5.3".
 
 Balance and difficulty:
@@ -85,7 +94,7 @@ Balance and difficulty:
 - `front`: a term, a concept prompt ("What happens to a gas's volume when its temperature doubles at constant
   pressure?"), a structure, a formula's name, or a problem type ("How do you find the limiting reactant?").
 - `back`: the answer in 1 to 3 sentences, or a short procedure. Include the key fact the exam asks.
-- `chapter` on each card.
+- `chapter`, `section` (as for questions: from the chapter's `Sections:` line) and `topic` on each card.
 - Start with what the tests will ask: a card for every study-focus point and every item on the review sheets
   (formulas, problem types as "How do you…" cards, the facts the FunSheets drill). Then every vocabulary term and
   objective of the chapters. Mix term cards with how and why cards. No duplicates.
@@ -97,7 +106,7 @@ then Edit to append the rest, calling `mcp__kea__kea_progress` with `percent` 55
 
 ```json
 { "questions": [
-  { "type": "mc", "q": "…", "choices": ["…", "…", "…", "…"], "answer": 2, "explain": "…", "chapter": "Chapter 5", "topic": "Boyle's law", "source": "FunSheet Ch 5" },
+  { "type": "mc", "q": "…", "choices": ["…", "…", "…", "…"], "answer": 2, "explain": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law", "source": "FunSheet Ch 5" },
   { "type": "multi", "q": "Select all that apply: …", "choices": ["…", "…", "…", "…", "…"], "answer": [0, 3], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "tf", "q": "…", "answer": false, "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
@@ -105,7 +114,7 @@ then Edit to append the rest, calling `mcp__kea__kea_progress` with `percent` 55
 ] }
 ```
 
-or, for flashcards, `{ "cards": [ { "front": "…", "back": "…", "chapter": "Chapter 5" } ] }`. `answer` indexes are
+or, for flashcards, `{ "cards": [ { "front": "…", "back": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law" } ] }`. `answer` indexes are
 0-based. Work each answer in your head as you write it; don't draft the set twice.
 
 Then call `mcp__kea__kea_progress` with `percent` 90 and run `uv run academic-sync practice-check <output> --count

@@ -181,6 +181,7 @@
   white-space: nowrap;
 }
 .st-reading-pages {
+  position: relative;
   flex: 1;
   overflow-y: auto;
   padding: 12px;
@@ -191,6 +192,7 @@
   background: var(--surface-2);
 }
 .rp-page {
+  flex-shrink: 0;
   display: block;
   background: #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
@@ -482,3 +484,29 @@
 }
 
 .st-progress { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; max-width: 360px; font-size: 12px; }
+.st-menu-note {
+  margin-left: auto;
+  padding-left: 14px;
+  font-size: 12px;
+}
+
+/* Where the answer is: a soft band over the line, fading after a moment. */
+.rp-mark {
+  position: absolute;
+  left: 12px;
+  height: 52px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent);
+  pointer-events: none;
+  animation: rp-mark 2.6s ease-out forwards;
+}
+@keyframes rp-mark {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

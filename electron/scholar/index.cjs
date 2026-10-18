@@ -407,10 +407,15 @@ function register() {
   });
   ipcMain.handle('scholar:studyGet', (_e, id) => study.get(id));
   ipcMain.handle('scholar:studyMake', async (_e, req) => {
-    const id = await study.request(req);
-    // Made by the computer that scans (it has the class files); the set comes back here when it's ready.
+    const { id, ready, pick } = await study.request(req);
+    // Made by the computer that scans (it has the class files); the set comes back here when it's ready. A set from
+    // saved questions is ready here at once, and the primary saves the same one (the same picks) for every device.
     if (devices.follower()) {
-      devices.relay({ task: 'practice', req: { ...req, id } });
+      devices.relay({ task: 'practice', req: { ...req, id, pick } });
+      return id;
+    }
+    if (ready) {
+      devices.soon();
       return id;
     }
     runner.run('practice', id, 'manual').then(() => {
@@ -423,6 +428,7 @@ function register() {
     });
     return id;
   });
+  ipcMain.handle('scholar:studySaved', (_e, req) => study.saved(req));
   ipcMain.handle('scholar:studyDelete', (_e, id) => study.remove(id));
   ipcMain.handle('scholar:studyAttempt', (_e, id, a) => study.saveAttempt(id, a));
   ipcMain.handle('scholar:studyKnown', (_e, id, known) => study.setKnown(id, known));

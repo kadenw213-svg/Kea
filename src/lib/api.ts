@@ -137,9 +137,13 @@ export interface KeaApi {
     /** One set with its questions or cards. */
     studyGet(id: string): Promise<StudySetFull | null>;
     /** Ask Claude for a new set (for a test or assignment, or for chapters). Resolves with its id once queued. */
-    studyMake(req: { kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number }): Promise<string>;
+    /** mode: 'mix' reuses up to 60% saved questions and has Claude write the rest; 'saved' uses saved ones only (ready at once); 'new' writes them all. */
+    studyMake(req: { kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number; mode?: 'mix' | 'saved' | 'new' }): Promise<string>;
+    /** How many saved questions (or cards) a set on these chapters, or for this test, could reuse. */
+    studySaved(req: { kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null }): Promise<{ count: number }>;
     studyDelete(id: string): Promise<boolean>;
-    studyAttempt(id: string, a: { score: number; total: number; n: number }): Promise<boolean>;
+    /** items: how each question went, [key, right] (right null for an unmarked written answer). */
+    studyAttempt(id: string, a: { score: number; total: number; n: number; items?: [string, boolean | null][] }): Promise<boolean>;
     studyKnown(id: string, known: number[]): Promise<boolean>;
     stop(): Promise<boolean>;
     runStatus(): Promise<{ running: ScholarRun | null; queued: QueuedRun[] }>;
@@ -521,7 +525,9 @@ export interface StudySet {
   count: number;
   createdAt: string;
   status: 'making' | 'ready' | 'failed';
-  source: 'claude' | 'library';
+  source: 'claude' | 'saved' | 'library';
+  /** How many of its items were reused from saved sets. */
+  reused?: number;
   error?: string;
   attempts: number;
   /** Best score as a fraction (0–1), or null before any attempt. */
@@ -529,18 +535,32 @@ export interface StudySet {
   last: { at: string; score: number; total: number; n: number } | null;
   known: number;
 }
-export type StudyQuestion =
+/** k: the question's key (the same question in two sets has the same key); section: the textbook section that answers it. */
+type QuestionBase = { k?: string; explain: string; chapter: string | null; section?: string | null; topic: string | null; source: string | null };
+export type StudyQuestion = QuestionBase &
+  (
   | { type: 'mc'; q: string; choices: string[]; answer: number; explain: string; chapter: string | null; topic: string | null; source: string | null }
   | { type: 'multi'; q: string; choices: string[]; answer: number[]; explain: string; chapter: string | null; topic: string | null; source: string | null }
   | { type: 'tf'; q: string; answer: boolean; explain: string; chapter: string | null; topic: string | null; source: string | null }
   | { type: 'num'; q: string; answer: number; tolerance: number; unit: string | null; explain: string; chapter: string | null; topic: string | null; source: string | null }
-  | { type: 'short'; q: string; answer: string; explain: string; chapter: string | null; topic: string | null; source: string | null };
+  | { type: 'short'; q: string; answer: string; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  );
+/** How a question has gone, across every set and device. */
+export interface StudyHistory {
+  seen: number;
+  right: number;
+  last: string;
+  lastRight: boolean | null;
+}
 export interface StudyCard {
+  k?: string;
   front: string;
   back: string;
   chapter: string | null;
+  section?: string | null;
+  topic?: string | null;
 }
-export type StudySetFull = Omit<StudySet, 'known' | 'attempts' | 'best' | 'last'> & { questions?: StudyQuestion[]; cards?: StudyCard[]; known: number[] };
+export type StudySetFull = Omit<StudySet, 'known' | 'attempts' | 'best' | 'last'> & { questions?: StudyQuestion[]; cards?: StudyCard[]; known: number[]; history?: Record<string, StudyHistory> };
 export interface ScholarReading {
   chapter: string;
   title: string | null;

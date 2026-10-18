@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('api', {
     studyList: () => ipcRenderer.invoke('scholar:studyList'),
     studyGet: (id) => ipcRenderer.invoke('scholar:studyGet', id),
     studyMake: (req) => ipcRenderer.invoke('scholar:studyMake', req),
+    studySaved: (req) => ipcRenderer.invoke('scholar:studySaved', req),
     studyDelete: (id) => ipcRenderer.invoke('scholar:studyDelete', id),
     studyAttempt: (id, a) => ipcRenderer.invoke('scholar:studyAttempt', id, a),
     studyKnown: (id, known) => ipcRenderer.invoke('scholar:studyKnown', id, known),

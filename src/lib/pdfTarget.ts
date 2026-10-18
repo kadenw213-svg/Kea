@@ -6,6 +6,8 @@ export interface OutlineEntry {
   /** 0-based page in the PDF, or -1 when the bookmark doesn't point at a page. */
   page: number;
   depth: number;
+  /** Where on the page the heading is (PDF units up from the bottom), when the bookmark says. */
+  y?: number;
 }
 
 /** The PDF's outline, flattened to three levels (chapter, section, subsection). */
@@ -23,7 +25,8 @@ export async function readOutline(pdf: PDFDocumentProxy): Promise<OutlineEntry[]
           page = typeof dest[0] === 'number' ? dest[0] : await pdf.getPageIndex(dest[0]);
         } catch {}
       }
-      out.push({ title: String(it.title || '').trim(), page, depth });
+      const y = Array.isArray(dest) && typeof dest[3] === 'number' ? dest[3] : undefined;
+      out.push({ title: String(it.title || '').trim(), page, depth, ...(y != null ? { y } : {}) });
       if (it.items?.length && depth < 2) await walk(it.items, depth + 1);
     }
   };

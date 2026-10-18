@@ -292,7 +292,7 @@ async function watchList(file) {
  * sections and the textbook chapter's source. The student never sees the vocabulary and objective lists; Claude uses
  * them, with the review documents, to cover everything the course tests.
  */
-async function practiceSources(file, textbooks, { courseId, chapters = [], itemId = null }) {
+async function practiceSources(file, textbooks, { courseId, chapters = [], itemId = null, allChapters = false }) {
   const db = await open(file);
   if (!db) return null;
   let item = null;
@@ -306,16 +306,19 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
       const o = itemOut(r, c0, banner, readingsFor(db, courseId, c0.course_code, textbooks), {}, null, null);
       item = { id: o.id, title: o.title, type: o.type, date: o.date, points: o.points, description: o.description, study_focus: o.studyFocus, review_links: [...o.links, ...o.weeklyLinks].map((l) => ({ label: l.label, url: l.url })) };
       if (!labels.length) labels = o.readings.map((x) => x.chapter);
+      if (!labels.length) labels = json(r.covered_chapters_json, []);
     }
   }
-  const c = rows(db, 'SELECT * FROM courses WHERE id = ?', [courseId])[0];
+  // (A class can be named by its code too.)
+  const c = rows(db, 'SELECT * FROM courses WHERE id = ? OR course_code = ?', [courseId, courseId])[0];
   if (!c) return null;
+  courseId = c.id;
   const sources = new Map();
   for (const s of rows(db, 'SELECT chapters_json, source_path, file_path FROM study_pdfs WHERE course_id = ? AND source_path IS NOT NULL', [courseId]))
     for (const ch of json(s.chapters_json, [])) if (fs.existsSync(s.source_path)) sources.set(ch, s.source_path);
   const want = new Set(labels);
   const out = rows(db, 'SELECT * FROM chapter_topics WHERE course_id = ?', [courseId])
-    .filter((t) => want.has(t.chapter_label))
+    .filter((t) => allChapters || want.has(t.chapter_label))
     .sort((a, b) => chapterNumber(a.chapter_label) - chapterNumber(b.chapter_label))
     .map((t) => ({
       label: t.chapter_label,
