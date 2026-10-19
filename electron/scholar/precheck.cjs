@@ -45,6 +45,30 @@ async function allPages(rel) {
 }
 
 /**
+ * A D2L answer with every page: lists like quizzes come 20 at a time with a `Next` address for the rest (CHE1011's
+ * Final Exam and Practice Final were past the first page, so Kea never saw them).
+ */
+async function getAll(rel) {
+  const r = await browser.getJson(rel);
+  if (!r?.data || !Array.isArray(r.data.Objects)) return r;
+  const objects = [...r.data.Objects];
+  let next = r.data.Next;
+  for (let i = 0; next && i < 20; i++) {
+    let more;
+    try {
+      const u = new URL(next, browser.schoolInfo().home);
+      more = await browser.getJson(u.pathname + u.search);
+    } catch {
+      break;
+    }
+    if (!more?.data || !Array.isArray(more.data.Objects)) break;
+    objects.push(...more.data.Objects);
+    next = more.data.Next;
+  }
+  return { ...r, data: { ...r.data, Objects: objects, Next: null } };
+}
+
+/**
  * What each area looks like, reduced to the parts that matter (so a changed view counter doesn't count as news).
  * `key` names each entry for the "what's new" summary.
  */
@@ -79,6 +103,32 @@ const AREAS = {
     entry: (q) => ({ id: q.QuizId, title: q.Name, due: q.DueDate, start: q.StartDate, end: q.EndDate }),
     label: 'quiz'
   },
+  // Discussion topics (graded "online assignments" are often discussions): every forum's topics, with their dates.
+  discussions: {
+    rel: (v, ou) => `/d2l/api/le/${v.le}/${ou}/discussions/forums/`,
+    expand: async (v, ou, forums) => {
+      const out = [];
+      for (const f of (Array.isArray(forums) ? forums : []).filter((x) => !x.IsHidden).slice(0, 40)) {
+        const r = await browser.getJson(`/d2l/api/le/${v.le}/${ou}/discussions/forums/${f.ForumId}/topics/`).catch(() => null);
+        for (const t of Array.isArray(r?.data) ? r.data : []) out.push({ ...t, ForumName: f.Name });
+      }
+      return out;
+    },
+    list: (d) => (Array.isArray(d) ? d : []).filter((t) => !t.IsHidden),
+    entry: (t) => ({ id: t.TopicId, title: `${t.ForumName}: ${t.Name}`, due: t.DueDate ?? null, start: t.StartDate ?? t.UnlockStartDate ?? null, end: t.EndDate ?? t.UnlockEndDate ?? null, points: t.ScoreOutOf ?? null, grade: t.GradeItemId ?? null }),
+    label: 'discussion topic'
+  },
+  calendar: {
+    rel: (v, ou) => {
+      const from = new Date(Date.now() - 7 * 864e5).toISOString();
+      const to = new Date(Date.now() + 240 * 864e5).toISOString();
+      return `/d2l/api/le/${v.le}/${ou}/calendar/events/myEvents/?startDateTime=${from}&endDateTime=${to}`;
+    },
+    // Only what's still ahead: events dropping out of the window as days pass aren't changes.
+    list: (d) => (Array.isArray(d) ? d : d?.Objects || []).filter((e) => new Date(e.EndDateTime || e.StartDateTime || 0) >= new Date(Date.now() - 864e5)),
+    entry: (e) => ({ id: e.CalendarEventId, title: e.Title, start: e.StartDateTime, end: e.EndDateTime }),
+    label: 'calendar date'
+  },
   content: {
     rel: (v, ou) => `/d2l/api/le/${v.le}/${ou}/content/toc`,
     list: (d) => {
@@ -93,7 +143,8 @@ const AREAS = {
       walk(d?.Modules);
       return out;
     },
-    entry: (t) => ({ id: t.TopicId ?? t.Identifier, title: `${t.module}: ${t.Title}`, at: t.LastModifiedDate, due: t.DueDate }),
+    // (Table-of-contents topics carry open and close dates and the graded tool they launch, not a due date.)
+    entry: (t) => ({ id: t.TopicId ?? t.Identifier, title: `${t.module}: ${t.Title}`, at: t.LastModifiedDate, due: t.DueDate ?? null, start: t.StartDateTime ?? null, end: t.EndDateTime ?? null, tool: t.ToolId ?? null, grade: t.GradeItemId ?? null }),
     label: 'content page'
   }
 };
@@ -181,7 +232,8 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     for (const [area, a] of Object.entries(AREAS)) {
       let r;
       try {
-        r = await browser.getJson(a.rel(v, c.ou));
+        r = await getAll(a.rel(v, c.ou));
+        if (a.expand && r?.data) r = { ...r, data: await a.expand(v, c.ou, r.data) };
       } catch (err) {
         reasons.push(`couldn't check ${area} (${String(err.message || err).slice(0, 80)})`);
         continue;
@@ -624,17 +676,8 @@ const SYNC_AREAS = {
   content: AREAS.content,
   dropbox: AREAS.dropbox,
   quizzes: AREAS.quizzes,
-  calendar: {
-    rel: (v, ou) => {
-      const from = new Date(Date.now() - 7 * 864e5).toISOString();
-      const to = new Date(Date.now() + 240 * 864e5).toISOString();
-      return `/d2l/api/le/${v.le}/${ou}/calendar/events/myEvents/?startDateTime=${from}&endDateTime=${to}`;
-    },
-    // Only what's still ahead: events dropping out of the window as days pass aren't changes.
-    list: (d) => (Array.isArray(d) ? d : d?.Objects || []).filter((e) => new Date(e.EndDateTime || e.StartDateTime || 0) >= new Date(Date.now() - 864e5)),
-    entry: (e) => ({ id: e.CalendarEventId, title: e.Title, start: e.StartDateTime, end: e.EndDateTime }),
-    label: 'calendar date'
-  }
+  discussions: AREAS.discussions,
+  calendar: AREAS.calendar
 };
 
 /**
@@ -658,7 +701,8 @@ async function syncCheck(code, ou) {
   for (const [area, a] of Object.entries(SYNC_AREAS)) {
     let got;
     try {
-      got = await browser.getJson(a.rel(v, ou));
+      got = await getAll(a.rel(v, ou));
+      if (a.expand && got?.data) got = { ...got, data: await a.expand(v, ou, got.data) };
     } catch (err) {
       reasons.push(`couldn't check ${area} (${String(err.message || err).slice(0, 80)})`);
       continue;

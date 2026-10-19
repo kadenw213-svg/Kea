@@ -8,6 +8,8 @@ against a plain in-memory SQLite database.
 
 from __future__ import annotations
 
+import re
+
 import uuid
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
@@ -262,6 +264,57 @@ def find_item_by_fingerprint(
     ).scalar_one_or_none()
 
 
+
+# ---------- Never overwrite one piece of work with another ----------
+# Fingerprints are deliberately loose ("quiz" + its number), so a reworded item updates in place. But two different
+# pieces of work can share one: on 2026-10-19 "Quiz for OA 6" overwrote "HW Quiz 6", and on 2026-10-17 a "Lab 3
+# Handout" deadline overwrote the "Lab 3: Classification" lab meeting. So a fingerprint match only updates when the
+# two are recognisably the same work; otherwise the newcomer becomes its own item and the near-miss is recorded.
+_GUARD_STOP = {"due", "the", "and", "for", "with", "from", "online", "week", "post", "posts", "initial", "response",
+               "submit", "submission", "pdf", "only", "folder", "part", "your", "this", "that", "complete", "chapter",
+               "chapters", "requires", "lockdown", "browser", "respondus", "webcam"}
+_GUARD_KIND = re.compile(
+    r"\b(lab(?:oratory)?|report|quiz|exam|test|hw|homework|assignment|module|discussion|oa|unit|project|paper|essay|"
+    r"worksheet|handout|practical|activity)\s*[:#.]?\s*#?\s*(\d+(?:\.\d+)*)\b|#\s*(\d+)\b",
+    re.IGNORECASE,
+)
+
+
+def _guard_ident(title: str):
+    m = _GUARD_KIND.search(title or "")
+    if not m:
+        return None, None
+    if m.group(3):
+        return m.group(3), None
+    kind = m.group(1).lower()
+    return m.group(2), {"homework": "hw", "laboratory": "lab", "test": "exam"}.get(kind, kind)
+
+
+def _guard_words(title: str) -> set[str]:
+    return {w[:-1] if len(w) > 4 and w.endswith("s") else w for w in re.findall(r"[a-z]+", (title or "").lower()) if len(w) >= 4 and w not in _GUARD_STOP}
+
+
+def same_work_title(old_title: str, new_title: str) -> bool:
+    """Whether two titles can be the same piece of work (a rewording), not two different ones that share a number."""
+    if (old_title or "").strip().lower() == (new_title or "").strip().lower():
+        return True
+    ia, ka = _guard_ident(old_title)
+    ib, kb = _guard_ident(new_title)
+    if ia and ib and ia != ib:
+        return False
+    if ka and kb and ka != kb:
+        return False
+    a, b = _guard_words(old_title), _guard_words(new_title)
+    # Words that only one of them has, naming a different kind of thing.
+    marks = ("handout", "work", "practice", "review", "quiz", "report", "practical")
+    for m in marks:
+        if (m in (old_title or "").lower()) != (m in (new_title or "").lower()) and not (m == "quiz" and ka == kb == "quiz"):
+            return False
+    if not a or not b:
+        return True
+    return len(a & b) / min(len(a), len(b)) >= 0.34
+
+
 def upsert_academic_item(
     session: Session, item: domain.AcademicItem, *, allow_downgrade: bool = False
 ) -> AcademicItemRow:
@@ -311,6 +364,25 @@ def upsert_academic_item(
     row = None
     if item.fingerprint:
         row = find_item_by_fingerprint(session, item.course_id, item.fingerprint)
+        if row is not None and not same_work_title(row.title, item.title):
+            # Different work under the same loose fingerprint: keep both, and leave a note to look at.
+            import hashlib
+
+            other = row
+            item = item.model_copy(update={"fingerprint": f"{item.fingerprint}~{hashlib.sha1(item.title.encode()).hexdigest()[:8]}"})
+            row = find_item_by_fingerprint(session, item.course_id, item.fingerprint)
+            if row is None:
+                session.add(UnresolvedReferenceRow(
+                    id=uuid.uuid4().hex,
+                    course_id=item.course_id,
+                    item_id=None,
+                    source_id=(item.source_ids[0] if item.source_ids else None),
+                    kind="conflicting_sources",
+                    description=f'Kept separate: "{item.title}" ({item.date}) shares an identity key with "{other.title}" ({other.date}) but is different work, so it was added as its own item instead of replacing it.',
+                    source_wording=item.title[:300],
+                    created_at=datetime.now(UTC),
+                    resolved=False,
+                ))
     if row is None and item.id:
         row = session.get(AcademicItemRow, item.id)
 

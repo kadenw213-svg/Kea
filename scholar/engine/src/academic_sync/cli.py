@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -400,18 +401,40 @@ def _numbers(title: str) -> list[str]:
     return [n for n in re.findall(r"\d+(?:\.\d+)*", title or "") if not re.fullmatch(r"(19|20)\d\d", n)]
 
 
-def _ident(title: str) -> str | None:
-    """A piece of work's own number: the first one that follows a word naming work ("Lab report #6", "Online Quiz 3:
-    Ch 25, 19", "HW: 4.6", "OA 7"), never a time or a points value ("by 11:59 pm", "200 points")."""
+_NUMBER_WORDS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8",
+                 "nine": "9", "ten": "10", "eleven": "11", "twelve": "12", "i": "1", "ii": "2", "iii": "3", "iv": "4",
+                 "v": "5", "vi": "6", "vii": "7", "viii": "8", "ix": "9", "x": "10"}
+_KIND = (r"lab(?:oratory)?(?:\s+report)?|report|quiz|exam|test|hw|homework|assignment|module|discussion|oa|unit|project|"
+         r"paper|essay|worksheet|problem set|handout|practical|activity|chapter|ch")
+
+
+def _ident_kind(title: str) -> tuple[str | None, str | None]:
+    """A piece of work's own number and the word naming it: the first number that follows a word naming work ("Lab
+    report #6", "Online Quiz 3: Ch 25", "HW: 4.6", "OA 7", "Practice Exam Three", "Lab Practical I", "Chapter 2 HW"),
+    never a time or a points value ("by 11:59 pm", "200 points")."""
     import re
 
     m = re.search(
-        r"\b(?:lab(?:oratory)?(?:\s+report)?|report|quiz|exam|test|hw|homework|assignment|module|discussion|oa|unit|"
-        r"project|paper|essay|worksheet|problem set|handout|practical|activity)\s*[:#]?\s*#?\s*(\d+(?:\.\d+)*)\b|#\s*(\d+)\b",
+        rf"\b({_KIND})\s*[:#.]?\s*#?\s*(\d+(?:\.\d+)*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|i{{1,3}}|iv|vi{{0,3}}|ix|x)\b|#\s*(\d+)\b",
         title or "",
         re.IGNORECASE,
     )
-    return (m.group(1) or m.group(2)) if m else None
+    if not m:
+        return None, None
+    if m.group(3):
+        return m.group(3), None
+    num = m.group(2).lower()
+    kind = re.sub(r"\s+report$", "", m.group(1).lower())
+    kind = {"ch": "chapter", "homework": "hw", "laboratory": "lab", "test": "exam"}.get(kind, kind)
+    num = _NUMBER_WORDS.get(num, num)
+    # A chapter is its whole number ("Chapter 1.3 - 1.4" is Chapter 1); homework sections stay exact (4.5 is not 4.6).
+    if kind == "chapter":
+        num = num.split(".")[0]
+    return num, kind
+
+
+def _ident(title: str) -> str | None:
+    return _ident_kind(title)[0]
 
 
 def _title_words(title: str) -> set[str]:
@@ -630,6 +653,162 @@ def coverage_cmd(
         console.print(f"[yellow]{len(unreadable)} document(s) couldn't be read (check them another way):[/yellow]")
         for u in unreadable:
             console.print(f"  {escape(u)}")
+
+
+# --------------------------------------------------------------------------
+# d2l-reconcile: every graded thing D2L itself lists, matched to the calendar
+# --------------------------------------------------------------------------
+# The coverage check reads documents; this reads D2L's own lists (assignment folders, quizzes, discussion topics,
+# graded content topics, grade items), as saved by Kea's daily pre-check, and finds each one on the calendar. Anything
+# D2L lists that the calendar doesn't have, or has on another day, is reported, every day, until it's added, fixed or
+# dismissed with a reason (coverage-dismiss --key d2l:<kind>:<id>). Kea's own snapshots only noticed what *changed*,
+# so anything missing from the first scan stayed missing forever (CHE1011's Practice Final, OA #6 quiz, Exam Work).
+
+def _local_day(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone().date()
+    except ValueError:
+        return None
+
+
+def _d2l_objects(folder: Path, code: str) -> list[dict]:
+    """D2L's graded things for a class, from a pre-check folder: {kind, id, title, day, has_date, grade_id}."""
+    def load(area):
+        try:
+            return json.loads((folder / f"{code}-{area}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    out: list[dict] = []
+    for f in load("dropbox") or []:
+        if f.get("IsHidden"):
+            continue
+        due = f.get("DueDate") or (f.get("Availability") or {}).get("EndDate")
+        out.append({"kind": "dropbox", "id": str(f.get("Id")), "title": f.get("Name", ""), "day": _local_day(due),
+                    "grade_id": str(f.get("GradeItemId") or "") or None})
+    quizzes = load("quizzes") or {}
+    for q in (quizzes.get("Objects") if isinstance(quizzes, dict) else quizzes) or []:
+        if q.get("IsActive") is False:
+            continue
+        due = q.get("DueDate") or q.get("EndDate")
+        out.append({"kind": "quiz", "id": str(q.get("QuizId")), "title": q.get("Name", ""), "day": _local_day(due),
+                    "grade_id": str(q.get("GradeItemId") or "") or None})
+    for t in load("discussions") or []:
+        due = t.get("DueDate") or t.get("EndDate") or t.get("UnlockEndDate")
+        graded = (t.get("ScoreOutOf") or 0) > 0 or t.get("GradeItemId")
+        if t.get("IsHidden") or not (due or graded):
+            continue
+        out.append({"kind": "discussion", "id": str(t.get("TopicId")), "title": f"{t.get('Name', '')}",
+                    "day": _local_day(due), "grade_id": str(t.get("GradeItemId") or "") or None})
+    toc = load("content") or {}
+
+    def walk(mods):
+        for m in mods or []:
+            if m.get("IsHidden"):
+                continue
+            for t in m.get("Topics") or []:
+                if t.get("IsHidden"):
+                    continue
+                # (Only a due date is compared: a topic's end date is often the late window closing.)
+                due = t.get("DueDate")
+                if t.get("GradeItemId") or t.get("DueDate"):
+                    out.append({"kind": "content", "id": str(t.get("TopicId") or t.get("Identifier")), "title": t.get("Title", ""),
+                                "day": _local_day(due), "grade_id": str(t.get("GradeItemId") or "") or None})
+            walk(m.get("Modules"))
+
+    walk(toc.get("Modules") if isinstance(toc, dict) else None)
+    linked = {o["grade_id"] for o in out if o.get("grade_id")}
+    for g in load("grades") or []:
+        if g.get("GradeObjectType") == 9 or "category" in str(g.get("GradeObjectTypeName", "")).lower():
+            continue
+        gid = str(g.get("GradeObjectIdentifier"))
+        if gid in linked:
+            continue  # already checked through the folder, quiz or topic it grades
+        out.append({"kind": "grade", "id": gid, "title": g.get("GradeObjectName", ""), "day": None, "grade_id": gid})
+    return [o for o in out if str(o.get("title") or "").strip()]
+
+
+def _reconcile_match(obj: dict, items: list[AcademicItem]):
+    """(matched item, days apart) for a D2L object: the same kind and number ("Exam 3(5-6) - Requires Respondus" is
+    "Exam 3 (Chapters 5-6)"), or the same name; None when nothing fits."""
+    a = _title_words(obj["title"])
+    ia, ka = _ident_kind(obj["title"])
+    practice = "practice" in obj["title"].lower()
+    best = None
+    for i in items:
+        ib, kb = _ident_kind(i.title)
+        if ia and ib and ia != ib:
+            continue
+        if practice != ("practice" in i.title.lower()):
+            continue
+        # An exam's work upload ("Exam 1 Work", "Show Work") is its own deadline, never the exam itself.
+        if ("work" in obj["title"].lower().split()) != ("work" in i.title.lower().split()):
+            continue
+        b = _title_words(i.title)
+        if ia and ia == ib and ka and ka == kb:
+            pass
+        elif not a or not b or (ia and not ib) or (ib and not ia):
+            continue
+        elif len(a & b) / min(len(a), len(b)) < 0.6:
+            continue
+        gap = abs((i.date - obj["day"]).days) if (i.date and obj["day"]) else 999
+        if best is None or gap < best[1]:
+            best = (i, gap)
+    return best
+
+
+def reconcile_findings(session, course: Course, folder: Path | None = None) -> dict:
+    """Unmatched D2L objects and date drift for a course, from the newest pre-check folder that has its files."""
+    from academic_sync.config import get_db_path
+
+    root = get_db_path().parent / "digests" / "kea-precheck"
+    if folder is None:
+        days = sorted((d for d in root.iterdir() if d.is_dir() and any(d.glob(f"{course.course_code}-*.json"))), reverse=True) if root.is_dir() else []
+        folder = days[0] if days else None
+    if folder is None:
+        return {"folder": None, "unmatched": [], "drift": []}
+    items = [i for i in repository.list_items_for_course(session, course.id) if not i.superseded_by_id and i.status not in (ItemStatus.CANCELLED, ItemStatus.SUPERSEDED)]
+    dismissed = set(repository.get_preference(session, "coverage_dismissed", course_id=course.id, default=[]) or [])
+    unmatched, drift = [], []
+    for o in _d2l_objects(folder, course.course_code):
+        key = f"d2l:{o['kind']}:{o['id']}"
+        if key in dismissed:
+            continue
+        hit = _reconcile_match(o, items)
+        row = {"key": key, "kind": o["kind"], "id": o["id"], "title": o["title"], "d2l_date": o["day"].isoformat() if o["day"] else None}
+        if hit is None:
+            unmatched.append(row)
+        elif o["day"] and hit[0].date and hit[1] > 0:
+            # On the calendar on a different day than D2L says (D2L wins; a day off often means a time-zone slip).
+            drift.append({**row, "item_id": hit[0].id, "item_title": hit[0].title, "item_date": hit[0].date.isoformat()})
+    return {"folder": str(folder), "unmatched": unmatched, "drift": drift}
+
+
+@app.command("d2l-reconcile")
+def d2l_reconcile_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    folder: Annotated[Path | None, typer.Option("--dir", help="A pre-check folder (default: the newest one).")] = None,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Every graded thing D2L lists for this course (assignment folders, quizzes, discussion topics, graded content,
+    grade items) matched to the calendar: lists what's missing and what's on a different day. Each one must be added,
+    corrected, or dismissed with coverage-dismiss --key d2l:<kind>:<id> and the reason."""
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        code = c.course_code
+        r = reconcile_findings(session, c, folder)
+    if as_json:
+        print(json.dumps({"course": code, **r}, indent=1, default=str))
+        return
+    if not r["unmatched"] and not r["drift"]:
+        console.print(f"{code}: everything D2L lists is on the calendar, on D2L's day." + ("" if r["folder"] else " (No pre-check data yet.)"))
+        return
+    for u in r["unmatched"]:
+        console.print(f"[red]Not on the calendar:[/red] {u['kind']} {escape(u['title'])} ({u['d2l_date'] or 'no date in D2L'})  [dim]{u['key']}[/dim]")
+    for d in r["drift"]:
+        console.print(f"[yellow]Different day:[/yellow] {escape(d['title'])}: D2L {d['d2l_date']}, calendar {d['item_date']} ({escape(d['item_title'])})  [dim]{d['key']}[/dim]")
 
 
 @app.command("coverage-dismiss")
