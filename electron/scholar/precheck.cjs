@@ -155,20 +155,41 @@ const AREAS = {
  * added up to 30: 125 points of lab reports, done on an outside lab site with their D2L folders hidden, were counting
  * as zeros and nothing on Kea's calendar said they existed. Returns [{ category, counted, visible, hidden }].
  */
+// Words that name a category's items: its own words (singular), their initials ("Online Assignments" → oa), and the
+// usual short forms. An item belongs to the category above it only when its name shares one of them.
+const GRADE_ALIAS = { hw: 'homework', homeworks: 'homework', exams: 'exam', test: 'exam', tests: 'exam', labs: 'lab', quizzes: 'quiz', reports: 'report', assignments: 'assignment', discussions: 'discussion' };
+const gradeTokens = (name) => {
+  const words = String(name || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+  return words.map((w) => GRADE_ALIAS[w] || w.replace(/s$/, '')).filter((w) => !['chapter', 'the', 'and', 'of', 'for', 'd2l', 'online'].includes(w) && !/^\d+$/.test(w));
+};
+const SHORT = { homework: 'hw', assignment: 'asg', examination: 'exam' };
 function hiddenWork(values) {
-  const out = [];
-  let cat = null;
-  const close = () => {
-    if (cat && cat.counted - cat.visible > 0.5) out.push({ category: cat.category, counted: cat.counted, visible: cat.visible, hidden: Math.round((cat.counted - cat.visible) * 100) / 100 });
-  };
-  for (const g of Array.isArray(values) ? values : []) {
-    if (g.GradeObjectType === 9 || /category/i.test(g.GradeObjectTypeName || '')) {
-      close();
-      cat = g.PointsDenominator ? { category: String(g.GradeObjectName || '').trim(), counted: +g.PointsDenominator, visible: 0 } : null;
-    } else if (cat && g.PointsDenominator) cat.visible += +g.PointsDenominator;
-  }
-  close();
-  return out;
+  const list = Array.isArray(values) ? values : [];
+  const isCat = (g) => g.GradeObjectType === 9 || /category/i.test(g.GradeObjectTypeName || '');
+  const cats = [];
+  list.forEach((g, i) => {
+    if (!isCat(g) || !g.PointsDenominator) return;
+    const name = String(g.GradeObjectName || '').trim();
+    const words = name.toLowerCase().match(/[a-z]+/g) || [];
+    const tokens = new Set(gradeTokens(name));
+    for (const t of [...tokens]) if (SHORT[t]) tokens.add(SHORT[t]);
+    if (words.length > 1) tokens.add(words.map((w) => w[0]).join(''));
+    cats.push({ at: i, category: name, counted: +g.PointsDenominator, visible: 0, tokens });
+  });
+  // Each item goes to the category its name names (wherever the gradebook lists it), else to none.
+  list.forEach((g, i) => {
+    if (isCat(g) || !g.PointsDenominator) return;
+    const words = String(g.GradeObjectName || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+    const names = new Set([...gradeTokens(g.GradeObjectName), ...words]);
+    const hits = cats.filter((c) => [...names].some((w) => c.tokens.has(w) || [...c.tokens].some((t) => t.length >= 2 && w.startsWith(t) && (w.length > t.length + 2 || /^\d+$/.test(w.slice(t.length))))));
+    if (!hits.length) return;
+    // Several match: the nearest one listed above it.
+    const above = hits.filter((c) => c.at < i).sort((x, y) => y.at - x.at)[0] || hits[0];
+    above.visible += +g.PointsDenominator;
+  });
+  return cats
+    .filter((c) => c.counted - c.visible > 0.5)
+    .map((c) => ({ category: c.category, counted: c.counted, visible: c.visible, hidden: Math.round((c.counted - c.visible) * 100) / 100 }));
 }
 const hiddenWords = (h) => `the "${h.category}" grade category counts ${h.counted} points, but the graded items you can see under it add up to ${h.visible}: ${h.hidden} points of work you can't see are counting (hidden assignments, an outside platform, or zeros not shown yet)`;
 
@@ -267,6 +288,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
 
   const state = readState();
   const next = { courses: { ...state.courses }, lastFull: state.lastFull };
+  let offline = '';
   const full = force || !state.lastFull || (Date.now() - new Date(state.lastFull).getTime()) / 864e5 >= fullEveryDays - 0.1;
   const changed = {};
   const quiet = [];
@@ -280,6 +302,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
         r = await getAll(a.rel(v, c.ou));
         if (a.expand && r?.data) r = { ...r, data: await a.expand(v, c.ou, r.data) };
       } catch (err) {
+        if (/ERR_NETWORK|ERR_INTERNET|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|ENOTFOUND|ECONNRESET|net::/i.test(String(err.message || err))) offline = offline || String(err.message || err).slice(0, 60);
         reasons.push(`couldn't check ${area} (${String(err.message || err).slice(0, 80)})`);
         continue;
       }
@@ -337,6 +360,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     if (reasons.length || full) changed[c.code] = reasons.length ? reasons : ['regular full check (messages and outside platforms)'];
     else quiet.push(c.code);
   }
+  if (offline) return { signedIn: true, setUp: true, offline, newShells: [], changed: {}, quiet: [], commit: () => {} };
   if (full) next.lastFull = new Date().toISOString();
   save('summary.json', { checked: new Date().toISOString(), full, changed, quiet, newShells });
   await refreshSubmissions(dir, v, await db.watchList(p.db)).catch((err) => console.error('Submissions', err));
@@ -384,7 +408,9 @@ async function refreshSubmissions(dir, v, list) {
     }
     const known = new Map((prev[c.code] || []).filter((x) => x.folder).map((x) => [x.folder, x]));
     for (const f of AREAS.dropbox.list(read('dropbox'))) {
-      const due = f.DueDate ? new Date(f.DueDate).getTime() : null;
+      // (A folder with only a closing date, like an exam's work upload, is checked by that date.)
+      const dueAt = f.DueDate || f.Availability?.EndDate;
+      const due = dueAt ? new Date(dueAt).getTime() : null;
       if (!due || due < now - 28 * 864e5 || due > now + 14 * 864e5) {
         if (known.has(f.Id)) out.push(known.get(f.Id));
         continue;

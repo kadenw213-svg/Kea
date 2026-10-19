@@ -58,6 +58,9 @@ TASKS.daily.pre = async (job, step) => {
   const r = await precheck().run({ fullEveryDays: Number(settings().get('scholar.fullCheckDays', '1')) || 1 });
   if (!r.setUp) return { skip: 'No class site is set up yet.', ok: false };
   if (!r.signedIn) return { skip: 'Kea isn’t signed in to your class site, so nothing was checked. Sign in under Add a class → From your school.', ok: false };
+  // The computer was asleep or offline while checking: don't work from half the data (and don't record a check);
+  // the next check tries again.
+  if (r.offline) return { skip: `The computer was offline or asleep during the check (${r.offline}). Kea tries again shortly.`, ok: false };
   for (const s of r.newShells) run('import', `${s.course_code} -- new class shell: ${JSON.stringify(s)}`, job.why);
   const codes = Object.keys(r.changed);
   const shells = r.newShells.length ? ` Found ${r.newShells.length} new class${r.newShells.length > 1 ? 'es' : ''} to scan: ${r.newShells.map((s) => s.course_code).join(', ')}.` : '';
