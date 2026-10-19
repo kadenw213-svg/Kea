@@ -160,7 +160,7 @@ export interface KeaApi {
     studyLearn(id: string, levels: Record<string, number> | null): Promise<boolean>;
     /** Record a Match time; returns the best. */
     studyMatch(id: string, ms: number): Promise<number | null>;
-    studyReview(opts?: { courseId?: string; limit?: number; newPerDay?: number }): Promise<ReviewQueue>;
+    studyReview(opts?: { courseId?: string; chapters?: string[]; limit?: number; newPerDay?: number }): Promise<ReviewQueue>;
     studyReviewMark(k: string, grade: 'again' | 'good' | 'easy', ctx: { courseId: string; chapter: string | null }): Promise<{ box: number; due: string }>;
     /** Ask Claude for a new set (for a test or assignment, or for chapters). Resolves with its id once queued. */
     /** mode: 'mix' reuses up to 60% saved questions and has Claude write the rest; 'saved' uses saved ones only (ready at once); 'new' writes them all. */
@@ -604,7 +604,7 @@ export interface MailDraft {
   replyTo?: string | null;
 }
 export interface MailList {
-  messages: { id: string; course: string; title: string; from?: string; preview: string; at: string; url: string; read: boolean; full: string | null }[];
+  messages: { id: string; course: string; title: string; from?: string; preview: string; at: string; url: string; canOpen?: boolean; read: boolean; full: string | null }[];
   /** What Kea sent, then the class site's own Sent folder (`fromSite`). */
   sent: { id: string; at: string; course: string; to: string; subject: string; body: string; replyTo: string | null; confirmed: boolean; why: string | null; url?: string; fromSite?: boolean }[];
   drafts: (MailDraft & { key: string; at: string })[];
@@ -688,7 +688,7 @@ export interface ReviewItem {
 export interface ReviewQueue {
   due: ReviewItem[];
   fresh: ReviewItem[];
-  counts: Record<string, { due: number; fresh: number; total: number; code: string }>;
+  counts: Record<string, { due: number; fresh: number; total: number; learning?: number; mastered?: number; code: string; test?: { date: string; title: string } | null }>;
   newToday: number;
 }
 export interface ScholarReading {

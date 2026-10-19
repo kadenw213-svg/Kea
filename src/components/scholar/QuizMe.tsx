@@ -4,12 +4,17 @@ import { api } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
 import { openScholar, useScholar } from './scholarStore';
+import { openStudyHub } from './StudyHub';
 
 /**
  * Quiz yourself on a chapter: its saved questions (the chapter's question bank and every set made on it), as one quiz
  * that asks missed and unseen questions first. The same quiz entry is reused each time, so its history builds up.
  */
-export async function quizChapter(courseId: string, chapter: string) {
+export async function quizChapter(courseId: string, chapter: string, code = '') {
+  if (code) {
+    openScholar(useScholar.getState().view);
+    return openStudyHub({ courseId, code, title: chapter, chapters: [chapter] });
+  }
   const { count } = await api.scholar.studySaved({ kind: 'exam', courseId, chapters: [chapter] }).catch(() => ({ count: 0 }));
   if (!count) {
     const writing = await api.scholar.studyBanks().catch(() => false);
@@ -44,14 +49,14 @@ export function QuizMeButton({ path, chapter }: { path: string; chapter?: string
       <ClipboardCheck size={15} /> Quiz me
     </button>
   );
-  if (tb.chapters.length === 1) return button(() => quizChapter(tb.courseId, tb.chapters[0]));
+  if (tb.chapters.length === 1) return button(() => quizChapter(tb.courseId, tb.chapters[0], tb.code));
   const first = chapter && tb.chapters.includes(chapter) ? [chapter, ...tb.chapters.filter((c) => c !== chapter)] : tb.chapters;
   return (
     <MenuButton button={() => button()}>
       {(close: () => void) => (
         <>
           {first.map((c) => (
-            <button key={c} className="menu-item" onClick={() => (close(), quizChapter(tb.courseId, c))}>
+            <button key={c} className="menu-item" onClick={() => (close(), quizChapter(tb.courseId, c, tb.code))}>
               {c}
             </button>
           ))}

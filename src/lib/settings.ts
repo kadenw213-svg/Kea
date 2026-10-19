@@ -476,7 +476,9 @@ export const SECTIONS: Section[] = [
         options: ['03:00', '04:00', '05:00', '06:00', '07:00', '08:00', '12:00', '18:00'].map((t) => ({ value: t, label: new Date(`2000-01-01T${t}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })),
         help: 'If Kea is closed then, the check runs the next time it opens.'
       },
-      { key: 'scholar.autoReading', label: 'Open the reading when you miss one', type: 'toggle', default: true, help: 'In practice exams, Learn, Review and flashcards, a wrong answer opens the textbook beside it at the section that teaches it.' },
+      { key: 'scholar.mailSignature', label: 'Message signature', type: 'text', default: '', help: 'Added under every new message you write in Messages (edit it there, under Signature).', advanced: true },
+      { key: 'scholar.mailSignatureReplies', label: 'Add the signature to replies too', type: 'toggle', default: true, advanced: true },
+      { key: 'scholar.autoReading', label: 'Open the reading when you miss one', type: 'toggle', default: true, help: 'A wrong answer opens the textbook beside it, at the section that teaches it, when Kea is sure it found that section. Otherwise the explanation under the question is shown on its own (the book icon still opens the chapter).' },
       { key: 'scholar.questionBanks', label: 'Keep a question bank for every chapter', type: 'toggle', default: true, help: 'Each chapter with a textbook gets saved practice questions (Quiz me in the textbook), and more are written when you run low. Written once, then free to take on every device.' },
       {
         key: 'scholar.bankSize',

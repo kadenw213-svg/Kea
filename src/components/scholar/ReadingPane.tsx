@@ -15,6 +15,8 @@ export interface ReadingTarget {
   topic?: string | null;
   /** The question and its answer (or the card's two sides): the words to look for on the page. */
   query?: string;
+  /** Opened by itself after a miss (not the student's click): shown only when Kea is sure it found the place. */
+  auto?: boolean;
   /** Which question asked (the open icon is shown as on). */
   key?: string;
 }
@@ -35,7 +37,7 @@ export function useMissReading() {
   const on = useSetting<boolean>('scholar.autoReading') !== false;
   return (t: { chapter?: string | null; section?: string | null; topic?: string | null; query?: string; key?: string }) => {
     if (!on || !t.chapter || !r.has(t.chapter)) return;
-    r.open({ chapter: t.chapter, section: t.section, topic: t.topic, query: t.query, key: t.key || `${t.chapter}|${t.section || ''}|${t.topic || ''}` });
+    r.open({ chapter: t.chapter, section: t.section, topic: t.topic, query: t.query, key: t.key || `${t.chapter}|${t.section || ''}|${t.topic || ''}`, auto: true });
   };
 }
 
@@ -107,7 +109,9 @@ const words = (s: string) =>
   (s.toLowerCase().replace(/[’‘]/g, "'").replace(/'s\b/g, '').match(/[a-z0-9]+(?:-[a-z0-9]+)*/g) || []).filter((w) => w.length >= 3 && !STOP.has(w));
 const overlap = (want: string[], have: Set<string>) => want.filter((w) => have.has(w)).length / Math.max(1, want.length);
 
-type Spot = { page: number; y: number | null };
+// `sure`: the place is the question's own section, a heading that names its topic, or a passage that clearly matches;
+// otherwise it's a best guess (the chapter's or section's start).
+type Spot = { page: number; y: number | null; sure?: boolean };
 const before = (a: Spot, b: Spot) => a.page < b.page || (a.page === b.page && (a.y ?? 0) < (b.y ?? 0));
 
 /**
@@ -151,7 +155,7 @@ async function locate(b: Book, t: ReadingTarget): Promise<Spot> {
       return { e, topic: overlap(topic, have), v: overlap(topic, have) * 3 + overlap(query, have) };
     })
     .sort((a, b2) => b2.v - a.v)[0];
-  if (heading && topic.length && heading.topic >= 0.5) return spot(heading.e);
+  if (heading && topic.length && heading.topic >= 0.5) return { ...(await spot(heading.e)), sure: true };
   // Otherwise search the text, from the section's start (or the chapter's first section) to the next one.
   const start: Spot = sec ? await spot(sec) : sections[0] ? await spot(sections[0]) : ch ? await spot(ch) : { page: 0, y: null };
   const end: Spot = area.next ? await spot(area.next) : { page: pages - 1, y: 1 };
@@ -168,9 +172,11 @@ async function locate(b: Book, t: ReadingTarget): Promise<Spot> {
         if (score > best.score) best = { spot: here, score };
       }
     }
-    if (best.score >= 1) return best.spot;
+    // (A strong match: most of the topic's words and a good part of the question's, together in a few lines.)
+    if (best.score >= 1) return { ...best.spot, sure: best.score >= 2.2 || (!!sec && !!num) };
   }
-  return start;
+  // The section the question names, found by its number, is the right place even with no closer match in it.
+  return { ...start, sure: !!sec && !!num };
 }
 
 // ---------- The pane ----------
@@ -243,7 +249,10 @@ export function ReadingPane({ file, target, onClose }: { file: string; target: R
   useEffect(() => {
     if (!doc || !width || !scroller.current) return;
     let live = true;
-    locate(doc, target).then(({ page, y }) => {
+    locate(doc, target).then(({ page, y, sure }) => {
+      // Opened by itself after a miss, but Kea isn't sure where the book teaches it: the explanation under the question
+      // is the better help, so the book closes again rather than show a page that may not answer it.
+      if (live && target.auto && !sure) return onClose();
       const box = scroller.current;
       const el = box?.querySelector<HTMLElement>(`[data-page="${page}"]`);
       if (!live || !box || !el) return;

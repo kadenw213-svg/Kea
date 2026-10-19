@@ -10,6 +10,7 @@ import { Bar, progressOf, span, useLiveRun, useNow } from './ScansView';
 import { ReadingButton, ReadingContext, ReadingPane, ReadingTarget, useMissReading } from './ReadingPane';
 import { judgeBlank } from '../../lib/blank';
 import { CardTest, Learn, Match, Review, ReviewBanner, SetEditor, SpeakButton, StarButton } from './StudyModes';
+import { openStudyHub, parseScope, StudyHub } from './StudyHub';
 import '../../styles/study.css';
 import { MathText } from './MathText';
 
@@ -22,7 +23,15 @@ export function useStudySets() {
     let live = true;
     const load = () => api.scholar.studyList().then((s) => live && setSets(s));
     load();
-    const offs = [api.scholar.onRun(() => load()), api.scholar.onChanged(load)];
+    // (A run reports every step; the sets only change when one starts or ends.)
+    let wasRunning: boolean | null = null;
+    const offs = [
+      api.scholar.onRun((r) => {
+        if (r.running !== wasRunning) load();
+        wasRunning = r.running;
+      }),
+      api.scholar.onChanged(load)
+    ];
     return () => {
       live = false;
       offs.forEach((f) => f());
@@ -33,7 +42,7 @@ export function useStudySets() {
 
 /** Whether new sets can be made: Claude signed in and the engine installed (checked once per session). */
 let canMakeCache: Promise<boolean> | null = null;
-function useCanMake() {
+export function useCanMake() {
   const [ok, setOk] = useState<boolean | null>(null);
   useEffect(() => {
     canMakeCache =
@@ -72,7 +81,7 @@ async function make(kind: StudyKind, courseId: string, count: number, target: Ta
 const REUSE = 0.6;
 
 /** The menu: a set from saved questions (instant, no Claude), or a new one that reuses some and adds new ones. */
-function MakeMenu({ kind, courseId, target, canMake, close }: { kind: StudyKind; courseId: string; target: Target; canMake: boolean | null; close(): void }) {
+export function MakeMenu({ kind, courseId, target, canMake, close }: { kind: StudyKind; courseId: string; target: Target; canMake: boolean | null; close(): void }) {
   const [saved, setSaved] = useState<number | null>(null);
   useEffect(() => {
     api.scholar.studySaved({ kind, courseId, ...target }).then((r) => setSaved(r.count)).catch(() => setSaved(0));
@@ -159,7 +168,7 @@ function MakingProgress({ id }: { id: string }) {
   return null;
 }
 
-function SetRow({ s, showCourse = false }: { s: StudySet; showCourse?: boolean }) {
+export function SetRow({ s, showCourse = false }: { s: StudySet; showCourse?: boolean }) {
   const [sure, setSure] = useState(false);
   const Icon = s.kind === 'exam' ? ClipboardList : Layers;
   const meta =
@@ -256,7 +265,6 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
           <p className="sch-sub">Your practice exams and flashcards. Each one is saved here: take it again any time and Kea shuffles it into a new exam.</p>
         </>
       )}
-      <ReviewBanner courseId={courseId || filter} />
       <div className="st-own">
         <button className="btn sm" onClick={() => openStudySet('edit:new')}>
           <Plus size={14} /> Make your own set
@@ -314,7 +322,7 @@ function Maker({ courses, courseId }: { courses: ScholarCourse[]; courseId: stri
   return (
     <section className="st-maker">
       <div className="st-maker-head">
-        <Plus size={15} /> <b>Make new</b>
+        <ClipboardList size={15} /> <b>Study chapters</b>
         {!courseId && (
           <select value={cid} onChange={(e) => setCid(e.target.value)}>
             {courses.map((c) => (
@@ -334,9 +342,17 @@ function Maker({ courses, courseId }: { courses: ScholarCourse[]; courseId: stri
         ))}
       </div>
       <div className="st-make">
-        <MakeButton kind="exam" disabled={!picked.length} canMake={canMake} courseId={cid} target={{ chapters: sortLabels(picked, detail) }} />
-        <MakeButton kind="cards" disabled={!picked.length} canMake={canMake} courseId={cid} target={{ chapters: sortLabels(picked, detail) }} />
-        {canMake === false && <span className="muted st-hint">Making new material needs your Claude account (set it up in Scans). Sets from your saved questions work without it.</span>}
+        <button
+          className="btn primary sm"
+          disabled={!picked.length}
+          onClick={() => {
+            const chapters = sortLabels(picked, detail);
+            openStudyHub({ courseId: cid, code: detail?.code || '', title: chapters.length === 1 ? chapters[0] : `${chapters.length} chapters`, chapters });
+          }}
+        >
+          <ClipboardList size={14} /> Study {picked.length ? sortLabels(picked, detail).map((x) => x.replace(/^Chapter /, 'Ch ')).join(', ') : 'these'}
+        </button>
+        {canMake === false && <span className="muted st-hint">Writing new questions needs your Claude account (set it up in Scans). Studying saved ones works without it.</span>}
       </div>
     </section>
   );
@@ -356,25 +372,33 @@ const DECK_MODES: [DeckMode, string, typeof Layers][] = [
  * The full-window player. `id` is a set's id, or "review:<courseId|all>" for spaced review, or "edit:<id>",
  * "edit:new" and "edit:import" for the set editor.
  */
-export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
+export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): void }) {
+  // ("<set id>#learn" opens a deck at Learn, "#match" at Match: the Study page's buttons.)
+  const [id, startMode] = fullId.split('#') as [string, DeckMode | undefined];
   const [set, setSet] = useState<StudySetFull | null>(null);
-  const [mode, setMode] = useState<DeckMode>('cards');
+  const [mode, setMode] = useState<DeckMode>(startMode || 'cards');
+  const hub = id.startsWith('hub:') ? parseScope(id) : null;
   // The class's textbook chapters, so each question can open its reading beside the quiz.
   const [pdfs, setPdfs] = useState<Map<string, string>>(new Map());
   const [reading, setReading] = useState<ReadingTarget | null>(null);
   const [pdfCourse, setPdfCourse] = useState('');
-  const review = id.startsWith('review:') ? id.slice(7) : null;
+  // "review:<courseId|all>" or "review:<courseId>:<chapters>" (one chapter's or one test's review).
+  const reviewParts = id.startsWith('review:') ? id.slice(7).split(':') : null;
+  const review = reviewParts ? reviewParts[0] : null;
+  const reviewChapters = reviewParts?.[1] ? decodeURIComponent(reviewParts[1]).split('|').filter(Boolean) : [];
   const edit = id.startsWith('edit:') ? id.slice(5) : null;
   useEffect(() => {
     setSet(null);
-    setMode('cards');
-    if (review != null || edit != null) return;
-    api.scholar.studyGet(id).then((s) => {
+    setMode(startMode || 'cards');
+    if (hub) setPdfCourse(hub.courseId);
+    if (review != null || edit != null || hub) return;
+    const asCards = id.startsWith('qcards:');
+    api.scholar.studyGet(asCards ? id.slice(7) : id).then((s) => {
       if (!s) return onClose();
-      setSet(s);
+      setSet(asCards ? questionCards(s) : s);
       if (s.courseId) setPdfCourse(s.courseId);
     });
-  }, [id]);
+  }, [fullId]);
   // The textbook chapters of the class in front of the student (Review moves between classes).
   useEffect(() => {
     if (!pdfCourse) return setPdfs(new Map());
@@ -386,10 +410,11 @@ export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
     return () => window.removeEventListener('keydown', key);
   }, [reading]);
   const file = reading && pdfs.get(reading.chapter);
-  const title = review != null ? 'Review' : edit != null ? (edit === 'new' || edit === 'import' ? 'New set' : 'Edit set') : set?.title || '';
-  const body =
-    review != null ? (
-      <Review courseId={review === 'all' ? '' : review} />
+  const title = hub ? 'Study' : review != null ? 'Review' : edit != null ? (edit === 'new' || edit === 'import' ? 'New set' : 'Edit set') : set?.title || '';
+  const body = hub ? (
+    <StudyHub scope={hub} />
+  ) : review != null ? (
+      <Review courseId={review === 'all' ? '' : review} chapters={reviewChapters} />
     ) : edit != null ? (
       <SetEditor id={edit === 'new' || edit === 'import' ? undefined : edit} startWithImport={edit === 'import'} onClose={onClose} />
     ) : !set ? (
@@ -662,6 +687,21 @@ export function Exam({ set }: { set: StudySetFull }) {
 }
 
 /** A question's right answer in words (what the book should say). */
+/**
+ * A question set as flashcards: the question on the front, the right answer on the back (and for a calculation, the
+ * answer with its unit). So every set can be studied in Flashcards and Learn, as on Quizlet, before any cards are
+ * written. Written-answer questions stay in practice exams.
+ */
+function questionCards(s: StudySetFull): StudySetFull {
+  const back = (q: StudyQuestion) =>
+    q.type === 'tf' ? (q.answer ? 'True' : 'False') : q.type === 'num' ? `${q.answer}${q.unit ? ` ${q.unit}` : ''}` : answerText(q);
+  const cards = (s.questions || [])
+    .filter((q) => q.type !== 'short')
+    .map((q) => ({ k: q.k, front: q.type === 'tf' ? `True or false: ${q.q}` : q.q, back: back(q), chapter: q.chapter, section: q.section, topic: q.topic }));
+  // (The same id as the questions' own set, so Learn and known-card progress are kept between sessions.)
+  return { ...s, kind: 'cards', cards, questions: undefined, count: cards.length };
+}
+
 const answerText = (q: StudyQuestion) =>
   q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join(' ') : q.type === 'tf' ? '' : q.type === 'num' ? q.unit || '' : q.answer;
 

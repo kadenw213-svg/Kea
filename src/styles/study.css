@@ -744,17 +744,186 @@
   color: var(--accent);
 }
 .sm-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: grid;
+  gap: 10px;
   padding: 14px 16px;
   margin: 0 0 12px;
   border-radius: 14px;
   background: var(--accent-soft);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
-.sm-banner > div {
+.sm-banner-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sm-banner-top > div {
   flex: 1;
+}
+/* One chip per class: tap to review only that class */
+.sm-classes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.sm-class {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sm-class:hover {
+  border-color: var(--accent);
+}
+.sm-class-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.sm-class-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* The Study page: one place for every way to study a chapter or a test */
+.hub {
+  display: grid;
+  gap: 18px;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 8px 4px 32px;
+}
+.hub-head h2 {
+  margin: 2px 0 2px;
+  font-size: 22px;
+}
+.hub-code {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.4px;
+}
+.hub-mastery {
+  display: grid;
+  gap: 6px;
+}
+.hub-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.hub-bar .m {
+  background: var(--accent);
+}
+.hub-bar .l {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.hub-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.hub-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 4px;
+  background: var(--surface-3);
+}
+.hub-legend i.m {
+  background: var(--accent);
+}
+.hub-legend i.l {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.hub-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+.hub-mode {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+button.hub-mode {
+  cursor: pointer;
+}
+button.hub-mode:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.hub-mode:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.hub-mode.primary {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.hub-mode svg {
+  color: var(--accent);
+}
+.hub-mode b {
+  font-size: 15px;
+}
+.hub-mode span {
+  font-size: 13px;
+}
+.hub-mode small {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.hub-sizes {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0;
+}
+.hub-sizes button {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.hub-sizes button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent, #fff);
+}
+.hub-note {
+  margin: -6px 0 0;
+}
+.hub-more {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
 }
 .sm-banner-sub {
   font-size: 12.5px;

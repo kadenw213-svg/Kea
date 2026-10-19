@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Clock, FileText, Inbox, Loader2, Mail, PenSquare, RefreshCw, Reply, Send, Trash2, X } from 'lucide-react';
 import { api, MailDraft, MailList, ScholarCourse } from '../../lib/api';
+import { useSetting, useSettings } from '../../lib/settings';
 import { toast } from '../../store';
 import { useScholar } from './scholarStore';
 
@@ -172,10 +173,15 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
     return mail.drafts.map((d) => ({ id: d.key, who: d.course || '', title: d.subject || (d.replyTo ? 'Reply' : 'New message'), sub: d.body, at: d.at, unread: false, mark: 'draft' }));
   }, [mail, box]);
 
+  // A new draft starts with the signature under it (like Gmail), on replies too unless that's turned off.
+  const signature = String(useSetting<string>('scholar.mailSignature') || '').trim();
+  const signReplies = useSetting<boolean>('scholar.mailSignatureReplies') !== false;
+  const signed = (reply: boolean) => (signature && (!reply || signReplies) ? `\n\n${signature}` : '');
+  const [editSig, setEditSig] = useState<string | null>(null);
   const replyTo = (m: NonNullable<typeof msg>) => {
     const key = `reply:${m.id}`;
     const saved = mail?.drafts.find((d) => d.key === key);
-    setCompose({ key, course: m.course, replyTo: m.id, subject: m.title, body: saved?.body || '' });
+    setCompose({ key, course: m.course, replyTo: m.id, subject: m.title, body: saved?.body || signed(true) });
   };
 
   return (
@@ -185,10 +191,36 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
         <button className="btn sm" onClick={() => sync()} disabled={syncing} title={mail?.checked ? `Last read from your class site ${when(mail.checked)}` : 'Read your class site’s messages now'}>
           {syncing ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} Refresh
         </button>
-        <button className="btn primary sm" onClick={() => setCompose({ key: `new:${Date.now().toString(36)}`, course: courses[0]?.code || '', to: '', subject: '', body: '' })}>
+        <button className="btn sm" onClick={() => setEditSig(editSig === null ? signature : null)} title="The signature added under your messages">
+          <FileText size={13} /> Signature
+        </button>
+        <button className="btn primary sm" onClick={() => setCompose({ key: `new:${Date.now().toString(36)}`, course: courses[0]?.code || '', to: '', subject: '', body: signed(false) })}>
           <PenSquare size={14} /> New message
         </button>
       </div>
+      {editSig !== null && (
+        <div className="ml-sig">
+          <textarea value={editSig} onChange={(e) => setEditSig(e.target.value)} rows={4} placeholder={'Kaden Walsh\nStudent, CHE1011'} autoFocus />
+          <label className="ml-sig-opt">
+            <input type="checkbox" checked={signReplies} onChange={(e) => useSettings.getState().set({ 'scholar.mailSignatureReplies': e.target.checked })} /> Add it to replies too
+          </label>
+          <div className="ml-sig-btns">
+            <button className="btn sm" onClick={() => setEditSig(null)}>
+              Cancel
+            </button>
+            <button
+              className="btn primary sm"
+              onClick={() => {
+                useSettings.getState().set({ 'scholar.mailSignature': editSig.trim() });
+                setEditSig(null);
+                toast('Signature saved: new messages start with it.', 'success');
+              }}
+            >
+              Save signature
+            </button>
+          </div>
+        </div>
+      )}
       <p className="sch-sub">Your class-site messages, read and answered here. Kea sends what you write through your class site, the same as pressing Reply and Send there, and marks it sent once the site confirms.</p>
       <div className="ml-wrap">
         <aside className="ml-list">
@@ -256,10 +288,10 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
                 </div>
               </div>
               <div className="ml-actions">
-                <button className="btn primary sm" disabled={!msg.url} title={msg.url ? '' : 'This message has no link on the class site to reply through'} onClick={() => replyTo(msg)}>
+                <button className="btn primary sm" disabled={!msg.canOpen && !msg.url} title={msg.canOpen || msg.url ? '' : 'This message has no link on the class site to reply through'} onClick={() => replyTo(msg)}>
                   <Reply size={14} /> Reply
                 </button>
-                <button className="btn sm" onClick={() => readFull(msg.id, true)} disabled={reading || !msg.url}>
+                <button className="btn sm" onClick={() => readFull(msg.id, true)} disabled={reading || (!msg.canOpen && !msg.url)}>
                   <RefreshCw size={13} /> Reload
                 </button>
                 {msg.url && (

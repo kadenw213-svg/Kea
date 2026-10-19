@@ -463,7 +463,7 @@ const testIn = (t: ReviewItem['test']) => {
   return days <= 0 ? `${t.title} is today` : days === 1 ? `${t.title} is tomorrow` : `${t.title} in ${days} days`;
 };
 
-export function Review({ courseId }: { courseId: string }) {
+export function Review({ courseId, chapters = [] }: { courseId: string; chapters?: string[] }) {
   const [queue, setQueue] = useState<ReviewQueue | null>(null);
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [pos, setPos] = useState(0);
@@ -473,8 +473,10 @@ export function Review({ courseId }: { courseId: string }) {
   const [judged, setJudged] = useState<boolean | undefined>(undefined);
   const [self, setSelf] = useState<boolean | undefined>(undefined);
   const [tally, setTally] = useState({ again: 0, good: 0, easy: 0 });
-  const load = () =>
-    api.scholar.studyReview({ courseId }).then((q) => {
+  // Studying ahead: the unseen questions too, past today's few new ones.
+  const [ahead, setAhead] = useState(false);
+  const load = (more = ahead) =>
+    api.scholar.studyReview({ courseId, chapters, ...(more ? { newPerDay: 1000, limit: 30 } : {}) }).then((q) => {
       setQueue(q);
       // Due ones first; new ones mixed in among them so a session isn't all new at the end.
       const fresh = [...q.fresh];
@@ -489,7 +491,7 @@ export function Review({ courseId }: { courseId: string }) {
     });
   useEffect(() => {
     load();
-  }, [courseId]);
+  }, [courseId, chapters.join('|')]);
   const clear = () => (setFlipped(false), setAnswer(null), setRevealed(false), setJudged(undefined), setSelf(undefined));
   const it = items[pos];
   const shown: Shown | null = useMemo(() => {
@@ -541,11 +543,23 @@ export function Review({ courseId }: { courseId: string }) {
 
   if (!queue) return <div className="spinner" />;
   const total = items.length;
+  const unseen = Object.values(queue.counts).reduce((n, c) => n + c.fresh, 0);
   if (!total)
     return (
       <div className="st-cards sm-review-done">
-        <h2>Nothing to review right now</h2>
-        <p className="muted">Every card and question you've studied is scheduled. New ones are added a few a day, chapters with a test coming first. Make or import a set, or study one in Learn, and it joins your review.</p>
+        <h2>Nothing due right now</h2>
+        <p className="muted">Everything you've studied is scheduled to come back before its test, and today's new questions are done.</p>
+        {unseen > 0 && (
+          <button
+            className="btn primary"
+            onClick={() => {
+              setAhead(true);
+              load(true);
+            }}
+          >
+            Study ahead: {Math.min(30, unseen)} of {unseen} new questions
+          </button>
+        )}
       </div>
     );
   if (pos >= total)
@@ -556,7 +570,7 @@ export function Review({ courseId }: { courseId: string }) {
         <p className="muted">
           {tally.good + tally.easy} remembered, {tally.again} to practise again. Each one is scheduled to come back, before its test when there is one.
         </p>
-        <button className="btn" onClick={load}>
+        <button className="btn" onClick={() => load()}>
           Check for more
         </button>
       </div>
@@ -635,26 +649,42 @@ export function ReviewBanner({ courseId = '' }: { courseId?: string }) {
     api.scholar.studyReview({ courseId, limit: 1000 }).then(setQ).catch(() => {});
   }, [version, courseId]);
   if (!q) return null;
-  const counts = Object.entries(q.counts).filter(([id]) => !courseId || id === courseId);
+  const counts = Object.entries(q.counts).filter(([id, c]) => (!courseId || id === courseId) && c.total);
   const due = counts.reduce((n, [, c]) => n + c.due, 0);
-  const total = counts.reduce((n, [, c]) => n + c.total, 0);
-  if (!total) return null;
   const fresh = Math.min(q.newToday, counts.reduce((n, [, c]) => n + c.fresh, 0));
+  if (!counts.length) return null;
+  const start = (id: string) => useScholar.getState().set({ study: `review:${id}` });
+  // Each class: what's due, how much is mastered, and its next test; the soonest test first.
+  const rows = counts.sort(([, a], [, b]) => (a.test?.date || '9999').localeCompare(b.test?.date || '9999'));
   return (
     <section className="sm-banner">
-      <div>
-        <b>{due ? `${due} to review` : 'Review'}</b>
-        {fresh > 0 && <span className="muted"> · {fresh} new today</span>}
-        <div className="muted sm-banner-sub">
-          {counts
-            .filter(([, c]) => c.due)
-            .map(([id, c]) => `${c.code || 'Mine'} ${c.due}`)
-            .join(' · ') || 'Spaced so every card comes back before its test.'}
+      <div className="sm-banner-top">
+        <div>
+          <b>{due ? `${due} to review` : 'Review'}</b>
+          {fresh > 0 && <span className="muted"> · {fresh} new today</span>}
+          <div className="muted sm-banner-sub">Spaced so every question comes back before its test, shared between your classes.</div>
         </div>
+        <button className="btn primary sm" disabled={!due && !fresh} onClick={() => start(courseId || 'all')}>
+          {due || fresh ? 'Review all' : 'All caught up'}
+        </button>
       </div>
-      <button className="btn primary sm" disabled={!due && !fresh} onClick={() => useScholar.getState().set({ study: `review:${courseId || 'all'}` })}>
-        {due || fresh ? 'Start review' : 'All caught up'}
-      </button>
+      <div className="sm-classes">
+        {rows.map(([id, c]) => {
+          const days = c.test ? Math.round((Date.parse(`${c.test.date}T12:00`) - Date.now()) / 864e5) : null;
+          return (
+            <button key={id} className="sm-class" onClick={() => start(id)} title={`Review ${c.code || 'your own sets'} only`}>
+              <b>{c.code || 'Mine'}</b>
+              <span className="sm-class-bar">
+                <i style={{ width: `${((c.mastered || 0) / c.total) * 100}%` }} />
+              </span>
+              <span className="muted">
+                {c.due ? `${c.due} due` : 'caught up'}
+                {days != null && days >= 0 && days <= 14 ? ` · test ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days}d`}` : ''}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }

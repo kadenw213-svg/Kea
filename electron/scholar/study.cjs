@@ -751,8 +751,29 @@ const dayStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,
 const addDays = (n) => dayStr(new Date(Date.now() + n * 864e5));
 
 /** Every reviewable item of the ready sets (in this class, or all): [{ k, kind, item, setId, courseId, courseCode, chapter }]. */
+// Kept between calls until a set or the list of sets changes (reading every set took most of half a second, during
+// which Kea's window froze).
+let reviewCache = { sig: '', items: null };
 function reviewable(courseId) {
+  const all = reviewableAll();
+  return courseId ? all.filter((x) => x.courseId === courseId) : all;
+}
+function reviewableAll() {
+  const sig = ['index.json', 'sets', 'mine', 'local']
+    .map((n) => {
+      try {
+        const st = fs.statSync(file(n));
+        // (A folder's time changes when a file is added or removed; each set's own time when it's rewritten.)
+        const inner = st.isDirectory() ? fs.readdirSync(file(n)).map((f) => fs.statSync(file(n, f)).mtimeMs).join(',') : '';
+        return `${st.mtimeMs}:${inner}`;
+      } catch {
+        return '-';
+      }
+    })
+    .join('|');
+  if (reviewCache.sig === sig && reviewCache.items) return reviewCache.items;
   const out = new Map();
+  const courseId = '';
   for (const e of index()) {
     if (e.status !== 'ready' || (courseId && e.courseId !== courseId)) continue;
     const s = readJson(file('sets', `${e.id}.json`), null) || readJson(file('mine', `${e.id}.json`), null) || readJson(file('local', `${e.id}.json`), {});
@@ -765,29 +786,46 @@ function reviewable(courseId) {
     for (const c of keyed(s.cards)) one(c, 'card');
     for (const q of keyed(s.questions)) one(q, 'question');
   }
-  return [...out.values()];
+  reviewCache = { sig, items: [...out.values()] };
+  return reviewCache.items;
 }
 
-/** What's due: { due: [...], fresh: [...], counts: { [courseId]: { due, fresh } }, tests }. `limit` caps the session. */
-async function reviewQueue({ courseId = '', limit = 40, newPerDay = 15 } = {}) {
+/**
+ * What's due: { due: [...], fresh: [...], counts: { [courseId]: { due, fresh, total, code, test } } }. `limit` caps the
+ * session; `chapters` narrows it to some chapters of the class (studying one chapter or one exam).
+ */
+async function reviewQueue({ courseId = '', chapters = [], limit = 40, newPerDay = 15 } = {}) {
   const p = profiles.paths();
   const tests = await db.nextTests(p.db).catch(() => ({}));
   const state = readJson(file('review.json'), {});
   const today = dayStr(new Date());
   const testOf = (x) => tests[`${x.courseId}|${x.chapter}`] || null;
-  const all = reviewable(courseId).map((x) => ({ ...x, test: testOf(x), state: state[x.k] || null, starred: !!starred()[x.k] }));
+  const stars = starred();
+  const want = new Set(chapters || []);
+  const all = reviewable(courseId)
+    .filter((x) => !want.size || want.has(x.chapter))
+    .map((x) => ({ ...x, test: testOf(x), state: state[x.k] || null, starred: !!stars[x.k] }));
   const soon = (x) => (x.test ? x.test.date : '9999');
   // Due: oldest first, then the soonest test.
   const due = all.filter((x) => x.state && x.state.due <= today).sort((a, b) => a.state.due.localeCompare(b.state.due) || soon(a).localeCompare(soon(b)));
-  // New ones today: the chapters with a test coming first, starred first, a few a day.
+  // New ones today, a few a day, shared fairly between classes: each class gets turns (two for a class with a test in
+  // the next week), and within a class the chapters with a test coming first, starred first. (Before, the class with
+  // the soonest test took every new card.) Studying one chapter or one exam isn't limited to today's few.
   const introduced = Object.values(state).filter((s) => s.first === today).length;
-  const fresh = all
-    .filter((x) => !x.state)
-    .sort((a, b) => soon(a).localeCompare(soon(b)) || Number(b.starred) - Number(a.starred))
-    .slice(0, Math.max(0, newPerDay - introduced));
+  const room = want.size ? limit : Math.max(0, newPerDay - introduced);
+  const byClass = new Map();
+  for (const x of all.filter((y) => !y.state).sort((a, b) => soon(a).localeCompare(soon(b)) || Number(b.starred) - Number(a.starred))) byClass.set(x.courseId, [...(byClass.get(x.courseId) || []), x]);
+  const weekAway = addDays(7);
+  const turns = [...byClass.values()].map((list) => ({ list, weight: list[0].test && list[0].test.date <= weekAway ? 2 : 1 }));
+  const fresh = [];
+  while (fresh.length < room && turns.some((t) => t.list.length))
+    for (const t of turns) for (let n = 0; n < t.weight && t.list.length && fresh.length < room; n++) fresh.push(t.list.shift());
   const counts = {};
   for (const x of all) {
-    const c = (counts[x.courseId] = counts[x.courseId] || { due: 0, fresh: 0, total: 0, code: x.courseCode });
+    const c = (counts[x.courseId] = counts[x.courseId] || { due: 0, fresh: 0, total: 0, learning: 0, mastered: 0, code: x.courseCode, test: null });
+    // (Mastered: it has come back right enough times to wait 8 days or more.)
+    if (x.state) x.state.box >= 4 ? c.mastered++ : c.learning++;
+    if (x.test && (!c.test || x.test.date < c.test.date)) c.test = x.test;
     c.total++;
     if (x.state && x.state.due <= today) c.due++;
     if (!x.state) c.fresh++;

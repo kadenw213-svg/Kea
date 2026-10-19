@@ -486,19 +486,81 @@ const withMail = (fn) => {
 
 /** A message's page as text (what the class site shows: sender, subject, date, body). */
 const readMessage = (url) => withMail(() => readMessageNow(url));
-async function readMessageNow(url) {
-  if (!url || !onSite(url)) throw new Error('This message has no class-site link to open.');
-  const w = await mailLoad(url);
-  if (!(await mailSignedIn(w, url))) throw new Error('Kea isn’t signed in to your class site.');
+async function readMessageNow(target) {
+  const url = typeof target === 'string' ? target : target?.url || '';
+  const loc = typeof target === 'object' ? target?.loc : null;
+  let w;
+  if (url) {
+    if (!onSite(url)) throw new Error('This message has no class-site link to open.');
+    w = await mailLoad(url);
+    if (!(await mailSignedIn(w, url))) throw new Error('Kea isn’t signed in to your class site.');
+  } else if (loc) w = await openMessage(loc);
+  else throw new Error('This message has no class-site link to open.');
   let text = '';
   for (const f of w.webContents.mainFrame.framesInSubtree) {
     if (hostOf(f.url) && hostOf(f.url) !== hostOf(readSchool().home)) continue;
+    // (Not the folder list or the message list beside the open message.)
+    if (loc && /frame_side_folders|frame_list_mail/i.test(f.url)) continue;
     try {
       const sub = await f.executeJavaScript(`(${extract.toString()})()`);
       if (sub.text.trim()) text += `${text ? '\n\n' : ''}${sub.text.trim()}`;
     } catch {}
   }
   return { url: w.webContents.getURL(), text: text.slice(0, 20000) };
+}
+
+/**
+ * The class site's message tool, at a folder ('inbox' or 'sent'). Its folders and messages are links that only work
+ * by being clicked (D2L's classic Email draws "javascript://" links), so Kea clicks them, as the student would.
+ */
+async function openFolder(folder = 'inbox') {
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const ou = (s.home.match(/\/d2l\/home\/(\d+)/) || [])[1] || '';
+  const start = new URL(`/d2l/lms/email/frame.d2l${ou ? `?ou=${ou}` : ''}`, s.home).href;
+  let w = await mailLoad(start);
+  if (!(await mailSignedIn(w, start))) throw new Error('Kea isn’t signed in to your class site.');
+  w = mailWindow();
+  if (folder === 'sent') {
+    let clicked = false;
+    for (let i = 0; i < 10 && !clicked; i++) {
+      clicked = !!(await inFrames(w, `(() => { ${ALL} const a = all.find((x) => x.tagName === 'A' && /^sent( mail| items)?\\b/i.test((x.textContent || '').trim()) && shown(x)); if (a) { a.click(); return true; } return false; })()`));
+      if (!clicked) await sleep(700);
+    }
+    if (!clicked) throw new Error('Kea couldn’t find the Sent folder in your class site’s messages.');
+    await sleep(2500);
+  }
+  return w;
+}
+
+/** Open one message by clicking it in its folder: { folder, subject, date }. Resolves to the mail window, message open. */
+async function openMessage(loc) {
+  const w = await openFolder(loc.folder || 'inbox');
+  const pick = `((subject, date) => { ${ALL}
+    const norm = (t) => (t || '').replace(/\\s+/g, ' ').trim();
+    const links = all.filter((x) => x.tagName === 'A' && norm(x.textContent) === norm(subject));
+    const a = links.find((l) => { const row = l.closest('tr, [role=row], li') || l.parentElement; return !date || norm(row && row.innerText).includes(norm(date)); }) || (date ? null : links[0]);
+    if (!a) return false;
+    a.click();
+    return true;
+  })(${JSON.stringify(String(loc.subject || ''))}, ${JSON.stringify(String(loc.date || ''))})`;
+  let ok = false;
+  for (let i = 0; i < 12 && !ok; i++) {
+    ok = !!(await inFrames(w, pick));
+    if (!ok) await sleep(800);
+  }
+  if (!ok) throw new Error('Kea couldn’t find that message in your class site’s mailbox (it may have been moved or deleted there). Open it on the class site.');
+  // Open once a frame other than the lists shows the subject with more than the list's line.
+  const probe = String(loc.subject || '').slice(0, 40);
+  for (let i = 0; i < 15; i++) {
+    await sleep(800);
+    for (const f of w.webContents.mainFrame.framesInSubtree) {
+      if (/frame_side_folders|frame_list_mail/i.test(f.url)) continue;
+      const t = await f.executeJavaScript('document.body ? document.body.innerText : ""').catch(() => '');
+      if (t.includes(probe) && t.length > probe.length + 60) return w;
+    }
+  }
+  return w;
 }
 
 // Inside the page: the elements of every shadow root and the document, for finding D2L's own controls.
@@ -513,16 +575,20 @@ const ALL = `const all = []; const walk = (r) => { for (const el of r.querySelec
  * with everything filled in for the student to check and send ({ sent: false, shown: true, why }).
  */
 const sendMessage = (msg) => withMail(() => sendMessageNow(msg));
-async function sendMessageNow({ url = '', ou = '', subject = '', body = '', to = '' }) {
+async function sendMessageNow({ url = '', loc = null, ou = '', subject = '', body = '', to = '' }) {
   const s = readSchool();
   if (!s.home) throw new Error('No class site is set up yet.');
   const text = String(body || '').trim();
   if (!text) throw new Error('Write something first.');
-  const reply = !!url;
-  const start = reply ? url : new URL(`/d2l/lms/email/frame.d2l?ou=${encodeURIComponent(ou)}`, s.home).href;
-  if (reply && !onSite(url)) throw new Error('This message has no class-site link to reply through.');
-  let w = await mailLoad(start);
-  if (!(await mailSignedIn(w, start))) throw new Error('Kea isn’t signed in to your class site.');
+  const reply = !!(url || loc);
+  let w;
+  if (!url && loc) w = await openMessage(loc);
+  else {
+    const start = url || new URL(`/d2l/lms/email/frame.d2l?ou=${encodeURIComponent(ou)}`, s.home).href;
+    if (url && !onSite(url)) throw new Error('This message has no class-site link to reply through.');
+    w = await mailLoad(start);
+    if (!(await mailSignedIn(w, start))) throw new Error('Kea isn’t signed in to your class site.');
+  }
   w = mailWindow();
   const show = (why) => {
     w.setTitle('Kea: check and send your message');
@@ -618,7 +684,7 @@ async function readMailboxNow() {
       let url = '';
       try { url = new URL(a.getAttribute('href'), location.href).href; } catch {}
       if (/^javascript:/i.test(url)) url = '';
-      rows.push({ url, subject: subject.slice(0, 300), from: from.slice(0, 120), date: date.slice(0, 60), unread, text: text.slice(0, 400) });
+      rows.push({ url, subject: subject.slice(0, 300), from: from.slice(0, 120), date: date.slice(0, 60), unread, text: text.slice(0, 400), oc: (a.getAttribute('onclick') || '').slice(0, 160) });
     }
     const folders = all.filter((x) => x.tagName === 'A' && /^(sent( items| mail)?|inbox)\\b/i.test((x.textContent || '').trim()))
       .map((x) => ({ name: (x.textContent || '').trim().slice(0, 40), href: (() => { try { return new URL(x.getAttribute('href') || '', location.href).href; } catch { return ''; } })() }));
@@ -655,16 +721,16 @@ async function readMailboxNow() {
   };
   const inboxFrames = await settle();
   const inbox = uniq(inboxFrames.flatMap((f) => f.rows));
-  // The Sent folder: its own link in the folder list.
-  const sentLink = inboxFrames.flatMap((f) => f.folders).find((x) => /^sent/i.test(x.name) && x.href && onSite(x.href));
+  // The Sent folder: clicked in the folder list (its link only works by being clicked).
   let sent = [];
-  let sentFrames = [];
-  if (sentLink) {
-    await mailLoad(sentLink.href);
-    sentFrames = await settle();
-    sent = uniq(sentFrames.flatMap((f) => f.rows));
+  let sentError = null;
+  try {
+    await openFolder('sent');
+    sent = uniq((await settle()).flatMap((f) => f.rows));
+  } catch (err) {
+    sentError = String(err.message || err);
   }
-  const seen = { at: new Date().toISOString(), start, frames: inboxFrames.map((f) => ({ url: f.url, title: f.title, rows: f.rows.length, folders: f.folders, links: f.links, sample: f.rows.length ? '' : f.sample })), sentLink: sentLink?.href || null, sentRows: sent.length };
+  const seen = { at: new Date().toISOString(), start, frames: inboxFrames.map((f) => ({ url: f.url, title: f.title, rows: f.rows.length, folders: f.folders, links: f.links, sample: f.rows.length ? '' : f.sample, onclick: f.rows.slice(0, 3).map((r) => r.oc) })), sentRows: sent.length, sentError };
   return { inbox, sent, seen };
 }
 

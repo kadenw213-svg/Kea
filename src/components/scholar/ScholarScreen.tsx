@@ -46,11 +46,11 @@ import { MenuButton } from '../Popover';
 import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, setClassColor, setTypeColor, useColors } from './kinds';
-import { PracticeBox, ResourcesView, StudyPlayer } from './Study';
+import { ResourcesView, StudyPlayer } from './Study';
 import { ReviewBanner } from './StudyModes';
 import { MessagesView } from './Messages';
 import { ChangesBox, ClassRules, SyllabusMap, ItemHistory } from './History';
-import { quizChapter } from './QuizMe';
+import { openStudyHub } from './StudyHub';
 import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
 import '../../styles/scholar.css';
 
@@ -554,15 +554,27 @@ function ReadingCard({ ctx, b, showCourse = true }: { ctx: Ctx; b: ScholarItem; 
               {!r.pdf && <span className="muted sch-nopdf">Textbook chapter being written</span>}
             </span>
             {r.pdf && (
-              <button
-                className="btn sm tonal"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openReading(r);
-                }}
-              >
-                <BookOpen size={14} /> Read
-              </button>
+              <span className="sch-chapter-btns">
+                <button
+                  className="btn sm tonal"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openReading(r);
+                  }}
+                >
+                  <BookOpen size={14} /> Read
+                </button>
+                <button
+                  className="btn sm"
+                  title="Review, practice exams, flashcards, Learn and Match for this chapter"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openStudyHub({ courseId: b.courseId, code: b.courseCode, title: `${r.chapter}${r.title ? `: ${r.title}` : ''}`, chapters: [r.chapter] });
+                  }}
+                >
+                  <ClipboardCheck size={14} /> Study
+                </button>
+              </span>
             )}
           </div>
         ))
@@ -1084,7 +1096,7 @@ function ClassView({ ctx, courseId }: { ctx: Ctx; courseId: string }) {
             ['textbook', 'Textbook'],
             ['calendar', 'Calendar'],
             ['grades', 'Grades'],
-            ['study', 'Practice']
+            ['study', 'Study']
           ] as const
         ).map(([id, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
@@ -1204,11 +1216,11 @@ function Textbook({ c }: { c: ScholarCourseDetail }) {
                 className="btn sm"
                 onClick={(e) => {
                   e.stopPropagation();
-                  quizChapter(c.id, ch.label);
+                  openStudyHub({ courseId: c.id, code: c.code, title: `${ch.label}${ch.title ? `: ${ch.title}` : ''}`, chapters: [ch.label] });
                 }}
-                title="Quiz yourself on this chapter's saved questions"
+                title="Review, practice exams, flashcards, Learn and Match for this chapter"
               >
-                <ClipboardCheck size={14} /> Quiz me
+                <ClipboardCheck size={14} /> Study
               </button>
             )}
           </div>
@@ -1219,7 +1231,6 @@ function Textbook({ c }: { c: ScholarCourseDetail }) {
                   <ExternalLink size={13} /> {ch.readingLabel || 'Class reading'}
                 </button>
               )}
-              <PracticeBox courseId={c.id} chapters={[ch.label]} title={`Practice ${ch.label}`} />
               {ch.pdf && <RewriteButton code={c.code} chapter={ch.label} />}
             </div>
           )}
@@ -1361,7 +1372,18 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           ))}
         </section>
       )}
-      {practice && <PracticeBox courseId={it.courseId} itemId={it.id} />}
+      {practice && (
+        <section className="st-box">
+          <div className="tb-h">Study for this</div>
+          <button
+            className="btn primary sm"
+            onClick={() => openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: it.covered.length ? it.covered : it.readings.map((r) => r.chapter), itemId: it.id })}
+          >
+            <ClipboardCheck size={14} /> Study {it.covered.length || it.readings.length ? (it.covered.length ? it.covered : it.readings.map((r) => r.chapter)).map((x) => x.replace(/^Chapter /, 'Ch ')).join(', ') : 'for this'}
+          </button>
+          <div className="muted st-hint">Review, a practice exam from the saved questions, flashcards, Learn and Match, all for what this covers.</div>
+        </section>
+      )}
       {instructions && (
         <section>
           <div className="tb-h">Instructions</div>

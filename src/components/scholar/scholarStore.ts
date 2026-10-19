@@ -23,7 +23,16 @@ export const useScholar = create<ScholarStore>((set) => ({
   set: (p) => set(p)
 }));
 
-export const reloadScholar = () => useScholar.getState().set({ version: useScholar.getState().version + 1 });
+// A burst of changes (a scan saving one thing after another) reloads the screens once, not once per change: every
+// reload re-reads the classes, the calendar and the study sets.
+let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+export const reloadScholar = () => {
+  if (reloadTimer) return;
+  reloadTimer = setTimeout(() => {
+    reloadTimer = null;
+    useScholar.getState().set({ version: useScholar.getState().version + 1 });
+  }, 400);
+};
 
 /** Open the Scholar tab (one per window) at a view. */
 export function openScholar(view: ScholarView = { name: 'week' }) {

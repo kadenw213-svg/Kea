@@ -65,7 +65,7 @@ async function syncMailbox(force = false) {
       rows.map((r) => {
         const id = mailId(r);
         const old = (folder === 'inbox' ? before : new Map((m.box.sent || []).map((x) => [x.id, x]))).get(id);
-        return { id, url: r.url, subject: r.subject, from: r.from, date: r.date, unread: !!r.unread, course: courseOf(r) || old?.course || '', first: old?.first || new Date().toISOString(), preview: r.text };
+        return { id, folder, url: r.url, subject: r.subject, from: r.from, date: r.date, unread: !!r.unread, course: courseOf(r) || old?.course || '', first: old?.first || new Date().toISOString(), preview: r.text };
       });
     const inbox = shape(box.inbox, 'inbox');
     const sent = shape(box.sent, 'sent');
@@ -95,6 +95,17 @@ async function syncMailbox(force = false) {
         notes.splice(0, Math.max(0, notes.length - 20));
       }
     }
+    // The newest messages' text, read ahead (a few each time), so they open at once.
+    const fetched = read();
+    for (const x of inbox.filter((i) => !fetched.bodies[i.id]).slice(0, 4)) {
+      try {
+        const page = await browser.readMessage(x.url ? x.url : { loc: { folder: 'inbox', subject: x.subject, date: x.date } });
+        const now = read();
+        now.bodies[x.id] = { text: page.text, at: new Date().toISOString() };
+        write(now);
+      } catch {}
+    }
+    if (inbox.length) changed();
     return { inbox: inbox.length, sent: sent.length, unreadable: keepOld };
   })().finally(() => {
     syncing = null;
@@ -122,7 +133,8 @@ function register({ browser, precheck, db }) {
       .readInbox()
       .items.filter((i) => i.kind === 'message' && !(i.url && urls.has(i.url)))
       .map((i) => ({ id: i.id, course: i.course || '', title: i.title, from: '', preview: i.body || '', at: i.at, url: i.url || '', read: !!i.read }));
-    return [...box.map((x) => ({ id: x.id, course: x.course, title: x.subject, from: x.from, preview: x.preview || '', at: x.date || x.first, sortAt: x.first, url: x.url, read: !x.unread })), ...alerts];
+    // (A mailbox message without a link of its own is opened by clicking it in its folder: its `loc`.)
+    return [...box.map((x) => ({ id: x.id, course: x.course, title: x.subject, from: x.from, preview: x.preview || '', at: x.date || x.first, sortAt: x.first, url: x.url, loc: { folder: x.folder || 'inbox', subject: x.subject, date: x.date }, read: !x.unread })), ...alerts];
   };
 
   ipcMain.handle('scholar:mailList', () => {
@@ -131,9 +143,9 @@ function register({ browser, precheck, db }) {
     const mine = m.sent.slice(0, 200);
     const siteSent = (m.box.sent || [])
       .filter((x) => !mine.some((s) => s.confirmed && s.subject && x.subject && s.subject.toLowerCase().includes(x.subject.toLowerCase().replace(/^re:\s*/, ''))))
-      .map((x) => ({ id: x.id, at: x.date || x.first, course: x.course, to: x.from, subject: x.subject, body: x.preview || '', replyTo: null, confirmed: true, why: null, url: x.url, fromSite: true }));
+      .map((x) => ({ id: x.id, at: x.date || x.first, course: x.course, to: x.from, subject: x.subject, body: m.bodies[x.id]?.text || x.preview || '', replyTo: null, confirmed: true, why: null, url: x.url, fromSite: true }));
     return {
-      messages: inboxMessages().map((i) => ({ id: i.id, course: i.course || '', title: i.title, from: i.from || '', preview: i.preview || '', at: i.at, url: i.url || '', read: !!i.read, full: m.bodies[i.id]?.text || null })),
+      messages: inboxMessages().map((i) => ({ id: i.id, course: i.course || '', title: i.title, from: i.from || '', preview: i.preview || '', at: i.at, url: i.url || '', canOpen: !!(i.url || i.loc), read: !!i.read, full: m.bodies[i.id]?.text || null })),
       sent: [...mine, ...siteSent],
       drafts: Object.entries(m.drafts).map(([key, d]) => ({ key, ...d })),
       checked: m.box.at || null
@@ -156,9 +168,11 @@ function register({ browser, precheck, db }) {
   ipcMain.handle('scholar:mailRead', async (_e, id, refresh) => {
     const m = read();
     if (!refresh && m.bodies[id]) return m.bodies[id];
-    const item = inboxMessages().find((i) => i.id === id) || (read().box.sent || []).find((x) => x.id === id);
-    if (!item?.url) return { text: item?.preview || '', at: null, noLink: true };
-    const page = await browser.readMessage(item.url);
+    const box = inboxMessages().find((i) => i.id === id);
+    const sentItem = (read().box.sent || []).find((x) => x.id === id);
+    const item = box || (sentItem && { ...sentItem, loc: { folder: 'sent', subject: sentItem.subject, date: sentItem.date } });
+    if (!item?.url && !item?.loc) return { text: item?.preview || '', at: null, noLink: true };
+    const page = await browser.readMessage(item.url ? item.url : { loc: item.loc });
     markRead(id);
     const fresh = read();
     fresh.bodies[id] = { text: page.text, at: new Date().toISOString() };
@@ -186,14 +200,14 @@ function register({ browser, precheck, db }) {
     const body = String(msg?.body || '').trim();
     if (!body) throw new Error('Write something first.');
     const reply = msg.replyTo ? inboxMessages().find((i) => i.id === msg.replyTo) : null;
-    if (msg.replyTo && !reply?.url) throw new Error('That message has no class-site link to reply through. Open it on the class site instead.');
+    if (msg.replyTo && !reply?.url && !reply?.loc) throw new Error('That message has no class-site link to reply through. Open it on the class site instead.');
     const course = String(msg.course || reply?.course || '');
     const ou = course ? (await db.watchList(profiles.paths().db)).find((c) => c.code === course)?.ou || '' : '';
     if (!reply && !ou) throw new Error('Pick the class to send it through.');
     if (!reply && !/@|\w/.test(String(msg.to || ''))) throw new Error('Add who it’s to.');
     sending = true;
     try {
-      const r = await browser.sendMessage({ url: reply?.url || '', ou, subject: String(msg.subject || ''), body, to: String(msg.to || '') });
+      const r = await browser.sendMessage({ url: reply?.url || '', loc: reply && !reply.url ? reply.loc : null, ou, subject: String(msg.subject || ''), body, to: String(msg.to || '') });
       const m = read();
       m.sent.unshift({ id: `${Date.now()}`, at: new Date().toISOString(), course, to: String(msg.to || ''), subject: String(msg.subject || reply?.title || ''), body, replyTo: msg.replyTo || null, confirmed: !!r.sent, why: r.why || null });
       m.sent = m.sent.slice(0, 500);

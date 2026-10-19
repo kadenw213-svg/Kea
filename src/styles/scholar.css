@@ -2349,3 +2349,37 @@
   font-size: 12px;
   white-space: nowrap;
 }
+
+/* The message signature editor */
+.ml-sig {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.ml-sig textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+}
+.ml-sig-opt {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+}
+.ml-sig-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* A chapter's two actions: Read and Study */
+.sch-chapter-btns {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
