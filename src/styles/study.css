@@ -510,3 +510,339 @@
     opacity: 0;
   }
 }
+
+/* ---------- More ways to study (StudyModes.tsx) ---------- */
+.st-modes {
+  margin-left: auto;
+}
+.st-modes button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.st-own {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+.st-star.on {
+  color: #fdd663;
+}
+.sm-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 18px;
+  font-size: 12.5px;
+}
+.sm-progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.sm-progress-bar > div {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.sm-learn h2,
+.sm-match-setup h2,
+.sm-review-done h2,
+.sm-editor h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+.sm-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.sm-editor .sm-actions .muted {
+  margin-right: auto;
+}
+.sm-round {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.sm-round-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13.5px;
+}
+.sm-round-row svg {
+  color: var(--success);
+  flex-shrink: 0;
+}
+.sm-prompt {
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface);
+  padding: 18px 22px 24px;
+  margin-bottom: 14px;
+}
+.sm-prompt-label {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.sm-prompt-tools {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+.sm-prompt-text {
+  font-size: 19px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.sm-choices {
+  margin-left: 0;
+}
+.sm-check {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+.sm-write {
+  display: flex;
+  gap: 8px;
+}
+.sm-write input {
+  flex: 1;
+  font-size: 16px;
+  padding: 10px 12px;
+}
+.sm-feedback {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.sm-feedback.right {
+  border-color: color-mix(in srgb, var(--success) 60%, transparent);
+}
+.sm-feedback.wrong {
+  border-color: color-mix(in srgb, var(--danger) 60%, transparent);
+}
+.sm-feedback .btn.primary {
+  margin-left: auto;
+}
+.sm-match {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 16px 60px;
+}
+.sm-match-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.sm-match-bar > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.sm-match-bar .btn {
+  margin-left: auto;
+}
+.sm-match-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+.sm-tile {
+  min-height: 110px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: opacity 0.25s, transform 0.15s, border-color 0.15s;
+}
+.sm-tile.front {
+  font-weight: 600;
+  font-size: 15px;
+}
+.sm-tile:hover {
+  border-color: var(--accent);
+}
+.sm-tile.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.sm-tile.miss {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  animation: sm-shake 0.3s;
+}
+.sm-tile.gone {
+  opacity: 0;
+  transform: scale(0.9);
+  pointer-events: none;
+}
+@keyframes sm-shake {
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+.sm-match-done,
+.sm-review-done {
+  text-align: center;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding-top: 40px;
+}
+.sm-match-done h2 {
+  font-size: 30px;
+  margin: 0;
+}
+.sm-review-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.sm-new,
+.sm-test {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+.sm-test {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.sm-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 0 0 12px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.sm-banner > div {
+  flex: 1;
+}
+.sm-banner-sub {
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+.sm-editor-head {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 14px;
+}
+.sm-title {
+  flex: 1;
+  min-width: 220px;
+  font-size: 16px;
+  padding: 9px 12px;
+}
+.sm-import {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin-bottom: 14px;
+}
+.sm-import p {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.sm-import textarea {
+  width: 100%;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  box-sizing: border-box;
+}
+.sm-import-opts {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.sm-import-opts label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.sm-import-opts .btn {
+  margin-left: auto;
+}
+.sm-import-preview {
+  font-size: 12.5px;
+  margin-top: 8px;
+}
+.sm-rows {
+  display: grid;
+  gap: 8px;
+}
+.sm-row {
+  display: grid;
+  grid-template-columns: 26px 1fr 1.6fr auto;
+  gap: 8px;
+  align-items: start;
+}
+.sm-row-num {
+  padding-top: 8px;
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: right;
+}
+.sm-row textarea {
+  resize: vertical;
+  min-height: 38px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  box-sizing: border-box;
+  width: 100%;
+}
+@media (max-width: 640px) {
+  .sm-row {
+    grid-template-columns: 1fr auto;
+  }
+  .sm-row-num {
+    display: none;
+  }
+  .st-modes {
+    margin-left: 0;
+    width: 100%;
+  }
+}

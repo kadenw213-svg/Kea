@@ -1,7 +1,7 @@
 // Study materials: practice exams and flashcard decks. Claude writes a whole set at once, only when the student asks;
 // Kea keeps it and shuffles, samples and grades it here, as often as the student likes, with no Claude involved.
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ClipboardList, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ClipboardList, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Plus, Pencil, ClipboardPaste, Star, Brain, Shapes, FileCheck, Repeat } from 'lucide-react';
 import { api, ScholarCourse, ScholarCourseDetail, StudyCard, StudyHistory, StudyKind, StudyQuestion, StudySet, StudySetFull } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
@@ -9,6 +9,7 @@ import { useScholar } from './scholarStore';
 import { Bar, progressOf, span, useLiveRun, useNow } from './ScansView';
 import { ReadingButton, ReadingContext, ReadingPane, ReadingTarget } from './ReadingPane';
 import { judgeBlank } from '../../lib/blank';
+import { CardTest, Learn, Match, Review, ReviewBanner, SetEditor, SpeakButton, StarButton } from './StudyModes';
 import '../../styles/study.css';
 
 // ---------- Shared state ----------
@@ -167,7 +168,7 @@ function SetRow({ s, showCourse = false }: { s: StudySet; showCourse?: boolean }
         ? s.error || 'Didn’t work'
         : [
             `${s.count} ${s.kind === 'exam' ? 'questions' : 'cards'}${s.source === 'saved' ? ', from saved ones' : s.reused ? ` (${s.reused} saved, ${s.count - s.reused} new)` : ''}`,
-            `made ${madeOn(s.createdAt)}`,
+            s.source === 'mine' && s.editedAt && s.editedAt.slice(0, 10) !== s.createdAt.slice(0, 10) ? `edited ${madeOn(s.editedAt)}` : `made ${madeOn(s.createdAt)}`,
             s.kind === 'exam' && s.best != null ? `best ${pct(s.best)} (${s.attempts} tr${s.attempts === 1 ? 'y' : 'ies'})` : '',
             s.kind === 'cards' && s.known ? `${s.known} known` : ''
           ]
@@ -182,10 +183,15 @@ function SetRow({ s, showCourse = false }: { s: StudySet; showCourse?: boolean }
           {s.itemTitle || s.title.replace(/^(Practice exam|Flashcards): /, '')}
         </div>
         <div className="muted st-meta">
-          {s.kind === 'exam' ? 'Practice exam' : 'Flashcards'} · {meta}
+          {s.kind === 'exam' ? 'Practice exam' : s.source === 'mine' ? 'Your set' : 'Flashcards'} · {meta}
         </div>
         {s.status === 'making' && <MakingProgress id={s.id} />}
       </div>
+      {s.status === 'ready' && s.source === 'mine' && (
+        <button className="icon-btn sm" title="Edit" onClick={() => openStudySet(`edit:${s.id}`)}>
+          <Pencil size={14} />
+        </button>
+      )}
       {s.status === 'ready' && (
         <button className="btn sm tonal" onClick={() => openStudySet(s.id)}>
           {s.kind === 'exam' ? 'Take' : 'Study'}
@@ -249,6 +255,15 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
           <p className="sch-sub">Your practice exams and flashcards. Each one is saved here: take it again any time and Kea shuffles it into a new exam.</p>
         </>
       )}
+      <ReviewBanner courseId={courseId || filter} />
+      <div className="st-own">
+        <button className="btn sm" onClick={() => openStudySet('edit:new')}>
+          <Plus size={14} /> Make your own set
+        </button>
+        <button className="btn sm" onClick={() => openStudySet('edit:import')}>
+          <ClipboardPaste size={14} /> Import from Quizlet
+        </button>
+      </div>
       <Maker courses={courses} courseId={courseId || filter} />
       {!courseId && courses.length > 1 && (
         <div className="st-seg st-filter">
@@ -269,7 +284,7 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
       ) : (
         [...byCourse.entries()].map(([cid, list]) => (
           <section key={cid}>
-            {!courseId && <h2 className="sch-h2">{courses.find((c) => c.id === cid)?.code || list[0].courseCode}</h2>}
+            {!courseId && <h2 className="sch-h2">{cid ? courses.find((c) => c.id === cid)?.code || list[0].courseCode : 'Your own sets'}</h2>}
             <div className="st-list">
               {list.map((s) => (
                 <SetRow key={s.id} s={s} />
@@ -328,16 +343,34 @@ function Maker({ courses, courseId }: { courses: ScholarCourse[]; courseId: stri
 const sortLabels = (picked: string[], d: ScholarCourseDetail | null) => (d ? d.chapters.map((c) => c.label).filter((l) => picked.includes(l)) : picked);
 
 // ---------- Taking a set ----------
+type DeckMode = 'cards' | 'learn' | 'test' | 'match';
+const DECK_MODES: [DeckMode, string, typeof Layers][] = [
+  ['cards', 'Flashcards', Layers],
+  ['learn', 'Learn', Brain],
+  ['test', 'Test', FileCheck],
+  ['match', 'Match', Shapes]
+];
+
+/**
+ * The full-window player. `id` is a set's id, or "review:<courseId|all>" for spaced review, or "edit:<id>",
+ * "edit:new" and "edit:import" for the set editor.
+ */
 export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
   const [set, setSet] = useState<StudySetFull | null>(null);
+  const [mode, setMode] = useState<DeckMode>('cards');
   // The class's textbook chapters, so each question can open its reading beside the quiz.
   const [pdfs, setPdfs] = useState<Map<string, string>>(new Map());
   const [reading, setReading] = useState<ReadingTarget | null>(null);
+  const review = id.startsWith('review:') ? id.slice(7) : null;
+  const edit = id.startsWith('edit:') ? id.slice(5) : null;
   useEffect(() => {
+    setSet(null);
+    setMode('cards');
+    if (review != null || edit != null) return;
     api.scholar.studyGet(id).then((s) => {
       if (!s) return onClose();
       setSet(s);
-      api.scholar.course(s.courseId).then((c) => setPdfs(new Map((c?.chapters || []).filter((ch) => ch.pdf).map((ch) => [ch.label, ch.pdf!.file]))));
+      if (s.courseId) api.scholar.course(s.courseId).then((c) => setPdfs(new Map((c?.chapters || []).filter((ch) => ch.pdf).map((ch) => [ch.label, ch.pdf!.file]))));
     });
   }, [id]);
   useEffect(() => {
@@ -346,6 +379,25 @@ export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
     return () => window.removeEventListener('keydown', key);
   }, [reading]);
   const file = reading && pdfs.get(reading.chapter);
+  const title = review != null ? 'Review' : edit != null ? (edit === 'new' || edit === 'import' ? 'New set' : 'Edit set') : set?.title || '';
+  const body =
+    review != null ? (
+      <Review courseId={review === 'all' ? '' : review} />
+    ) : edit != null ? (
+      <SetEditor id={edit === 'new' || edit === 'import' ? undefined : edit} startWithImport={edit === 'import'} onClose={onClose} />
+    ) : !set ? (
+      <div className="spinner" />
+    ) : set.kind === 'exam' ? (
+      <Exam set={set} />
+    ) : mode === 'learn' ? (
+      <Learn set={set} />
+    ) : mode === 'test' ? (
+      <CardTest set={set} />
+    ) : mode === 'match' ? (
+      <Match set={set} />
+    ) : (
+      <Cards set={set} />
+    );
   return (
     <ReadingContext.Provider value={{ has: (ch) => !!ch && pdfs.has(ch), open: setReading, current: reading }}>
       <div className={`st-player ${file ? 'with-reading' : ''}`}>
@@ -353,10 +405,24 @@ export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
           <button className="icon-btn" onClick={onClose} title="Close (Esc)">
             <X size={18} />
           </button>
-          <div className="st-player-title">{set?.title || ''}</div>
+          <div className="st-player-title">{title}</div>
+          {set?.kind === 'cards' && (
+            <div className="st-seg st-modes">
+              {DECK_MODES.map(([m, label, Icon]) => (
+                <button key={m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
+                  <Icon size={13} /> {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {set?.source === 'mine' && (
+            <button className="btn sm" onClick={() => useScholar.getState().set({ study: `edit:${set.id}` })}>
+              <Pencil size={13} /> Edit
+            </button>
+          )}
         </div>
         <div className="st-player-body">
-          <div className="st-main">{!set ? <div className="spinner" /> : set.kind === 'exam' ? <Exam set={set} /> : <Cards set={set} />}</div>
+          <div className="st-main">{body}</div>
           {file && reading && <ReadingPane file={file} target={reading} onClose={() => setReading(null)} />}
         </div>
       </div>
@@ -364,7 +430,7 @@ export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
   );
 }
 
-function shuffle<T>(a: T[]): T[] {
+export function shuffle<T>(a: T[]): T[] {
   const b = [...a];
   for (let i = b.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -374,11 +440,11 @@ function shuffle<T>(a: T[]): T[] {
 }
 
 /** A question as shown: choices in a fresh order, with the stored answer mapped to it. */
-interface Shown {
+export interface Shown {
   q: StudyQuestion;
   order: number[]; // shown position → original choice index
 }
-type Answer = number | number[] | boolean | string | null;
+export type Answer = number | number[] | boolean | string | null;
 
 function parseNumber(s: string): number | null {
   const t = s
@@ -395,7 +461,7 @@ function parseNumber(s: string): number | null {
  * Right or wrong (short answers are marked by the student: null until then; a blank is marked by judgeBlank, null while
  * it decides, and the student can overrule it).
  */
-function grade(s: Shown, a: Answer, self?: boolean, judged?: boolean): boolean | null {
+export function grade(s: Shown, a: Answer, self?: boolean, judged?: boolean): boolean | null {
   const q = s.q;
   if (q.type === 'blank') return self ?? judged ?? null;
   if (q.type === 'mc') return typeof a === 'number' && s.order[a] === q.answer;
@@ -434,7 +500,7 @@ function choose(all: StudyQuestion[], n: number, history: Record<string, StudyHi
   );
 }
 
-function Exam({ set }: { set: StudySetFull }) {
+export function Exam({ set }: { set: StudySetFull }) {
   const all = set.questions || [];
   const [n, setN] = useState(Math.min(all.length, 25));
   const [instant, setInstant] = useState(false);
@@ -573,7 +639,7 @@ function Exam({ set }: { set: StudySetFull }) {
 const answerText = (q: StudyQuestion) =>
   q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join(' ') : q.type === 'tf' ? '' : q.type === 'num' ? q.unit || '' : q.answer;
 
-function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf, onCheck }: { num: number; s: Shown; answer: Answer; setAnswer(a: Answer): void; reveal: boolean; result: boolean | null; onSelf(ok: boolean): void; onCheck?: () => void }) {
+export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf, onCheck }: { num: number; s: Shown; answer: Answer; setAnswer(a: Answer): void; reveal: boolean; result: boolean | null; onSelf(ok: boolean): void; onCheck?: () => void }) {
   const q = s.q;
   const state = !reveal ? '' : result === true ? 'right' : result === false ? 'wrong' : 'mark';
   return (
@@ -671,10 +737,12 @@ function Cards({ set }: { set: StudySetFull }) {
   const cards = set.cards || [];
   const [known, setKnown] = useState<number[]>(set.known || []);
   const [onlyLearning, setOnlyLearning] = useState(false);
+  const [starred, setStarred] = useState<string[]>(set.starred || []);
+  const [onlyStarred, setOnlyStarred] = useState(false);
   const [order, setOrder] = useState<number[]>(() => cards.map((_, i) => i));
   const [pos, setPos] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  const deck = order.filter((i) => !onlyLearning || !known.includes(i));
+  const deck = order.filter((i) => (!onlyLearning || !known.includes(i)) && (!onlyStarred || starred.includes(cards[i].k!)));
   const idx = deck[Math.min(pos, deck.length - 1)];
   const card: StudyCard | undefined = cards[idx];
   const move = (d: number) => {
@@ -710,6 +778,11 @@ function Cards({ set }: { set: StudySetFull }) {
         <button className={`btn sm ${onlyLearning ? 'tonal' : ''}`} onClick={() => (setOnlyLearning(!onlyLearning), setPos(0), setFlipped(false))}>
           Only ones I'm learning
         </button>
+        {starred.length > 0 && (
+          <button className={`btn sm ${onlyStarred ? 'tonal' : ''}`} onClick={() => (setOnlyStarred(!onlyStarred), setPos(0), setFlipped(false))}>
+            <Star size={13} /> Starred ({starred.length})
+          </button>
+        )}
       </div>
       {card ? (
         <>
@@ -735,8 +808,12 @@ function Cards({ set }: { set: StudySetFull }) {
               <ArrowRight size={18} />
             </button>
             <ReadingButton id={card.k} chapter={card.chapter} section={card.section} topic={card.topic} query={`${card.front} ${card.back}`} />
+            <StarButton k={card.k} starred={starred.includes(card.k!)} onChange={(on) => setStarred((s) => (on ? [...s, card.k!] : s.filter((x) => x !== card.k)))} />
+            <SpeakButton text={flipped ? card.back : card.front} />
           </div>
         </>
+      ) : onlyStarred ? (
+        <div className="sch-empty">No starred cards left here.</div>
       ) : (
         <div className="sch-empty">
           You know every card in this deck.

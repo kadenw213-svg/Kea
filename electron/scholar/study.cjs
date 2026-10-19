@@ -16,6 +16,11 @@
 //   attempts.json       { [id]: [{ at, score, total, n, items: [[k, right]] }] }   (practice exams; `items` says how
 //                        each question went, which is each question's history across every set)
 //   cards.json          { [id]: { known: [card index] } }            (flashcards)
+//   stars.json          { [k]: true }                                (starred cards and questions)
+//   review.json         { [k]: { box, due, last, lapses } }          (spaced review, see review())
+//   learn.json          { [id]: { [k]: 0 | 1 | 2 } }                 (Learn: new, familiar, mastered)
+//   match.json          { [id]: best time in ms }                     (Match)
+// Sets the student makes or imports themselves are ordinary card sets with source 'mine' (courseId may be '').
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -97,6 +102,10 @@ function get(id) {
     out.history = Object.fromEntries(out.questions.filter((q) => h[q.k]).map((q) => [q.k, h[q.k]]));
   }
   if (s.cards) out.cards = keyed(s.cards);
+  const stars = starred();
+  out.starred = [...(out.cards || []), ...(out.questions || [])].filter((it) => stars[it.k]).map((it) => it.k);
+  out.learn = learnGet(id);
+  out.matchBest = readJson(file('match.json'), {})[id] || null;
   return out;
 }
 
@@ -107,6 +116,7 @@ function remove(id) {
   const attempts = readJson(file('attempts.json'), {});
   delete attempts[id];
   writeJson(file('attempts.json'), attempts);
+  learnSet(id, null);
   return true;
 }
 
@@ -610,4 +620,131 @@ function settle(isRunning) {
   if (changed) saveIndex(list);
 }
 
-module.exports = { list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard };
+
+// ---------- The student's own sets: made by hand or pasted in from Quizlet ----------
+/** Save (create or replace) a set the student made: { id?, title, courseId, cards: [{ front, back }] }. Returns its id. */
+async function saveMine({ id: given, title, courseId = '', cards }) {
+  const clean = (Array.isArray(cards) ? cards : []).map(cleanCard).filter(Boolean).slice(0, 2000);
+  if (!clean.length) throw new Error('Add at least one card with both sides filled in.');
+  const name = String(title || '').trim().slice(0, 120) || 'My cards';
+  let courseCode = '';
+  if (courseId) {
+    const p = profiles.paths();
+    courseCode = (await db.courses(p.db, p.textbooks, {}).catch(() => [])).find((c) => c.id === courseId)?.code || '';
+  }
+  const old = given ? index().find((e) => e.id === given && e.source === 'mine') : null;
+  const id = old ? old.id : `cards-${Date.now().toString(36)}`;
+  // Chapters: whatever the cards name, so a class's chapter views find them.
+  const chapters = [...new Set(clean.map((c) => c.chapter).filter(Boolean))];
+  const entry = { id, kind: 'cards', title: name, courseId: courseId || '', courseCode, chapters, itemId: null, itemTitle: null, count: clean.length, reused: 0, createdAt: old?.createdAt || new Date().toISOString(), editedAt: new Date().toISOString(), status: 'ready', source: 'mine' };
+  writeJson(file('sets', `${id}.json`), { cards: clean });
+  saveIndex([...index().filter((e) => e.id !== id), entry]);
+  return id;
+}
+
+// ---------- Stars ----------
+function star(k, on) {
+  const stars = readJson(file('stars.json'), {});
+  if (on) stars[k] = true;
+  else delete stars[k];
+  writeJson(file('stars.json'), stars);
+  return true;
+}
+const starred = () => readJson(file('stars.json'), {});
+
+// ---------- Learn and Match progress ----------
+function learnGet(id) {
+  return readJson(file('learn.json'), {})[id] || {};
+}
+function learnSet(id, levels) {
+  const all = readJson(file('learn.json'), {});
+  if (levels && Object.keys(levels).length) all[id] = levels;
+  else delete all[id];
+  writeJson(file('learn.json'), all);
+  return true;
+}
+function matchBest(id, ms) {
+  const all = readJson(file('match.json'), {});
+  if (Number.isFinite(ms) && ms > 0 && (!all[id] || ms < all[id])) {
+    all[id] = Math.round(ms);
+    writeJson(file('match.json'), all);
+  }
+  return all[id] || null;
+}
+
+// ---------- Spaced review, timed to the tests ----------
+// Every card and question the student has (from every ready set) can come back for review. Each has a box: right moves
+// it up a box (Easy two), wrong sends it back two. A box is how many days until it's due again; but a card on a chapter
+// with a test coming is always due again before that test (the day before, at the latest), so everything gets one
+// last look in time. New items are introduced a few a day, the chapters with the soonest test first.
+const BOX_DAYS = [0, 1, 2, 4, 8, 16, 32, 64];
+const dayStr = (d) => d.toISOString().slice(0, 10);
+const addDays = (n) => dayStr(new Date(Date.now() + n * 864e5));
+
+/** Every reviewable item of the ready sets (in this class, or all): [{ k, kind, item, setId, courseId, courseCode, chapter }]. */
+function reviewable(courseId) {
+  const out = new Map();
+  for (const e of index()) {
+    if (e.status !== 'ready' || (courseId && e.courseId !== courseId)) continue;
+    const s = readJson(file('sets', `${e.id}.json`), null) || readJson(file('local', `${e.id}.json`), {});
+    const one = (it, kind) => {
+      if (out.has(it.k)) return;
+      // Written answers need the student to mark them: they stay in practice exams, not in quick review.
+      if (kind === 'question' && it.type === 'short') return;
+      out.set(it.k, { k: it.k, kind, item: it, setId: e.id, courseId: e.courseId, courseCode: e.courseCode, chapter: it.chapter || (e.chapters || [])[0] || null });
+    };
+    for (const c of keyed(s.cards)) one(c, 'card');
+    for (const q of keyed(s.questions)) one(q, 'question');
+  }
+  return [...out.values()];
+}
+
+/** What's due: { due: [...], fresh: [...], counts: { [courseId]: { due, fresh } }, tests }. `limit` caps the session. */
+async function reviewQueue({ courseId = '', limit = 40, newPerDay = 15 } = {}) {
+  const p = profiles.paths();
+  const tests = await db.nextTests(p.db).catch(() => ({}));
+  const state = readJson(file('review.json'), {});
+  const today = dayStr(new Date());
+  const testOf = (x) => tests[`${x.courseId}|${x.chapter}`] || null;
+  const all = reviewable(courseId).map((x) => ({ ...x, test: testOf(x), state: state[x.k] || null, starred: !!starred()[x.k] }));
+  const soon = (x) => (x.test ? x.test.date : '9999');
+  // Due: oldest first, then the soonest test.
+  const due = all.filter((x) => x.state && x.state.due <= today).sort((a, b) => a.state.due.localeCompare(b.state.due) || soon(a).localeCompare(soon(b)));
+  // New ones today: the chapters with a test coming first, starred first, a few a day.
+  const introduced = Object.values(state).filter((s) => s.first === today).length;
+  const fresh = all
+    .filter((x) => !x.state)
+    .sort((a, b) => soon(a).localeCompare(soon(b)) || Number(b.starred) - Number(a.starred))
+    .slice(0, Math.max(0, newPerDay - introduced));
+  const counts = {};
+  for (const x of all) {
+    const c = (counts[x.courseId] = counts[x.courseId] || { due: 0, fresh: 0, total: 0, code: x.courseCode });
+    c.total++;
+    if (x.state && x.state.due <= today) c.due++;
+    if (!x.state) c.fresh++;
+  }
+  const strip = ({ state: _s, ...x }) => ({ ...x, box: _s?.box ?? null });
+  return { due: due.slice(0, limit).map(strip), fresh: fresh.slice(0, Math.max(0, limit - due.length)).map(strip), counts, newToday: Math.max(0, newPerDay - introduced) };
+}
+
+/** How one went: grade 'again' | 'good' | 'easy'. Returns the item's new { box, due }. */
+async function reviewMark(k, grade, { courseId = '', chapter = null } = {}) {
+  const state = readJson(file('review.json'), {});
+  const today = dayStr(new Date());
+  const was = state[k] || { box: 0, lapses: 0, first: today };
+  let box = grade === 'again' ? Math.max(0, was.box - 2) : Math.min(BOX_DAYS.length - 1, was.box + (grade === 'easy' ? 2 : 1));
+  let due = addDays(BOX_DAYS[box]);
+  // Back before its test: never due on or after the test day while there's still a day to look at it.
+  if (courseId && chapter) {
+    const t = (await db.nextTests(profiles.paths().db).catch(() => ({})))[`${courseId}|${chapter}`];
+    if (t && t.date > today) {
+      const eve = dayStr(new Date(Date.parse(t.date) - 864e5));
+      if (due >= t.date) due = eve > today ? eve : addDays(Math.min(1, BOX_DAYS[box]));
+    }
+  }
+  state[k] = { box, due, last: new Date().toISOString(), lapses: was.lapses + (grade === 'again' ? 1 : 0), first: was.first || today };
+  writeJson(file('review.json'), state);
+  return state[k];
+}
+
+module.exports = { list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };

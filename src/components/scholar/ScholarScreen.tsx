@@ -46,6 +46,7 @@ import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, setClassColor, setTypeColor, useColors } from './kinds';
 import { PracticeBox, ResourcesView, StudyPlayer } from './Study';
+import { ReviewBanner } from './StudyModes';
 import { quizChapter } from './QuizMe';
 import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
 import '../../styles/scholar.css';
@@ -451,6 +452,7 @@ function WeekView({ ctx }: { ctx: Ctx }) {
         {open ? `${open} thing${open === 1 ? '' : 's'} to do in the next two weeks.` : 'Nothing left to do in the next two weeks.'}
         {next ? ` Next: ${next.courseCode} ${TYPE_LABEL[next.type]?.toLowerCase() || ''} at ${clock(next.start)}${next.location && next.location !== 'Online' ? ` in ${shortRoom(next.location)}` : ''}.` : ''}
       </p>
+      <ReviewBanner />
       {missing.length > 0 && (
         <section className="miss-box">
           <button className="miss-head" onClick={() => setMissOpen(!missOpen)}>

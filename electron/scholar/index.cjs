@@ -480,6 +480,13 @@ function register() {
     return true;
   });
   ipcMain.handle('scholar:studyKnown', (_e, id, known) => study.setKnown(id, known));
+  // The student's own sets, stars, Learn and Match progress, and spaced review (all kept on this computer).
+  ipcMain.handle('scholar:studySaveMine', (_e, set) => study.saveMine(set));
+  ipcMain.handle('scholar:studyStar', (_e, k, on) => study.star(String(k), !!on));
+  ipcMain.handle('scholar:studyLearn', (_e, id, levels) => study.learnSet(id, levels));
+  ipcMain.handle('scholar:studyMatch', (_e, id, ms) => study.matchBest(id, Number(ms)));
+  ipcMain.handle('scholar:studyReview', (_e, opts) => study.reviewQueue(opts || {}));
+  ipcMain.handle('scholar:studyReviewMark', (_e, k, grade, ctx) => study.reviewMark(String(k), ['again', 'good', 'easy'].includes(grade) ? grade : 'good', ctx || {}));
   ipcMain.handle('scholar:resume', (_e, task) => {
     if (devices.follower()) return (devices.relay({ task: 'resume', arg: task || '' }), true);
     return runner.pending() ? runner.resume() : runner.resumeLast(task || 'import');

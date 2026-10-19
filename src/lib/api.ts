@@ -136,6 +136,15 @@ export interface KeaApi {
     studyList(): Promise<StudySet[]>;
     /** One set with its questions or cards. */
     studyGet(id: string): Promise<StudySetFull | null>;
+    /** Create or replace a set the student made or imported. Returns its id. */
+    studySaveMine(set: { id?: string; title: string; courseId: string; cards: { front: string; back: string; chapter?: string | null }[] }): Promise<string>;
+    studyStar(k: string, on: boolean): Promise<boolean>;
+    /** Save Learn progress for a set ({ [k]: 0 | 1 | 2 }); null resets it. */
+    studyLearn(id: string, levels: Record<string, number> | null): Promise<boolean>;
+    /** Record a Match time; returns the best. */
+    studyMatch(id: string, ms: number): Promise<number | null>;
+    studyReview(opts?: { courseId?: string; limit?: number; newPerDay?: number }): Promise<ReviewQueue>;
+    studyReviewMark(k: string, grade: 'again' | 'good' | 'easy', ctx: { courseId: string; chapter: string | null }): Promise<{ box: number; due: string }>;
     /** Ask Claude for a new set (for a test or assignment, or for chapters). Resolves with its id once queued. */
     /** mode: 'mix' reuses up to 60% saved questions and has Claude write the rest; 'saved' uses saved ones only (ready at once); 'new' writes them all. */
     studyMake(req: { id?: string; kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number; mode?: 'mix' | 'saved' | 'new' }): Promise<string>;
@@ -556,7 +565,8 @@ export interface StudySet {
   count: number;
   createdAt: string;
   status: 'making' | 'ready' | 'failed';
-  source: 'claude' | 'saved' | 'library';
+  source: 'claude' | 'saved' | 'library' | 'mine';
+  editedAt?: string;
   /** How many of its items were reused from saved sets. */
   reused?: number;
   error?: string;
@@ -593,7 +603,36 @@ export interface StudyCard {
   section?: string | null;
   topic?: string | null;
 }
-export type StudySetFull = Omit<StudySet, 'known' | 'attempts' | 'best' | 'last'> & { questions?: StudyQuestion[]; cards?: StudyCard[]; known: number[]; history?: Record<string, StudyHistory> };
+export type StudySetFull = Omit<StudySet, 'known' | 'attempts' | 'best' | 'last'> & {
+  questions?: StudyQuestion[];
+  cards?: StudyCard[];
+  known: number[];
+  history?: Record<string, StudyHistory>;
+  /** Keys of starred items. */
+  starred?: string[];
+  /** Learn progress: { [k]: 0 new | 1 familiar | 2 mastered }. */
+  learn?: Record<string, number>;
+  matchBest?: number | null;
+};
+/** One card or question waiting for review. */
+export interface ReviewItem {
+  k: string;
+  kind: 'card' | 'question';
+  item: StudyCard | StudyQuestion;
+  setId: string;
+  courseId: string;
+  courseCode: string;
+  chapter: string | null;
+  test: { date: string; title: string } | null;
+  starred: boolean;
+  box: number | null;
+}
+export interface ReviewQueue {
+  due: ReviewItem[];
+  fresh: ReviewItem[];
+  counts: Record<string, { due: number; fresh: number; total: number; code: string }>;
+  newToday: number;
+}
 export interface ScholarReading {
   chapter: string;
   title: string | null;

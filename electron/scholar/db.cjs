@@ -126,6 +126,23 @@ async function textbookChapters(file, textbooks) {
   return out.map((x, i) => ({ x, i })).sort((a, b) => when(a.x).localeCompare(when(b.x)) || a.i - b.i).map(({ x }) => x);
 }
 
+/**
+ * The next test on each chapter: { "courseId|Chapter N": { date, title } } for tests from today on that list the
+ * chapters they cover. Spaced review uses it to bring each card back before the test it's on.
+ */
+async function nextTests(file) {
+  const db = await open(file);
+  if (!db) return {};
+  const today = new Date().toISOString().slice(0, 10);
+  const out = {};
+  for (const t of rows(db, `SELECT course_id, title, date, covered_chapters_json FROM academic_items WHERE item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} AND date >= ? ORDER BY date`, [today]))
+    for (const label of json(t.covered_chapters_json, [])) {
+      const key = `${t.course_id}|${label}`;
+      if (!out[key]) out[key] = { date: String(t.date).slice(0, 10), title: t.title };
+    }
+  return out;
+}
+
 /** Which class and chapters a textbook PDF is (matched by its file name): { courseId, code, chapters } or null. */
 async function textbookOf(file, textbooks, pdf) {
   const db = await open(file);
@@ -384,4 +401,4 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
   return { course: { id: c.id, code: c.course_code, name: c.name }, item, chapters: out, tests };
 }
 
-module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf };
+module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests };

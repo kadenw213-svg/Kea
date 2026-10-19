@@ -106,6 +106,12 @@ contextBridge.exposeInMainWorld('api', {
     studyDelete: (id) => ipcRenderer.invoke('scholar:studyDelete', id),
     studyAttempt: (id, a) => ipcRenderer.invoke('scholar:studyAttempt', id, a),
     studyKnown: (id, known) => ipcRenderer.invoke('scholar:studyKnown', id, known),
+    studySaveMine: (set) => ipcRenderer.invoke('scholar:studySaveMine', set),
+    studyStar: (k, on) => ipcRenderer.invoke('scholar:studyStar', k, on),
+    studyLearn: (id, levels) => ipcRenderer.invoke('scholar:studyLearn', id, levels),
+    studyMatch: (id, ms) => ipcRenderer.invoke('scholar:studyMatch', id, ms),
+    studyReview: (opts) => ipcRenderer.invoke('scholar:studyReview', opts),
+    studyReviewMark: (k, grade, ctx) => ipcRenderer.invoke('scholar:studyReviewMark', k, grade, ctx),
     onResume: (cb) => {
       const h = (_e, p) => cb(p);
       ipcRenderer.on('scholar:resume', h);
