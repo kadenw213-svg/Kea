@@ -64,7 +64,7 @@ const TOOLS = [
 // can post in a class, so an address is only followed when it's the class site (or its school), a known school
 // platform, or an address the class site itself links to (from Kea's own reading of the course content). Never a
 // file on this computer, and never anywhere else, so nothing can be sent out through a crafted address.
-const PLATFORMS = /(^|\.)(aleks\.com|mheducation\.com|mcgraw-hill\.com|pearson\.com|pearsoned\.com|pearsoncmg\.com|mylabmastering\.com|masteringchemistry\.com|cengage\.com|webassign\.net|cengagenow\.com|holscience\.com|scienceinteractive\.com|macmillanlearning\.com|achieve\.macmillanlearning\.com|wiley\.com|wileyplus\.com|zybooks\.com|perusall\.com|instructure\.com|brightspace\.com|d2l\.com|desire2learn\.com|openstax\.org|libretexts\.org|simplesyllabus\.com|kaltura\.com|panopto\.com|youtube\.com|vimeo\.com|turnitin\.com|respondus\.com|labster\.com|knewton\.com|hawkeslearning\.com|chegg\.com)$/i;
+const PLATFORMS = /(^|\.)(aleks\.com|mheducation\.com|mcgraw-hill\.com|pearson\.com|pearsoned\.com|pearsoncmg\.com|mylabmastering\.com|masteringchemistry\.com|cengage\.com|webassign\.net|cengagenow\.com|holscience\.com|scienceinteractive\.com|macmillanlearning\.com|achieve\.macmillanlearning\.com|wiley\.com|wileyplus\.com|zybooks\.com|perusall\.com|instructure\.com|brightspace\.com|d2l\.com|desire2learn\.com|openstax\.org|libretexts\.org|simplesyllabus\.com|kaltura\.com|panopto\.com|youtube\.com|vimeo\.com|turnitin\.com|respondus\.com|labster\.com|knewton\.com|hawkeslearning\.com|chegg\.com|youtu\.be|yuja\.com|evaluationkit\.com|castlebranch\.com|readspeaker\.com)$/i;
 let linked = { at: 0, hosts: new Set() };
 function linkedHosts() {
   if (Date.now() - linked.at < 5 * 60e3) return linked.hosts;
@@ -73,7 +73,8 @@ function linkedHosts() {
     const dir = path.join(profiles.paths().workspace, 'data', 'digests', 'kea-precheck');
     const days = fs.readdirSync(dir).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().slice(-3);
     for (const d of days)
-      for (const f of fs.readdirSync(path.join(dir, d)).filter((f) => /-content\.json$/.test(f))) {
+      // (Links in content, announcements, assignments and discussions: a platform's address can be anywhere.)
+      for (const f of fs.readdirSync(path.join(dir, d)).filter((f) => /-(content|news|dropbox|discussions|quizzes|calendar)\.json$/.test(f))) {
         const text = fs.readFileSync(path.join(dir, d, f), 'utf8');
         for (const m of text.matchAll(/https:\/\/([a-z0-9.-]+)/gi)) hosts.add(m[1].toLowerCase());
       }

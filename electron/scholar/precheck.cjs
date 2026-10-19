@@ -172,6 +172,51 @@ function hiddenWork(values) {
 }
 const hiddenWords = (h) => `the "${h.category}" grade category counts ${h.counted} points, but the graded items you can see under it add up to ${h.visible}: ${h.hidden} points of work you can't see are counting (hidden assignments, an outside platform, or zeros not shown yet)`;
 
+// ---------- Outside platforms: every one a class links to, and when Kea last read it ----------
+// Platforms where graded work (and its due dates) can live outside D2L. A class linking to one that no scan has opened
+// in a week is a reason for the daily check to open it and match its assignments to the calendar: the CHE1011 lab
+// reports lived on Science Interactive and were lost because nothing ever looked there.
+const PLATFORM_KINDS = [
+  { re: /aleks/i, host: 'aleks.com', name: 'ALEKS' },
+  { re: /science ?interactive|holscience|\bhol\b|myhol/i, host: 'holscience.com', name: 'Science Interactive' },
+  { re: /simple ?syllabus/i, host: 'simplesyllabus.com', name: 'Simple Syllabus' },
+  { re: /connect|mcgraw|mheducation/i, host: 'mheducation.com', name: 'McGraw Hill Connect' },
+  { re: /pearson|mylab|mastering/i, host: 'pearson.com', name: 'Pearson' },
+  { re: /cengage|webassign|mindtap/i, host: 'cengage.com', name: 'Cengage' },
+  { re: /zybooks/i, host: 'zybooks.com', name: 'zyBooks' },
+  { re: /perusall/i, host: 'perusall.com', name: 'Perusall' },
+  { re: /wileyplus|wiley/i, host: 'wiley.com', name: 'Wiley' },
+  { re: /macmillan|achieve/i, host: 'macmillanlearning.com', name: 'Macmillan' },
+  { re: /labster/i, host: 'labster.com', name: 'Labster' }
+];
+/** The outside platforms a class's content links to: [{ name, host, launch, title }]. */
+function classPlatforms(toc) {
+  const found = new Map();
+  const walk = (mods) => {
+    for (const m of mods || []) {
+      if (m.IsHidden) continue;
+      for (const t of m.Topics || []) {
+        if (t.IsHidden) continue;
+        const text = `${t.Title || ''} ${t.Url || ''}`;
+        const lti = t.ActivityType === 7 || /type=lti|\/lti\//i.test(t.Url || '');
+        // (A publisher's video or media file is something to watch, not a place work is assigned.)
+        if (!lti && /:\/\/(media|video|player|cdn)[.-]|\.(mp4|mp3|pdf)(\?|$)/i.test(t.Url || '')) continue;
+        const kind = PLATFORM_KINDS.find((k) => k.re.test(text));
+        if (kind && (lti || /^https?:/i.test(t.Url || '')) && !found.has(kind.host)) found.set(kind.host, { ...kind, re: undefined, launch: t.Url || '', title: t.Title || '' });
+      }
+      walk(m.Modules);
+    }
+  };
+  walk(toc?.Modules);
+  return [...found.values()];
+}
+const lastRead = (host) =>
+  Object.entries(browser.platformsRead())
+    .filter(([h]) => h === host || h.endsWith(`.${host}`))
+    .map(([, at]) => at)
+    .sort()
+    .pop() || null;
+
 /** What changed in one area since last time, in words: "2 new announcements: Exam 3 moved; Lab 8 notes". */
 function describe(area, before, now, label = AREAS[area].label) {
   const old = new Map((before || []).map((e) => [String(e.id), e]));
@@ -270,6 +315,22 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     } catch (err) {
       console.error('Reconcile', err);
     }
+    // Outside platforms this class uses that no scan has read in a week (asked once a week per platform).
+    try {
+      const toc = JSON.parse(fs.readFileSync(path.join(dir, `${c.code}-content.json`), 'utf8'));
+      const told = { ...(before.platformTold || {}) };
+      const plats = classPlatforms(toc);
+      seen.platforms = plats.map((pl) => ({ name: pl.name, host: pl.host, launch: pl.launch, last: lastRead(pl.host) }));
+      for (const pl of seen.platforms) {
+        const stale = !pl.last || Date.now() - Date.parse(pl.last) > 7 * 864e5;
+        const recently = told[pl.host] && Date.now() - Date.parse(told[pl.host]) < 7 * 864e5;
+        if (stale && !recently) {
+          reasons.push(`Outside platform not checked ${pl.last ? `since ${pl.last.slice(0, 10)}` : 'yet'}: ${pl.name} (${pl.host}). Open it with d2l_open through the class's own link (${pl.launch || 'find it in the course content'}), read its assignment list with due dates (and status), and make sure every one is on the calendar with the platform's date; if it needs its own sign-in, tell the student`);
+          told[pl.host] = new Date().toISOString();
+        }
+      }
+      seen.platformTold = told;
+    } catch {}
     next.courses[c.code] = { ...before, ...seen };
     if (!Object.keys(before).length) reasons.unshift('first check by Kea');
     if (reasons.length || full) changed[c.code] = reasons.length ? reasons : ['regular full check (messages and outside platforms)'];

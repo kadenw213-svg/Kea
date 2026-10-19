@@ -258,32 +258,85 @@ function fillLogin(w, login) {
 }
 
 // ---------- What the tools do ----------
-/** Read a page: its title, address, text (including Brightspace's shadow DOM and same-site frames) and links. */
+/**
+ * Read a page: its title, address, text (including shadow DOM and frames) and links. Works for the class site and for
+ * the outside platforms it links to (ALEKS, Science Interactive, Simple Syllabus, publisher sites), reached directly or
+ * through a D2L launch link. Only a D2L sign-in page asks the student to sign in; an outside platform is given time to
+ * draw itself (they build their pages with scripts) and all its frames are read. Platforms visited are remembered, so
+ * Kea can tell when one hasn't been checked in a while.
+ */
 async function open(url, offset = 0) {
   const s = readSchool();
   if (!s.home) throw new Error('No class site is set up yet.');
-  let w = await load(url || s.home);
-  if (!(await ensureSignedIn(w))) throw new Error('Not signed in to the class site (the user did not finish signing in).');
-  if (!onSite(w.webContents.getURL()) || (url && hostOf(w.webContents.getURL()) !== hostOf(url) && hostOf(url) === hostOf(s.home))) w = await load(url || s.home);
+  const target = url || s.home;
+  let w = await load(target);
+  const outside = () => hostOf(w.webContents.getURL()) !== hostOf(s.home);
+  if (!outside() || hostOf(target) === hostOf(s.home)) {
+    // On the class site (or sent back to its sign-in page): sign in, then open the page again.
+    if (!outside() && !onSite(w.webContents.getURL())) {
+      if (!(await ensureSignedIn(w))) throw new Error('Not signed in to the class site (the user did not finish signing in).');
+      w = await load(target);
+    }
+  }
+  if (outside()) {
+    // A platform draws its page after loading: wait until its text stops growing (up to ~15 seconds).
+    let last = -1;
+    for (let i = 0; i < 15; i++) {
+      const len = await w.webContents.executeJavaScript('(document.body ? document.body.innerText.length : 0)').catch(() => 0);
+      if (len > 200 && len === last) break;
+      last = len;
+      await sleep(1000);
+    }
+    rememberPlatform(w.webContents.getURL());
+  }
   const page = await w.webContents.executeJavaScript(`(${extract.toString()})()`);
-  // Frames from the class site (the content viewer shows files and pages in iframes).
+  // Frames: the class site's content viewer, and a platform's own frames (any host, on a platform page).
   for (const f of w.webContents.mainFrame.framesInSubtree) {
-    if (f === w.webContents.mainFrame || hostOf(f.url) !== hostOf(s.home)) continue;
+    if (f === w.webContents.mainFrame) continue;
+    if (!outside() && hostOf(f.url) !== hostOf(s.home)) continue;
     try {
       const sub = await f.executeJavaScript(`(${extract.toString()})()`);
       if (sub.text.trim()) page.text += `\n\n[Frame: ${f.url}]\n${sub.text}`;
       page.links.push(...sub.links);
+      if (hostOf(f.url) && hostOf(f.url) !== hostOf(s.home)) rememberPlatform(f.url);
     } catch {}
   }
+  // A platform asking for its own sign-in (not D2L's): say so, so the scan tells the student instead of reading a
+  // login form as if it were the assignment list.
+  const loginWall = outside() && (await w.webContents.executeJavaScript('!!document.querySelector("input[type=password]")').catch(() => false));
   const LIMIT = 40000;
   const text = page.text.slice(offset, offset + LIMIT);
   return {
     url: w.webContents.getURL(),
     title: page.title,
+    ...(loginWall ? { needs_sign_in: `This platform (${hostOf(w.webContents.getURL())}) is asking for its own sign-in, separate from the class site. Tell the student (kea_notify, needs_you) to sign in to it once in Kea's class-site window; its assignments can't be read until then.` } : {}),
     text,
     more: page.text.length > offset + LIMIT ? `Text continues: call again with offset ${offset + LIMIT} (of ${page.text.length}).` : undefined,
     links: offset ? undefined : [...new Map(page.links.map((l) => [l.href, l])).values()].slice(0, 500)
   };
+}
+
+// When each outside platform was last read (profile platforms.json { host: ISO time }), for the "not checked in a
+// while" alert.
+const platformsFile = () => path.join(profiles.paths().dir, 'platforms.json');
+function rememberPlatform(url) {
+  const host = hostOf(url);
+  if (!host) return;
+  try {
+    let seen = {};
+    try {
+      seen = JSON.parse(fs.readFileSync(platformsFile(), 'utf8'));
+    } catch {}
+    seen[host] = new Date().toISOString();
+    fs.writeFileSync(platformsFile(), JSON.stringify(seen, null, 1));
+  } catch {}
+}
+function platformsRead() {
+  try {
+    return JSON.parse(fs.readFileSync(platformsFile(), 'utf8'));
+  } catch {
+    return {};
+  }
 }
 
 /** Runs inside the page: visible text and links, walking into shadow roots. */
@@ -688,4 +741,4 @@ function onLoginSubmitted(e, form) {
 
 const remembering = (e) => (e.returnValue = !!(wantsRemember() && win && !win.isDestroyed() && e.sender === win.webContents));
 
-module.exports = { open, show, reply, readMessage, sendMessage, handIn, isClassSite, fetchText, getJson, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
+module.exports = { open, platformsRead, show, reply, readMessage, sendMessage, handIn, isClassSite, fetchText, getJson, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
