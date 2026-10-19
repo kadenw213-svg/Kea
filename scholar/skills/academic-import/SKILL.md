@@ -338,7 +338,9 @@ real evidence exists to close them:
   different title phrasing across two sources -- e.g. a syllabus's coarse
   "Ch 1 Exam" and the platform's own "Online Exam: Chapter 1.3-1.4 &
   1.6-1.7," both due the same day): mark the less-informative one
-  superseded per CLAUDE.md invariant 30, don't leave both live. If the
+  superseded per CLAUDE.md invariant 30 with `uv run academic-sync
+  item-supersede <id> --by <kept id> --reason "<why>"` (never ad-hoc SQL or
+  Python: the reason goes into the item's history), don't leave both live. If the
   redundant one already has its own live Calendar event, **`delete_event`
   it** (`notificationLevel: NONE`) and remove its `SyncRecord` -- amended
   2026-09-01, no per-instance confirmation needed for a confident

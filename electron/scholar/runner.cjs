@@ -438,12 +438,28 @@ async function next() {
     // PDFs are never read directly (every page would go to Claude as a picture): downloads come with a text copy.
     // Nor is the engine's source: its commands are listed in Kea's CLAUDE.md, and reading the code to find them was
     // the biggest waste in early runs.
-    const args = ['-p', prompt, '--model', 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', '--permission-mode', 'dontAsk', '--allowedTools', ...t.tools, '--disallowedTools', 'Read(**/*.pdf)', 'Read(./src/**/*.py)'];
+    // Nor may it touch the database file or the run logs directly: every change goes through the engine, which keeps
+    // the item history.
+    const args = ['-p', prompt, '--model', 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', '--permission-mode', 'dontAsk', '--allowedTools', ...t.tools, '--disallowedTools', 'Read(**/*.pdf)', 'Read(./src/**/*.py)', 'Edit(data/*.db)', 'Write(data/*.db)', 'Edit(data/logs/**)', 'Write(data/logs/**)', 'Edit(data/backups/**)', 'Write(data/backups/**)'];
+    // A copy of the database before every run that can change it (the newest 30 are kept), and the run's id for the
+    // item history, so every change can be traced to this run and undone from its copy.
+    if (['import', 'sync', 'daily', 'study'].includes(job.task)) {
+      try {
+        const dbFile = profiles.paths().db;
+        const backups = path.join(path.dirname(dbFile), 'backups');
+        fs.mkdirSync(backups, { recursive: true });
+        fs.copyFileSync(dbFile, path.join(backups, `${new Date().toISOString().replace(/[:.]/g, '-')}-${job.task}-${entry.id}.db`));
+        const old = fs.readdirSync(backups).filter((f) => f.endsWith('.db')).sort();
+        for (const f of old.slice(0, Math.max(0, old.length - 30))) fs.rmSync(path.join(backups, f), { force: true });
+      } catch (err) {
+        console.error('Backup before run', err);
+      }
+    }
     entry.phase = 'claude';
     entry.claude = true;
     entry.claudeStart = new Date().toISOString();
     step(`${t.label}…`);
-    const child = spawn(claude, args, { cwd, env: workspace.engineEnv(uv), windowsHide: true });
+    const child = spawn(claude, args, { cwd, env: { ...workspace.engineEnv(uv), KEA_RUN_ID: String(entry.id), KEA_TASK: job.task }, windowsHide: true });
     current.child = child;
     let buf = '';
     let result = null;

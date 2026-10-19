@@ -95,6 +95,32 @@ from academic_sync.sync.email_payload import build_daily_overview_email
 from academic_sync.sync.planner import compute_plan
 
 app = typer.Typer(help="academic-sync: D2L -> normalized academic model -> Google Calendar.")
+
+
+def _set_event_context(reason: str | None = None) -> None:
+    """Tell the database's history triggers who is writing: Kea's run id (KEA_RUN_ID, set by Kea for every run; a
+    manual or developer session otherwise), the command, and the reason when one is given."""
+    import sys
+
+    from sqlalchemy import text as sql
+
+    run_id = os.environ.get("KEA_RUN_ID") or f"manual-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    task = os.environ.get("KEA_TASK")
+    command = " ".join(sys.argv[1:])[:400]
+    try:
+        with session_scope() as session:
+            session.execute(
+                sql("INSERT INTO event_context (id, run_id, command, reason) VALUES (1, :r, :c, :why) "
+                    "ON CONFLICT(id) DO UPDATE SET run_id = :r, command = :c, reason = :why"),
+                {"r": f"{task}:{run_id}" if task else run_id, "c": command, "why": reason},
+            )
+    except Exception:  # noqa: BLE001 -- history context must never stop a command
+        pass
+
+
+@app.callback()
+def _every_command() -> None:
+    _set_event_context()
 course_app = typer.Typer(help="Manage known courses.")
 prefs_app = typer.Typer(help="Manage reusable preferences.")
 app.add_typer(course_app, name="course")
@@ -811,6 +837,145 @@ def d2l_reconcile_cmd(
         console.print(f"[yellow]Different day:[/yellow] {escape(d['title'])}: D2L {d['d2l_date']}, calendar {d['item_date']} ({escape(d['item_title'])})  [dim]{d['key']}[/dim]")
 
 
+# --------------------------------------------------------------------------
+# item history: when, why and by which run every item changed
+# --------------------------------------------------------------------------
+def _events(session, where: str, params: dict, limit: int = 2000) -> list[dict]:
+    from sqlalchemy import text as sql
+
+    rows = session.execute(sql(f"SELECT ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json FROM item_events WHERE {where} ORDER BY ts, id LIMIT {int(limit)}"), params).all()
+    out = []
+    for ts, run_id, command, reason, op, table, row_id, course_id, ch in rows:
+        try:
+            changes = json.loads(ch) if ch else None
+        except ValueError:
+            changes = ch
+        out.append({"ts": ts, "run": run_id, "command": command, "reason": reason, "op": op, "table": table, "id": row_id, "course_id": course_id, "changes": changes})
+    return out
+
+
+@app.command("item-history")
+def item_history_cmd(
+    item_id: Annotated[str, typer.Argument(help="The item's id (or its first 8 characters).")],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Everything that ever happened to one calendar item: created (from which source), each change (old -> new, per
+    field), superseded, cancelled, restored, unsynced; with the time, the Kea run and command, and the reason."""
+    from sqlalchemy import text as sql
+
+    with session_scope() as session:
+        full = session.execute(sql("SELECT id FROM academic_items WHERE id = :i OR id LIKE :p LIMIT 2"), {"i": item_id, "p": f"{item_id}%"}).all()
+        if len(full) != 1:
+            console.print("[red]No single item matches that id.[/red]")
+            raise typer.Exit(1)
+        iid = full[0][0]
+        events = _events(session, "row_id = :i", {"i": iid})
+        item = session.execute(sql("SELECT title, date, status, source_ids_json, superseded_by_id FROM academic_items WHERE id = :i"), {"i": iid}).one()
+        try:
+            src_ids = json.loads(item[3] or "[]")
+        except ValueError:
+            src_ids = []
+        sources = [dict(zip(("id", "title", "source_type", "url", "local_path", "retrieved_at"), r)) for r in session.execute(
+            sql("SELECT id, title, source_type, url, local_path, retrieved_at FROM sources WHERE id IN (SELECT value FROM json_each(:j))"), {"j": json.dumps(src_ids)}).all()]
+    out = {"id": iid, "title": item[0], "date": item[1], "status": item[2], "superseded_by": item[4], "sources": sources, "events": events}
+    if as_json:
+        print(json.dumps(out, indent=1, default=str))
+        return
+    console.print(f"[bold]{escape(item[0])}[/bold] ({item[1] or 'no date'}, {item[2]})")
+    for e in events:
+        what = e["changes"] if e["op"] != "create" else "created"
+        if isinstance(what, dict) and e["op"] not in ("create", "baseline"):
+            what = "; ".join(f"{k}: {v[0]!r} -> {v[1]!r}" for k, v in what.items() if isinstance(v, list) and len(v) == 2)
+        console.print(f"  {e['ts'][:19]}  {e['op']:<9} {escape(str(what))[:300]}  [dim]{e['run'] or ''} · {escape(e['command'] or '')[:80]}{' · ' + escape(e['reason']) if e['reason'] else ''}[/dim]")
+
+
+@app.command("changes")
+def changes_cmd(
+    course: Annotated[str | None, typer.Option("--course")] = None,
+    since: Annotated[str | None, typer.Option("--since", help="YYYY-MM-DD (default: 7 days ago).")] = None,
+    run: Annotated[str | None, typer.Option("--run", help="Only this Kea run.")] = None,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """What changed on the calendar: items added, moved, renamed, superseded, cancelled, dismissed, since a date (or
+    in one run), with the reasons."""
+    from sqlalchemy import text as sql
+
+    start = since or (date.today() - timedelta(days=7)).isoformat()
+    with session_scope() as session:
+        where, params = "ts >= :s AND op <> 'baseline'", {"s": start}
+        if course:
+            where += " AND course_id = :c"
+            params["c"] = _resolve_course_or_exit(session, course).id
+        if run:
+            where += " AND run_id LIKE :r"
+            params["r"] = f"%{run}%"
+        events = _events(session, where, params, limit=5000)
+        titles = dict(session.execute(sql("SELECT id, title FROM academic_items")).all())
+        codes = dict(session.execute(sql("SELECT id, course_code FROM courses")).all())
+    for e in events:
+        e["title"] = titles.get(e["id"]) if e["table"] == "academic_items" else None
+        e["course"] = codes.get(e["course_id"])
+    if as_json:
+        print(json.dumps({"since": start, "events": events}, indent=1, default=str))
+        return
+    for e in events:
+        console.print(f"{e['ts'][:16]}  {e['course'] or '':<8} {e['op']:<9} {escape(e['title'] or e['id'] or '')[:70]}  [dim]{escape(e['reason'] or '')[:120]}[/dim]")
+
+
+def _item_status_change(item_id: str, reason: str, *, by: str | None = None, cancel: bool = False, restore: bool = False) -> None:
+    from sqlalchemy import text as sql
+
+    if len(reason.strip()) < 8:
+        console.print("[red]Give the real reason in --reason.[/red]")
+        raise typer.Exit(1)
+    _set_event_context(reason.strip())
+    with session_scope() as session:
+        row = session.execute(sql("SELECT id, status FROM academic_items WHERE id = :i OR id LIKE :p"), {"i": item_id, "p": f"{item_id}%"}).all()
+        if len(row) != 1:
+            console.print("[red]No single item matches that id.[/red]")
+            raise typer.Exit(1)
+        iid = row[0][0]
+        if restore:
+            session.execute(sql("UPDATE academic_items SET superseded_by_id = NULL, status = CASE WHEN status IN ('superseded', 'cancelled') THEN 'clear' ELSE status END WHERE id = :i"), {"i": iid})
+        elif cancel:
+            session.execute(sql("UPDATE academic_items SET status = 'cancelled' WHERE id = :i"), {"i": iid})
+        else:
+            other = session.execute(sql("SELECT id FROM academic_items WHERE id = :b OR id LIKE :p"), {"b": by, "p": f"{by}%"}).all()
+            if len(other) != 1:
+                console.print("[red]--by must name exactly one item.[/red]")
+                raise typer.Exit(1)
+            session.execute(sql("UPDATE academic_items SET superseded_by_id = :b, status = 'superseded' WHERE id = :i"), {"b": other[0][0], "i": iid})
+    console.print("Done; the reason is in the item's history.")
+
+
+@app.command("item-supersede")
+def item_supersede_cmd(
+    item_id: Annotated[str, typer.Argument()],
+    by: Annotated[str, typer.Option("--by", help="The item that replaces it.")],
+    reason: Annotated[str, typer.Option("--reason", help="Why (e.g. 'duplicate of the dropbox listing', 'moved by the 9/2 announcement').")],
+) -> None:
+    """Replace an item by another one (a duplicate, or a moved/renamed version), with the reason. Nothing is deleted."""
+    _item_status_change(item_id, reason, by=by)
+
+
+@app.command("item-cancel")
+def item_cancel_cmd(
+    item_id: Annotated[str, typer.Argument()],
+    reason: Annotated[str, typer.Option("--reason", help="Why, quoting the source that says so.")],
+) -> None:
+    """Mark an item cancelled (the class site says it no longer applies), with the reason. Nothing is deleted."""
+    _item_status_change(item_id, reason, cancel=True)
+
+
+@app.command("item-restore")
+def item_restore_cmd(
+    item_id: Annotated[str, typer.Argument()],
+    reason: Annotated[str, typer.Option("--reason")],
+) -> None:
+    """Bring back a superseded or cancelled item, with the reason."""
+    _item_status_change(item_id, reason, restore=True)
+
+
 @app.command("coverage-dismiss")
 def coverage_dismiss_cmd(
     course: Annotated[str, typer.Option("--course")],
@@ -822,6 +987,7 @@ def coverage_dismiss_cmd(
     if len(note.strip()) < 8:
         console.print("[red]Give the real reason in --note.[/red]")
         raise typer.Exit(1)
+    _set_event_context(f"Dismissed {key}: {note.strip()}")
     with session_scope() as session:
         c = _resolve_course_or_exit(session, course)
         current = list(repository.get_preference(session, "coverage_dismissed", course_id=c.id, default=[]) or [])

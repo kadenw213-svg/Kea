@@ -304,6 +304,95 @@ def _0020_add_chapter_summary(session: Session) -> None:
         session.execute(text("ALTER TABLE chapter_topics ADD COLUMN summary VARCHAR"))
 
 
+def _0021_add_item_history(session: Session) -> None:
+    # 2026-10-19 (Kea): an append-only history of every calendar item, kept by the database itself. The student asked
+    # to always know exactly why and when anything was changed or lost; until now updates overwrote rows in place
+    # (a "Lab 3 Handout" deadline silently replaced the "Lab 3: Classification" lab meeting) and supersessions left no
+    # reason. Triggers record every create and every change (old -> new, per field) with the run and command that made
+    # it and the reason given, whatever wrote it (engine command, ad-hoc script, raw SQL). Calendar items and sources
+    # can't be deleted any more (supersede or cancel them, with a reason), and the history itself can't be edited.
+    stmts = [
+        """CREATE TABLE IF NOT EXISTS event_context (id INTEGER PRIMARY KEY CHECK (id = 1), run_id TEXT, command TEXT, reason TEXT)""",
+        """INSERT OR IGNORE INTO event_context (id, run_id, command, reason) VALUES (1, 'migration', 'db upgrade', NULL)""",
+        """CREATE TABLE IF NOT EXISTS item_events (
+             id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, run_id TEXT, command TEXT, reason TEXT,
+             op TEXT NOT NULL, table_name TEXT NOT NULL, row_id TEXT, course_id TEXT, changes_json TEXT)""",
+        """CREATE INDEX IF NOT EXISTS ix_item_events_row ON item_events (row_id, ts)""",
+        """CREATE INDEX IF NOT EXISTS ix_item_events_ts ON item_events (ts)""",
+        """CREATE TRIGGER IF NOT EXISTS item_events_no_update BEFORE UPDATE ON item_events
+             BEGIN SELECT RAISE(ABORT, 'Item history is append-only.'); END""",
+        """CREATE TRIGGER IF NOT EXISTS item_events_no_delete BEFORE DELETE ON item_events
+             BEGIN SELECT RAISE(ABORT, 'Item history is append-only.'); END""",
+        """CREATE TRIGGER IF NOT EXISTS academic_items_history_insert AFTER INSERT ON academic_items BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'create', 'academic_items', NEW.id, NEW.course_id, json_object('title', NEW.title, 'item_type', NEW.item_type, 'date', NEW.date, 'start_time', NEW.start_time, 'end_time', NEW.end_time, 'due_time', NEW.due_time, 'date_range_end', NEW.date_range_end, 'status', NEW.status, 'superseded_by_id', NEW.superseded_by_id, 'points', NEW.points, 'is_optional', NEW.is_optional, 'is_tentative', NEW.is_tentative, 'reference_url', NEW.reference_url, 'submission_url', NEW.submission_url, 'resource_url', NEW.resource_url, 'location_id', NEW.location_id, 'platform_location', NEW.platform_location, 'description', NEW.description, 'covered_chapters_json', NEW.covered_chapters_json, 'study_focus_json', NEW.study_focus_json, 'module_label', NEW.module_label, 'source_ids_json', NEW.source_ids_json));
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS academic_items_history_update AFTER UPDATE ON academic_items BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1),
+                    CASE WHEN OLD.superseded_by_id IS NULL AND NEW.superseded_by_id IS NOT NULL THEN 'supersede'
+                         WHEN OLD.status IS NOT 'cancelled' AND NEW.status = 'cancelled' THEN 'cancel'
+                         WHEN OLD.superseded_by_id IS NOT NULL AND NEW.superseded_by_id IS NULL THEN 'restore'
+                         ELSE 'update' END,
+                    'academic_items', NEW.id, NEW.course_id, ch
+             FROM (SELECT json_group_object(k, json(v)) AS ch FROM (
+          SELECT 'title' AS k, json_array(OLD.title, NEW.title) AS v WHERE OLD.title IS NOT NEW.title
+          UNION ALL SELECT 'item_type' AS k, json_array(OLD.item_type, NEW.item_type) AS v WHERE OLD.item_type IS NOT NEW.item_type
+          UNION ALL SELECT 'date' AS k, json_array(OLD.date, NEW.date) AS v WHERE OLD.date IS NOT NEW.date
+          UNION ALL SELECT 'start_time' AS k, json_array(OLD.start_time, NEW.start_time) AS v WHERE OLD.start_time IS NOT NEW.start_time
+          UNION ALL SELECT 'end_time' AS k, json_array(OLD.end_time, NEW.end_time) AS v WHERE OLD.end_time IS NOT NEW.end_time
+          UNION ALL SELECT 'due_time' AS k, json_array(OLD.due_time, NEW.due_time) AS v WHERE OLD.due_time IS NOT NEW.due_time
+          UNION ALL SELECT 'date_range_end' AS k, json_array(OLD.date_range_end, NEW.date_range_end) AS v WHERE OLD.date_range_end IS NOT NEW.date_range_end
+          UNION ALL SELECT 'status' AS k, json_array(OLD.status, NEW.status) AS v WHERE OLD.status IS NOT NEW.status
+          UNION ALL SELECT 'superseded_by_id' AS k, json_array(OLD.superseded_by_id, NEW.superseded_by_id) AS v WHERE OLD.superseded_by_id IS NOT NEW.superseded_by_id
+          UNION ALL SELECT 'points' AS k, json_array(OLD.points, NEW.points) AS v WHERE OLD.points IS NOT NEW.points
+          UNION ALL SELECT 'is_optional' AS k, json_array(OLD.is_optional, NEW.is_optional) AS v WHERE OLD.is_optional IS NOT NEW.is_optional
+          UNION ALL SELECT 'is_tentative' AS k, json_array(OLD.is_tentative, NEW.is_tentative) AS v WHERE OLD.is_tentative IS NOT NEW.is_tentative
+          UNION ALL SELECT 'reference_url' AS k, json_array(OLD.reference_url, NEW.reference_url) AS v WHERE OLD.reference_url IS NOT NEW.reference_url
+          UNION ALL SELECT 'submission_url' AS k, json_array(OLD.submission_url, NEW.submission_url) AS v WHERE OLD.submission_url IS NOT NEW.submission_url
+          UNION ALL SELECT 'resource_url' AS k, json_array(OLD.resource_url, NEW.resource_url) AS v WHERE OLD.resource_url IS NOT NEW.resource_url
+          UNION ALL SELECT 'location_id' AS k, json_array(OLD.location_id, NEW.location_id) AS v WHERE OLD.location_id IS NOT NEW.location_id
+          UNION ALL SELECT 'platform_location' AS k, json_array(OLD.platform_location, NEW.platform_location) AS v WHERE OLD.platform_location IS NOT NEW.platform_location
+          UNION ALL SELECT 'description' AS k, json_array(OLD.description, NEW.description) AS v WHERE OLD.description IS NOT NEW.description
+          UNION ALL SELECT 'covered_chapters_json' AS k, json_array(OLD.covered_chapters_json, NEW.covered_chapters_json) AS v WHERE OLD.covered_chapters_json IS NOT NEW.covered_chapters_json
+          UNION ALL SELECT 'study_focus_json' AS k, json_array(OLD.study_focus_json, NEW.study_focus_json) AS v WHERE OLD.study_focus_json IS NOT NEW.study_focus_json
+          UNION ALL SELECT 'module_label' AS k, json_array(OLD.module_label, NEW.module_label) AS v WHERE OLD.module_label IS NOT NEW.module_label
+          UNION ALL SELECT 'source_ids_json' AS k, json_array(OLD.source_ids_json, NEW.source_ids_json) AS v WHERE OLD.source_ids_json IS NOT NEW.source_ids_json
+             )) WHERE ch IS NOT NULL AND ch <> '{}';
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS academic_items_no_delete BEFORE DELETE ON academic_items
+             BEGIN SELECT RAISE(ABORT, 'Calendar items are never deleted: supersede or cancel them with a reason (item-supersede, item-cancel).'); END""",
+        """CREATE TRIGGER IF NOT EXISTS sources_history_insert AFTER INSERT ON sources BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'source', 'sources', NEW.id, NEW.course_id,
+                     json_object('title', NEW.title, 'source_type', NEW.source_type, 'url', NEW.url, 'local_path', NEW.local_path));
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS sources_no_delete BEFORE DELETE ON sources
+             BEGIN SELECT RAISE(ABORT, 'Sources are never deleted: they are the record of where every item came from.'); END""",
+        """CREATE TRIGGER IF NOT EXISTS sync_records_history_delete AFTER DELETE ON sync_records BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'unsync', 'sync_records', OLD.academic_item_id, NULL, json_object('calendar_event_id', OLD.google_event_id));
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS preferences_history_dismiss AFTER UPDATE ON preferences
+             WHEN NEW.key = 'coverage_dismissed' AND OLD.value_json IS NOT NEW.value_json BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'dismiss', 'preferences', NEW.key, NEW.course_id, json_array(OLD.value_json, NEW.value_json));
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS preferences_history_dismiss_insert AFTER INSERT ON preferences
+             WHEN NEW.key = 'coverage_dismissed' BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'dismiss', 'preferences', NEW.key, NEW.course_id, json_array(NULL, NEW.value_json));
+           END""",
+        # Where every item stands today: the first entry of its history (nothing earlier was recorded).
+        """INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'migration', 'db upgrade', 'History starts here: the item as it was when Kea began keeping history (first seen ' || COALESCE(first_seen, '?') || ')',
+                    'baseline', 'academic_items', id, course_id, json_object('title', title, 'item_type', item_type, 'date', date, 'start_time', start_time, 'end_time', end_time, 'due_time', due_time, 'date_range_end', date_range_end, 'status', status, 'superseded_by_id', superseded_by_id, 'points', points, 'is_optional', is_optional, 'is_tentative', is_tentative, 'reference_url', reference_url, 'submission_url', submission_url, 'resource_url', resource_url, 'location_id', location_id, 'platform_location', platform_location, 'description', description, 'covered_chapters_json', covered_chapters_json, 'study_focus_json', study_focus_json, 'module_label', module_label, 'source_ids_json', source_ids_json)
+             FROM academic_items""",
+    ]
+    for st in stmts:
+        session.execute(text(st))
+
+
 MIGRATIONS: list[MigrationFn] = [
     _0001_initial_schema,
     _0002_add_item_reference_urls,
@@ -325,6 +414,7 @@ MIGRATIONS: list[MigrationFn] = [
     _0018_add_study_depth_fields,
     _0019_add_study_pdfs_table,
     _0020_add_chapter_summary,
+    _0021_add_item_history,
 ]
 
 
