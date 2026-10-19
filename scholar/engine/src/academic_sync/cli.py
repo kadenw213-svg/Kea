@@ -2280,6 +2280,42 @@ def study_pdf_due_cmd(
     print(json.dumps(bundles, indent=1))
 
 
+def _calc_value(expr: str) -> float:
+    """The value of a plain arithmetic expression (numbers, + - * / ** and parentheses, e notation, and log/ln/sqrt/
+    exp), evaluated safely: how a calculation question's answer is worked out rather than typed from memory."""
+    import ast
+    import math
+
+    funcs = {"log": math.log10, "log10": math.log10, "ln": math.log, "sqrt": math.sqrt, "exp": math.exp, "abs": abs}
+    tree = ast.parse(str(expr).replace("^", "**").replace("×", "*"), mode="eval")
+
+    def ev(n):
+        if isinstance(n, ast.Expression):
+            return ev(n.body)
+        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)):
+            return float(n.value)
+        if isinstance(n, ast.UnaryOp) and isinstance(n.op, (ast.USub, ast.UAdd)):
+            return -ev(n.operand) if isinstance(n.op, ast.USub) else ev(n.operand)
+        if isinstance(n, ast.BinOp) and isinstance(n.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)):
+            a, b = ev(n.left), ev(n.right)
+            if isinstance(n.op, ast.Pow) and abs(b) > 100:
+                raise ValueError("exponent too large")
+            if isinstance(n.op, ast.Add):
+                return a + b
+            if isinstance(n.op, ast.Sub):
+                return a - b
+            if isinstance(n.op, ast.Mult):
+                return a * b
+            if isinstance(n.op, ast.Div):
+                return a / b if b else float("nan")
+            return a ** b
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in funcs and len(n.args) == 1:
+            return float(funcs[n.func.id](ev(n.args[0])))
+        raise ValueError("only numbers, + - * / ^ ( ) and log, ln, sqrt, exp")
+
+    return ev(tree)
+
+
 @app.command("practice-check")
 def practice_check_cmd(
     path: Annotated[Path, typer.Argument(help="The practice set JSON (data/study/out/<id>.json).")],
@@ -2344,9 +2380,22 @@ def practice_check_cmd(
                     problems.append(f"{where}: answer must be true or false")
             elif kind == "num":
                 try:
-                    float(q.get("answer"))
+                    value = float(q.get("answer"))
                 except (TypeError, ValueError):
                     problems.append(f"{where}: answer must be a number")
+                    value = None
+                # The answer, worked out: `calc` is the arithmetic that gives it, and it must agree.
+                calc = q.get("calc")
+                if not calc:
+                    problems.append(f"{where}: needs calc, the arithmetic that gives the answer (e.g. \"745/760*5.60/2.10\")")
+                elif value is not None:
+                    try:
+                        got = _calc_value(calc)
+                        tol = max(abs(float(q.get("tolerance") or 0)), abs(value) * 0.01, 1e-9)
+                        if not abs(got - value) <= tol:
+                            problems.append(f"{where}: calc {calc} gives {got:.6g}, not the answer {value:g}")
+                    except Exception as err:  # noqa: BLE001
+                        problems.append(f"{where}: calc can't be worked out ({err})")
             elif kind == "short":
                 if not str(q.get("answer", "")).strip():
                     problems.append(f"{where}: needs a model answer")
@@ -2362,6 +2411,21 @@ def practice_check_cmd(
                 problems.append(f"{where}: type must be mc, multi, tf, num, short or blank")
     if count and len(items) < count * 0.9:
         problems.append(f"only {len(items)} of the {count} asked for")
+    # Exam level, checked rather than hoped for: every question says how hard it is, and a set leans hard.
+    if "questions" in data and items:
+        levels = [str(q.get("level", "")).lower() for q in items if isinstance(q, dict)]
+        missing = sum(1 for lv in levels if lv not in ("recall", "apply", "multistep"))
+        if missing:
+            problems.append(f"{missing} question(s) have no level (recall, apply or multistep)")
+        if len(items) >= 15:
+            share = lambda lv: sum(1 for x in levels if x == lv) / len(items)  # noqa: E731
+            blanks = sum(1 for q in items if isinstance(q, dict) and q.get("type") == "blank") / len(items)
+            if share("recall") > 0.35:
+                problems.append(f"{share('recall'):.0%} are recall: at most 35%; make more of them apply or multistep, like the exams")
+            if share("multistep") < 0.2:
+                problems.append(f"only {share('multistep'):.0%} are multistep: at least 20% should chain steps (conversions, two concepts, a calculation feeding another)")
+            if blanks > 0.15:
+                problems.append(f"{blanks:.0%} are fill-in-the-blank: at most 15% (more only when the class's tests use blanks)")
     print(json.dumps({"ok": not problems, "count": len(items), "problems": problems[:80]}, indent=1))
     if problems:
         raise typer.Exit(code=1)

@@ -55,6 +55,29 @@ function chaptersIn(text) {
   }
   return out;
 }
+/**
+ * The chapters a test covers: as saved, or, when nothing was saved, read from its title and study focus ("Practice
+ * Exam Three (Ch5-Ch6)", "Online Quiz 2 (Ch 23-24, 27)", "Chapters 32–33"). A test with no chapters never shapes any
+ * practice, so it's worked out rather than left empty. `known` limits it to chapters the class really has.
+ */
+function coveredOf(r, known) {
+  const saved = json(r.covered_chapters_json, []);
+  if (saved.length) return saved;
+  const text = [r.title, ...json(r.study_focus_json, [])].join(' \n ');
+  const out = [];
+  for (const m of text.matchAll(/\b(?:chapters?|chs?\.?)\s*((?:\d+[a-z]?\s*(?:[-–]|to|through|,|&|and)?\s*(?:ch(?:apter)?s?\.?\s*)?)+)/gi)) {
+    const parts = m[1].replace(/ch(?:apter)?s?\.?/gi, '').split(/\s*(?:,|&|\band\b)\s*/i);
+    for (const part of parts) {
+      const range = part.match(/(\d+)\s*(?:[-–]|to|through)\s*(\d+)/i);
+      const nums = range ? Array.from({ length: Math.max(0, Math.min(40, +range[2] - +range[1])) + 1 }, (_, i) => +range[1] + i) : (part.match(/\d+/g) || []).map(Number);
+      for (const n of nums) {
+        const label = `Chapter ${n}`;
+        if ((!known || known.has(label)) && !out.includes(label)) out.push(label);
+      }
+    }
+  }
+  return out;
+}
 const chapterNumber = (label) => parseFloat(String(label).replace(/[^\d.]/g, '')) || 0;
 
 const ACTIVE = "status NOT IN ('superseded', 'cancelled')";
@@ -122,8 +145,8 @@ async function textbookChapters(file, textbooks) {
     if (c.end_date && String(c.end_date).slice(0, 10) < today) continue;
     const { pdfs } = readingsFor(db, c.id, c.course_code, textbooks);
     for (const label of [...pdfs.keys()].sort((a, b) => chapterNumber(a) - chapterNumber(b))) out.push({ courseId: c.id, label });
-    for (const t of rows(db, `SELECT date, covered_chapters_json FROM academic_items WHERE course_id = ? AND item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} AND date >= ? ORDER BY date`, [c.id, today]))
-      for (const label of json(t.covered_chapters_json, [])) if (!soon.has(`${c.id}|${label}`)) soon.set(`${c.id}|${label}`, t.date);
+    for (const t of rows(db, `SELECT title, date, covered_chapters_json, study_focus_json FROM academic_items WHERE course_id = ? AND item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} AND date >= ? ORDER BY date`, [c.id, today]))
+      for (const label of coveredOf(t)) if (!soon.has(`${c.id}|${label}`)) soon.set(`${c.id}|${label}`, t.date);
   }
   const when = (x) => soon.get(`${x.courseId}|${x.label}`) || '9999';
   return out.map((x, i) => ({ x, i })).sort((a, b) => when(a.x).localeCompare(when(b.x)) || a.i - b.i).map(({ x }) => x);
@@ -138,8 +161,8 @@ async function nextTests(file) {
   if (!db) return {};
   const today = localDay();
   const out = {};
-  for (const t of rows(db, `SELECT course_id, title, date, covered_chapters_json FROM academic_items WHERE item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} AND date >= ? ORDER BY date`, [today]))
-    for (const label of json(t.covered_chapters_json, [])) {
+  for (const t of rows(db, `SELECT course_id, title, date, covered_chapters_json, study_focus_json FROM academic_items WHERE item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} AND date >= ? ORDER BY date`, [today]))
+    for (const label of coveredOf(t)) {
       const key = `${t.course_id}|${label}`;
       if (!out[key]) out[key] = { date: String(t.date).slice(0, 10), title: t.title };
     }
@@ -386,9 +409,11 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
     }));
   // Every test that covers these chapters, with what the instructor said it covers (scraped from the class site) and
   // its review sheets: the questions should look like these tests.
+  const knownLabels = new Set(rows(db, 'SELECT chapter_label FROM chapter_topics WHERE course_id = ?', [courseId]).map((x) => x.chapter_label));
   const tests = rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} ORDER BY date`, [courseId])
-    .map((r) => ({ r, covered: json(r.covered_chapters_json, []), focus: json(r.study_focus_json, []) }))
-    .filter(({ r, covered, focus }) => (item && r.id === item.id) || ((focus.length || r.description) && covered.some((ch) => want.has(ch))))
+    .map((r) => ({ r, covered: coveredOf(r, knownLabels), focus: json(r.study_focus_json, []) }))
+    // (Every test on these chapters counts, even with no study focus posted yet: its format and date still matter.)
+    .filter(({ r, covered }) => (item && r.id === item.id) || covered.some((ch) => want.has(ch)))
     .map(({ r, covered, focus }) => ({
       id: r.id,
       title: r.title,

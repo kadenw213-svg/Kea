@@ -574,7 +574,7 @@ const str = (v) => (typeof v === 'string' ? v.trim() : '');
 /** One question, cleaned, or null when it can't be used. */
 function cleanQuestion(q) {
   if (!q || typeof q !== 'object') return null;
-  const base = { type: q.type, q: str(q.q), explain: str(q.explain), chapter: str(q.chapter) || null, section: str(q.section) || null, topic: str(q.topic) || null, source: str(q.source) || null };
+  const base = { type: q.type, q: str(q.q), explain: str(q.explain), chapter: str(q.chapter) || null, section: str(q.section) || null, topic: str(q.topic) || null, source: str(q.source) || null, ...(['recall', 'apply', 'multistep'].includes(q.level) ? { level: q.level } : {}) };
   if (!base.q) return null;
   if (q.type === 'mc' || q.type === 'multi') {
     const choices = Array.isArray(q.choices) ? q.choices.map(str).filter(Boolean) : [];
@@ -588,7 +588,7 @@ function cleanQuestion(q) {
     const answer = Number(q.answer);
     if (!Number.isFinite(answer)) return null;
     const tol = Number(q.tolerance);
-    return { ...base, answer, tolerance: Number.isFinite(tol) && tol >= 0 ? tol : Math.abs(answer) * 0.01, unit: str(q.unit) || null };
+    return { ...base, answer, tolerance: Number.isFinite(tol) && tol >= 0 ? tol : Math.abs(answer) * 0.01, unit: str(q.unit) || null, ...(str(q.calc) ? { calc: str(q.calc) } : {}) };
   }
   if (q.type === 'short') return str(q.answer) ? { ...base, answer: str(q.answer) } : null;
   if (q.type === 'blank') {

@@ -72,7 +72,10 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
       <Step done={claudeOk} busy={busy === 'claude'} icon={<Bot size={16} />} title="Your Claude account">
         <p>
           Kea uses <b>Claude Code</b>, Anthropic's free app for your Claude account, to read your class site and write your textbook chapters. It runs hidden in the
-          background with Kea's own instructions, and can only read your class site and save into Kea.
+          background with Kea's own instructions. It can read only Kea's class folder, your class site and the school platforms your classes link to, and it saves only into Kea.
+        </p>
+        <p className="muted">
+          What it reads from your classes (announcements, assignments, grades, files, messages and discussion posts, including classmates' posts and names) is sent to Anthropic to be processed under your Claude account's terms. Your classes are stored on this computer and, if you turn on device sync, in your own OneDrive or Google Drive folder. Kea has no server of its own.
         </p>
         {!c.claude ? (
           <button className="btn tonal sm" disabled={!!busy} onClick={() => act('claude', () => api.scholar.installClaude(), 'Claude Code is installed.')}>

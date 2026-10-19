@@ -74,14 +74,18 @@ notes and review sheets: "multiple choice, calculation problems and short essays
 - `multi`: "Select all that apply", 4 to 6 choices, 2 or more correct.
 - `tf`: only where the course uses true/false; prefer `mc`.
 - `num`: a calculation with a numeric answer: `answer` (number), `tolerance` (absolute; fit it to sensible
-  rounding, such as 0.01 for an answer of 2.45), `unit`. The stem gives every value needed. Chemistry, math and
-  physics sets should be at least 30% `num` when the course's tests are calculation-heavy.
+  rounding, such as 0.01 for an answer of 2.45), `unit`, and `calc`: the plain arithmetic that gives the answer,
+  with the numbers from the stem (`"745/760*5.60/2.10"`; `^` for powers, `log`, `ln`, `sqrt`, `exp`, e-notation).
+  `practice-check` works `calc` out and refuses an answer it doesn't match, so every answer is computed, never
+  typed from memory. The stem gives every value needed. Chemistry, math and physics sets should be at least 30%
+  `num` when the course's tests are calculation-heavy.
 - `blank`: fill in the blank. The stem has `____` where the answer goes, and the answer is one or two words (a term,
   a name, a symbol, a short number with its unit): `answer`, plus `accept`, a list of other forms a teacher would take
   ("NaCl" for "sodium chloride", "ATP" for "adenosine triphosphate", a common synonym). Kea forgives spelling
   slips, capitals and plurals itself and has a local model judge the rest, so list only real alternatives. The stem
-  must make one answer clearly right. Use blanks for recall of terms and facts instead of easy `mc`: about 20% of an
-  exam set (more for vocabulary-heavy chapters), unless the course's tests are multiple choice only.
+  must make one answer clearly right. Blanks are recall: at most 15% of a set (`practice-check` enforces it), and
+  only for terms a test really asks for, never a trivial definition. More only when the class's own tests use
+  fill-in-the-blank; none when they're multiple choice only.
 - `short`: a short written answer or explanation (essay-style courses, "explain why"). `answer` is a model answer
   in 1 to 4 sentences, with the points a grader would look for. The student marks their own answer against it.
 
@@ -94,12 +98,19 @@ Every question has:
   writes it ("5.1 The Gaseous State"). Kea opens the textbook there when the student taps the book icon, so pick the
   section a student should read to answer it.
 - `source`: where it came from: "FunSheet Ch 5", "Study focus", "Objective", "Textbook 5.3".
+- `level`: how hard it is: `recall` (remember a term or fact), `apply` (use one idea: calculate, classify, predict,
+  interpret), or `multistep` (chain two or more steps or concepts: a unit conversion before a gas law, grams of an
+  electrolyte → particles → ΔT, % m/m with density → molarity, ranking several compounds by two properties).
 
 Balance and difficulty:
 - Spread questions across the chapters in proportion to what the tests' focus covers. For one chapter, cover every
   section.
-- About 30% recall and recognition, 50% application (calculate, classify, predict, interpret), 20% harder multi-step
-  or comparison questions, the hardest type the review sheets show.
+- At most 35% `recall`, about 45% `apply`, and at least 20% `multistep` (`practice-check` enforces the limits). The
+  multistep ones are the hardest type the review sheets and practice exams show, and a bit harder: exams combine
+  ideas, so practice must too. No giveaways: a choice set where only one option could possibly fit, or a stem that
+  names the answer, is recall at best.
+- Every objective, every section and every problem type on the review sheets gets questions; in your summary,
+  name any you couldn't cover and why.
 - Each question tests one thing and doesn't give away another question's answer. No duplicates or near-duplicates,
   except calculations: the same problem format with new numbers is fine (better still if what's asked changes too).
 - Plain text only, no LaTeX or Markdown. Use Unicode: x², x³, √, ≤, ≥, ≠, ±, π, Δ, →, ⇌, °, subscripts like H₂O and
@@ -123,10 +134,10 @@ then Edit to append the rest, calling `mcp__kea__kea_progress` with `percent` 55
 
 ```json
 { "questions": [
-  { "type": "mc", "q": "…", "choices": ["…", "…", "…", "…"], "answer": 2, "explain": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law", "source": "FunSheet Ch 5" },
+  { "type": "mc", "q": "…", "choices": ["…", "…", "…", "…"], "answer": 2, "level": "apply", "explain": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law", "source": "FunSheet Ch 5" },
   { "type": "multi", "q": "Select all that apply: …", "choices": ["…", "…", "…", "…", "…"], "answer": [0, 3], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "tf", "q": "…", "answer": false, "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
-  { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "calc": "745/760*5.60/2.24", "level": "multistep", "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "blank", "q": "The pressure of a gas is inversely proportional to its volume at constant temperature; this is ____ law.", "answer": "Boyle's", "accept": ["Boyle"], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "short", "q": "…", "answer": "…", "explain": "…", "chapter": "…", "topic": "…", "source": "…" }
 ] }
