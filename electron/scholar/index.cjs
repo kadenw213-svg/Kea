@@ -253,6 +253,7 @@ async function tick() {
     const today = localDate();
     // (Once today's checks are done, chapters short of questions get them, one at a time.)
     if (s.lastRuns.daily === today) return keepBanks();
+    if (Date.now() < offlineUntil) return;
     if (!(await ready())) return;
     const daysSince = (d) => (d ? Math.round((new Date(`${today}T12:00`) - new Date(`${d}T12:00`)) / 864e5) : Infinity);
     const weekday = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][now.getDay()];
@@ -260,11 +261,23 @@ async function tick() {
     const checkDue = daysSince(s.lastRuns.check || s.lastRuns.daily) >= checkEvery;
     // The readings-and-links update: every day, or on its weekday (or once a week has gone by without one).
     const syncDue = daysSince(s.lastRuns.sync) >= 1 && (syncOn === 'daily' || syncOn === weekday || daysSince(s.lastRuns.sync) >= 7);
+    const before = { ...s.lastRuns };
     s.lastRuns.daily = today;
     if (checkDue) s.lastRuns.check = today;
     if (syncDue) s.lastRuns.sync = today;
     writeState(s);
-    if (checkDue) await runner.run('daily', '', 'schedule');
+    if (checkDue) {
+      await runner.run('daily', '', 'schedule');
+      // Offline or asleep during the check: today isn't done, so the next tick tries again (in 15 minutes or more).
+      const last = runner.activity?.().find((e) => e.task === 'daily');
+      if (last && /offline or asleep/.test(last.summary || '')) {
+        const st = readState();
+        st.lastRuns = { ...st.lastRuns, daily: before.daily, check: before.check, sync: before.sync };
+        writeState(st);
+        offlineUntil = Date.now() + 15 * 60e3;
+        return;
+      }
+    }
     if (syncDue) await runner.run('sync', '', 'schedule');
     if ((checkDue || syncDue) && settings.get('scholar.studyPdfs', true) !== false) await runner.run('study', '', 'schedule');
     keepBanks();
@@ -277,6 +290,7 @@ async function tick() {
 // Every chapter with a textbook keeps a bank of saved questions (50 by default), and gets more when the student runs
 // low. Made by the primary only, one chapter at a time, each bank written once and then reused on every device.
 let banking = false;
+let offlineUntil = 0;
 // Question-bank runs allowed in one day.
 const BANK_RUNS = 12;
 let bankRuns = { day: '', n: 0 };
