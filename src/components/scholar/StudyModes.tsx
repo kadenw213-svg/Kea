@@ -211,7 +211,7 @@ export function Learn({ set }: { set: StudySetFull }) {
         )}
         {!queue && (
           <>
-            <p className="muted">Each card starts as multiple choice. Get it right and next time you type the term from its definition. Miss one and it comes back later in the round. Cards you master join your spaced review.</p>
+            <p className="muted">Each card starts as multiple choice. Get it right and next time you type the term from its definition. Miss one and it comes back later in the round.</p>
             <div className="st-setup-row">
               <span>Answer by</span>
               <div className="st-seg">

@@ -46,6 +46,35 @@ const json = (s, fallback) => {
 const hhmm = (t) => (t ? String(t).slice(0, 5) : null);
 
 /** The chapters (or modules, units) a title names: "Chapter 22; Chapter 26", "Ch 4", "Module 1" → their labels. */
+// Words that say what kind of thing an item is, not what it's about.
+const ITEM_WORDS = new Set('lab labs handout handouts report reports quiz quizzes exam exams test tests assignment assignments homework hw discussion discussions practical practicals review reviews worksheet module unit chapter part online due submit submission upload uploaded work written notebook pdf post posts reply replies response responses introduction intro and the of for with from to in on a an week class lecture lectures activity activities pre prelab using use used basic principle principles overview general your you how what why which first second final new evaluat evaluation'.split(' '));
+function topicWords(text) {
+  return (
+    String(text || '')
+      .toLowerCase()
+      .match(/[a-z]{3,}/g) || []
+  )
+    .filter((w) => !ITEM_WORDS.has(w))
+    .map((w) => w.replace(/(ies|es|s)$/, (m) => (m === 'ies' ? 'y' : '')).slice(0, 7));
+}
+/** The chapters whose title or sections name an item's topic: the best match, when its words clearly overlap. */
+function topicChapters(text, chapterWords) {
+  if (!chapterWords?.size) return [];
+  const want = [...new Set(topicWords(text))];
+  if (!want.length) return [];
+  // A word in the chapter's title or a section heading counts three times one in its vocabulary or objectives.
+  const scored = [...chapterWords].map(([label, have]) => [label, want.reduce((n, w) => n + (have.strong.has(w) ? 3 : have.weak.has(w) ? 1 : 0), 0)]).filter(([, n]) => n > 0);
+  const best = Math.max(0, ...scored.map(([, n]) => n));
+  return best ? scored.filter(([, n]) => n === best).map(([l]) => l).slice(0, 2) : [];
+}
+
+/** What numbered lab or exam a title names ("Lab 8", "Exam 4", "the Final Exam"): its key, or null. */
+function siblingKey(title) {
+  const m = /\b(lab|exam|test|quiz)\s*#?\s*(\d+)\b/i.exec(title || '');
+  if (m) return `${m[1].toLowerCase().replace('test', 'exam')}${m[2]}`;
+  return /\bfinal exam\b/i.test(title || '') ? 'final' : null;
+}
+
 function chaptersIn(text) {
   const out = [];
   for (const m of String(text || '').matchAll(/\b(chapter|ch\.?|module|unit)\s*(\d+[a-z]?)\b/gi)) {
@@ -97,7 +126,29 @@ function readingsFor(db, courseId, code, textbooks) {
   const topics = rows(db, 'SELECT * FROM chapter_topics WHERE course_id = ?', [courseId]);
   const titles = new Map(topics.map((t) => [t.chapter_label, t.title]));
   const summaries = new Map(topics.filter((t) => t.summary).map((t) => [t.chapter_label, t.summary]));
-  return { pdfs, titles, summaries };
+  // Each chapter's own words, for finding the chapter a lab or assignment is about: its title and section headings
+  // (strong), and its vocabulary and objectives (weaker).
+  const words = new Map(
+    topics.map((t) => [
+      t.chapter_label,
+      {
+        strong: new Set(topicWords(`${t.title || ''} ${json(t.sections_json, []).join(' ')}`)),
+        weak: new Set(topicWords(`${t.vocabulary || ''} ${t.added_vocabulary || ''} ${json(t.objectives_json, []).join(' ')}`))
+      }
+    ])
+  );
+  // What "Lab 8" and "Exam 4" are, so "Lab 8 Handout" is about Lab 8's topic and "Exam 4 work" covers Exam 4's chapters.
+  const siblings = new Map();
+  for (const r of rows(db, `SELECT title, item_type, covered_chapters_json FROM academic_items WHERE course_id = ? AND ${ACTIVE}`, [courseId])) {
+    const key = siblingKey(r.title);
+    if (!key) continue;
+    const chapters = [...new Set([...coveredOf({ title: r.title, covered_chapters_json: r.covered_chapters_json }), ...chaptersIn(r.title)])];
+    const topic = (r.title || '').replace(/\b(lab|exam|test|quiz)\s*#?\s*\d+\b|\bfinal exam\b/i, '').trim();
+    const have = siblings.get(key);
+    // (The one that says the most: chapters first, then the longest topic.)
+    if (!have || (chapters.length && !have.chapters.length) || (!have.chapters.length && topic.length > have.topic.length)) siblings.set(key, { chapters, topic });
+  }
+  return { pdfs, titles, summaries, words, siblings };
 }
 
 /** Classes in the profile, with what's coming up. */
@@ -248,9 +299,19 @@ function usualRooms(db) {
 
 function itemOut(r, course, banner, readings, done, rooms, ev) {
   const covered = json(r.covered_chapters_json, []);
-  let chapters = [...new Set([...covered, ...chaptersIn(`${r.title} ${r.module_label || ''}`)])];
-  // An assignment with no chapter of its own reads that week's chapters.
-  if (!chapters.length && banner && !['administrative_deadline', 'break', 'no_class'].includes(r.item_type)) chapters = chaptersIn(banner.title);
+  // (Ranges and lists too: "Exam 1 (Chapters 1-2)", "Online Quiz 3: Chapters 25, 19, 27 & 28".)
+  let chapters = [...new Set([...covered, ...coveredOf({ title: r.title }), ...chaptersIn(`${r.title} ${r.module_label || ''}`)])];
+  const skip = ['administrative_deadline', 'break', 'no_class'].includes(r.item_type);
+  // A lab (or anything else) named for its topic ("Lab 5: Protists") is that topic's chapter; labs often trail the
+  // lectures, so for a lab this comes before the week's reading.
+  const byTopic = () => (skip ? [] : topicChapters(`${r.title} ${r.module_label || ''}`, readings.words));
+  // "Lab 8 Handout", "Upload written work for Exam 4": the chapters (or topic) of the lab or exam it belongs to.
+  const of = siblingKey(r.title) && readings.siblings?.get(siblingKey(r.title));
+  if (!chapters.length && of && !skip) chapters = of.chapters.length ? of.chapters : topicChapters(of.topic, readings.words);
+  if (!chapters.length && /lab/.test(r.item_type)) chapters = byTopic();
+  // Otherwise an item with no chapter of its own reads that week's chapters, then its topic.
+  if (!chapters.length && banner && !skip) chapters = chaptersIn(banner.title);
+  if (!chapters.length) chapters = byTopic();
   return {
     id: r.id,
     courseId: r.course_id,

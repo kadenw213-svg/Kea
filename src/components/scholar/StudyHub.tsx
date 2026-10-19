@@ -1,9 +1,9 @@
-// One place to study anything: a chapter, a test, an assignment, or chapters you pick. Like a Quizlet set page: how
-// much you've mastered, and every way to study it (spaced review, a practice exam from the saved questions, flashcards,
-// Learn and Match), with past practice exams and their scores. Opened by the one Study button wherever there's
+// One place to study anything: a chapter, a test, an assignment, a lab or lecture, or chapters you pick. Like a Quizlet
+// set page: how your practice has gone, and every way to study it (a practice exam from the saved questions,
+// flashcards, Learn and Match, by topic), with past practice exams and their scores. No pacing: you choose what to study. Opened by the one Study button wherever there's
 // something to study, so there aren't different buttons doing the same thing in different places.
 import { useEffect, useState } from 'react';
-import { Brain, ClipboardList, Layers, Loader2, Repeat, Shapes, Sparkles } from 'lucide-react';
+import { Brain, ClipboardList, Layers, Loader2, Shapes, Sparkles } from 'lucide-react';
 import { api, PoolItem, ReviewQueue } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
@@ -82,10 +82,10 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   }, [scope.courseId, scope.itemId, scope.chapters.join('|'), sets?.length]);
 
   const c = q?.counts[scope.courseId];
-  const total = c?.total || 0;
-  const mastered = c?.mastered || 0;
-  const learning = c?.learning || 0;
-  const due = c?.due || 0;
+  // How practice has gone, question by question (the picked topics only, when some are picked).
+  const total = inTopics.length;
+  const mastered = inTopics.filter((p) => p.lastRight === true).length;
+  const learning = inTopics.filter((p) => p.lastRight === false).length;
   const days = c?.test ? Math.round((Date.parse(`${c.test.date}T12:00`) - Date.now()) / 864e5) : null;
   const mine = (sets || []).filter((s) => s.courseId === scope.courseId && (scope.itemId ? s.itemId === scope.itemId : s.chapters.join('|') === scope.chapters.join('|')) && s.kind === 'exam' && s.attempts > 0);
 
@@ -114,7 +114,6 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
       setBusy('');
     }
   };
-  const review = () => useScholar.getState().set({ study: `review:${scope.courseId}:${encodeURIComponent(scope.chapters.join('|'))}:${encodeURIComponent(topics.join('|'))}` });
   const exam = narrowed ? picked.length : saved?.exam || 0;
   const cards = saved?.cards || 0;
 
@@ -136,9 +135,9 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
             <span className="l" style={{ width: `${(learning / total) * 100}%` }} />
           </div>
           <div className="hub-legend">
-            <span><i className="m" /> {mastered} mastered</span>
-            <span><i className="l" /> {learning} learning</span>
-            <span><i /> {total - mastered - learning} not seen yet</span>
+            <span><i className="m" /> {mastered} right last time</span>
+            <span><i className="l" /> {learning} missed last time</span>
+            <span><i /> {total - mastered - learning} not tried yet</span>
           </div>
         </div>
       )}
@@ -175,13 +174,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
       )}
 
       <div className="hub-modes">
-        <button className="hub-mode primary" onClick={review} disabled={!total}>
-          <Repeat size={20} />
-          <b>Review</b>
-          <span>{total ? (topics.length ? `${topics.length} topic${topics.length > 1 ? 's' : ''} picked` : due ? `${due} due now` : 'Ready when you are') : 'No questions yet'}</span>
-          <small>Spaced, so everything comes back before the test</small>
-        </button>
-        <div className="hub-mode">
+        <div className="hub-mode primary">
           <ClipboardList size={20} />
           <b>Practice exam</b>
           <span>{exam ? (narrowed ? `From the ${exam} you picked` : `From ${exam} saved questions, shuffled`) : narrowed ? 'None match what you picked' : saved ? 'No questions yet' : '…'}</span>

@@ -47,7 +47,6 @@ import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, setClassColor, setTypeColor, useColors } from './kinds';
 import { ResourcesView, StudyPlayer } from './Study';
-import { ReviewBanner } from './StudyModes';
 import { MessagesView } from './Messages';
 import { ChangesBox, ClassRules, SyllabusMap, ItemHistory } from './History';
 import { openStudyHub } from './StudyHub';
@@ -422,6 +421,18 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
             <BookOpen size={14} /> Read
           </button>
         )}
+        {it.readings.length > 0 && !['administrative_deadline', 'break', 'no_class'].includes(it.type) && (
+          <button
+            className="btn sm"
+            title={`Study ${it.readings.map((r) => r.chapter).join(', ')}: practice exam, flashcards, Learn and Match`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: it.readings.map((r) => r.chapter), itemId: TEST.has(it.type) ? it.id : undefined });
+            }}
+          >
+            <ClipboardCheck size={14} /> Study
+          </button>
+        )}
       </div>
     </div>
   );
@@ -462,7 +473,6 @@ function WeekView({ ctx }: { ctx: Ctx }) {
         {open ? `${open} thing${open === 1 ? '' : 's'} to do in the next two weeks.` : 'Nothing left to do in the next two weeks.'}
         {next ? ` Next: ${next.courseCode} ${TYPE_LABEL[next.type]?.toLowerCase() || ''} at ${clock(next.start)}${next.location && next.location !== 'Online' ? ` in ${shortRoom(next.location)}` : ''}.` : ''}
       </p>
-      <ReviewBanner />
       <ChangesBox />
       {missing.length > 0 && (
         <section className="miss-box">
@@ -1268,7 +1278,10 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
   // What a test is like ("Exam format: essay, multiple choice…"); the rest of its study focus stays internal and goes
   // into practice exams and flashcards instead of a wall of topics here.
   const format = it.studyFocus.find((f) => /^(exam |test |quiz )?format\b/i.test(f));
-  const practice = TEST.has(it.type) || (it.readings.length > 0 && TODO.has(it.type) && !['administrative_deadline', 'other_deadline'].includes(it.type));
+  // What the instructor said to know for it (besides its format), shown plainly.
+  const toKnow = it.studyFocus.filter((f) => f !== format && f.trim());
+  // Anything that covers chapters (an exam, an assignment, a lab, a lecture) can be studied.
+  const practice = it.readings.length > 0 && !['administrative_deadline', 'break', 'no_class'].includes(it.type);
   const missing = isMissing(it);
   const quick = primaryLink(it);
   const cat = categoryOf(it.type);
@@ -1372,16 +1385,26 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           ))}
         </section>
       )}
+      {toKnow.length > 0 && (
+        <section>
+          <div className="tb-h">What to know</div>
+          <ul className="pn-know">
+            {toKnow.slice(0, 12).map((f, i) => (
+              <li key={i}>{f}</li>
+            ))}
+          </ul>
+        </section>
+      )}
       {practice && (
         <section className="st-box">
           <div className="tb-h">Study for this</div>
           <button
             className="btn primary sm"
-            onClick={() => openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: it.covered.length ? it.covered : it.readings.map((r) => r.chapter), itemId: it.id })}
+            onClick={() => openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: it.readings.map((r) => r.chapter), itemId: TEST.has(it.type) ? it.id : undefined })}
           >
-            <ClipboardCheck size={14} /> Study {it.covered.length || it.readings.length ? (it.covered.length ? it.covered : it.readings.map((r) => r.chapter)).map((x) => x.replace(/^Chapter /, 'Ch ')).join(', ') : 'for this'}
+            <ClipboardCheck size={14} /> Study {it.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ')}
           </button>
-          <div className="muted st-hint">Review, a practice exam from the saved questions, flashcards, Learn and Match, all for what this covers.</div>
+          <div className="muted st-hint">A practice exam, flashcards, Learn and Match on everything this covers, by topic.</div>
         </section>
       )}
       {instructions && (

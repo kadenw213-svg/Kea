@@ -2383,3 +2383,13 @@
   gap: 6px;
   flex-shrink: 0;
 }
+
+/* What the instructor said to know, on an item */
+.pn-know {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
