@@ -138,3 +138,39 @@ export function ChangesBox() {
     </section>
   );
 }
+
+/** A class's rules (late work, required uploads, exam environment, participation), strongest first. */
+export function ClassRules({ code }: { code: string }) {
+  const [open, setOpen] = useState(false);
+  const [rules, setRules] = useState<{ text: string; where: string }[] | null>(null);
+  useEffect(() => {
+    setRules(null);
+    api.scholar
+      .courseRules(code)
+      .then((r) => setRules(r.rules))
+      .catch(() => setRules([]));
+  }, [code]);
+  if (!rules || !rules.length) return null;
+  const shown = open ? rules : rules.slice(0, 5);
+  return (
+    <section className="hs-changes cls-rules">
+      <button className="hs-head" onClick={() => setOpen(!open)}>
+        <b>Class rules</b>
+        <span className="muted">what can cost points, from the syllabus and announcements</span>
+        <ChevronDown size={15} className={open ? 'flip' : ''} />
+      </button>
+      <ul className="cls-rule-list">
+        {shown.map((r, i) => (
+          <li key={i}>
+            {r.text} <span className="muted">({r.where})</span>
+          </li>
+        ))}
+      </ul>
+      {!open && rules.length > 5 && (
+        <button className="btn sm" onClick={() => setOpen(true)}>
+          All {rules.length}
+        </button>
+      )}
+    </section>
+  );
+}

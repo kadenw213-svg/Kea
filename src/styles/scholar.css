@@ -2283,3 +2283,14 @@
   font-size: 12px;
   margin-top: 4px;
 }
+.cls-rules {
+  margin-top: 12px;
+}
+.cls-rule-list {
+  margin: 8px 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+}

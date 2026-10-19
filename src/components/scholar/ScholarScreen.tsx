@@ -49,7 +49,7 @@ import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, is
 import { PracticeBox, ResourcesView, StudyPlayer } from './Study';
 import { ReviewBanner } from './StudyModes';
 import { MessagesView } from './Messages';
-import { ChangesBox, ItemHistory } from './History';
+import { ChangesBox, ClassRules, ItemHistory } from './History';
 import { quizChapter } from './QuizMe';
 import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
 import '../../styles/scholar.css';
@@ -1073,6 +1073,7 @@ function ClassView({ ctx, courseId }: { ctx: Ctx; courseId: string }) {
           </button>
         )}
       </div>
+      <ClassRules code={c.code} />
       <div className="cls-tabs">
         {(
           [

@@ -448,6 +448,7 @@ function register() {
     if (at < 0) throw new Error((r.err || r.out || 'No answer from the engine.').slice(0, 300));
     return JSON.parse(r.out.slice(at));
   };
+  ipcMain.handle('scholar:courseRules', (_e, code) => engineJson(['course-rules', '--course', String(code).replace(/[^\w]/g, ''), '--json']));
   ipcMain.handle('scholar:itemHistory', (_e, id) => engineJson(['item-history', String(id).replace(/[^\w-]/g, ''), '--json']));
   ipcMain.handle('scholar:changes', (_e, opts = {}) => {
     const args = ['changes', '--json'];

@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('api', {
     openLink: (url) => ipcRenderer.invoke('scholar:openLink', url),
     replyMessage: (url, course) => ipcRenderer.invoke('scholar:replyMessage', url, course),
     itemHistory: (id) => ipcRenderer.invoke('scholar:itemHistory', id),
+    courseRules: (code) => ipcRenderer.invoke('scholar:courseRules', code),
     changes: (opts) => ipcRenderer.invoke('scholar:changes', opts),
     mailList: () => ipcRenderer.invoke('scholar:mailList'),
     mailRead: (id, refresh) => ipcRenderer.invoke('scholar:mailRead', id, !!refresh),

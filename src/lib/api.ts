@@ -140,6 +140,8 @@ export interface KeaApi {
     replyMessage(url: string, course: string): Promise<{ replied: boolean }>;
     /** One item's history: created, each change (old → new), replaced or cancelled, with the scan and the reason. */
     itemHistory(id: string): Promise<{ id: string; title: string; sources: { title: string; source_type: string; url: string | null; retrieved_at: string }[]; events: HistoryEvent[] }>;
+    /** The rules a class grades by (late work, required uploads, exam environment), with where each was found. */
+    courseRules(code: string): Promise<{ course: string; rules: { text: string; where: string; strength: number }[] }>;
     /** What changed on the calendar since a date (default a week ago). */
     changes(opts: { since?: string; course?: string }): Promise<{ since: string; events: (HistoryEvent & { title: string | null; course: string | null })[] }>;
     mailList(): Promise<MailList>;

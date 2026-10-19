@@ -1040,6 +1040,91 @@ def item_restore_cmd(
     _item_status_change(item_id, reason, restore=True)
 
 
+# --------------------------------------------------------------------------
+# course-rules: the rules a class grades by, wherever they're written
+# --------------------------------------------------------------------------
+# Late policies, "no work, no credit", upload windows, exam-environment rules, participation rules: sentences in the
+# syllabus, announcements and course pages that can cost points. They were never kept anywhere (the coverage check
+# even dismissed two late-policy sentences as "not work"), so they're gathered here, deterministically, every time.
+_RULE = re.compile(
+    r"\b(must|required|requirement|zero|no credit|no work|late|deduct\w*|penalt\w*|will not be accepted|not be accepted|"
+    r"within \d+ (?:minutes?|hours?|days?)|full credit|fail(?:ing|ure)?|plagiari\w*|academic (?:dis)?honesty|lockdown|"
+    r"respondus|webcam|make-?ups?|extensions?|dropped from|attendance|participation|on different days|at least \d+|"
+    r"no retakes?|not be dropped|cannot be dropped|single file|numbered)\b",
+    re.IGNORECASE,
+)
+_RULE_STRONG = re.compile(r"\b(zero|no credit|will not be accepted|not be accepted|fail\w*|within \d+|must|required|deduct\w*|penalt\w*)\b", re.IGNORECASE)
+
+
+def course_rules(session, course: Course) -> list[dict]:
+    """[{text, where, strength}] rule sentences for a course, strongest first, de-duplicated."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    docs, _ = _coverage_documents(session, course)
+    # Announcements and assignment/discussion text Kea saved from D2L, too.
+    from academic_sync.config import get_db_path
+
+    root = get_db_path().parent / "digests" / "kea-precheck"
+    days = sorted((d for d in root.iterdir() if d.is_dir()), reverse=True)[:1] if root.is_dir() else []
+    for d in days:
+        try:
+            news = json.loads((d / f"{course.course_code}-news.json").read_text(encoding="utf-8"))
+            for n in news or []:
+                body = _rich(n.get("Body"))
+                if body:
+                    docs.append((f"announcement: {n.get('Title', '')}", ParsedDocument(text=body, title=n.get("Title", ""))))
+        except (OSError, ValueError):
+            pass
+    for where, doc in docs:
+        # (Study material isn't rules: guided readings, FunSheets, worksheets and keys say "must" about chemistry.)
+        name = Path(where).name if not where.startswith(("source:", "announcement:")) else where
+        if re.search(r"guided|fun ?sheet|worksheet|answer|\bkey\b|review|objectives|study ?guide|textbook|^ch ?\d|chapter \d", name, re.IGNORECASE):
+            continue
+        # PDFs often repeat each line (headings drawn twice): keep one of each.
+        lines, prev = [], None
+        for ln in (doc.text or "").splitlines():
+            if ln.strip() and ln.strip() == prev:
+                continue
+            prev = ln.strip()
+            lines.append(ln)
+        text = re.sub(r"[ \t]+", " ", "\n".join(lines))
+        for sentence in re.split(r"(?<=[.!?])\s+|\n{2,}|\n(?=[-•*\d])", text):
+            sentence = re.sub(r"\s+", " ", sentence.strip(" -•*\t\n"))
+            if not (25 <= len(sentence) <= 420) or not _RULE.search(sentence):
+                continue
+            # Not a rule: a due-date line ("Sunday, August 23, 2026 11:59 PM: ... due"), a fill-in exercise, a page
+            # footer, a book listing, an objective.
+            if re.match(r"^(mon|tues|wednes|thurs|fri|satur|sun)day, \w+ \d", sentence, re.IGNORECASE) or "___" in sentence:
+                continue
+            if re.search(r"p a g e|\(CLO \d|^(subtitle|authors?|isbn|required or recomm)", sentence, re.IGNORECASE):
+                continue
+            norm = re.sub(r"[^a-z0-9]+", " ", sentence.lower()).strip()
+            if norm in seen or sum(c.isalpha() for c in sentence) < 15:
+                continue
+            seen.add(norm)
+            out.append({"text": sentence, "where": name, "strength": len(_RULE_STRONG.findall(sentence)) * 2 + len(_RULE.findall(sentence))})
+    out.sort(key=lambda r: -r["strength"])
+    return out[:80]
+
+
+@app.command("course-rules")
+def course_rules_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """The rules this class grades by (late work, required uploads, exam environment, participation), gathered from
+    its syllabus, announcements and pages, strongest first, with where each was found."""
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        code = c.course_code
+        rules = course_rules(session, c)
+    if as_json:
+        print(json.dumps({"course": code, "rules": rules}, indent=1))
+        return
+    for r in rules:
+        console.print(f"- {escape(r['text'])}  [dim]({escape(r['where'])})[/dim]")
+
+
 @app.command("coverage-dismiss")
 def coverage_dismiss_cmd(
     course: Annotated[str, typer.Option("--course")],
