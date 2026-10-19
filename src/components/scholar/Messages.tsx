@@ -208,6 +208,15 @@ export function MessagesView({ courses }: { courses: ScholarCourse[] }) {
               onSent={() => (setCompose(null), reload(), setBox('sent'))}
             />
           )}
+          {compose?.replyTo && (() => {
+            const orig = mail?.messages.find((m) => m.id === compose.replyTo);
+            return orig ? (
+              <div className="ml-quoted">
+                <div className="muted">Replying to {orig.title}</div>
+                <div className="ml-text">{full[orig.id] || orig.full || orig.preview}</div>
+              </div>
+            ) : null;
+          })()}
           {!compose && msg && box === 'inbox' && (
             <article className="ml-msg">
               <div className="ml-msg-head">
