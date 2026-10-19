@@ -209,7 +209,18 @@ async function coverageCheck(arg) {
     } catch {
       continue;
     }
-    const items = out.uncovered || [];
+    // Plus everything D2L itself lists (folders, quizzes, discussions, grade items) that the calendar lacks or has
+    // on another day.
+    let rec = {};
+    try {
+      const rr = await workspace.runHidden(uv, ['run', 'academic-sync', 'd2l-reconcile', '--course', code, '--json'], { cwd, env: workspace.engineEnv(uv) });
+      rec = JSON.parse(rr.out.slice(rr.out.indexOf('{')));
+    } catch {}
+    const items = [
+      ...(out.uncovered || []),
+      ...(rec.unmatched || []).map((u) => ({ key: u.key, title: `${u.title} (in D2L's ${u.kind === 'dropbox' ? 'assignments' : u.kind === 'grade' ? 'grades' : `${u.kind}s`})`, date: u.d2l_date })),
+      ...(rec.drift || []).map((d) => ({ key: d.key, title: `${d.title}: D2L says ${d.d2l_date}, your calendar ${d.item_date}`, date: d.d2l_date }))
+    ];
     const unreadable = out.unreadable || [];
     // Told once per change (the same open gap isn't repeated after every update).
     const seenFile = path.join(profiles.paths().dir, 'coverage-told.json');
@@ -483,7 +494,7 @@ async function next() {
           after?.(true);
         } catch {}
         // Every import and weekly update ends with Kea's own coverage check (not left to Claude remembering).
-        if (job.task === 'import' || job.task === 'sync') coverageCheck(job.arg).catch((err) => console.error('Coverage', err));
+        if (job.task === 'import' || job.task === 'sync' || job.task === 'daily') coverageCheck(job.task === 'daily' ? '' : job.arg).catch((err) => console.error('Coverage', err));
         // A class's first scan is followed by its whole textbook (one week per run).
         if (job.task === 'import' && job.arg.trim() && !/\bresume\b/.test(job.arg) && settings().get('scholar.studyPdfs', true) !== false) run('study', `missing ${job.arg.trim().split(/\s+/)[0]}`, job.why);
         finish(true, text.trim().slice(0, 4000) || 'Done.');

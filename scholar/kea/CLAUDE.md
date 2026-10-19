@@ -44,6 +44,13 @@ field.** If a command answers with an error, its message says what's wrong.
   (schedules, syllabus tables, lab handouts, transcriptions) that has no calendar item; `coverage-dismiss --course X
   --key <key from coverage --json> --note "<why it isn't separate work>"`. `completeness` and `kea-brief`
   (`not_on_calendar`) include it.
+- D2L's own lists: `d2l-reconcile --course X [--dir <pre-check folder>] [--json]` matches every assignment folder,
+  quiz, discussion topic, graded content topic and grade item to the calendar and lists what's missing (`unmatched`)
+  or on a different day (`drift`). Kea runs it every day; when the pre-check reasons say "D2L lists graded work the
+  calendar doesn't match", fix each line: extract a small file with D2L's wording and date (as
+  `downloads/<CODE>/d2l_dropbox/missed_by_first_scan.txt` does), or, when it truly is already there under another
+  name or isn't graded work, `coverage-dismiss --key d2l:<kind>:<id> --note "<reason>"`. D2L's date wins over a
+  document's.
 - Daily: `digest-deadlines --course X`, `digest-ingest --file X`, `digest-render --course X`,
   `digest-record-sent --course X [--message-id] [--skipped]`; `shells-check --file X`.
 - Textbooks: `study-pdf-due`, `study-pdf-check --banner X`, `study-pdf-build --banner X`, `study-pdf-skip --banner X
