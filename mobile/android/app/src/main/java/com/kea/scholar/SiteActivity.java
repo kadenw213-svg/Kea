@@ -87,6 +87,7 @@ public class SiteActivity extends Activity {
 
             @Override
             public void onPageFinished(WebView view, String u) {
+                currentUrl = u;
                 CookieManager.getInstance().flush();
                 view.evaluateJavascript(ClassSite.CAPTURE_SCRIPT, null);
                 if (ClassSite.onSite(SiteActivity.this, u)) {
@@ -99,8 +100,8 @@ public class SiteActivity extends Activity {
                         // Open the page's upload box so the scanned file can go straight in.
                         view.postDelayed(() -> view.evaluateJavascript(PRESS_UPLOAD, null), 1200);
                     }
-                } else if (tries++ < 3) {
-                    // A sign-in page: try the saved login first.
+                } else if (tries++ < 3 && ClassSite.mayFill(SiteActivity.this, u)) {
+                    // The sign-in page the login was saved on: try it first.
                     String user = Store.secure(SiteActivity.this).getString("user", "");
                     String pass = Store.secure(SiteActivity.this).getString("pass", "");
                     if (!pass.isEmpty()) view.postDelayed(() -> view.evaluateJavascript(ClassSite.fillScript(user, pass), null), 900);
@@ -172,12 +173,17 @@ public class SiteActivity extends Activity {
         + "var b=all.filter(function(el){return /^(BUTTON|D2L-BUTTON|D2L-BUTTON-SUBTLE|A)$/.test(el.tagName)&&/add a file|upload|choose file|browse/i.test((el.innerText||el.getAttribute('text')||el.getAttribute('aria-label')||'').trim());})[0];"
         + "if(b)b.click();})()";
 
+    /** The page actually showing (from the WebView, not from anything a page says about itself). */
+    volatile String currentUrl = "";
+
     final class LoginBridge {
         @JavascriptInterface
         public void save(String user, String pass, String url) {
-            // Only from a sign-in page (not the class site itself), and only a real password.
-            if (pass == null || pass.isEmpty() || ClassSite.onSite(SiteActivity.this, url)) return;
-            android.content.SharedPreferences.Editor e = Store.secure(SiteActivity.this).edit().putString("pass", pass);
+            // Only from a sign-in page over https (not the class site itself), and only a real password. The page's
+            // own claim about where it is isn't trusted: the address shown in the WebView is what's saved with it.
+            String at = currentUrl;
+            if (pass == null || pass.isEmpty() || at == null || !at.toLowerCase().startsWith("https://") || ClassSite.onSite(SiteActivity.this, at)) return;
+            android.content.SharedPreferences.Editor e = Store.secure(SiteActivity.this).edit().putString("pass", pass).putString("loginHost", ClassSite.host(at).toLowerCase());
             if (user != null && !user.isEmpty()) e.putString("user", user);
             e.apply();
         }

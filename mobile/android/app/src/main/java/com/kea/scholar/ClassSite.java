@@ -51,6 +51,26 @@ final class ClassSite {
         return !home.isEmpty() && host(url).equals(host(home)) && !url.matches("(?i).*(/d2l/login|/login).*");
     }
 
+    /**
+     * Whether the saved login may be typed into this page: only the sign-in page it was saved on (its exact host, over
+     * https). A login saved before Kea kept that host is only filled on the school's own domain or a well-known
+     * sign-in service, and the host is then remembered. Never on any other page, so a lookalike page linked from a
+     * course can't collect the password.
+     */
+    static boolean mayFill(Context ctx, String url) {
+        if (url == null || !url.toLowerCase().startsWith("https://")) return false;
+        String h = host(url).toLowerCase();
+        String saved = Store.secure(ctx).getString("loginHost", "");
+        if (!saved.isEmpty()) return h.equals(saved);
+        String[] parts = host(Store.home(ctx)).toLowerCase().split("\\.");
+        String school = parts.length >= 2 ? parts[parts.length - 2] + "." + parts[parts.length - 1] : "";
+        boolean known = (!school.isEmpty() && (h.equals(school) || h.endsWith("." + school)))
+            || h.equals("login.microsoftonline.com") || h.equals("login.live.com") || h.equals("accounts.google.com")
+            || h.endsWith(".okta.com") || h.endsWith(".onelogin.com") || h.endsWith(".duosecurity.com");
+        if (known) Store.secure(ctx).edit().putString("loginHost", h).apply();
+        return known;
+    }
+
     // ---------- Requests with the signed-in session ----------
     static final class Answer {
         int status;
@@ -163,7 +183,7 @@ final class ClassSite {
                         finish.run(true);
                         return;
                     }
-                    if (tries[0]++ >= 4) return;
+                    if (tries[0]++ >= 4 || !mayFill(app, url)) return;
                     // Give the sign-in page a moment to draw its fields, then fill and press its own button.
                     MAIN.postDelayed(() -> {
                         if (!finished[0]) view.evaluateJavascript(fillScript(user, pass), null);
