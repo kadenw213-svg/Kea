@@ -32,7 +32,8 @@ import {
   Trash2,
   Monitor,
   ClipboardCheck,
-  ShieldAlert
+  ShieldAlert,
+  Reply
 } from 'lucide-react';
 import { inboxParts, kindOf } from './inboxFormat';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
@@ -683,8 +684,21 @@ function InboxView({ ctx }: { ctx: Ctx }) {
                 </button>
               </div>
               {parts.text && <div className="ib-body">{parts.text}</div>}
-              {parts.links.length > 0 && (
+              {(parts.links.length > 0 || i.kind === 'message') && (
                 <div className="ib-links">
+                  {i.kind === 'message' && (
+                    <button
+                      className="ib-link primary"
+                      title="Opens the message on your class site with Reply already pressed"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        read(i);
+                        api.scholar.replyMessage(i.url || '', i.course || '').then((r) => !r.replied && toast('The message is open on your class site. Press Reply there.', 'info'));
+                      }}
+                    >
+                      <Reply size={12} /> Reply
+                    </button>
+                  )}
                   {(open === i.id ? parts.links : parts.links.slice(0, 3)).map((l) => (
                     <button
                       key={l.url}

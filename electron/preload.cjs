@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('api', {
     syncNow: () => ipcRenderer.invoke('scholar:syncNow'),
     handIn: (ou, folderId, file) => ipcRenderer.invoke('scholar:handIn', ou, folderId, file),
     openLink: (url) => ipcRenderer.invoke('scholar:openLink', url),
+    replyMessage: (url, course) => ipcRenderer.invoke('scholar:replyMessage', url, course),
     resume: (task) => ipcRenderer.invoke('scholar:resume', task),
     studyList: () => ipcRenderer.invoke('scholar:studyList'),
     studyGet: (id) => ipcRenderer.invoke('scholar:studyGet', id),

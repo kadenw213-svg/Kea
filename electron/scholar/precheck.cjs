@@ -405,6 +405,7 @@ function parseAlerts(html, home) {
   return out;
 }
 
+const notes = [];
 async function updateAlerts(list) {
   const home = browser.schoolInfo().home;
   const homeOu = (home.match(/\/d2l\/home\/(\d+)/) || [])[1];
@@ -439,7 +440,21 @@ async function updateAlerts(list) {
   fs.writeFileSync(inboxFile(), JSON.stringify({ ...box, seeded: true }));
   if (box.seeded) {
     const { Notification } = require('electron');
-    for (const n of fresh.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: n.course ? `${n.course}: ${n.title}` : n.title, body: n.body.slice(0, 200) }).show();
+    for (const n of fresh.slice(0, 5)) {
+      if (!Notification.isSupported()) continue;
+      const note = new Notification({ title: n.course ? `${n.course}: ${n.title}` : n.title, body: `${n.body.slice(0, 180)}${n.kind === 'message' ? ' (click to reply)' : ''}` });
+      // Clicking a message's notification opens it with Reply pressed; anything else opens on the class site.
+      note.on('click', () => {
+        if (n.kind === 'message') {
+          const ou = list.find((c) => c.code === n.course)?.ou;
+          browser.reply(n.url, ou).catch(() => {});
+        } else if (n.url) browser.show(n.url).catch(() => {});
+      });
+      note.show();
+      // (Kept, or Windows can drop the click once the notification object is collected.)
+      notes.push(note);
+      notes.splice(0, Math.max(0, notes.length - 20));
+    }
   }
 }
 

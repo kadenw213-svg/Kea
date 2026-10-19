@@ -136,6 +136,8 @@ export interface KeaApi {
     studyList(): Promise<StudySet[]>;
     /** One set with its questions or cards. */
     studyGet(id: string): Promise<StudySetFull | null>;
+    /** Open a class-site message with its Reply pressed (the student writes and sends it). */
+    replyMessage(url: string, course: string): Promise<{ replied: boolean }>;
     /** Create or replace a set the student made or imported. Returns its id. */
     studySaveMine(set: { id?: string; title: string; courseId: string; cards: { front: string; back: string; chapter?: string | null }[] }): Promise<string>;
     studyStar(k: string, on: boolean): Promise<boolean>;

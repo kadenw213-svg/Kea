@@ -425,6 +425,11 @@ function register() {
   // Grades: Kea's own check of the class site, or what the daily checks recorded before that ran.
   ipcMain.handle('scholar:grades', async (_e, courseId, code) => precheck.readGrades().byCourse[code] || (await db.gradesFromChecks(p().db, courseId)));
   // Links: class-site pages open in Kea's signed-in window; everything else in the web browser.
+  // Reply to a class-site message: the message opens with its Reply already pressed (the student writes and sends).
+  ipcMain.handle('scholar:replyMessage', async (_e, url, course) => {
+    const ou = course ? (await db.watchList(p().db)).find((c) => c.code === course)?.ou : null;
+    return browser.reply(typeof url === 'string' ? url : '', ou);
+  });
   ipcMain.handle('scholar:openLink', (_e, url) => {
     if (!/^https?:\/\//i.test(String(url))) return false;
     if (browser.isClassSite(url)) return browser.show(url);

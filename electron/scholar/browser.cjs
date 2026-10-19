@@ -357,6 +357,44 @@ async function show(url) {
 }
 
 /**
+ * Answer a class-site message: open the message itself in Kea's window and press the page's own Reply, so the student
+ * lands on a reply already addressed to the sender. Kea never writes or sends anything: the student does. When the
+ * message has no link of its own, its class's message list opens instead. Returns { replied }.
+ */
+async function reply(url, ou) {
+  const s = readSchool();
+  const target = url && onSite(url) ? url : s.home && ou ? new URL(`/d2l/lms/email/frame.d2l?ou=${encodeURIComponent(ou)}`, s.home).href : s.home;
+  if (!target) throw new Error('No class site is set up yet.');
+  const w = await load(target);
+  w.setTitle('Kea: reply to a message');
+  w.show();
+  w.focus();
+  if (!(await ensureSignedIn(w))) return { replied: false };
+  if (!onSite(w.webContents.getURL())) await load(target);
+  if (!url) return { replied: false };
+  // The message is drawn inside frames and web components, a moment after loading: look for its Reply a few times.
+  const press = `(() => {
+    const roots = [document];
+    for (let i = 0; i < roots.length; i++) for (const el of roots[i].querySelectorAll('*')) if (el.shadowRoot) roots.push(el.shadowRoot);
+    for (const r of roots)
+      for (const b of r.querySelectorAll('button, a, [role=button], d2l-button, d2l-button-subtle, d2l-button-icon, input[type=button]')) {
+        const label = (b.getAttribute('text') || b.getAttribute('aria-label') || b.getAttribute('title') || b.value || b.textContent || '').trim();
+        if (/^reply$/i.test(label) && b.offsetParent !== null) { b.click(); return true; }
+      }
+    return false;
+  })()`;
+  for (let tries = 0; tries < 15; tries++) {
+    for (const f of w.webContents.mainFrame.framesInSubtree) {
+      try {
+        if (await f.executeJavaScript(press)) return { replied: true };
+      } catch {}
+    }
+    await sleep(800);
+  }
+  return { replied: false };
+}
+
+/**
  * Hand in a file: open the assignment folder's own D2L submission page in Kea's window and put the file in its upload
  * box, the same as the student choosing it there. Kea never presses Submit: the student checks the page and submits.
  * Returns { attached } (false when the page's upload box couldn't be found; the page is open either way).
@@ -497,4 +535,4 @@ function onLoginSubmitted(e, form) {
 
 const remembering = (e) => (e.returnValue = !!(wantsRemember() && win && !win.isDestroyed() && e.sender === win.webContents));
 
-module.exports = { open, show, handIn, isClassSite, fetchText, getJson, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
+module.exports = { open, show, reply, handIn, isClassSite, fetchText, getJson, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };

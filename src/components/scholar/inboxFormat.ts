@@ -64,7 +64,7 @@ export function inboxParts(i: ScholarInboxItem): { text: string; links: { label:
     lines.push(l.replace(/[ \t]+$/, ''));
   }
   const text = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-  if (i.url && !found.some((l) => l.url === i.url)) found.push({ label: i.kind === 'announcement' ? 'Open announcement' : 'Open on the class site', url: i.url });
+  if (i.url && !found.some((l) => l.url === i.url)) found.push({ label: i.kind === 'announcement' ? 'Open announcement' : i.kind === 'message' ? 'Open message' : 'Open on the class site', url: i.url });
   const seen = new Set<string>();
   return { text, links: found.filter((l) => !seen.has(l.url) && seen.add(l.url)).slice(0, 6) };
 }
