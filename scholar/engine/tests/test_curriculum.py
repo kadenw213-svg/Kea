@@ -124,7 +124,9 @@ def test_explanations_must_teach():
     bare = {"type": "num", "level": "apply", "q": "Density?", "answer": 1.26}
     assert any("symbols" in p for p in _explain_problems(bare, "d = m/V = 31.5 g / 25.0 mL = 1.26 g/mL, three significant figures kept throughout."))
     good = "Density is mass per volume: d = m/V, where d is the density in g/mL, m the mass in grams and V the volume in mL. 31.5 g / 25.0 mL = 1.26 g/mL."
-    assert _explain_problems(bare, good) == []
+    worked = {**bare, "steps": ["Find the density d.", "Formula: d = m/V.", "d = 31.5 / 25.0 = 1.26 g/mL."]}
+    assert _explain_problems(worked, good) == []
+    assert any("steps" in p for p in _explain_problems(bare, good))
     assert any("thin" in p for p in _explain_problems(bare, "31.5 / 25.0 = 1.26 g/mL."))
     # Solving for x is algebra, not a formula with symbols to define.
     assert not any("symbols" in p for p in _explain_problems({"type": "mc"}, "Subtract 3 from both sides, then x = (12 - 3)/3 = 3."))

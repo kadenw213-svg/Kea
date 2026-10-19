@@ -4,7 +4,7 @@
 // something to study, so there aren't different buttons doing the same thing in different places.
 import { useEffect, useState } from 'react';
 import { Brain, ClipboardList, Layers, Loader2, Repeat, Shapes, Sparkles } from 'lucide-react';
-import { api, ReviewQueue } from '../../lib/api';
+import { api, PoolItem, ReviewQueue } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
 import { useScholar } from './scholarStore';
@@ -32,6 +32,22 @@ export const parseScope = (id: string): StudyScope | null => {
 // The same scope always opens the same practice exam and deck, so their scores and Learn progress build up.
 const stableId = (kind: string, s: StudyScope) => `${kind}-hub${(s.courseId + (s.itemId || '') + s.chapters.join('')).toLowerCase().replace(/[^a-z0-9]+/g, '')}`.slice(0, 60);
 const SIZES = [10, 25, 50];
+type Which = 'all' | 'new' | 'missed' | 'starred';
+const WHICH: [Which, string][] = [
+  ['all', 'All'],
+  ['new', 'Not seen yet'],
+  ['missed', 'Ones I missed'],
+  ['starred', 'Starred']
+];
+const isMissed = (p: PoolItem) => p.lastRight === false || (p.seen > 0 && p.right < p.seen && p.lastRight !== true);
+const shuffled = <T,>(a: T[]) => {
+  const b = [...a];
+  for (let i = b.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [b[i], b[j]] = [b[j], b[i]];
+  }
+  return b;
+};
 
 export function StudyHub({ scope }: { scope: StudyScope }) {
   const sets = useStudySets();
@@ -40,6 +56,20 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   const [saved, setSaved] = useState<{ exam: number; cards: number } | null>(null);
   const [size, setSize] = useState(25);
   const [busy, setBusy] = useState('');
+  // What to study: the topics (textbook sections) picked, none meaning all; and which of their questions.
+  const [pool, setPool] = useState<PoolItem[] | null>(null);
+  const [topics, setTopics] = useState<string[]>([]);
+  const [which, setWhich] = useState<Which>('all');
+  useEffect(() => {
+    api.scholar
+      .studyPool({ courseId: scope.courseId, chapters: scope.chapters })
+      .then(setPool)
+      .catch(() => setPool([]));
+  }, [scope.courseId, scope.chapters.join('|'), sets?.length]);
+  const sectionsOf = [...new Set((pool || []).map((p) => p.section || 'Other'))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const inTopics = (pool || []).filter((p) => !topics.length || topics.includes(p.section || 'Other'));
+  const picked = inTopics.filter((p) => (which === 'new' ? !p.seen && p.box == null : which === 'missed' ? isMissed(p) : which === 'starred' ? p.starred : true));
+  const narrowed = topics.length > 0 || which !== 'all';
   const target = scope.itemId ? { itemId: scope.itemId } : { chapters: scope.chapters };
   useEffect(() => {
     api.scholar
@@ -62,9 +92,17 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   const open = async (kind: 'exam' | 'cards', count: number, mode = '') => {
     setBusy(kind + mode);
     try {
-      // No flashcards yet: the saved questions, as cards.
-      if (kind === 'cards' && !cards) {
-        const id = await api.scholar.studyMake({ id: stableId('exam-all', scope), kind: 'exam', courseId: scope.courseId, ...target, mode: 'saved', count: exam });
+      // A practice exam of exactly what's picked (missed ones first when there are more than asked for).
+      if (kind === 'exam' && narrowed) {
+        const keys = [...shuffled(picked.filter(isMissed)), ...shuffled(picked.filter((p) => !isMissed(p)))].slice(0, count).map((p) => p.k);
+        const id = await api.scholar.studyMake({ id: stableId('exam-pick', scope), kind: 'exam', courseId: scope.courseId, ...target, mode: 'saved', count: keys.length, pick: keys });
+        useScholar.getState().set({ study: id });
+        return;
+      }
+      // No flashcards yet (or a narrowed choice): the saved questions, as cards.
+      if (kind === 'cards' && (!cards || narrowed)) {
+        const keys = narrowed ? picked.map((p) => p.k) : undefined;
+        const id = await api.scholar.studyMake({ id: stableId(narrowed ? 'exam-pickc' : 'exam-all', scope), kind: 'exam', courseId: scope.courseId, ...target, mode: 'saved', count: keys ? keys.length : exam, ...(keys ? { pick: keys } : {}) });
         useScholar.getState().set({ study: `qcards:${id}${mode ? `#${mode}` : ''}` });
         return;
       }
@@ -76,8 +114,8 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
       setBusy('');
     }
   };
-  const review = () => useScholar.getState().set({ study: `review:${scope.courseId}:${encodeURIComponent(scope.chapters.join('|'))}` });
-  const exam = saved?.exam || 0;
+  const review = () => useScholar.getState().set({ study: `review:${scope.courseId}:${encodeURIComponent(scope.chapters.join('|'))}:${encodeURIComponent(topics.join('|'))}` });
+  const exam = narrowed ? picked.length : saved?.exam || 0;
   const cards = saved?.cards || 0;
 
   return (
@@ -105,17 +143,48 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
         </div>
       )}
 
+      {(pool?.length || 0) > 0 && (
+        <div className="hub-pick">
+          <div className="hub-pick-row">
+            <span className="hub-pick-label">Topics</span>
+            <button className={`st-chip ${!topics.length ? 'on' : ''}`} onClick={() => setTopics([])}>
+              All
+            </button>
+            {sectionsOf.map((s) => {
+              const n = (pool || []).filter((p) => (p.section || 'Other') === s).length;
+              const on = topics.includes(s);
+              return (
+                <button key={s} className={`st-chip ${on ? 'on' : ''}`} onClick={() => setTopics(on ? topics.filter((x) => x !== s) : [...topics, s])} title={s}>
+                  {s.length > 44 ? `${s.slice(0, 42)}…` : s} <span className="muted">{n}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="hub-pick-row">
+            <span className="hub-pick-label">Questions</span>
+            {WHICH.map(([w, label]) => {
+              const n = inTopics.filter((p) => (w === 'new' ? !p.seen && p.box == null : w === 'missed' ? isMissed(p) : w === 'starred' ? p.starred : true)).length;
+              return (
+                <button key={w} className={`st-chip ${which === w ? 'on' : ''}`} disabled={!n && w !== 'all'} onClick={() => setWhich(w)}>
+                  {label} <span className="muted">{n}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="hub-modes">
         <button className="hub-mode primary" onClick={review} disabled={!total}>
           <Repeat size={20} />
           <b>Review</b>
-          <span>{total ? (due ? `${due} due now` : 'Ready when you are') : 'No questions yet'}</span>
+          <span>{total ? (topics.length ? `${topics.length} topic${topics.length > 1 ? 's' : ''} picked` : due ? `${due} due now` : 'Ready when you are') : 'No questions yet'}</span>
           <small>Spaced, so everything comes back before the test</small>
         </button>
         <div className="hub-mode">
           <ClipboardList size={20} />
           <b>Practice exam</b>
-          <span>{exam ? `From ${exam} saved questions, shuffled` : saved ? 'No questions yet' : '…'}</span>
+          <span>{exam ? (narrowed ? `From the ${exam} you picked` : `From ${exam} saved questions, shuffled`) : narrowed ? 'None match what you picked' : saved ? 'No questions yet' : '…'}</span>
           {exam > 0 && (
             <div className="hub-sizes">
               {SIZES.filter((n) => n < exam).map((n) => (
@@ -139,10 +208,10 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
             ['match', 'Match', Shapes, 'Race to pair terms and meanings']
           ] as const
         ).map(([mode, label, Icon, sub]) => (
-          <button key={label} className="hub-mode" disabled={(!cards && (mode === 'match' || !exam)) || !!busy} onClick={() => open('cards', cards || exam, mode)}>
+          <button key={label} className="hub-mode" disabled={((!cards || narrowed) && (mode === 'match' || !exam)) || !!busy} onClick={() => open('cards', cards || exam, mode)}>
             <Icon size={20} />
             <b>{label}</b>
-            <span>{cards ? `${cards} cards` : mode === 'match' ? 'Needs flashcards' : exam ? `${exam} questions as cards` : 'No cards yet'}</span>
+            <span>{cards && !narrowed ? `${cards} cards` : mode === 'match' ? 'Needs flashcards' : exam ? `${exam} questions as cards` : 'No cards yet'}</span>
             <small>{sub}</small>
           </button>
         ))}

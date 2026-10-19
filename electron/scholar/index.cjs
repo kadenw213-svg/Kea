@@ -347,6 +347,22 @@ async function keepBanks() {
         break;
       }
     }
+    // Then worked step-by-step solutions for the questions that have none, a chapter at a time, soonest test first.
+    for (let n = 0; n < 50 && settings.get('scholar.workedSteps', true) !== false; n++) {
+      const today = new Date().toDateString();
+      if (bankRuns.day !== today) bankRuns = { day: today, n: 0 };
+      if (bankRuns.n >= BANK_RUNS) break;
+      const p = profiles.paths();
+      const chapters = await db.textbookChapters(p.db, p.textbooks);
+      const need = study.stepsNeed(chapters);
+      if (!need) break;
+      const code = (await db.courses(p.db, p.textbooks, {}).catch(() => [])).find((c) => c.id === need.courseId)?.code;
+      if (!code) break;
+      bankRuns.n++;
+      const done = await runner.run('steps', `${code} ${need.label}`, 'schedule');
+      // (No progress on that chapter: stop rather than ask again today.)
+      if (!done || done.paused || study.stepsNeed([{ courseId: need.courseId, label: need.label }])?.missing >= need.missing) break;
+    }
   } catch (err) {
     console.error('Question banks', err);
   } finally {
@@ -557,6 +573,18 @@ function register() {
     return id;
   });
   ipcMain.handle('scholar:studySaved', (_e, req) => study.saved(req));
+  // Worked steps for a question's chapter, now (the student missed one that has none yet).
+  ipcMain.handle('scholar:studyStepsFor', (_e, k) => {
+    const w = study.whereIs(String(k));
+    if (!w?.courseCode || !w.chapter) throw new Error('Kea couldn’t find which chapter this question is from.');
+    const arg = `${w.courseCode} ${w.chapter}`;
+    if (devices.follower()) return (devices.relay({ task: 'steps', arg }), { queued: true, ...w });
+    const st = runner.status();
+    if (![st.running, ...st.queued].some((j) => j && j.task === 'steps' && j.arg === arg)) runner.run('steps', arg, 'manual');
+    return { queued: true, ...w };
+  });
+  // The saved questions of some chapters with how each has gone, for choosing exactly what to study.
+  ipcMain.handle('scholar:studyPool', (_e, { courseId, chapters }) => study.pool(String(courseId || ''), Array.isArray(chapters) ? chapters.map(String) : []));
   // The textbook PDF open in a tab: which class and chapters it is, for its Quiz me button.
   ipcMain.handle('scholar:textbookOf', (_e, file) => db.textbookOf(p().db, p().textbooks, file));
   // A chapter with no saved questions yet: write its bank now (on the primary). False when Claude isn't available.

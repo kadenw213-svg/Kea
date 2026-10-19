@@ -11,6 +11,7 @@ import { reloadScholar, useScholar } from './scholarStore';
 import { Exam, grade, QuestionCard, Shown, Answer, shuffle } from './Study';
 import { ReadingContext, useMissReading } from './ReadingPane';
 import { MathText } from './MathText';
+import { openStudyHub } from './StudyHub';
 
 // ---------- Small shared pieces ----------
 /** Read a side aloud with the computer's own voice (nothing leaves the computer). */
@@ -463,7 +464,7 @@ const testIn = (t: ReviewItem['test']) => {
   return days <= 0 ? `${t.title} is today` : days === 1 ? `${t.title} is tomorrow` : `${t.title} in ${days} days`;
 };
 
-export function Review({ courseId, chapters = [] }: { courseId: string; chapters?: string[] }) {
+export function Review({ courseId, chapters = [], sections = [] }: { courseId: string; chapters?: string[]; sections?: string[] }) {
   const [queue, setQueue] = useState<ReviewQueue | null>(null);
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [pos, setPos] = useState(0);
@@ -476,7 +477,7 @@ export function Review({ courseId, chapters = [] }: { courseId: string; chapters
   // Studying ahead: the unseen questions too, past today's few new ones.
   const [ahead, setAhead] = useState(false);
   const load = (more = ahead) =>
-    api.scholar.studyReview({ courseId, chapters, ...(more ? { newPerDay: 1000, limit: 30 } : {}) }).then((q) => {
+    api.scholar.studyReview({ courseId, chapters, sections, ...(more ? { newPerDay: 1000, limit: 30 } : {}) }).then((q) => {
       setQueue(q);
       // Due ones first; new ones mixed in among them so a session isn't all new at the end.
       const fresh = [...q.fresh];
@@ -491,7 +492,7 @@ export function Review({ courseId, chapters = [] }: { courseId: string; chapters
     });
   useEffect(() => {
     load();
-  }, [courseId, chapters.join('|')]);
+  }, [courseId, chapters.join('|'), sections.join('|')]);
   const clear = () => (setFlipped(false), setAnswer(null), setRevealed(false), setJudged(undefined), setSelf(undefined));
   const it = items[pos];
   const shown: Shown | null = useMemo(() => {
@@ -509,7 +510,7 @@ export function Review({ courseId, chapters = [] }: { courseId: string; chapters
   const lookUp = () => {
     if (!it) return;
     const x = it.item as StudyCard & StudyQuestion;
-    missReading({ chapter: it.chapter, section: x.section, topic: x.topic, query: it.kind === 'card' ? `${x.front} ${x.back}` : `${x.q} ${typeof x.answer === 'string' ? x.answer : ''}`, key: it.k });
+    missReading({ chapter: it.chapter, section: x.section, topic: x.topic, query: it.kind === 'card' ? `${x.front} ${x.back}` : `${x.q} ${typeof x.answer === 'string' ? x.answer : ''}`, key: it.k, steps: it.kind === 'card' ? undefined : x.steps });
   };
   useEffect(() => {
     if (result === false) lookUp();
@@ -642,9 +643,58 @@ export function Review({ courseId, chapters = [] }: { courseId: string; chapters
 }
 
 /** The review summary on My resources: what's due per class, and a button to start. */
+/** Pick a class and its chapters, then study exactly those (topics and which questions are chosen on the Study page). */
+function StudyPicker({ classes }: { classes: { id: string; code: string }[] }) {
+  const [cid, setCid] = useState(classes[0]?.id || '');
+  const [chapters, setChapters] = useState<{ label: string; title: string | null }[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
+  useEffect(() => {
+    setPicked([]);
+    if (cid) api.scholar.course(cid).then((c) => setChapters((c?.chapters || []).filter((ch) => ch.pdf).map((ch) => ({ label: ch.label, title: ch.title }))));
+  }, [cid]);
+  const code = classes.find((c) => c.id === cid)?.code || '';
+  const go = () => {
+    const chs = chapters.map((c) => c.label).filter((l) => picked.includes(l));
+    openStudyHub({ courseId: cid, code, title: chs.length === 1 ? `${chs[0]}${chapters.find((c) => c.label === chs[0])?.title ? `: ${chapters.find((c) => c.label === chs[0])?.title}` : ''}` : `${code}: ${chs.map((c) => c.replace(/^Chapter /, 'Ch ')).join(', ')}`, chapters: chs });
+  };
+  return (
+    <div className="sm-picker">
+      <div className="hub-pick-row">
+        <span className="hub-pick-label">Class</span>
+        {classes.map((c) => (
+          <button key={c.id} className={`st-chip ${cid === c.id ? 'on' : ''}`} onClick={() => setCid(c.id)}>
+            {c.code}
+          </button>
+        ))}
+      </div>
+      <div className="hub-pick-row">
+        <span className="hub-pick-label">Chapters</span>
+        <button className={`st-chip ${picked.length === chapters.length && chapters.length ? 'on' : ''}`} onClick={() => setPicked(picked.length === chapters.length ? [] : chapters.map((c) => c.label))}>
+          All
+        </button>
+        {chapters.map((ch) => {
+          const on = picked.includes(ch.label);
+          return (
+            <button key={ch.label} className={`st-chip ${on ? 'on' : ''}`} title={ch.title || ''} onClick={() => setPicked(on ? picked.filter((x) => x !== ch.label) : [...picked, ch.label])}>
+              {ch.label.replace(/^Chapter /, 'Ch ')}
+            </button>
+          );
+        })}
+      </div>
+      <div className="sm-picker-go">
+        <button className="btn primary sm" disabled={!picked.length} onClick={go}>
+          Study {picked.length ? `${picked.length} chapter${picked.length > 1 ? 's' : ''}` : ''}
+        </button>
+        <span className="muted">Then pick topics and which questions (new, missed, starred).</span>
+      </div>
+    </div>
+  );
+}
+
 export function ReviewBanner({ courseId = '' }: { courseId?: string }) {
   const version = useScholar((s) => s.version);
   const [q, setQ] = useState<ReviewQueue | null>(null);
+  const [pickOpen, setPickOpen] = useState(false);
   useEffect(() => {
     api.scholar.studyReview({ courseId, limit: 1000 }).then(setQ).catch(() => {});
   }, [version, courseId]);
@@ -654,6 +704,7 @@ export function ReviewBanner({ courseId = '' }: { courseId?: string }) {
   const fresh = Math.min(q.newToday, counts.reduce((n, [, c]) => n + c.fresh, 0));
   if (!counts.length) return null;
   const start = (id: string) => useScholar.getState().set({ study: `review:${id}` });
+  const [picking, setPicking] = [pickOpen, setPickOpen];
   // Each class: what's due, how much is mastered, and its next test; the soonest test first.
   const rows = counts.sort(([, a], [, b]) => (a.test?.date || '9999').localeCompare(b.test?.date || '9999'));
   return (
@@ -664,10 +715,14 @@ export function ReviewBanner({ courseId = '' }: { courseId?: string }) {
           {fresh > 0 && <span className="muted"> · {fresh} new today</span>}
           <div className="muted sm-banner-sub">Spaced so every question comes back before its test, shared between your classes.</div>
         </div>
+        <button className="btn sm" onClick={() => setPicking(!picking)}>
+          Choose what to study
+        </button>
         <button className="btn primary sm" disabled={!due && !fresh} onClick={() => start(courseId || 'all')}>
           {due || fresh ? 'Review all' : 'All caught up'}
         </button>
       </div>
+      {picking && <StudyPicker classes={rows.map(([id, c]) => ({ id, code: c.code })).filter((c) => c.code)} />}
       <div className="sm-classes">
         {rows.map(([id, c]) => {
           const days = c.test ? Math.round((Date.parse(`${c.test.date}T12:00`) - Date.now()) / 864e5) : null;

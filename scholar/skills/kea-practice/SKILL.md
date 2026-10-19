@@ -101,6 +101,11 @@ Every question has:
     reason ("convert mL to L first, because molarity is per liter"), and a sanity check of the answer's size or units;
   - for `mc`: also why the most tempting wrong choice is wrong (the mistake it comes from).
   Kea's check rejects explanations that use a formula without saying what its symbols mean.
+- `steps`: the worked solution, as a list of short steps the student follows when they miss it (Kea shows them
+  numbered). Calculations: 3 to 8 steps (what's asked and given with units; the formula by name with every symbol
+  defined; conversions first, with why; rearrange, substitute, compute; the answer with units and a sense check).
+  Concept questions: 2 to 5 steps of reasoning (the deciding rule, how it applies here, why the tempting wrong choice
+  fails). Every question except `short` has steps; Kea's check rejects calculations without them.
 - `chapter`: the chapter label it tests ("Chapter 5"); `topic`: the idea it tests in a few words, using the
   textbook's own term ("Boyle's law", "molarity").
 - `section`: the textbook section that teaches the answer, exactly as the chapter's `Sections:` line in the brief
@@ -150,7 +155,7 @@ each part with how far along you are:
   { "type": "mc", "q": "…", "choices": ["…", "…", "…", "…"], "answer": 2, "level": "apply", "explain": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law", "source": "FunSheet Ch 5" },
   { "type": "multi", "q": "Select all that apply: …", "choices": ["…", "…", "…", "…", "…"], "answer": [0, 3], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "tf", "q": "…", "answer": false, "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
-  { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "calc": "745/760*5.60/2.24", "level": "multistep", "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "calc": "745/760*5.60/2.24", "level": "multistep", "explain": "…", "steps": ["Find …. Given: …", "Formula: …, where …", "Convert …", "Substitute: …", "Answer: 2.45 atm, which makes sense because …"], "chapter": "…", "topic": "…", "source": "…" },
   { "type": "blank", "q": "The pressure of a gas is inversely proportional to its volume at constant temperature; this is ____ law.", "answer": "Boyle's", "accept": ["Boyle"], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "short", "q": "…", "answer": "…", "explain": "…", "chapter": "…", "topic": "…", "source": "…" }
 ] }

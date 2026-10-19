@@ -7,6 +7,7 @@ import { api } from '../../lib/api';
 import { loadPdf, PDFDocumentProxy } from '../../editors/pdf/pdfjs';
 import { findChapter, OutlineEntry, readOutline } from '../../lib/pdfTarget';
 import { useSetting, useSettings } from '../../lib/settings';
+import { MathText } from './MathText';
 
 export interface ReadingTarget {
   chapter: string;
@@ -17,6 +18,8 @@ export interface ReadingTarget {
   query?: string;
   /** Opened by itself after a miss (not the student's click): shown only when Kea is sure it found the place. */
   auto?: boolean;
+  /** The question's worked solution, shown above the book. */
+  steps?: string[];
   /** Which question asked (the open icon is shown as on). */
   key?: string;
 }
@@ -35,14 +38,14 @@ export const ReadingContext = createContext<{ has(chapter?: string | null): bool
 export function useMissReading() {
   const r = useContext(ReadingContext);
   const on = useSetting<boolean>('scholar.autoReading') !== false;
-  return (t: { chapter?: string | null; section?: string | null; topic?: string | null; query?: string; key?: string }) => {
+  return (t: { chapter?: string | null; section?: string | null; topic?: string | null; query?: string; key?: string; steps?: string[] }) => {
     if (!on || !t.chapter || !r.has(t.chapter)) return;
-    r.open({ chapter: t.chapter, section: t.section, topic: t.topic, query: t.query, key: t.key || `${t.chapter}|${t.section || ''}|${t.topic || ''}`, auto: true });
+    r.open({ chapter: t.chapter, section: t.section, topic: t.topic, query: t.query, key: t.key || `${t.chapter}|${t.section || ''}|${t.topic || ''}`, auto: true, steps: t.steps });
   };
 }
 
 /** The book icon on a question or card. */
-export function ReadingButton({ chapter, section, topic, query, id }: { chapter?: string | null; section?: string | null; topic?: string | null; query?: string; id?: string }) {
+export function ReadingButton({ chapter, section, topic, query, id, steps }: { chapter?: string | null; section?: string | null; topic?: string | null; query?: string; id?: string; steps?: string[] }) {
   const r = useContext(ReadingContext);
   if (!chapter || !r.has(chapter)) return null;
   const key = id || `${chapter}|${section || ''}|${topic || ''}`;
@@ -54,7 +57,7 @@ export function ReadingButton({ chapter, section, topic, query, id }: { chapter?
       title={`Read ${where ? `about ${where}` : chapter} beside the quiz`}
       onClick={(e) => {
         e.stopPropagation();
-        r.open({ chapter, section, topic, query, key });
+        r.open({ chapter, section, topic, query, key, steps });
       }}
     >
       <BookOpen size={15} />
@@ -180,6 +183,27 @@ async function locate(b: Book, t: ReadingTarget): Promise<Spot> {
 }
 
 // ---------- The pane ----------
+/** The question's worked solution above the book: how to solve it first, the textbook's teaching below. */
+function StepsPanel({ steps }: { steps: string[] }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rp-steps">
+      <button className="st-steps-head" onClick={() => setOpen(!open)}>
+        How to solve it <span className="muted">· {open ? 'hide' : `${steps.length} steps`}</span>
+      </button>
+      {open && (
+        <ol>
+          {steps.map((s, i) => (
+            <li key={i}>
+              <MathText text={s} />
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 /** One page, drawn when it scrolls into view. */
 function Page({ pdf, n, width, ratio, root }: { pdf: PDFDocumentProxy; n: number; width: number; ratio: number; root: HTMLElement | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -281,6 +305,7 @@ export function ReadingPane({ file, target, onClose }: { file: string; target: R
           <X size={15} />
         </button>
       </div>
+      {target.steps?.length ? <StepsPanel steps={target.steps} /> : null}
       <div className={`st-reading-pages ${dark ? 'dark' : ''}`} ref={scroller}>
         {error ? <p className="muted">{error}</p> : !doc ? <div className="spinner" /> : Array.from({ length: doc.pdf.numPages }, (_, i) => <Page key={i} pdf={doc.pdf} n={i} width={width} ratio={doc.ratio} root={scroller.current} />)}
         {mark && <div key={mark.at} className="rp-mark" style={{ top: mark.top, width }} />}

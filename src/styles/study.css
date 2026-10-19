@@ -1015,3 +1015,84 @@ button.hub-mode:hover:not(:disabled) {
     width: 100%;
   }
 }
+
+/* A question's worked solution */
+.st-steps {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.st-steps.none {
+  background: transparent;
+  border-style: dashed;
+}
+.st-steps-head {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+.st-steps ol {
+  margin: 8px 0 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 6px;
+  line-height: 1.5;
+}
+.st-disputed {
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  color: var(--warn, #c98a12);
+}
+.rp-steps {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  max-height: 45%;
+  overflow: auto;
+}
+.rp-steps ol {
+  margin: 8px 0 2px;
+  padding-left: 22px;
+  display: grid;
+  gap: 6px;
+  line-height: 1.5;
+  font-size: 13.5px;
+}
+
+/* Choosing exactly what to study: topics and which questions */
+.hub-pick {
+  display: grid;
+  gap: 8px;
+}
+.hub-pick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.hub-pick-label {
+  width: 78px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.sm-picker {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.sm-picker-go {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}

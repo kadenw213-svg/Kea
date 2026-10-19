@@ -121,7 +121,7 @@ export interface KeaApi {
     signInClaude(): Promise<ClaudeAccount>;
     setupEngine(): Promise<boolean>;
     /** On a device that isn't the primary, the primary is asked instead: `relayed` names it. */
-    run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe' | 'curriculum', arg?: string): Promise<boolean | { relayed: string; online: boolean }>;
+    run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe' | 'curriculum' | 'steps', arg?: string): Promise<boolean | { relayed: string; online: boolean }>;
     /** Your devices: the drive they sync through, which one is the primary, and what it's running. */
     devices(): Promise<DevicesStatus>;
     /** Classes other devices share, found in every drive on this one, and what's missing when there are none. */
@@ -160,13 +160,15 @@ export interface KeaApi {
     studyLearn(id: string, levels: Record<string, number> | null): Promise<boolean>;
     /** Record a Match time; returns the best. */
     studyMatch(id: string, ms: number): Promise<number | null>;
-    studyReview(opts?: { courseId?: string; chapters?: string[]; limit?: number; newPerDay?: number }): Promise<ReviewQueue>;
+    studyReview(opts?: { courseId?: string; chapters?: string[]; sections?: string[]; limit?: number; newPerDay?: number }): Promise<ReviewQueue>;
     studyReviewMark(k: string, grade: 'again' | 'good' | 'easy', ctx: { courseId: string; chapter: string | null }): Promise<{ box: number; due: string }>;
     /** Ask Claude for a new set (for a test or assignment, or for chapters). Resolves with its id once queued. */
     /** mode: 'mix' reuses up to 60% saved questions and has Claude write the rest; 'saved' uses saved ones only (ready at once); 'new' writes them all. */
-    studyMake(req: { id?: string; kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number; mode?: 'mix' | 'saved' | 'new' }): Promise<string>;
+    studyMake(req: { id?: string; kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number; mode?: 'mix' | 'saved' | 'new'; /** Exactly these saved questions (keys). */ pick?: string[] }): Promise<string>;
     /** How many saved questions (or cards) a set on these chapters, or for this test, could reuse. */
     studySaved(req: { kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null }): Promise<{ count: number }>;
+    studyPool(req: { courseId: string; chapters: string[] }): Promise<PoolItem[]>;
+    studyStepsFor(k: string): Promise<{ queued: boolean; courseCode: string; chapter: string }>;
     /** Which class and chapters a textbook PDF is (for Quiz me), or null. */
     textbookOf(file: string): Promise<{ courseId: string; code: string; chapters: string[] } | null>;
     /** Write question banks for chapters that have none (on the primary); false when Claude isn't connected. */
@@ -634,8 +636,26 @@ export interface StudySet {
   last: { at: string; score: number; total: number; n: number } | null;
   known: number;
 }
-/** k: the question's key (the same question in two sets has the same key); section: the textbook section that answers it. */
-type QuestionBase = { k?: string; explain: string; chapter: string | null; section?: string | null; topic: string | null; source: string | null };
+/** One saved question and how it has gone (for choosing what to study). */
+export interface PoolItem {
+  k: string;
+  chapter: string | null;
+  section: string | null;
+  topic: string | null;
+  type: string;
+  level: string | null;
+  seen: number;
+  right: number;
+  lastRight: boolean | null;
+  box: number | null;
+  starred: boolean;
+  steps: boolean;
+}
+/**
+ * k: the question's key (the same question in two sets has the same key); section: the textbook section that answers
+ * it; steps: its worked solution; answerDisputed: the steps writer found the stored answer may be wrong.
+ */
+type QuestionBase = { k?: string; explain: string; chapter: string | null; section?: string | null; topic: string | null; source: string | null; steps?: string[]; answerDisputed?: boolean };
 export type StudyQuestion = QuestionBase &
   (
   | { type: 'mc'; q: string; choices: string[]; answer: number; explain: string; chapter: string | null; topic: string | null; source: string | null }

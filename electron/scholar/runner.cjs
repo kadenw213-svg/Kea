@@ -40,6 +40,8 @@ const TASKS = {
   // A class's chapters held to its syllabus: outcomes and topical outline recorded and each taught by a chapter whose
   // notes carry it, every chapter's notes complete (sections from the slides or the book), the textbook and testing
   // guidelines recorded. Reads the class site, the book's own contents and the school's published course outlines.
+  // Worked step-by-step solutions for one chapter's saved questions that have none ("CODE Chapter 5").
+  steps: { prompt: (arg) => `/kea-steps ${arg || ''}`.trim(), tools: [...BASE, 'mcp__kea__kea_progress'], label: 'Writing step-by-step solutions' },
   curriculum: { prompt: (arg) => `/kea-curriculum ${arg || ''}`.trim(), tools: [...BASE, ...KEA_TOOLS, ...REFERENCE, 'WebSearch'], label: 'Matching chapters to the syllabus' }
 };
 // Publishers' contents pages, colleges' sites (published course outlines and master syllabi) and the course-catalog
@@ -314,6 +316,35 @@ TASKS.curriculum.pre = async (job, step) => {
 };
 
 TASKS.practice.afterResume = (job) => (ok) => require('./study.cjs').ingest(job.arg, ok);
+
+// Steps: Kea lists the chapter's questions without a worked solution (with their answers and explanations); Claude
+// writes the steps into a file; Kea saves them into the questions (each keeps its key, so progress carries on).
+async function stepsTarget(arg) {
+  const [code, ...rest] = String(arg || '').trim().replace(/\s+resume$/, '').split(/\s+/);
+  const label = rest.join(' ');
+  const course = (await db().courses(profiles.paths().db, profiles.paths().textbooks, {}).catch(() => [])).find((c) => c.code === code);
+  return { code, label, course };
+}
+function stepsAfter(code, label, course) {
+  if (!course) return;
+  const study = require('./study.cjs');
+  const out = path.join(profiles.paths().workspace, 'data', 'study', 'steps', code, `${label}.steps.json`);
+  if (!fs.existsSync(out)) return;
+  const n = study.applyFixes(course.id, readJson(out, []));
+  fs.renameSync(out, `${out}.applied-${Date.now()}`);
+  if (n) send('scholar:changed');
+}
+TASKS.steps.pre = async (job, step) => {
+  const { code, label, course } = await stepsTarget(job.arg);
+  if (!course || !label) return { skip: 'Kea couldn’t find that chapter.', ok: false };
+  step(`Listing ${label}'s questions that need worked steps…`);
+  const b = require('./study.cjs').stepsBrief(course.id, code, label);
+  if (!b.count) return { skip: `${code} ${label}: every question already has its worked steps.`, ok: true };
+  return { prompt: `/kea-steps ${b.brief} ${b.output}`, after: (ok) => ok && stepsAfter(code, label, course) };
+};
+TASKS.steps.afterResume = (job) => (ok) => {
+  if (ok) stepsTarget(job.arg).then(({ code, label, course }) => stepsAfter(code, label, course));
+};
 
 TASKS.practice.pre = async (job, step) => {
   const study = require('./study.cjs');

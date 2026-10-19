@@ -605,10 +605,13 @@ const prompt = (arg) => {
 // ---------- Checking what Claude wrote ----------
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 
+/** A worked solution: 1 to 14 short steps, each one line of plain text. */
+const cleanSteps = (steps) => (Array.isArray(steps) ? steps.map(str).filter(Boolean).map((x) => x.slice(0, 600)).slice(0, 14) : []);
+
 /** One question, cleaned, or null when it can't be used. */
 function cleanQuestion(q) {
   if (!q || typeof q !== 'object') return null;
-  const base = { type: q.type, q: str(q.q), explain: str(q.explain), chapter: str(q.chapter) || null, section: str(q.section) || null, topic: str(q.topic) || null, source: str(q.source) || null, ...(['recall', 'apply', 'multistep'].includes(q.level) ? { level: q.level } : {}) };
+  const base = { type: q.type, q: str(q.q), explain: str(q.explain), chapter: str(q.chapter) || null, section: str(q.section) || null, topic: str(q.topic) || null, source: str(q.source) || null, ...(['recall', 'apply', 'multistep'].includes(q.level) ? { level: q.level } : {}), ...(cleanSteps(q.steps).length ? { steps: cleanSteps(q.steps) } : {}), ...(q.answerDisputed ? { answerDisputed: true } : {}) };
   if (!base.q) return null;
   if (q.type === 'mc' || q.type === 'multi') {
     const choices = Array.isArray(q.choices) ? q.choices.map(str).filter(Boolean) : [];
@@ -794,7 +797,7 @@ function reviewableAll() {
  * What's due: { due: [...], fresh: [...], counts: { [courseId]: { due, fresh, total, code, test } } }. `limit` caps the
  * session; `chapters` narrows it to some chapters of the class (studying one chapter or one exam).
  */
-async function reviewQueue({ courseId = '', chapters = [], limit = 40, newPerDay = 15 } = {}) {
+async function reviewQueue({ courseId = '', chapters = [], sections = [], limit = 40, newPerDay = 15 } = {}) {
   const p = profiles.paths();
   const tests = await db.nextTests(p.db).catch(() => ({}));
   const state = readJson(file('review.json'), {});
@@ -802,8 +805,9 @@ async function reviewQueue({ courseId = '', chapters = [], limit = 40, newPerDay
   const testOf = (x) => tests[`${x.courseId}|${x.chapter}`] || null;
   const stars = starred();
   const want = new Set(chapters || []);
+  const topics = new Set(sections || []);
   const all = reviewable(courseId)
-    .filter((x) => !want.size || want.has(x.chapter))
+    .filter((x) => (!want.size || want.has(x.chapter)) && (!topics.size || topics.has(x.item.section)))
     .map((x) => ({ ...x, test: testOf(x), state: state[x.k] || null, starred: !!stars[x.k] }));
   const soon = (x) => (x.test ? x.test.date : '9999');
   // Due: oldest first, then the soonest test.
@@ -812,7 +816,8 @@ async function reviewQueue({ courseId = '', chapters = [], limit = 40, newPerDay
   // the next week), and within a class the chapters with a test coming first, starred first. (Before, the class with
   // the soonest test took every new card.) Studying one chapter or one exam isn't limited to today's few.
   const introduced = Object.values(state).filter((s) => s.first === today).length;
-  const room = want.size ? limit : Math.max(0, newPerDay - introduced);
+  // (Studying what the student picked has no daily cap: every unseen one can come, a session at a time.)
+  const room = want.size || topics.size ? limit : Math.max(0, newPerDay - introduced);
   const byClass = new Map();
   for (const x of all.filter((y) => !y.state).sort((a, b) => soon(a).localeCompare(soon(b)) || Number(b.starred) - Number(a.starred))) byClass.set(x.courseId, [...(byClass.get(x.courseId) || []), x]);
   const weekAway = addDays(7);
@@ -859,7 +864,7 @@ async function reviewMark(k, grade, { courseId = '', chapter = null } = {}) {
  * question keeps its key, so stars, Learn progress and spaced review carry on. Returns how many were changed.
  */
 function applyFixes(courseId, fixes) {
-  const byKey = new Map((Array.isArray(fixes) ? fixes : []).filter((f) => f && typeof f.k === 'string' && str(f.explain).length >= 40).map((f) => [f.k, f]));
+  const byKey = new Map((Array.isArray(fixes) ? fixes : []).filter((f) => f && typeof f.k === 'string' && (str(f.explain).length >= 40 || cleanSteps(f.steps).length >= 2)).map((f) => [f.k, f]));
   if (!byKey.size) return 0;
   let changed = 0;
   for (const e of index()) {
@@ -875,11 +880,81 @@ function applyFixes(courseId, fixes) {
       touched = true;
       changed++;
       // (The key stays the question's old one even when its wording is fixed.)
-      return { ...q, k, explain: str(fix.explain), ...(str(fix.q) ? { q: str(fix.q) } : {}) };
+      return { ...q, k, ...(str(fix.explain).length >= 40 ? { explain: str(fix.explain) } : {}), ...(cleanSteps(fix.steps).length >= 2 ? { steps: cleanSteps(fix.steps) } : {}), ...(str(fix.q) ? { q: str(fix.q) } : {}), ...(fix.wrong_answer ? { answerDisputed: true } : {}) };
     });
     if (touched) writeJson(f, s);
   }
   return changed;
 }
 
-module.exports = { applyFixes, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };
+/**
+ * The saved questions of some chapters, each with how it has gone: for choosing exactly what to study (by topic, and
+ * new, missed or starred ones). [{ k, chapter, section, topic, type, level, seen, right, lastRight, box, starred, steps }]
+ */
+function pool(courseId, chapters) {
+  const h = history();
+  const review = readJson(file('review.json'), {});
+  const stars = starred();
+  return catalog('exam', courseId, chapters).map((q) => ({
+    k: q.k,
+    chapter: q.chapter,
+    section: q.section || null,
+    topic: q.topic || null,
+    type: q.type,
+    level: q.level || null,
+    seen: h[q.k]?.seen || 0,
+    right: h[q.k]?.right || 0,
+    lastRight: h[q.k]?.lastRight ?? null,
+    box: review[q.k]?.box ?? null,
+    starred: !!stars[q.k],
+    steps: Array.isArray(q.steps) && q.steps.length > 1
+  }));
+}
+
+/** The first chapter (in the order given: soonest test first) with saved questions that have no worked steps yet. */
+function stepsNeed(chapters) {
+  for (const { courseId, label } of chapters) {
+    const missing = catalog('exam', courseId, [label]).filter((q) => q.type !== 'short' && !(Array.isArray(q.steps) && q.steps.length > 1));
+    if (missing.length) return { courseId, label, missing: missing.length };
+  }
+  return null;
+}
+
+/**
+ * The brief for writing worked steps for a chapter's questions that have none: every such question with its answer and
+ * explanation. Returns { brief, output, count } (workspace-relative paths).
+ */
+function stepsBrief(courseId, code, label) {
+  const ws = profiles.paths().workspace;
+  const dir = path.join(ws, 'data', 'study', 'steps', code);
+  fs.mkdirSync(dir, { recursive: true });
+  const qs = catalog('exam', courseId, [label]).filter((q) => q.type !== 'short' && !(Array.isArray(q.steps) && q.steps.length > 1));
+  const ans = (q) => (q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join('; ') : q.type === 'tf' ? (q.answer ? 'True' : 'False') : `${q.answer}${q.unit ? ` ${q.unit}` : ''}`);
+  const lines = [`# ${code} ${label}: ${qs.length} questions that need worked steps`, ''];
+  qs.forEach((q, i) =>
+    lines.push(
+      `${i + 1}. k=${q.k} [${q.type}${q.level ? `, ${q.level}` : ''}${q.section ? `, ${q.section}` : ''}]`,
+      `   Q: ${String(q.q).replace(/\s+/g, ' ')}`,
+      ...(q.choices ? [`   Choices: ${q.choices.join(' | ')}`] : []),
+      `   Answer: ${ans(q)}`,
+      `   Explanation: ${String(q.explain || '').replace(/\s+/g, ' ')}`,
+      ''
+    )
+  );
+  const brief = path.join(dir, `${label}.md`);
+  fs.writeFileSync(brief, lines.join('\n'));
+  const rel = (f) => path.relative(ws, f).replace(/\\/g, '/');
+  return { brief: rel(brief), output: rel(path.join(dir, `${label}.steps.json`)), count: qs.length };
+}
+
+/** Which class and chapter a saved question is in (by its key): { courseId, courseCode, chapter } or null. */
+function whereIs(k) {
+  for (const e of index()) {
+    if (e.kind !== 'exam' || e.status !== 'ready' || !e.courseId) continue;
+    const q = keyed(readJson(file('sets', `${e.id}.json`), {}).questions).find((x) => x.k === k);
+    if (q) return { courseId: e.courseId, courseCode: e.courseCode, chapter: q.chapter || (e.chapters || [])[0] || null };
+  }
+  return null;
+}
+
+module.exports = { applyFixes, pool, stepsNeed, stepsBrief, whereIs, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };

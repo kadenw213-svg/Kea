@@ -386,6 +386,7 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
   const reviewParts = id.startsWith('review:') ? id.slice(7).split(':') : null;
   const review = reviewParts ? reviewParts[0] : null;
   const reviewChapters = reviewParts?.[1] ? decodeURIComponent(reviewParts[1]).split('|').filter(Boolean) : [];
+  const reviewSections = reviewParts?.[2] ? decodeURIComponent(reviewParts[2]).split('|').filter(Boolean) : [];
   const edit = id.startsWith('edit:') ? id.slice(5) : null;
   useEffect(() => {
     setSet(null);
@@ -414,7 +415,7 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
   const body = hub ? (
     <StudyHub scope={hub} />
   ) : review != null ? (
-      <Review courseId={review === 'all' ? '' : review} chapters={reviewChapters} />
+      <Review courseId={review === 'all' ? '' : review} chapters={reviewChapters} sections={reviewSections} />
     ) : edit != null ? (
       <SetEditor id={edit === 'new' || edit === 'import' ? undefined : edit} startWithImport={edit === 'import'} onClose={onClose} />
     ) : !set ? (
@@ -581,7 +582,7 @@ export function Exam({ set }: { set: StudySetFull }) {
     const target = (i: number) => {
       const q = run[i].q;
       opened.current.add(i);
-      missReading({ chapter: q.chapter, section: q.section, topic: q.topic, query: `${q.q} ${answerText(q)}`, key: q.k });
+      missReading({ chapter: q.chapter, section: q.section, topic: q.topic, query: `${q.q} ${answerText(q)}`, key: q.k, steps: q.steps });
     };
     if (submitted) {
       const first = results.findIndex((r) => r === false);
@@ -702,6 +703,57 @@ function questionCards(s: StudySetFull): StudySetFull {
   return { ...s, kind: 'cards', cards, questions: undefined, count: cards.length };
 }
 
+/**
+ * The worked solution, step by step: open by itself after a miss, a click away after a right answer. A question
+ * without steps yet offers to have its chapter's written now.
+ */
+export function WorkedSteps({ q, open: startOpen }: { q: StudyQuestion; open: boolean }) {
+  const [open, setOpen] = useState(startOpen);
+  const [asked, setAsked] = useState(false);
+  useEffect(() => setOpen(startOpen), [startOpen, q.k]);
+  if (q.type === 'short') return null;
+  if (!q.steps?.length) {
+    if (!startOpen || !q.k) return null;
+    return (
+      <div className="st-steps none">
+        {asked ? (
+          <span className="muted">The step-by-step solutions for this chapter are being written (a few minutes; follow it under Scans).</span>
+        ) : (
+          <button
+            className="btn sm"
+            onClick={() =>
+              api.scholar
+                .studyStepsFor(q.k!)
+                .then(() => setAsked(true))
+                .catch((err) => toast(err?.message || 'Kea couldn’t start that.', 'error'))
+            }
+          >
+            Write step-by-step solutions for {q.chapter || 'this chapter'}
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="st-steps">
+      {q.answerDisputed && <div className="st-disputed">Kea’s review found the stored answer to this question may be wrong: the steps below work it correctly.</div>}
+      <button className="st-steps-head" onClick={() => setOpen(!open)}>
+        {open ? 'Step by step' : 'Show the steps'}
+        <span className="muted"> · {q.steps.length} steps</span>
+      </button>
+      {open && (
+        <ol>
+          {q.steps.map((s, i) => (
+            <li key={i}>
+              <MathText text={s} />
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 const answerText = (q: StudyQuestion) =>
   q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join(' ') : q.type === 'tf' ? '' : q.type === 'num' ? q.unit || '' : q.answer;
 
@@ -713,7 +765,7 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
       <div className="st-q-head">
         <span className="st-num">{num}</span>
         <div className="st-stem"><MathText text={q.q} /></div>
-        <ReadingButton id={q.k} chapter={q.chapter} section={q.section} topic={q.topic} query={`${q.q} ${answerText(q)}`} />
+        <ReadingButton id={q.k} chapter={q.chapter} section={q.section} topic={q.topic} query={`${q.q} ${answerText(q)}`} steps={q.steps} />
       </div>
       {(q.type === 'mc' || q.type === 'multi') && (
         <div className="st-choices">
@@ -781,6 +833,7 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
             </div>
           )}
           <div><MathText text={q.explain} /></div>
+          <WorkedSteps q={q} open={result === false} />
           {q.type === 'short' && (
             <div className="st-self">
               <span className="muted">Did you get it?</span>
