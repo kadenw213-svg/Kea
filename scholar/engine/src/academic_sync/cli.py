@@ -11,6 +11,7 @@ state.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -1179,6 +1180,9 @@ def export_cmd(
             unresolved = repository.list_unresolved_references(session, c.id)
             text = format_course_export(c, items, unresolved)
 
+            if output is not None and REPO_ROOT.resolve() not in output.resolve().parents:
+                console.print("[red]--output must be inside this workspace.[/red]")
+                raise typer.Exit(code=1)
             out_path = output or (
                 REPO_ROOT / "data" / "downloads" / c.course_code / "consolidated_events.txt"
             )
@@ -2507,6 +2511,61 @@ def study_pdf_image_cmd(
     print(json.dumps(info, indent=1))
 
 
+# Figure scripts are written by Claude from course material, which can carry instructions planted by anyone who can
+# post in a class (a discussion reply, a linked page). So a script is read before it runs: only drawing is allowed.
+_PLOT_IMPORTS = {"math", "numpy", "matplotlib", "matplotlib.pyplot", "matplotlib.patches", "matplotlib.lines",
+                 "matplotlib.ticker", "matplotlib.colors", "matplotlib.path", "matplotlib.transforms", "matplotlib.text",
+                 "matplotlib.collections", "matplotlib.gridspec", "mpl_toolkits.mplot3d", "fractions", "statistics",
+                 "random", "datetime", "os"}
+_PLOT_BANNED_NAMES = {"open", "exec", "eval", "compile", "__import__", "globals", "locals", "vars", "getattr",
+                      "setattr", "delattr", "input", "breakpoint", "help", "memoryview", "sys", "subprocess",
+                      "socket", "shutil", "pathlib", "importlib", "builtins", "ctypes", "pickle", "marshal"}
+
+
+def _plot_script_problem(code: str) -> str | None:
+    """Why a figure script mustn't run, or None when it only draws."""
+    import ast
+    import re
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as err:
+        return f"it doesn't parse ({err.msg})"
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name not in _PLOT_IMPORTS:
+                    return f"it imports {a.name}"
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or "") not in _PLOT_IMPORTS or node.level:
+                return f"it imports from {node.module}"
+        elif isinstance(node, ast.Name) and node.id in _PLOT_BANNED_NAMES:
+            return f"it uses {node.id}"
+        elif isinstance(node, ast.Attribute):
+            if node.attr.startswith("_"):
+                return f"it reaches into {node.attr}"
+            # From os, only making the img/ folder (and joining a path for it).
+            if isinstance(node.value, ast.Name) and node.value.id == "os" and node.attr not in ("makedirs", "path"):
+                return f"it uses os.{node.attr}"
+            if (isinstance(node.value, ast.Attribute) and node.value.attr == "path" and isinstance(node.value.value, ast.Name)
+                    and node.value.value.id == "os" and node.attr not in ("join", "exists")):
+                return f"it uses os.path.{node.attr}"
+            # numpy and matplotlib calls that read or write files other than the figure itself.
+            if node.attr in {"load", "loadtxt", "genfromtxt", "fromfile", "tofile", "save", "savez", "savetxt",
+                             "memmap", "imread", "system", "popen", "DataSource", "ctypeslib", "lib"}:
+                return f"it calls {node.attr}"
+        elif isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "makedirs":
+            for arg in node.args[:1]:
+                if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str) and re.fullmatch(r"[\w\-]+", arg.value)):
+                    return "it makes a folder other than a plain one next to it (like img)"
+        elif isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "savefig":
+            for arg in node.args[:1]:
+                if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+                        and re.fullmatch(r"(img/)?[\w\- .]+\.(png|svg|pdf)", arg.value) and ".." not in arg.value):
+                    return "it saves a figure somewhere other than a plain file name in its folder or img/"
+    return None
+
+
 @app.command("study-pdf-plot")
 def study_pdf_plot_cmd(
     script: Annotated[Path, typer.Argument(help="A matplotlib script inside data/study_pdfs/.")],
@@ -2521,8 +2580,17 @@ def study_pdf_plot_cmd(
     if study_pdf_mod.WORK_ROOT.resolve() not in path.parents or path.suffix != ".py":
         console.print("[red]Only .py scripts inside data/study_pdfs/ can run here.[/red]")
         raise typer.Exit(code=1)
+    problem = _plot_script_problem(path.read_text(encoding="utf-8", errors="replace"))
+    if problem:
+        console.print(f"[red]Not run: {problem}. A figure script may only import math, numpy and matplotlib, draw, and "
+                      "save images into its own folder.[/red]")
+        raise typer.Exit(code=1)
+    # A bare environment: no inherited secrets or paths, so the script only draws.
+    env = {k: v for k, v in os.environ.items() if k.upper() in ("SYSTEMROOT", "TEMP", "TMP", "PATH", "MPLBACKEND", "WINDIR")}
+    env["MPLBACKEND"] = "Agg"
+    (path.parent / "img").mkdir(exist_ok=True)
     proc = subprocess.run([sys.executable, "-I", str(path)], cwd=path.parent,
-                          capture_output=True, text=True, timeout=300)
+                          capture_output=True, text=True, timeout=300, env=env)
     print(proc.stdout + proc.stderr)
     if proc.returncode:
         raise typer.Exit(code=proc.returncode)

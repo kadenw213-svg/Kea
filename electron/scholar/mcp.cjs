@@ -3,6 +3,9 @@
 // Tools: read pages and files of the class site through Kea's own browser, and report progress and news to Kea.
 const http = require('http');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const profiles = require('./profiles.cjs');
 const browser = require('./browser.cjs');
 
 const PROTOCOL = '2025-06-18';
@@ -57,16 +60,58 @@ const TOOLS = [
  * Start a server for one run. `hooks.progress(message)` and `hooks.notify({course, title, body})` report to Kea.
  * Resolves to { url, token, close() }.
  */
+// Where a scan may go with the student's signed-in browser. Course pages can carry instructions planted by anyone who
+// can post in a class, so an address is only followed when it's the class site (or its school), a known school
+// platform, or an address the class site itself links to (from Kea's own reading of the course content). Never a
+// file on this computer, and never anywhere else, so nothing can be sent out through a crafted address.
+const PLATFORMS = /(^|\.)(aleks\.com|mheducation\.com|mcgraw-hill\.com|pearson\.com|pearsoned\.com|pearsoncmg\.com|mylabmastering\.com|masteringchemistry\.com|cengage\.com|webassign\.net|cengagenow\.com|holscience\.com|scienceinteractive\.com|macmillanlearning\.com|achieve\.macmillanlearning\.com|wiley\.com|wileyplus\.com|zybooks\.com|perusall\.com|instructure\.com|brightspace\.com|d2l\.com|desire2learn\.com|openstax\.org|libretexts\.org|simplesyllabus\.com|kaltura\.com|panopto\.com|youtube\.com|vimeo\.com|turnitin\.com|respondus\.com|labster\.com|knewton\.com|hawkeslearning\.com|chegg\.com)$/i;
+let linked = { at: 0, hosts: new Set() };
+function linkedHosts() {
+  if (Date.now() - linked.at < 5 * 60e3) return linked.hosts;
+  const hosts = new Set();
+  try {
+    const dir = path.join(profiles.paths().workspace, 'data', 'digests', 'kea-precheck');
+    const days = fs.readdirSync(dir).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().slice(-3);
+    for (const d of days)
+      for (const f of fs.readdirSync(path.join(dir, d)).filter((f) => /-content\.json$/.test(f))) {
+        const text = fs.readFileSync(path.join(dir, d, f), 'utf8');
+        for (const m of text.matchAll(/https:\/\/([a-z0-9.-]+)/gi)) hosts.add(m[1].toLowerCase());
+      }
+  } catch {}
+  linked = { at: Date.now(), hosts };
+  return hosts;
+}
+function allowedUrl(url) {
+  let u;
+  try {
+    u = new URL(String(url || ''), browser.schoolInfo().home || undefined);
+  } catch {
+    throw new Error('That isn’t a web address.');
+  }
+  if (u.protocol !== 'https:') throw new Error('Only https pages on the class site or its linked school platforms can be opened.');
+  const host = u.hostname.toLowerCase();
+  const home = (() => {
+    try {
+      return new URL(browser.schoolInfo().home).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  })();
+  const school = home.split('.').slice(-2).join('.');
+  if (host === home || (school && (host === school || host.endsWith(`.${school}`))) || PLATFORMS.test(host) || linkedHosts().has(host)) return u.href;
+  throw new Error(`${host} isn't the class site or a platform the class links to, so it can't be opened here.`);
+}
+
 function start(hooks) {
   const token = crypto.randomBytes(24).toString('hex');
   const call = async (name, a = {}) => {
     switch (name) {
       case 'd2l_open':
-        return browser.open(a.url, a.offset || 0);
+        return browser.open(allowedUrl(a.url), a.offset || 0);
       case 'd2l_fetch':
-        return browser.fetchText(a.url, a.offset || 0);
+        return browser.fetchText(allowedUrl(a.url), a.offset || 0);
       case 'd2l_download': {
-        const saved = await browser.download(a.url, a.path);
+        const saved = await browser.download(allowedUrl(a.url), a.path);
         // PDFs and Word files come with their text, so the file itself never has to be read as page pictures.
         if (/\.(pdf|docx)$/i.test(saved.saved) && hooks.docText) {
           try {

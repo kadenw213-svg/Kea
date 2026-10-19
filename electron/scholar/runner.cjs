@@ -9,7 +9,11 @@ const workspace = require('./workspace.cjs');
 const mcp = require('./mcp.cjs');
 
 const KEA_TOOLS = ['d2l_open', 'd2l_fetch', 'd2l_download', 'd2l_status', 'kea_progress', 'kea_notify'].map((t) => `mcp__kea__${t}`);
-const BASE = ['Bash(uv run academic-sync:*)', 'Read', 'Glob', 'Grep', 'Skill', 'ToolSearch', 'Edit(data/**)', 'Write(data/**)'];
+// Reading and searching stay inside this scan folder: course pages can carry planted instructions, and a scan must
+// never be able to read the rest of the computer.
+const BASE = ['Bash(uv run academic-sync:*)', 'Read(./**)', 'Glob(./**)', 'Grep(./**)', 'Skill', 'ToolSearch', 'Edit(data/**)', 'Write(data/**)'];
+// The textbook writer may look things up only on reference sites (nothing it reads can be posted anywhere else).
+const REFERENCE = ['en.wikipedia.org', 'commons.wikimedia.org', 'openstax.org', 'libretexts.org', 'chem.libretexts.org', 'bio.libretexts.org', 'math.libretexts.org', 'phys.libretexts.org', 'khanacademy.org', 'ncbi.nlm.nih.gov', 'nist.gov', 'webbook.nist.gov', 'pubchem.ncbi.nlm.nih.gov'].map((d) => `WebFetch(domain:${d})`);
 
 /** What each kind of run does, and the only tools it may use. */
 const TASKS = {
@@ -26,7 +30,7 @@ const TASKS = {
     label: 'Connection test'
   },
   // This week's textbook chapters (no class site needed; open educational sources for figures and checking facts).
-  study: { prompt: (arg) => `/weekly-study-pdf ${arg || ''}`.trim(), tools: [...BASE, 'WebFetch', 'WebSearch', 'mcp__kea__kea_progress', 'mcp__kea__kea_notify'], label: 'Writing textbook chapters' },
+  study: { prompt: (arg) => `/weekly-study-pdf ${arg || ''}`.trim(), tools: [...BASE, ...REFERENCE, 'WebSearch', 'mcp__kea__kea_progress', 'mcp__kea__kea_notify'], label: 'Writing textbook chapters' },
   // A practice exam or flashcard deck the student asked for, written from the brief Kea prepares (the tests' focus, the
   // chapters' notes and review sheets Kea downloaded itself): Claude only reads that and writes.
   practice: { prompt: (arg) => require('./study.cjs').prompt(arg), tools: [...BASE, 'mcp__kea__kea_progress'], label: 'Making study material' }
