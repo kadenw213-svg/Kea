@@ -68,7 +68,22 @@ _DEADLINE_KEYWORDS = re.compile(
 )
 
 
+# Checked before the keywords: phrasings the keyword list gets wrong.
+#  - "Lab 3 report" / "Lab #3 write-up" is a lab report to hand in, not a lab session (the words aren't adjacent).
+#  - "Exam 3 Work" / "upload your exam work to the assignment folder" is an upload due after an exam, not the exam
+#    itself (2026-10-19: classed as EXAM, it took the real Exam 4 and Final Exam items' identities).
+#  - "Test 2" / "Practice Test" is a test.
+_FIRST: list[tuple[ItemType, re.Pattern]] = [
+    (ItemType.LAB_HANDOUT, re.compile(r"\blab\s*#?\s*\d+\s*:?\s*(report|write-?up|handout)\b|\blab\s+report\s*#?\s*\d+", re.IGNORECASE)),
+    (ItemType.ASSIGNMENT, re.compile(r"\b(exam|test|final)\s*#?\s*\d*\s+work\b|\bassignment folder\b|\bupload\b[^.]*\bwork\b", re.IGNORECASE)),
+    (ItemType.EXAM, re.compile(r"\b(unit |chapter |practice )?test\s*#?\s*\d+\b|\bpractice test\b", re.IGNORECASE)),
+]
+
+
 def classify_item_type(text: str) -> ItemType | None:
+    for item_type, pattern in _FIRST:
+        if pattern.search(text):
+            return item_type
     for item_type, patterns in _TYPE_KEYWORD_PATTERNS:
         if any(p.search(text) for p in patterns):
             return item_type

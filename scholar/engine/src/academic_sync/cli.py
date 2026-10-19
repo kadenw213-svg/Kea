@@ -218,6 +218,15 @@ def _load_document(path: Path, title: str | None) -> ParsedDocument:
         return parse_pdf(str(path), base_title=title)
     if suffix in (".html", ".htm"):
         return parse_html(path.read_text(encoding="utf-8", errors="replace"), base_title=title)
+    if suffix == ".docx":
+        import docx
+
+        d = docx.Document(str(path))
+        lines = [para.text for para in d.paragraphs]
+        for table in d.tables:
+            for row in table.rows:
+                lines.append(" | ".join(cell.text.strip().replace("\n", " ") for cell in row.cells))
+        return ParsedDocument(text="\n".join(lines).strip(), title=title)
     text = path.read_text(encoding="utf-8", errors="replace")
     cleaned_text, extracted_title = _strip_get_page_text_header(text)
     return ParsedDocument(text=cleaned_text, title=title or extracted_title)
@@ -362,7 +371,7 @@ def _parse_time(value: str):
 # This check runs the same deterministic extraction over every downloaded file
 # (without saving anything) and reports what isn't there.
 
-_COVERAGE_SUFFIXES = {".txt", ".md", ".html", ".htm", ".pdf"}
+_COVERAGE_SUFFIXES = {".txt", ".md", ".html", ".htm", ".pdf", ".docx"}
 # (Not class meetings: lectures and lab sessions repeat every week and aren't handed in.)
 _COVERAGE_TYPES = {ItemType.EXAM, ItemType.FINAL_EXAM, ItemType.LAB_PRACTICAL}
 _TITLE_STOP = {
@@ -372,21 +381,45 @@ _TITLE_STOP = {
 }
 # Words that name the same thing.
 _SAME_WORD = {"test": "exam", "tests": "exam", "exams": "exam", "midterm": "exam", "hw": "homework"}
+# Kinds of work that are never each other: a lab report, a lab practical, an exam. Everything else (homework, quizzes,
+# discussions, papers, "other deadline") is one kind here, since schedules name the same homework quiz or discussion
+# reply all three ways ("Chapter 1 HW" is a D2L quiz; "OA 1 response posts" is a discussion).
 _FAMILY = {
-    ItemType.LAB_HANDOUT: "lab", ItemType.LAB: "lab", ItemType.LAB_PRACTICAL: "lab",
-    ItemType.QUIZ: "quiz", ItemType.PRE_LAB_QUIZ: "quiz",
+    ItemType.LAB_HANDOUT: "lab", ItemType.LAB: "lab", ItemType.LAB_PRACTICAL: "practical",
     ItemType.EXAM: "exam", ItemType.FINAL_EXAM: "exam",
-    ItemType.DISCUSSION: "discussion",
 }
+# Items that aren't on the calendar for real (left out when deciding whether a piece of work is there).
+_NOT_THERE = {ItemStatus.CANCELLED, ItemStatus.UNRESOLVED, ItemStatus.DRAFT, ItemStatus.SUPERSEDED}
+
+
+def _numbers(title: str) -> list[str]:
+    """The numbers in a name, whole: "HW: 4.6" is 4.6 (never 4 and 6); years aren't identifiers."""
+    import re
+
+    return [n for n in re.findall(r"\d+(?:\.\d+)*", title or "") if not re.fullmatch(r"(19|20)\d\d", n)]
+
+
+def _ident(title: str) -> str | None:
+    """A piece of work's own number: the first one that follows a word naming work ("Lab report #6", "Online Quiz 3:
+    Ch 25, 19", "HW: 4.6", "OA 7"), never a time or a points value ("by 11:59 pm", "200 points")."""
+    import re
+
+    m = re.search(
+        r"\b(?:lab(?:oratory)?(?:\s+report)?|report|quiz|exam|test|hw|homework|assignment|module|discussion|oa|unit|"
+        r"project|paper|essay|worksheet|problem set|handout|practical|activity)\s*[:#]?\s*#?\s*(\d+(?:\.\d+)*)\b|#\s*(\d+)\b",
+        title or "",
+        re.IGNORECASE,
+    )
+    return (m.group(1) or m.group(2)) if m else None
 
 
 def _title_words(title: str) -> set[str]:
     import re
 
     words = set()
-    for w in re.findall(r"[a-z0-9]+", (title or "").lower()):
+    for w in re.findall(r"[a-z]+", (title or "").lower()):
         w = _SAME_WORD.get(w, w)
-        if not (len(w) >= 4 or w.isdigit()) or w in _TITLE_STOP:
+        if len(w) < 4 or w in _TITLE_STOP:
             continue
         # Plurals are the same word ("Prerequisites", "prerequisite").
         words.add(w[:-1] if len(w) > 4 and w.endswith("s") and not w.endswith("ss") else w)
@@ -394,41 +427,53 @@ def _title_words(title: str) -> set[str]:
 
 
 def _same_work(candidate: AcademicItem, existing: AcademicItem) -> bool:
-    """Whether an existing calendar item is this piece of work (same date give or
-    take a day, same kind of work, and the same name). Numbers must agree: "Lab
-    report #6" is never "Online Assignment 7", however many other words match."""
+    """Whether an existing calendar item is this piece of work: the same day, the same kind of work, the same
+    number and the same name. Strict on purpose: calling two different pieces of work "the same" hides a gap, which
+    is the dangerous mistake (a false alarm only costs a coverage-dismiss). Rules that came from real misses:
+    "HW: 4.6" is never "HW: 4.5"; "Lab 5 report" is never "HW Quiz 5"; "Lab Practical 2" is never "Lab 2 Handout";
+    a lab report is never the discussion on the same topic due that day; a different day is a different item (a
+    stored date that's a day off is itself a gap to fix)."""
     if candidate.fingerprint and candidate.fingerprint == existing.fingerprint:
         return True
-    if candidate.date is None or existing.date is None or abs((candidate.date - existing.date).days) > 1:
-        return False
-    a, b = _title_words(candidate.title), _title_words(existing.title)
-    na, nb = {w for w in a if w.isdigit()}, {w for w in b if w.isdigit()}
-    if na and nb and not (na & nb):
+    if candidate.date is None or existing.date is None or candidate.date != existing.date:
         return False
     family = _FAMILY.get(candidate.item_type, "work")
     same_family = family == _FAMILY.get(existing.item_type, "work")
-    # A class has one exam on a day: an exam line on an exam day is that exam (but a practice exam is
-    # its own thing).
-    if family == "exam" and same_family and candidate.date == existing.date and ("practice" in a) == ("practice" in b):
+    ia, ib = _ident(candidate.title), _ident(existing.title)
+    if ia and ib and ia != ib:
+        return False
+    a, b = _title_words(candidate.title), _title_words(existing.title)
+    # A class has one exam on a day: an exam line on an exam day is that exam (a practice exam is its own thing).
+    if family == "exam" and same_family and ("practice" in a) == ("practice" in b):
         return True
-    # The same numbered piece of the same kind on the same day ("Online Assignment 6" under a new name).
-    if na and nb and same_family:
+    # The same numbered piece of the same kind ("Online Assignment 6" under a new name).
+    if same_family and ia and ia == ib:
         return True
-    # A nameless line ("Due on Oct 14") is covered by any work due that day.
+    # A nameless line ("Due on Oct 14", "Lab report (SI PDF only)") only counts as the same kind of work that day.
     if not a:
-        return candidate.date == existing.date and (existing.item_type.is_deadline or existing.item_type in _COVERAGE_TYPES)
+        return same_family and not (ia and not ib)
     if not b:
         return False
     if same_family:
         # Measured against the shorter name, so a longer description of the same work still matches.
         return len(a & b) / min(len(a), len(b)) >= 0.6
-    # Different kinds of work (a lab report and a discussion on the same topic, due the same day) are
-    # separate unless every word of this one is in the other's name.
-    return a <= b
+    # Different kinds of work are separate unless this one's whole name (two words at least) is in the other's.
+    return len(a) >= 2 and a <= b and ia == ib
+
+
+def _same_undated(candidate: AcademicItem, existing: AcademicItem) -> bool:
+    """A numbered piece of work found with no date: the same kind and number, and the same name, at any date."""
+    if _FAMILY.get(candidate.item_type, "work") != _FAMILY.get(existing.item_type, "work"):
+        return False
+    if _ident(candidate.title) != _ident(existing.title):
+        return False
+    a, b = _title_words(candidate.title), _title_words(existing.title)
+    return not a or not b or len(a & b) / min(len(a), len(b)) >= 0.5
 
 
 def _coverage_key(item: AcademicItem) -> str:
-    return f"{item.date.isoformat() if item.date else ''}|{' '.join(sorted(_title_words(item.title)))}"
+    ident = _ident(item.title) or ""
+    return f"{item.date.isoformat() if item.date else ''}|{ident} {' '.join(sorted(_title_words(item.title)))}".rstrip()
 
 
 def course_documents(course: Course) -> list[Path]:
@@ -442,18 +487,48 @@ def course_documents(course: Course) -> list[Path]:
     out: list[Path] = []
     for folder in root.iterdir():
         if folder.is_dir() and code and folder.name.lower().startswith(code):
-            # (consolidated_events is Kea's own listing of the calendar, not a course document.)
+            # (consolidated_events is Kea's own listing of the calendar and raw_notes a scan's own notes, not course
+            # documents: what they summarize is saved as its own file. A PDF's or Word
+            # file's `.txt` copy is read as the file itself.)
             out.extend(
                 p for p in folder.rglob("*")
-                if p.is_file() and p.suffix.lower() in _COVERAGE_SUFFIXES and not p.name.startswith("consolidated_events")
+                if p.is_file() and p.suffix.lower() in _COVERAGE_SUFFIXES and not p.name.startswith(("consolidated_events", "raw_notes"))
+                and not p.name.lower().endswith((".pdf.txt", ".docx.txt"))
             )
     return sorted(out)
 
 
-def uncovered_document_items(session, course: Course) -> list[tuple[Path, AcademicItem]]:
-    """Dated graded work found in this course's downloaded documents that has no
-    matching item on the calendar (and wasn't dismissed with coverage-dismiss)."""
-    existing = [i for i in repository.list_items_for_course(session, course.id) if not i.superseded_by_id]
+def _coverage_documents(session, course: Course) -> tuple[list[tuple[str, ParsedDocument]], list[str]]:
+    """Every document to check: the downloaded files and the saved text of every source (announcements and pages
+    read live, whose files may be gone). Returns (documents, files that couldn't be read)."""
+    from sqlalchemy import text as sql
+
+    docs: list[tuple[str, ParsedDocument]] = []
+    unreadable: list[str] = []
+    for path in course_documents(course):
+        try:
+            doc = _load_document(path, path.name)
+        except Exception as err:  # noqa: BLE001
+            unreadable.append(f"{path} ({type(err).__name__})")
+            continue
+        if path.suffix.lower() in (".pdf", ".docx") and len((doc.text or "").strip()) < 40:
+            # A scanned handout: there may be dates in it that no text can show.
+            unreadable.append(f"{path} (no text: scanned or image-only)")
+        docs.append((str(path), doc))
+    rows = session.execute(
+        sql("SELECT title, raw_text FROM sources WHERE course_id = :c AND raw_text IS NOT NULL AND length(raw_text) > 40"),
+        {"c": course.id},
+    ).all()
+    for title, raw in rows:
+        docs.append((f"source: {title}", ParsedDocument(text=raw, title=title)))
+    return docs, unreadable
+
+
+def coverage_findings(session, course: Course) -> tuple[list[tuple[str, AcademicItem]], list[str]]:
+    """Graded work written in this course's documents with no matching calendar item (dated ones on their day,
+    numbered ones found with no date at all), and documents that couldn't be read. Dismissed lines are left out."""
+    existing = [i for i in repository.list_items_for_course(session, course.id) if not i.superseded_by_id and i.status not in _NOT_THERE]
+    everything = [i for i in repository.list_items_for_course(session, course.id) if not i.superseded_by_id]
     dismissed = set(repository.get_preference(session, "coverage_dismissed", course_id=course.id, default=[]) or [])
     config = get_config()
     reference_year = course.start_date.year if course.start_date else datetime.now().year
@@ -461,13 +536,11 @@ def uncovered_document_items(session, course: Course) -> list[tuple[Path, Academ
     dated = sorted(i.date for i in existing if i.date)
     start = course.start_date or (dated[0] if dated else None)
     end = course.end_date or (dated[-1] if dated else None)
-    found: list[tuple[Path, AcademicItem]] = []
+    found: list[tuple[str, AcademicItem]] = []
     seen: set[str] = set()
-    for path in course_documents(course):
-        try:
-            document = _load_document(path, path.name)
-        except Exception:  # noqa: BLE001 -- an unreadable file can't hide anything we could have read
-            continue
+    docs, unreadable = _coverage_documents(session, course)
+    for where, document in docs:
+        is_pdf = where.lower().endswith(".pdf")
         ctx = ExtractionContext(
             course_id=course.id,
             source_id="coverage-check",
@@ -475,19 +548,33 @@ def uncovered_document_items(session, course: Course) -> list[tuple[Path, Academ
             term_start=course.start_date,
             term_end=course.end_date,
             reference_phrases=config.completeness.reference_phrases,
+            # Schedules are grids of bare dates ("9/14"); the term gives the year.
+            allow_bare_dates=True,
         )
         try:
             result = extract_from_document(document, ctx)
-        except Exception:  # noqa: BLE001
+        except Exception as err:  # noqa: BLE001
+            unreadable.append(f"{where} (couldn't be read: {type(err).__name__})")
             continue
         for item in result.items:
-            if item.date is None or not (item.item_type.is_deadline or item.item_type in _COVERAGE_TYPES):
+            if not (item.item_type.is_deadline or item.item_type in _COVERAGE_TYPES):
+                continue
+            if item.date is None:
+                # No date found: still reported when it's a numbered piece of work ("Lab report #3") that isn't
+                # on the calendar under any date, so a schedule Kea can't read doesn't hide it.
+                if not _ident(item.title) or item.title[:1].islower():
+                    continue
+                key = _coverage_key(item)
+                if key in seen or key in dismissed or any(_same_undated(item, e) for e in everything):
+                    continue
+                seen.add(key)
+                found.append((where, item))
                 continue
             # Policy prose in a PDF picks up whatever date heading came before it ("Each quiz will..."):
             # only a line that names its own date, or a dated grid in a page or text file, counts.
-            if path.suffix.lower() == ".pdf" and "date heading" in (item.source_wording or ""):
+            if is_pdf and "date heading" in (item.source_wording or "") and not _ident(item.title):
                 continue
-            if item.title[:1].islower():
+            if is_pdf and item.title[:1].islower():
                 continue
             if start and item.date < start - timedelta(days=14):
                 continue
@@ -497,8 +584,13 @@ def uncovered_document_items(session, course: Course) -> list[tuple[Path, Academ
             if key in seen or key in dismissed or any(_same_work(item, e) for e in existing):
                 continue
             seen.add(key)
-            found.append((path, item))
-    return found
+            found.append((where, item))
+    return found, unreadable
+
+
+def uncovered_document_items(session, course: Course) -> list[tuple[str, AcademicItem]]:
+    """Graded work written in this course's documents with no matching calendar item (see coverage_findings)."""
+    return coverage_findings(session, course)[0]
 
 
 @app.command("coverage")
@@ -506,32 +598,37 @@ def coverage_cmd(
     course: Annotated[str, typer.Option("--course")],
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """List dated graded work written in this course's downloaded documents that
-    isn't on the calendar. Each one must be added (extract the file, or create
-    the item) or dismissed with coverage-dismiss and a reason."""
+    """List graded work written in this course's documents that isn't on the calendar (dated ones, and numbered
+    ones with no date found), and documents that couldn't be read. Each item must be added (extract the file, or
+    create the item) or dismissed with coverage-dismiss and a reason; each unreadable file must be read another way."""
     with session_scope() as session:
         c = _resolve_course_or_exit(session, course)
         code = c.course_code
-        found = uncovered_document_items(session, c)
+        found, unreadable = coverage_findings(session, c)
         rows = [
             {
-                "file": str(p),
+                "file": where,
                 "date": i.date.isoformat() if i.date else None,
                 "type": i.item_type.value,
                 "title": i.title,
                 "key": _coverage_key(i),
             }
-            for p, i in found
+            for where, i in found
         ]
     if as_json:
-        print(json.dumps({"course": code, "uncovered": rows}, indent=1))
+        print(json.dumps({"course": code, "uncovered": rows, "unreadable": unreadable}, indent=1))
         return
-    if not rows:
-        console.print(f"{code}: every dated piece of work in its documents is on the calendar.")
+    if not rows and not unreadable:
+        console.print(f"{code}: every piece of graded work in its documents is on the calendar.")
         return
-    console.print(f"[red]{code}: {len(rows)} dated item(s) in its documents aren't on the calendar:[/red]")
-    for r in rows:
-        console.print(f"  {r['date']}  {escape(r['title'])}  [dim]({r['type']}; {escape(r['file'])})[/dim]")
+    if rows:
+        console.print(f"[red]{code}: {len(rows)} item(s) in its documents aren't on the calendar:[/red]")
+        for r in rows:
+            console.print(f"  {r['date'] or 'no date found'}  {escape(r['title'])}  [dim]({r['type']}; {escape(r['file'])})[/dim]")
+    if unreadable:
+        console.print(f"[yellow]{len(unreadable)} document(s) couldn't be read (check them another way):[/yellow]")
+        for u in unreadable:
+            console.print(f"  {escape(u)}")
 
 
 @app.command("coverage-dismiss")
@@ -649,7 +746,7 @@ def completeness_cmd(course: Annotated[str | None, typer.Option("--course")] = N
                 missing_chapter_topic_count=missing_chapter_topic_count,
                 partial_chapter_topic_count=partial_chapter_topic_count,
                 uncovered_document_items=[
-                    f"{i.date.isoformat()} {i.title} ({p.name})"
+                    f"{i.date.isoformat() if i.date else 'no date found'} {i.title} ({Path(str(p)).name})"
                     for p, i in ([] if c.is_synthetic else uncovered_document_items(session, c))
                 ],
                 is_synthetic=c.is_synthetic,
@@ -1852,7 +1949,7 @@ def kea_brief_cmd(
             # Dated graded work written in the course's documents with no item (see `coverage`): each
             # gets added, or dismissed with coverage-dismiss and the reason.
             "not_on_calendar": [
-                {"title": i.title, "date": i.date.isoformat(), "type": i.item_type.value, "file": str(p), "key": _coverage_key(i)}
+                {"title": i.title, "date": i.date.isoformat() if i.date else None, "type": i.item_type.value, "file": str(p), "key": _coverage_key(i)}
                 for p, i in ([] if c.is_synthetic else uncovered_document_items(session, c))
             ],
         }
