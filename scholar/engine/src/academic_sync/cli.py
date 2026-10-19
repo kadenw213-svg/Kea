@@ -1098,6 +1098,9 @@ def course_rules(session, course: Course) -> list[dict]:
                 continue
             if re.search(r"p a g e|\(CLO \d|^(subtitle|authors?|isbn|required or recomm)", sentence, re.IGNORECASE):
                 continue
+            # (Kea's own transcription notes repeat what the class wrote; the original sentence is kept instead.)
+            if re.match(r"^(transcribed from|derived from|source:|re-checked)", sentence, re.IGNORECASE):
+                continue
             norm = re.sub(r"[^a-z0-9]+", " ", sentence.lower()).strip()
             if norm in seen or sum(c.isalpha() for c in sentence) < 15:
                 continue
