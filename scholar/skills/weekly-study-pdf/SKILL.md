@@ -175,7 +175,9 @@ is the floor, not the target. A student who reads only this PDF should be able t
 1. **Drawn for the PDF.** Graphs, function plots, phase diagrams, titration curves, data
    plots. Write a matplotlib script in `work_dir` (e.g. `fig_exp.py`, saving PNGs at
    200 dpi into `img/`, clean white style, labeled axes), then run
-   `uv run academic-sync study-pdf-plot <work_dir>/fig_exp.py`. No credit needed.
+   `uv run academic-sync study-pdf-plot <work_dir>/fig_exp.py`. No credit needed. Kea reads the script before
+   running it: import only math, numpy, matplotlib, random and os (for `os.makedirs("img", exist_ok=True)` only),
+   and save with a plain literal path, `plt.savefig("img/name.png", dpi=200)`. Anything else is refused.
 2. **Wikimedia Commons.** For anatomy, organisms, structures and lab equipment:
    `uv run academic-sync study-pdf-image search "<words>"`, then
    `uv run academic-sync study-pdf-image get "File:<name>" --banner <id> --name <stem>`.
