@@ -205,7 +205,7 @@ async function coverageCheck(arg) {
   const first = String(arg || '').trim().split(/\s+/)[0];
   const codes = /^[A-Z]{2,5}\d{3,5}[A-Z]?$/i.test(first) ? [first.toUpperCase()] : (await db().watchList(profiles.paths().db)).map((c) => c.code);
   for (const code of codes) {
-    const r = await workspace.runHidden(uv, ['run', 'academic-sync', 'coverage', '--course', code, '--json'], { cwd, env: workspace.engineEnv(uv) });
+    const r = await workspace.runHidden(uv, ['run', 'academic-sync', 'coverage', '--course', code, '--json'], { cwd, env: { ...workspace.engineEnv(uv), KEA_TASK: 'coverage', KEA_RUN_ID: `${Date.now()}` } });
     let out;
     try {
       out = JSON.parse(r.out.slice(r.out.indexOf('{')));
@@ -451,7 +451,10 @@ async function next() {
         const dbFile = profiles.paths().db;
         const backups = path.join(path.dirname(dbFile), 'backups');
         fs.mkdirSync(backups, { recursive: true });
-        fs.copyFileSync(dbFile, path.join(backups, `${new Date().toISOString().replace(/[:.]/g, '-')}-${job.task}-${entry.id}.db`));
+        const name = path.join(backups, `${new Date().toISOString().replace(/[:.]/g, '-')}-${job.task}-${entry.id}.db`);
+        fs.copyFileSync(dbFile, name);
+        // (With its journal files, if SQLite left any, so the copy is complete.)
+        for (const x of ['-wal', '-shm', '-journal']) if (fs.existsSync(dbFile + x)) fs.copyFileSync(dbFile + x, name + x);
         const old = fs.readdirSync(backups).filter((f) => f.endsWith('.db')).sort();
         for (const f of old.slice(0, Math.max(0, old.length - 30))) fs.rmSync(path.join(backups, f), { force: true });
       } catch (err) {

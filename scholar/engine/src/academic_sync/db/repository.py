@@ -272,7 +272,8 @@ def find_item_by_fingerprint(
 # two are recognisably the same work; otherwise the newcomer becomes its own item and the near-miss is recorded.
 _GUARD_STOP = {"due", "the", "and", "for", "with", "from", "online", "week", "post", "posts", "initial", "response",
                "submit", "submission", "pdf", "only", "folder", "part", "your", "this", "that", "complete", "chapter",
-               "chapters", "requires", "lockdown", "browser", "respondus", "webcam"}
+               "chapters", "requires", "lockdown", "browser", "respondus", "webcam", "assignment", "quiz",
+               "exam", "homework", "discussion", "module"}
 _GUARD_KIND = re.compile(
     r"\b(lab(?:oratory)?|report|quiz|exam|test|hw|homework|assignment|module|discussion|oa|unit|project|paper|essay|"
     r"worksheet|handout|practical|activity)\s*[:#.]?\s*#?\s*(\d+(?:\.\d+)*)\b|#\s*(\d+)\b",
@@ -287,7 +288,7 @@ def _guard_ident(title: str):
     if m.group(3):
         return m.group(3), None
     kind = m.group(1).lower()
-    return m.group(2), {"homework": "hw", "laboratory": "lab", "test": "exam"}.get(kind, kind)
+    return m.group(2), {"homework": "hw", "laboratory": "lab", "test": "exam", "oa": "assignment"}.get(kind, kind)
 
 
 def _guard_words(title: str) -> set[str]:
@@ -308,7 +309,8 @@ def same_work_title(old_title: str, new_title: str) -> bool:
     # Words that only one of them has, naming a different kind of thing.
     marks = ("handout", "work", "practice", "review", "quiz", "report", "practical")
     for m in marks:
-        if (m in (old_title or "").lower()) != (m in (new_title or "").lower()) and not (m == "quiz" and ka == kb == "quiz"):
+        # (Whole words: "homework" isn't "work".)
+        if (re.search(rf"\b{m}\b", (old_title or "").lower()) is None) != (re.search(rf"\b{m}\b", (new_title or "").lower()) is None):
             return False
     if not a or not b:
         return True
@@ -369,7 +371,13 @@ def upsert_academic_item(
             import hashlib
 
             other = row
-            item = item.model_copy(update={"fingerprint": f"{item.fingerprint}~{hashlib.sha1(item.title.encode()).hexdigest()[:8]}"})
+            # A newcomer kept separately before (under a reworded title) is the same one: reuse its key.
+            base = item.fingerprint
+            kept = session.execute(
+                select(AcademicItemRow).where(AcademicItemRow.course_id == item.course_id, AcademicItemRow.fingerprint.like(f"{base}~%"))
+            ).scalars().all()
+            again = next((k for k in kept if same_work_title(k.title, item.title)), None)
+            item = item.model_copy(update={"fingerprint": again.fingerprint if again else f"{base}~{hashlib.sha1(item.title.encode()).hexdigest()[:8]}"})
             row = find_item_by_fingerprint(session, item.course_id, item.fingerprint)
             if row is None:
                 session.add(UnresolvedReferenceRow(
@@ -418,7 +426,12 @@ def upsert_academic_item(
     row.source_ids_json = item.source_ids
     row.item_type = item.item_type.value
     row.title = item.title
-    row.description = item.description
+    # (A re-extraction with no description never blanks one: the D2L instructions Kea copied in stay.)
+    if item.description or not row.description:
+        row.description = item.description
+    # An item cancelled or replaced on purpose (item-cancel, item-supersede, with a reason) isn't brought back by a
+    # re-read of an old source; item-restore does that.
+    kept_status = row.status in ("cancelled", "superseded") and not allow_downgrade
     if not skip_date_fields:
         # A genuinely different incoming date (not the first time this row
         # gets a date) supersedes any earlier pattern-rule inference --
@@ -443,7 +456,7 @@ def upsert_academic_item(
         # so this was a bookkeeping bug, not a duplicate-Calendar-event
         # risk -- but a confusing one for exactly the "run this for a
         # friend and trust the status output" case this audit is for).
-        if row.status == "synced" and item.status != ItemStatus.SYNCED and not allow_downgrade:
+        if (row.status == "synced" and item.status != ItemStatus.SYNCED and not allow_downgrade) or kept_status:
             pass
         else:
             row.status = item.status.value
@@ -499,7 +512,8 @@ def upsert_academic_item(
     row.is_inferred_date = item.is_inferred_date or row.is_inferred_date
     row.last_seen = now
     row.source_hash = item.source_hash
-    row.superseded_by_id = item.superseded_by_id
+    if not kept_status:
+        row.superseded_by_id = item.superseded_by_id
     row.calendar_event_id = item.calendar_event_id
     row.calendar_fingerprint = item.calendar_fingerprint
     row.fingerprint = item.fingerprint or row.fingerprint

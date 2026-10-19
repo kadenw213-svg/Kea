@@ -44,10 +44,27 @@ def get_session_factory(db_url: str | None = None) -> sessionmaker:
     return _SessionFactory
 
 
+# Who is writing (Kea's run, the command, the reason), for the database's item-history triggers. Written as the first
+# statement of every session, so it's inside the same transaction as that session's changes: another process can't
+# swap it in between (SQLite lets one writer at a time), and each change is credited to the run that made it.
+EVENT_CONTEXT: dict[str, str | None] = {}
+
+
 @contextmanager
 def session_scope(db_url: str | None = None) -> Iterator[Session]:
     factory = get_session_factory(db_url)
     session = factory()
+    if EVENT_CONTEXT:
+        from sqlalchemy import text as _sql
+
+        try:
+            session.execute(
+                _sql("INSERT INTO event_context (id, run_id, command, reason) VALUES (1, :r, :c, :why) "
+                     "ON CONFLICT(id) DO UPDATE SET run_id = :r, command = :c, reason = :why"),
+                {"r": EVENT_CONTEXT.get("run_id"), "c": EVENT_CONTEXT.get("command"), "why": EVENT_CONTEXT.get("reason")},
+            )
+        except Exception:  # noqa: BLE001 -- before the history tables exist (first migration)
+            session.rollback()
     try:
         yield session
         session.commit()

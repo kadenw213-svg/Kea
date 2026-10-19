@@ -98,24 +98,16 @@ app = typer.Typer(help="academic-sync: D2L -> normalized academic model -> Googl
 
 
 def _set_event_context(reason: str | None = None) -> None:
-    """Tell the database's history triggers who is writing: Kea's run id (KEA_RUN_ID, set by Kea for every run; a
-    manual or developer session otherwise), the command, and the reason when one is given."""
+    """Who is writing, for the database's history triggers: Kea's run id (KEA_RUN_ID, set by Kea for every run and
+    check; a manual or developer session otherwise), the command, and the reason when one is given. Applied inside each
+    write transaction (db.session.EVENT_CONTEXT), so concurrent commands can't take each other's credit."""
     import sys
 
-    from sqlalchemy import text as sql
+    from academic_sync.db.session import EVENT_CONTEXT
 
     run_id = os.environ.get("KEA_RUN_ID") or f"manual-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     task = os.environ.get("KEA_TASK")
-    command = " ".join(sys.argv[1:])[:400]
-    try:
-        with session_scope() as session:
-            session.execute(
-                sql("INSERT INTO event_context (id, run_id, command, reason) VALUES (1, :r, :c, :why) "
-                    "ON CONFLICT(id) DO UPDATE SET run_id = :r, command = :c, reason = :why"),
-                {"r": f"{task}:{run_id}" if task else run_id, "c": command, "why": reason},
-            )
-    except Exception:  # noqa: BLE001 -- history context must never stop a command
-        pass
+    EVENT_CONTEXT.update({"run_id": f"{task}:{run_id}" if task else run_id, "command": " ".join(sys.argv[1:])[:400], "reason": reason})
 
 
 @app.callback()
@@ -449,7 +441,10 @@ def _ident_kind(title: str) -> tuple[str | None, str | None]:
         return None, None
     if m.group(3):
         return m.group(3), None
-    num = m.group(2).lower()
+    raw = m.group(2)
+    if re.fullmatch(r"[ivxIVX]+", raw) and (raw != raw.upper() or (m.end() < len(title) and title[m.end()].isalpha())):
+        return None, None
+    num = raw.lower()
     kind = re.sub(r"\s+report$", "", m.group(1).lower())
     kind = {"ch": "chapter", "homework": "hw", "laboratory": "lab", "test": "exam"}.get(kind, kind)
     num = _NUMBER_WORDS.get(num, num)
@@ -700,7 +695,9 @@ def _local_day(value):
 
 
 def _rich(v) -> str:
-    """D2L rich text ({Text, Html} or a string) as plain text."""
+    """D2L rich text ({Text, Html}, {Text: {Text, Html}, IsDisplayed} or a string) as plain text."""
+    while isinstance(v, dict) and isinstance(v.get("Text"), dict):
+        v = v["Text"]
     if isinstance(v, dict):
         v = v.get("Text") or re.sub(r"<[^>]+>", " ", v.get("Html") or "")
     return re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", str(v or ""))).strip()
@@ -760,7 +757,7 @@ def _d2l_objects(folder: Path, code: str) -> list[dict]:
         due = q.get("DueDate") or q.get("EndDate")
         out.append({"kind": "quiz", "id": str(q.get("QuizId")), "title": q.get("Name", ""), "day": _local_day(due),
                     "grade_id": str(q.get("GradeItemId") or "") or None,
-                    "instructions": _rich((q.get("Instructions") or {}).get("Text") if isinstance(q.get("Instructions"), dict) else None) or _rich(q.get("Description"))})
+                    "instructions": _rich(q.get("Instructions")) or _rich(q.get("Description"))})
     for t in load("discussions") or []:
         due = t.get("DueDate") or t.get("EndDate") or t.get("UnlockEndDate")
         graded = (t.get("ScoreOutOf") or 0) > 0 or t.get("GradeItemId")
@@ -797,33 +794,74 @@ def _d2l_objects(folder: Path, code: str) -> list[dict]:
     return [o for o in out if str(o.get("title") or "").strip()]
 
 
-def _reconcile_match(obj: dict, items: list[AcademicItem]):
-    """(matched item, days apart) for a D2L object: the same kind and number ("Exam 3(5-6) - Requires Respondus" is
-    "Exam 3 (Chapters 5-6)"), or the same name; None when nothing fits."""
-    a = _title_words(obj["title"])
-    ia, ka = _ident_kind(obj["title"])
-    practice = "practice" in obj["title"].lower()
+_WORK_KINDS = {"discussion", "assignment", "review", "quiz", "exam", "lab", "practical", "essay", "paper", "project", "hw", "worksheet", "handout"}
+
+
+def _kinds(title: str) -> dict[str, str]:
+    """Every (kind -> number) a name carries: "Module 4 Assignment 2" is {module: 4, assignment: 2}."""
+    out: dict[str, str] = {}
+    for m in re.finditer(rf"\b({_KIND})\s*[:#.]?\s*#?\s*(\d+(?:\.\d+)*|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b", title or "", re.IGNORECASE):
+        kind = re.sub(r"\s+report$", "", m.group(1).lower())
+        kind = {"ch": "chapter", "homework": "hw", "laboratory": "lab", "test": "exam", "oa": "assignment"}.get(kind, kind)
+        num = _NUMBER_WORDS.get(m.group(2).lower(), m.group(2).lower())
+        out.setdefault(kind, num.split(".")[0] if kind == "chapter" else num)
+    return out
+
+
+def _work_words(title: str) -> set[str]:
+    # ("the assignment folder" is where work goes, not what it is.)
+    t = re.sub(r"assignment (submission )?folders?", "", (title or "").lower())
+    found = {k for k in _WORK_KINDS if re.search(rf"\b{k}s?\b", t)}
+    if re.search(r"\bhomework\b|\bhw\b", t):
+        found.add("hw")
+    if re.search(r"\boa\b|\bonline assignment", t):
+        found.add("assignment")
+    if "test" in t.split():
+        found.add("exam")
+    return found
+
+
+def _reconcile_score(obj: dict, item: AcademicItem):
+    """How well an item fits a D2L object (higher is better), or None when they're different work."""
+    ka, kb = _kinds(obj["title"]), _kinds(item.title)
+    for k in set(ka) & set(kb):
+        if ka[k] != kb[k]:
+            return None
+    wa, wb = _work_words(obj["title"]), _work_words(item.title)
+    # Different kinds of work (a discussion and an assignment of the same module) are never each other.
+    if wa and wb and not (wa & wb):
+        return None
+    # (A handout and the folder it's turned in to are the same work, so "handout" isn't one of these.)
+    for mark in ("practice", "work", "review"):
+        if (re.search(rf"\b{mark}\b", obj["title"].lower()) is None) != (re.search(rf"\b{mark}\b", item.title.lower()) is None):
+            return None
+    a, b = _title_words(obj["title"]), _title_words(item.title)
+    shared_kinds = len(set(ka) & set(kb))
+    # Measured against the shorter name, unless only one of them carries a number (then against the longer: "Review:
+    # Chapter 3" is not "HW: Final Review" just for sharing "review").
+    one_numbered = bool(ka) != bool(kb)
+    overlap = len(a & b) / (max if one_numbered else min)(len(a), len(b)) if a and b else 0.0
+    if overlap < 0.5 and not (shared_kinds and (not a or not b)) and not (shared_kinds >= 2):
+        if not (shared_kinds and wa & wb):
+            return None
+    return overlap * 2 + shared_kinds
+
+
+def _reconcile_match(obj: dict, items: list[AcademicItem], taken: set | None = None):
+    """(matched item, days apart) for a D2L object, best fit first (words, then kinds, then the nearest date); an
+    item already matched to another dated object isn't used twice. None when nothing fits."""
     best = None
     for i in items:
-        ib, kb = _ident_kind(i.title)
-        if ia and ib and ia != ib:
+        if taken is not None and i.id in taken:
             continue
-        if practice != ("practice" in i.title.lower()):
-            continue
-        # An exam's work upload ("Exam 1 Work", "Show Work") is its own deadline, never the exam itself.
-        if ("work" in obj["title"].lower().split()) != ("work" in i.title.lower().split()):
-            continue
-        b = _title_words(i.title)
-        if ia and ia == ib and ka and ka == kb:
-            pass
-        elif not a or not b or (ia and not ib) or (ib and not ia):
-            continue
-        elif len(a & b) / min(len(a), len(b)) < 0.6:
+        score = _reconcile_score(obj, i)
+        if score is None:
             continue
         gap = abs((i.date - obj["day"]).days) if (i.date and obj["day"]) else 999
-        if best is None or gap < best[1]:
-            best = (i, gap)
-    return best
+        key = (score, -gap)
+        if best is None or key > best[2]:
+            best = (i, gap, key)
+    return (best[0], best[1]) if best else None
 
 
 def reconcile_findings(session, course: Course, folder: Path | None = None) -> dict:
@@ -836,14 +874,21 @@ def reconcile_findings(session, course: Course, folder: Path | None = None) -> d
         folder = days[0] if days else None
     if folder is None:
         return {"folder": None, "unmatched": [], "drift": [], "_matched": []}
-    items = [i for i in repository.list_items_for_course(session, course.id) if not i.superseded_by_id and i.status not in (ItemStatus.CANCELLED, ItemStatus.SUPERSEDED)]
+    # (Graded work only: a reading week, a lecture or a break is never the thing D2L grades.)
+    not_work = {ItemType.WEEKLY_READING, ItemType.READING, ItemType.LECTURE, ItemType.BREAK, ItemType.NO_CLASS, ItemType.RECITATION, ItemType.SEMINAR}
+    items = [i for i in repository.list_items_for_course(session, course.id) if not i.superseded_by_id and i.status not in (ItemStatus.CANCELLED, ItemStatus.SUPERSEDED) and i.item_type not in not_work]
     dismissed = set(repository.get_preference(session, "coverage_dismissed", course_id=course.id, default=[]) or [])
     unmatched, drift, matched = [], [], []
-    for o in _d2l_objects(folder, course.course_code):
+    taken: set = set()
+    # Dated objects first (they're the surest), each item matched to one dated object at most.
+    objects = sorted(_d2l_objects(folder, course.course_code), key=lambda o: (o["day"] is None, o["kind"] == "grade"))
+    for o in objects:
         key = f"d2l:{o['kind']}:{o['id']}"
-        hit = _reconcile_match(o, items)
+        hit = _reconcile_match(o, items, taken if o["day"] else None)
         if hit is not None:
             matched.append((o, hit[0]))
+            if o["day"]:
+                taken.add(hit[0].id)
         if key in dismissed:
             continue
         row = {"key": key, "kind": o["kind"], "id": o["id"], "title": o["title"], "d2l_date": o["day"].isoformat() if o["day"] else None}
@@ -878,13 +923,20 @@ def d2l_reconcile_cmd(
             _set_event_context("Instructions copied from D2L")
             for o, item in r["_matched"]:
                 text = (o.get("instructions") or "").strip()
-                if len(text) < 20:
+                if len(text) < 20 or text.startswith("{'Text'"):
+                    row = session.get(AcademicItemRow, item.id)
+                    # (Undo the unreadable text an earlier version copied in from an empty quiz description.)
+                    if row is not None and (row.description or "").startswith("From D2L") and "{'Text'" in (row.description or ""):
+                        row.description = None
+                        filled += 1
                     continue
                 row = session.get(AcademicItemRow, item.id)
                 header = f"From D2L ({o['kind']} \"{o['title']}\"):\n"
-                if row is not None and (row.description or "").strip() != (header + text).strip():
-                    # Several D2L objects can match one item (a folder and its quiz): the longest instructions win.
-                    if not row.description or not row.description.startswith("From D2L") or len(text) >= len(row.description):
+                current = row.description or "" if row is not None else ""
+                if row is not None and current.strip() != (header + text).strip():
+                    # The same D2L object always refreshes it (an instructor's edit, even a shorter one); another
+                    # object matching the same item (a folder and its quiz) replaces it only with longer text.
+                    if not current or current.startswith(header) or not current.startswith("From D2L") or len(header + text) > len(current):
                         row.description = header + text
                         filled += 1
     r.pop("_matched", None)

@@ -199,11 +199,10 @@ const hiddenWords = (h) => `the "${h.category}" grade category counts ${h.counte
 // reports lived on Science Interactive and were lost because nothing ever looked there.
 const PLATFORM_KINDS = [
   { re: /aleks/i, host: 'aleks.com', name: 'ALEKS' },
-  { re: /science ?interactive|holscience|\bhol\b|myhol/i, host: 'holscience.com', name: 'Science Interactive' },
-  { re: /simple ?syllabus/i, host: 'simplesyllabus.com', name: 'Simple Syllabus' },
+  { re: /science ?interactive|holscience|\bhol\b|myhol/i, host: 'holscience.com', hosts: ['holscience.com', 'scienceinteractive.com'], name: 'Science Interactive' },
   { re: /connect|mcgraw|mheducation/i, host: 'mheducation.com', name: 'McGraw Hill Connect' },
   { re: /pearson|mylab|mastering/i, host: 'pearson.com', name: 'Pearson' },
-  { re: /cengage|webassign|mindtap/i, host: 'cengage.com', name: 'Cengage' },
+  { re: /cengage|webassign|mindtap/i, host: 'cengage.com', hosts: ['cengage.com', 'webassign.net', 'cengagenow.com'], name: 'Cengage' },
   { re: /zybooks/i, host: 'zybooks.com', name: 'zyBooks' },
   { re: /perusall/i, host: 'perusall.com', name: 'Perusall' },
   { re: /wileyplus|wiley/i, host: 'wiley.com', name: 'Wiley' },
@@ -218,8 +217,9 @@ function classPlatforms(toc) {
       if (m.IsHidden) continue;
       for (const t of m.Topics || []) {
         if (t.IsHidden) continue;
-        const text = `${t.Title || ''} ${t.Url || ''}`;
         const lti = t.ActivityType === 7 || /type=lti|\/lti\//i.test(t.Url || '');
+        // A launch tool is known by its name; a plain link only by where it goes.
+        const text = lti ? `${t.Title || ''} ${t.Url || ''}` : String(t.Url || '').replace(/^https?:\/\//i, '').split('/')[0];
         // (A publisher's video or media file is something to watch, not a place work is assigned.)
         if (!lti && /:\/\/(media|video|player|cdn)[.-]|\.(mp4|mp3|pdf)(\?|$)/i.test(t.Url || '')) continue;
         const kind = PLATFORM_KINDS.find((k) => k.re.test(text));
@@ -233,7 +233,7 @@ function classPlatforms(toc) {
 }
 const lastRead = (host) =>
   Object.entries(browser.platformsRead())
-    .filter(([h]) => h === host || h.endsWith(`.${host}`))
+    .filter(([h]) => (PLATFORM_KINDS.find((k) => k.host === host)?.hosts || [host]).some((x) => h === x || h.endsWith(`.${x}`)))
     .map(([, at]) => at)
     .sort()
     .pop() || null;
@@ -302,7 +302,8 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
         r = await getAll(a.rel(v, c.ou));
         if (a.expand && r?.data) r = { ...r, data: await a.expand(v, c.ou, r.data) };
       } catch (err) {
-        if (/ERR_NETWORK|ERR_INTERNET|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|ENOTFOUND|ECONNRESET|net::/i.test(String(err.message || err))) offline = offline || String(err.message || err).slice(0, 60);
+        // (Only a real disconnection, not a single failed request: the check already reached the class site.)
+        if (/ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_ADDRESS_UNREACHABLE|ERR_NETWORK_IO_SUSPENDED|ENOTFOUND/i.test(String(err.message || err))) offline = offline || String(err.message || err).slice(0, 60);
         reasons.push(`couldn't check ${area} (${String(err.message || err).slice(0, 80)})`);
         continue;
       }
@@ -329,7 +330,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     // reason for today's check to fix it, when it's new (an open one isn't re-sent every day; it's in the Inbox).
     try {
       const uv = await workspace.findUv();
-      const rr = await workspace.runHidden(uv, ['run', 'academic-sync', 'd2l-reconcile', '--course', c.code, '--dir', dir, '--fill-instructions', '--json'], { cwd: p.workspace, env: workspace.engineEnv(uv) });
+      const rr = await workspace.runHidden(uv, ['run', 'academic-sync', 'd2l-reconcile', '--course', c.code, '--dir', dir, '--fill-instructions', '--json'], { cwd: p.workspace, env: { ...workspace.engineEnv(uv), KEA_RUN_ID: day(), KEA_TASK: 'precheck' } });
       const rec = JSON.parse(rr.out.slice(rr.out.indexOf('{')));
       const found = [...(rec.unmatched || []).map((u) => `${u.kind} "${u.title}" (${u.d2l_date || 'no date'}) isn't on the calendar [${u.key}]`), ...(rec.drift || []).map((d) => `"${d.title}" is on the calendar for ${d.item_date} but D2L says ${d.d2l_date} [${d.key}]`)];
       seen.reconcile = found;

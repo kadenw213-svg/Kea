@@ -267,9 +267,10 @@ async function tick() {
     if (syncDue) s.lastRuns.sync = today;
     writeState(s);
     if (checkDue) {
+      const started = Date.now();
       await runner.run('daily', '', 'schedule');
       // Offline or asleep during the check: today isn't done, so the next tick tries again (in 15 minutes or more).
-      const last = runner.activity?.().find((e) => e.task === 'daily');
+      const last = runner.activity().find((e) => e.task === 'daily' && Date.parse(e.start) >= started - 1000);
       if (last && /offline or asleep/.test(last.summary || '')) {
         const st = readState();
         st.lastRuns = { ...st.lastRuns, daily: before.daily, check: before.check, sync: before.sync };
@@ -457,12 +458,21 @@ function register() {
   // Item history and "what changed" (the engine's append-only record of every change, with runs and reasons).
   const engineJson = async (args) => {
     const uv = await workspace.findUv();
-    const r = await workspace.runHidden(uv, ['run', 'academic-sync', ...args], { cwd: p().workspace, env: workspace.engineEnv(uv) });
+    const r = await workspace.runHidden(uv, ['run', 'academic-sync', ...args], { cwd: p().workspace, env: { ...workspace.engineEnv(uv), KEA_TASK: 'view', KEA_RUN_ID: `${Date.now()}` } });
     const at = r.out.indexOf('{');
     if (at < 0) throw new Error((r.err || r.out || 'No answer from the engine.').slice(0, 300));
     return JSON.parse(r.out.slice(at));
   };
-  ipcMain.handle('scholar:courseRules', (_e, code) => engineJson(['course-rules', '--course', String(code).replace(/[^\w]/g, ''), '--json']));
+  // (Rules are worked out from every document, so each class's list is kept for ten minutes.)
+  const rulesCache = new Map();
+  ipcMain.handle('scholar:courseRules', async (_e, code) => {
+    const k = String(code).replace(/[^\w]/g, '');
+    const hit = rulesCache.get(k);
+    if (hit && Date.now() - hit.at < 10 * 60e3) return hit.value;
+    const value = await engineJson(['course-rules', '--course', k, '--json']);
+    rulesCache.set(k, { at: Date.now(), value });
+    return value;
+  });
   ipcMain.handle('scholar:itemHistory', (_e, id) => engineJson(['item-history', String(id).replace(/[^\w-]/g, ''), '--json']));
   ipcMain.handle('scholar:changes', (_e, opts = {}) => {
     const args = ['changes', '--json'];

@@ -270,14 +270,20 @@ async function open(url, offset = 0) {
   if (!s.home) throw new Error('No class site is set up yet.');
   const target = url || s.home;
   let w = await load(target);
-  const outside = () => hostOf(w.webContents.getURL()) !== hostOf(s.home);
-  if (!outside() || hostOf(target) === hostOf(s.home)) {
-    // On the class site (or sent back to its sign-in page): sign in, then open the page again.
-    if (!outside() && !onSite(w.webContents.getURL())) {
-      if (!(await ensureSignedIn(w))) throw new Error('Not signed in to the class site (the user did not finish signing in).');
-      w = await load(target);
-    }
+  // Sent to the school's sign-in (D2L's own page, or a single-sign-on host): sign in, then open the page again.
+  const signInPage = async () => {
+    const cur = w.webContents.getURL();
+    if (hostOf(cur) === hostOf(s.home)) return !onSite(cur);
+    if (s.login?.host && hostOf(cur) === s.login.host) return true;
+    if (hostOf(target) !== hostOf(s.home)) return false;
+    const pw = await w.webContents.executeJavaScript('!!document.querySelector("input[type=password]")').catch(() => false);
+    return pw && /login|signin|sso|saml|adfs|idp|microsoftonline|okta|auth/i.test(cur);
+  };
+  if (await signInPage()) {
+    if (!(await ensureSignedIn(w))) throw new Error('Not signed in to the class site (the user did not finish signing in).');
+    w = await load(target);
   }
+  const outside = () => hostOf(w.webContents.getURL()) !== hostOf(s.home);
   if (outside()) {
     // A platform draws its page after loading: wait until its text stops growing (up to ~15 seconds).
     let last = -1;
@@ -469,8 +475,18 @@ async function mailSignedIn(w, url) {
   return onSite(mailWindow().webContents.getURL());
 }
 
+// Reading and sending share one window: one at a time, so opening another message can never move the page a reply
+// is being written on.
+let mailLock = Promise.resolve();
+const withMail = (fn) => {
+  const run = mailLock.then(fn, fn);
+  mailLock = run.catch(() => {});
+  return run;
+};
+
 /** A message's page as text (what the class site shows: sender, subject, date, body). */
-async function readMessage(url) {
+const readMessage = (url) => withMail(() => readMessageNow(url));
+async function readMessageNow(url) {
   if (!url || !onSite(url)) throw new Error('This message has no class-site link to open.');
   const w = await mailLoad(url);
   if (!(await mailSignedIn(w, url))) throw new Error('Kea isn’t signed in to your class site.');
@@ -496,7 +512,8 @@ const ALL = `const all = []; const walk = (r) => { for (const el of r.querySelec
  * text, then its Send is pressed. Returns { sent: true } once the class site shows it went, otherwise opens the page
  * with everything filled in for the student to check and send ({ sent: false, shown: true, why }).
  */
-async function sendMessage({ url = '', ou = '', subject = '', body = '', to = '' }) {
+const sendMessage = (msg) => withMail(() => sendMessageNow(msg));
+async function sendMessageNow({ url = '', ou = '', subject = '', body = '', to = '' }) {
   const s = readSchool();
   if (!s.home) throw new Error('No class site is set up yet.');
   const text = String(body || '').trim();
@@ -557,7 +574,8 @@ async function sendMessage({ url = '', ou = '', subject = '', body = '', to = ''
     await sleep(1000);
     const gone = !(await inFrames(w, present));
     const said = await inFrames(w, `(() => /message (has been |was )?sent|sent successfully/i.test(document.body ? document.body.innerText : ''))()`);
-    if (said || (gone && w.webContents.getURL() !== before) || (gone && i >= 4)) return { sent: true, how };
+    // Sent only when the site says so, or the editor closed and the page moved on (not just a redraw).
+    if (said || (gone && w.webContents.getURL() !== before)) return { sent: true, how };
   }
   return show('Kea pressed Send but the class site didn’t confirm it. Check your Sent folder on the class site before sending again.');
 }
