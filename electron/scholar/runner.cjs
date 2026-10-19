@@ -192,6 +192,46 @@ function saveActivity(entry) {
   fs.mkdirSync(path.dirname(activityFile()), { recursive: true });
   fs.writeFileSync(activityFile(), JSON.stringify(list.slice(0, 60), null, 1));
 }
+/**
+ * After an import or weekly update: graded work written in a class's documents that still isn't on the calendar, or a
+ * document Kea couldn't read, becomes a "needs you" message, so a gap is never silent.
+ */
+async function coverageCheck(arg) {
+  const uv = await workspace.findUv();
+  const cwd = profiles.paths().workspace;
+  const first = String(arg || '').trim().split(/\s+/)[0];
+  const codes = /^[A-Z]{2,5}\d{3,5}[A-Z]?$/i.test(first) ? [first.toUpperCase()] : (await db().watchList(profiles.paths().db)).map((c) => c.code);
+  for (const code of codes) {
+    const r = await workspace.runHidden(uv, ['run', 'academic-sync', 'coverage', '--course', code, '--json'], { cwd, env: workspace.engineEnv(uv) });
+    let out;
+    try {
+      out = JSON.parse(r.out.slice(r.out.indexOf('{')));
+    } catch {
+      continue;
+    }
+    const items = out.uncovered || [];
+    const unreadable = out.unreadable || [];
+    // Told once per change (the same open gap isn't repeated after every update).
+    const seenFile = path.join(profiles.paths().dir, 'coverage-told.json');
+    const told = readJson(seenFile, {});
+    const sig = JSON.stringify([items.map((i) => i.key), unreadable]);
+    if (told[code] === sig) continue;
+    told[code] = sig;
+    fs.writeFileSync(seenFile, JSON.stringify(told));
+    if (!items.length && !unreadable.length) continue;
+    const lines = [
+      ...items.slice(0, 8).map((i) => `• ${i.title} (${i.date || 'no date found'})`),
+      ...unreadable.slice(0, 4).map((u) => `• Couldn't read ${path.basename(String(u).split(' (')[0])}`)
+    ];
+    addNews({
+      course: code,
+      kind: 'needs_you',
+      title: items.length ? `${items.length} piece${items.length > 1 ? 's' : ''} of graded work in ${code}'s documents ${items.length > 1 ? "aren't" : "isn't"} on your calendar` : `Kea couldn't read ${unreadable.length} of ${code}'s documents`,
+      body: `${lines.join('\n')}\nThe next weekly update looks into each one; check your class site for any that are due soon.`
+    });
+  }
+}
+
 function addNews(n) {
   const list = readJson(newsFile(), []);
   list.unshift({ id: `${Date.now()}`, at: new Date().toISOString(), read: false, ...n });
@@ -442,6 +482,8 @@ async function next() {
         try {
           after?.(true);
         } catch {}
+        // Every import and weekly update ends with Kea's own coverage check (not left to Claude remembering).
+        if (job.task === 'import' || job.task === 'sync') coverageCheck(job.arg).catch((err) => console.error('Coverage', err));
         // A class's first scan is followed by its whole textbook (one week per run).
         if (job.task === 'import' && job.arg.trim() && !/\bresume\b/.test(job.arg) && settings().get('scholar.studyPdfs', true) !== false) run('study', `missing ${job.arg.trim().split(/\s+/)[0]}`, job.why);
         finish(true, text.trim().slice(0, 4000) || 'Done.');

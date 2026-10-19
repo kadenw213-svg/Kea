@@ -116,6 +116,8 @@ function copyTree(src, dst) {
       }
     }
   };
+  // A shared folder that isn't there (the drive not caught up yet) is never a reason to delete what's here.
+  if (!fs.existsSync(src)) return false;
   walk(src, dst);
   const prune = (d) => {
     if (!fs.existsSync(d)) return;
