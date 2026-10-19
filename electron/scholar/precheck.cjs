@@ -301,11 +301,12 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
         for (const h of seen.hiddenWork) if (was.get(h.category) !== h.hidden) reasons.push(`Hidden graded work: ${hiddenWords(h)}. Find what it is (course schedule, outside platform, hidden folders), make sure every piece is on the calendar, and tell the student which ones are missing`);
       }
     }
-    // Everything D2L lists matched to the calendar (Kea's own check, no Claude): a missing or misdated item is a
+    // Everything D2L lists matched to the calendar (Kea's own check, no Claude), each item's D2L instructions and
+    // rubric copied into its details (kept current when the instructor edits them); a missing or misdated item is a
     // reason for today's check to fix it, when it's new (an open one isn't re-sent every day; it's in the Inbox).
     try {
       const uv = await workspace.findUv();
-      const rr = await workspace.runHidden(uv, ['run', 'academic-sync', 'd2l-reconcile', '--course', c.code, '--dir', dir, '--json'], { cwd: p.workspace, env: workspace.engineEnv(uv) });
+      const rr = await workspace.runHidden(uv, ['run', 'academic-sync', 'd2l-reconcile', '--course', c.code, '--dir', dir, '--fill-instructions', '--json'], { cwd: p.workspace, env: workspace.engineEnv(uv) });
       const rec = JSON.parse(rr.out.slice(rr.out.indexOf('{')));
       const found = [...(rec.unmatched || []).map((u) => `${u.kind} "${u.title}" (${u.d2l_date || 'no date'}) isn't on the calendar [${u.key}]`), ...(rec.drift || []).map((d) => `"${d.title}" is on the calendar for ${d.item_date} but D2L says ${d.d2l_date} [${d.key}]`)];
       seen.reconcile = found;

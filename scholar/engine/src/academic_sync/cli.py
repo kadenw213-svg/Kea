@@ -699,6 +699,45 @@ def _local_day(value):
         return None
 
 
+def _rich(v) -> str:
+    """D2L rich text ({Text, Html} or a string) as plain text."""
+    if isinstance(v, dict):
+        v = v.get("Text") or re.sub(r"<[^>]+>", " ", v.get("Html") or "")
+    return re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", str(v or ""))).strip()
+
+
+def _folder_instructions(f: dict) -> str:
+    """An assignment folder's instructions, attachments and rubric, as the student would read them in D2L."""
+    parts = []
+    text = _rich(f.get("CustomInstructions"))
+    if text:
+        parts.append(text)
+    files = [a.get("FileName") for a in (f.get("Attachments") or []) if isinstance(a, dict) and a.get("FileName")]
+    if files:
+        parts.append("Attached: " + ", ".join(files))
+    links = [a.get("LinkName") or a.get("Href") for a in (f.get("LinkAttachments") or []) if isinstance(a, dict)]
+    if [x for x in links if x]:
+        parts.append("Links: " + ", ".join(x for x in links if x))
+    rules = []
+    if f.get("AllowableFileType") not in (None, 0):
+        rules.append("specific file types only")
+    if f.get("SubmissionType") == 0 or f.get("SubmissionType") == "File":
+        rules.append("file submission")
+    for r in ((f.get("Assessment") or {}).get("Rubrics") or []):
+        lines = [f"Rubric: {r.get('Name', '')}"]
+        for g in r.get("CriteriaGroups") or []:
+            for c in g.get("Criteria") or []:
+                cells = c.get("Cells") or []
+                top = max((x.get("Points") or 0 for x in cells), default=0)
+                best = next((x.get("Description") for x in cells if (x.get("Points") or 0) == top and x.get("Description")), "")
+                lines.append(f"- {c.get('Name', '')} ({top:g} pts){': ' + _rich(best)[:240] if best else ''}")
+        parts.append("\n".join(lines))
+    denom = (f.get("Assessment") or {}).get("ScoreDenominator")
+    if denom:
+        parts.append(f"Worth {denom:g} points." + (f" ({', '.join(rules)})" if rules else ""))
+    return "\n\n".join(p for p in parts if p).strip()[:8000]
+
+
 def _d2l_objects(folder: Path, code: str) -> list[dict]:
     """D2L's graded things for a class, from a pre-check folder: {kind, id, title, day, has_date, grade_id}."""
     def load(area):
@@ -713,21 +752,23 @@ def _d2l_objects(folder: Path, code: str) -> list[dict]:
             continue
         due = f.get("DueDate") or (f.get("Availability") or {}).get("EndDate")
         out.append({"kind": "dropbox", "id": str(f.get("Id")), "title": f.get("Name", ""), "day": _local_day(due),
-                    "grade_id": str(f.get("GradeItemId") or "") or None})
+                    "grade_id": str(f.get("GradeItemId") or "") or None, "instructions": _folder_instructions(f)})
     quizzes = load("quizzes") or {}
     for q in (quizzes.get("Objects") if isinstance(quizzes, dict) else quizzes) or []:
         if q.get("IsActive") is False:
             continue
         due = q.get("DueDate") or q.get("EndDate")
         out.append({"kind": "quiz", "id": str(q.get("QuizId")), "title": q.get("Name", ""), "day": _local_day(due),
-                    "grade_id": str(q.get("GradeItemId") or "") or None})
+                    "grade_id": str(q.get("GradeItemId") or "") or None,
+                    "instructions": _rich((q.get("Instructions") or {}).get("Text") if isinstance(q.get("Instructions"), dict) else None) or _rich(q.get("Description"))})
     for t in load("discussions") or []:
         due = t.get("DueDate") or t.get("EndDate") or t.get("UnlockEndDate")
         graded = (t.get("ScoreOutOf") or 0) > 0 or t.get("GradeItemId")
         if t.get("IsHidden") or not (due or graded):
             continue
         out.append({"kind": "discussion", "id": str(t.get("TopicId")), "title": f"{t.get('Name', '')}",
-                    "day": _local_day(due), "grade_id": str(t.get("GradeItemId") or "") or None})
+                    "day": _local_day(due), "grade_id": str(t.get("GradeItemId") or "") or None,
+                    "instructions": _rich(t.get("Description"))})
     toc = load("content") or {}
 
     def walk(mods):
@@ -794,22 +835,24 @@ def reconcile_findings(session, course: Course, folder: Path | None = None) -> d
         days = sorted((d for d in root.iterdir() if d.is_dir() and any(d.glob(f"{course.course_code}-*.json"))), reverse=True) if root.is_dir() else []
         folder = days[0] if days else None
     if folder is None:
-        return {"folder": None, "unmatched": [], "drift": []}
+        return {"folder": None, "unmatched": [], "drift": [], "_matched": []}
     items = [i for i in repository.list_items_for_course(session, course.id) if not i.superseded_by_id and i.status not in (ItemStatus.CANCELLED, ItemStatus.SUPERSEDED)]
     dismissed = set(repository.get_preference(session, "coverage_dismissed", course_id=course.id, default=[]) or [])
-    unmatched, drift = [], []
+    unmatched, drift, matched = [], [], []
     for o in _d2l_objects(folder, course.course_code):
         key = f"d2l:{o['kind']}:{o['id']}"
+        hit = _reconcile_match(o, items)
+        if hit is not None:
+            matched.append((o, hit[0]))
         if key in dismissed:
             continue
-        hit = _reconcile_match(o, items)
         row = {"key": key, "kind": o["kind"], "id": o["id"], "title": o["title"], "d2l_date": o["day"].isoformat() if o["day"] else None}
         if hit is None:
             unmatched.append(row)
         elif o["day"] and hit[0].date and hit[1] > 0:
             # On the calendar on a different day than D2L says (D2L wins; a day off often means a time-zone slip).
             drift.append({**row, "item_id": hit[0].id, "item_title": hit[0].title, "item_date": hit[0].date.isoformat()})
-    return {"folder": str(folder), "unmatched": unmatched, "drift": drift}
+    return {"folder": str(folder), "unmatched": unmatched, "drift": drift, "_matched": matched}
 
 
 @app.command("d2l-reconcile")
@@ -817,14 +860,35 @@ def d2l_reconcile_cmd(
     course: Annotated[str, typer.Option("--course")],
     folder: Annotated[Path | None, typer.Option("--dir", help="A pre-check folder (default: the newest one).")] = None,
     as_json: Annotated[bool, typer.Option("--json")] = False,
+    fill_instructions: Annotated[bool, typer.Option("--fill-instructions", help="Copy each matched item's D2L instructions and rubric into its details.")] = False,
 ) -> None:
     """Every graded thing D2L lists for this course (assignment folders, quizzes, discussion topics, graded content,
     grade items) matched to the calendar: lists what's missing and what's on a different day. Each one must be added,
-    corrected, or dismissed with coverage-dismiss --key d2l:<kind>:<id> and the reason."""
+    corrected, or dismissed with coverage-dismiss --key d2l:<kind>:<id> and the reason. With --fill-instructions, the
+    instructions, attachments and rubric D2L shows for each matched item become its details (the student sees them in
+    Kea), and are kept up to date when the instructor edits them."""
+    filled = 0
     with session_scope() as session:
         c = _resolve_course_or_exit(session, course)
         code = c.course_code
         r = reconcile_findings(session, c, folder)
+        if fill_instructions:
+            from academic_sync.db.orm import AcademicItemRow
+
+            _set_event_context("Instructions copied from D2L")
+            for o, item in r["_matched"]:
+                text = (o.get("instructions") or "").strip()
+                if len(text) < 20:
+                    continue
+                row = session.get(AcademicItemRow, item.id)
+                header = f"From D2L ({o['kind']} \"{o['title']}\"):\n"
+                if row is not None and (row.description or "").strip() != (header + text).strip():
+                    # Several D2L objects can match one item (a folder and its quiz): the longest instructions win.
+                    if not row.description or not row.description.startswith("From D2L") or len(text) >= len(row.description):
+                        row.description = header + text
+                        filled += 1
+    r.pop("_matched", None)
+    r["instructions_filled"] = filled
     if as_json:
         print(json.dumps({"course": code, **r}, indent=1, default=str))
         return
