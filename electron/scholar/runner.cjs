@@ -13,7 +13,10 @@ const KEA_TOOLS = ['d2l_open', 'd2l_fetch', 'd2l_download', 'd2l_status', 'kea_p
 // never be able to read the rest of the computer.
 const BASE = ['Bash(uv run academic-sync:*)', 'Read(./**)', 'Glob(./**)', 'Grep(./**)', 'Skill', 'ToolSearch', 'Edit(data/**)', 'Write(data/**)'];
 // The textbook writer may look things up only on reference sites (nothing it reads can be posted anywhere else).
-const REFERENCE = ['en.wikipedia.org', 'commons.wikimedia.org', 'openstax.org', 'libretexts.org', 'chem.libretexts.org', 'bio.libretexts.org', 'math.libretexts.org', 'phys.libretexts.org', 'khanacademy.org', 'ncbi.nlm.nih.gov', 'nist.gov', 'webbook.nist.gov', 'pubchem.ncbi.nlm.nih.gov'].map((d) => `WebFetch(domain:${d})`);
+// (Claude Code matches a domain exactly: "openstax.org" doesn't cover "www.openstax.org", so each site is allowed with
+// its subdomains too.)
+const fetchFrom = (domains) => domains.flatMap((d) => [`WebFetch(domain:${d})`, `WebFetch(domain:*.${d})`]);
+const REFERENCE = fetchFrom(['wikipedia.org', 'wikimedia.org', 'openstax.org', 'libretexts.org', 'khanacademy.org', 'nih.gov', 'nist.gov']);
 
 /** What each kind of run does, and the only tools it may use. */
 const TASKS = {
@@ -39,8 +42,9 @@ const TASKS = {
   // guidelines recorded. Reads the class site, the book's own contents and the school's published course outlines.
   curriculum: { prompt: (arg) => `/kea-curriculum ${arg || ''}`.trim(), tools: [...BASE, ...KEA_TOOLS, ...REFERENCE, 'WebSearch'], label: 'Matching chapters to the syllabus' }
 };
-// Publishers' contents pages, for where a chapter is in the class's own book.
-const PUBLISHERS = ['mheducation.com', 'pearson.com', 'cengage.com', 'wiley.com', 'macmillanlearning.com', 'norton.com', 'openstax.org'].map((d) => `WebFetch(domain:${d})`);
+// Publishers' contents pages, colleges' sites (published course outlines and master syllabi) and the course-catalog
+// services colleges publish them through.
+const PUBLISHERS = [...fetchFrom(['mheducation.com', 'mheducation.ca', 'pearson.com', 'cengage.com', 'wiley.com', 'macmillanlearning.com', 'norton.com', 'smartcatalogiq.com', 'acalog.com', 'coursedog.com', 'courseleaf.com']), 'WebFetch(domain:*.edu)'];
 
 // ---------- Plain-code steps before a run (no Claude usage) ----------
 // Each may answer { skip: summary } (nothing for Claude to do), { prompt, after(ok) } (run Claude with this prompt),
@@ -164,8 +168,81 @@ TASKS.study.pre = async (job, step) => {
 
 // Only the classes whose chapters fall short of their syllabus (Kea's own check, no Claude), one class per run, with
 // the list of what to fix. The school's own site may be read for its published course outlines.
+// How many chapters one depth review reads (each is its textbook chapter, notes and question bank).
+const DEPTH_PER_RUN = 6;
+
+/**
+ * `CODE depth`: Claude reviews the chapters due (soonest test first) at exam depth: each chapter's syllabus outcomes,
+ * test focus and review sheets against its notes, its textbook chapter and its saved questions. Kea writes each
+ * chapter's notes and a readable copy of its questions first; afterwards, every chapter judged to have gaps gets its
+ * textbook rewritten and a harder question top-up aimed at the gaps.
+ */
+async function depthPre(job, step, code) {
+  const due = ((await engineJson(['depth-due', '--course', code, '--json']).catch(() => null)) || [])
+    .filter((c) => c.due)
+    .sort((a, b) => String(a.next_test?.date || '9999').localeCompare(String(b.next_test?.date || '9999')))
+    .slice(0, DEPTH_PER_RUN);
+  if (!due.length) return { skip: `${code}: every chapter's depth review is current. Checked by Kea itself, so no Claude usage.`, ok: true };
+  const uv = await workspace.findUv();
+  const cwd = profiles.paths().workspace;
+  const study = require('./study.cjs');
+  step(`Gathering ${code}'s chapter notes and questions…`);
+  await study.notesFor(code, (file) => docText(uv, cwd, file), step).catch((err) => console.error('Chapter notes', err));
+  const course = (await db().courses(profiles.paths().db, profiles.paths().textbooks, {}).catch(() => [])).find((c) => c.code === code);
+  const dir = path.join(cwd, 'data', 'study', 'depth', code);
+  fs.mkdirSync(dir, { recursive: true });
+  const rel = (f) => path.relative(cwd, f).replace(/\\/g, '/');
+  const lines = [];
+  for (const c of due) {
+    const qs = course ? study.catalog('exam', course.id, [c.label]) : [];
+    const file = path.join(dir, `${c.label}.md`);
+    const levels = ['recall', 'apply', 'multistep'].map((l) => `${qs.filter((q) => q.level === l).length} ${l}`).join(', ');
+    fs.writeFileSync(
+      file,
+      [`# ${code} ${c.label}: the ${qs.length} saved questions (${levels})`, '', ...qs.map((q, i) => `${i + 1}. [${q.type}${q.level ? `, ${q.level}` : ''}${q.section ? `, ${q.section}` : ''}] ${String(q.q).replace(/\s+/g, ' ').slice(0, 400)}`)].join('\n')
+    );
+    const notes = path.join(cwd, 'data', 'study', 'notes', code, `${c.label}.md`);
+    lines.push(`- ${c.label}${c.title ? `: ${c.title}` : ''} (${c.why}${c.next_test ? `; next: ${c.next_test.title} on ${c.next_test.date}` : ''})\n  notes: ${fs.existsSync(notes) ? rel(notes) : '(none)'}\n  textbook: ${c.textbook_source ? rel(c.textbook_source) : '(none)'}\n  questions: ${rel(file)} (${qs.length})`);
+  }
+  const started = localStamp();
+  return {
+    prompt: `/kea-curriculum ${code} depth\n\nThe chapters to review:\n${lines.join('\n')}`,
+    after: (ok) => ok && depthAfter(code, course, started)
+  };
+}
+
+// The engine stamps reviews in local time (YYYY-MM-DDTHH:MM:SS), so runs compare against the same.
+const localStamp = (t = Date.now()) => new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+
+/** After a depth review: each chapter found to have gaps gets its textbook rewritten and a harder question top-up. */
+async function depthAfter(code, course, started) {
+  if (!course) course = (await db().courses(profiles.paths().db, profiles.paths().textbooks, {}).catch(() => [])).find((c) => c.code === code);
+  const rows = (await engineJson(['depth-due', '--course', code, '--json']).catch(() => null)) || [];
+  const gaps = rows.filter((r) => r.verdict === 'gaps' && r.reviewed_at && r.reviewed_at.slice(0, 19) >= started);
+  if (!gaps.length) return;
+  const study = require('./study.cjs');
+  if (settings().get('scholar.studyPdfs', true) !== false) run('study', `rewrite ${code} ${gaps.map((g) => g.label).join(', ')}`, 'depth');
+  if (!course) return;
+  for (const g of gaps) {
+    const r = await study.request({ kind: 'exam', courseId: course.id, chapters: [g.label], count: 25, mode: 'new', bank: true, upgrade: true }).catch(() => null);
+    if (r?.id) run('practice', r.id, 'depth');
+  }
+  addNews({
+    course: code,
+    kind: 'update',
+    title: `${code}: ${gaps.length} chapter${gaps.length > 1 ? 's' : ''} rewritten to cover what the tests ask`,
+    body: gaps.map((g) => `• ${g.label}: ${String(g.note || '').slice(0, 220)}`).join('\n')
+  });
+}
+
+// (A depth review continued after a stop still rewrites what it found: anything it judged in the last day.)
+TASKS.curriculum.afterResume = (job) => (ok) => {
+  if (ok && /\bdepth\b/.test(job.arg)) depthAfter(String(job.arg).trim().split(/\s+/)[0], null, localStamp(Date.now() - 864e5)).catch(() => {});
+};
+
 TASKS.curriculum.pre = async (job, step) => {
   const code = String(job.arg || '').trim().split(/\s+/)[0];
+  if (/\bdepth\b/.test(job.arg)) return depthPre(job, step, code);
   const list = await db().watchList(profiles.paths().db);
   if (!code) {
     const due = [];
@@ -191,7 +268,7 @@ TASKS.curriculum.pre = async (job, step) => {
   })();
   return {
     prompt: `/kea-curriculum ${job.arg.trim()}${fix.length ? `\n\nWhat Kea's check found (\`curriculum --course ${code} --json\` has the whole report):\n${fix.map((p) => `- ${p.key}: ${p.text}`).join('\n')}` : ''}`,
-    tools: [...PUBLISHERS, ...(root ? [`WebFetch(domain:${root})`] : [])]
+    tools: [...PUBLISHERS, ...(root ? fetchFrom([root]) : [])]
   };
 };
 
@@ -263,7 +340,10 @@ async function coverageCheck(arg) {
     const items = [
       ...(out.uncovered || []),
       ...(rec.unmatched || []).map((u) => ({ key: u.key, title: `${u.title} (in D2L's ${u.kind === 'dropbox' ? 'assignments' : u.kind === 'grade' ? 'grades' : `${u.kind}s`})`, date: u.d2l_date })),
-      ...(rec.drift || []).map((d) => ({ key: d.key, title: `${d.title}: D2L says ${d.d2l_date}, your calendar ${d.item_date}`, date: d.d2l_date }))
+      ...(rec.drift || []).map((d) => ({ key: d.key, title: `${d.title}: D2L says ${d.d2l_date}, your calendar ${d.item_date}`, date: d.d2l_date })),
+      // Taken off the calendar earlier although D2L grades it, or graded-looking and folded into a reading week.
+      ...(rec.hidden || []).map((h) => ({ key: h.key, title: `${h.item_title} (taken off your calendar: ${h.how})`, date: h.d2l_date })),
+      ...(rec.suspects || []).map((x) => ({ key: x.key, title: `${x.title} (folded into "${x.replaced_by}"; may be graded work)`, date: x.date }))
     ];
     const unreadable = out.unreadable || [];
     // Told once per change (the same open gap isn't repeated after every update).
@@ -322,8 +402,23 @@ async function curriculumCheck(why = 'schedule') {
       });
     }
   }
+  // Depth: a class with chapters due for review (never reviewed, rewritten since, or a test within three weeks) gets a
+  // depth review every 3 days while any has a test within three weeks, else once a week.
+  const deep = [];
+  for (const c of list) {
+    const rows = (await engineJson(['depth-due', '--course', c.code, '--json']).catch(() => null)) || [];
+    const dueRows = rows.filter((r) => r.due);
+    if (!dueRows.length) continue;
+    const soon = dueRows.some((r) => r.next_test && (Date.parse(r.next_test.date) - Date.now()) / 864e5 <= 21);
+    const t = told[c.code] || {};
+    if (Date.now() - new Date(t.depthAt || 0).getTime() > (soon ? 3 : 7) * 864e5) {
+      deep.push(c.code);
+      told[c.code] = { ...t, depthAt: new Date().toISOString() };
+    }
+  }
   fs.writeFileSync(file, JSON.stringify(told, null, 1));
   for (const code of due) run('curriculum', code, why);
+  for (const code of deep) run('curriculum', `${code} depth`, why);
   return due;
 }
 

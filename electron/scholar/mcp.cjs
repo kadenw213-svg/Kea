@@ -25,7 +25,7 @@ const TOOLS = [
   },
   {
     name: 'd2l_download',
-    description: "Save a file from the class site (a syllabus PDF, a handout, a .docx) into this workspace, under data/downloads/. 'path' is relative to data/downloads, e.g. 'BIO1112/syllabus.pdf'. Returns where it was saved; for a PDF or .docx also the path of its extracted text (read that, never the PDF) and images of any pages that have no text.",
+    description: "Save a file from the class site (a syllabus PDF, a handout, a .docx) into this workspace, under data/downloads/. 'path' is relative to data/downloads, e.g. 'BIO1112/syllabus.pdf'. Returns where it was saved; for a PDF, .docx or .pptx (lecture slides) also the path of its extracted text (read that, never the file itself) and images of any pages that have no text.",
     inputSchema: { type: 'object', properties: { url: { type: 'string' }, path: { type: 'string' } }, required: ['url', 'path'] }
   },
   {
@@ -114,7 +114,7 @@ function start(hooks) {
       case 'd2l_download': {
         const saved = await browser.download(allowedUrl(a.url), a.path);
         // PDFs and Word files come with their text, so the file itself never has to be read as page pictures.
-        if (/\.(pdf|docx)$/i.test(saved.saved) && hooks.docText) {
+        if (/\.(pdf|docx|pptx)$/i.test(saved.saved) && hooks.docText) {
           try {
             const t = await hooks.docText(saved.saved);
             if (t) {

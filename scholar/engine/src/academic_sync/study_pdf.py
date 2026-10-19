@@ -269,6 +269,11 @@ def remembered_only(work: Path) -> list[str] | None:
     return [str(x) for x in labels] if isinstance(labels, list) and labels else None
 
 
+def _depth_gaps(session: Session, course_id: str, label: str) -> str | None:
+    row = repository.find_chapter_topic(session, course_id, label)
+    return row.depth_note if row is not None and getattr(row, "depth_verdict", None) == "gaps" else None
+
+
 def topic_summary(session: Session, course_id: str, label: str) -> str | None:
     row = repository.find_chapter_topic(session, course_id, label)
     return getattr(row, "summary", None) if row else None
@@ -407,6 +412,8 @@ def build_bundle(session: Session, banner: AcademicItem,
             "summary": topic_summary(session, course.id, label) if label else None,
             # Where it is in the student's own book, when the class numbers chapters differently.
             "textbook_ref": topic.textbook_ref if topic else None,
+            # What Claude's depth review found missing or too shallow (the rewrite must fix it).
+            "depth_gaps": _depth_gaps(session, course.id, label) if label else None,
             "syllabus_outcomes": next((v for k, v in outcomes.items() if label and canonicalize_chapter_label(k) == canonicalize_chapter_label(label)), []),
         })
     if write_only is not None:

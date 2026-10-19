@@ -466,6 +466,28 @@ def _0022_add_curriculum(session: Session) -> None:
         session.execute(text(st))
 
 
+def _0023_guard_folding_graded_work(session: Session) -> None:
+    # (Also: each chapter's depth review -- verdict, what's missing, when -- see ChapterTopicRow.)
+    topics = {row[1] for row in session.execute(text("PRAGMA table_info(chapter_topics)"))}
+    for col, kind in (("depth_verdict", "VARCHAR"), ("depth_note", "VARCHAR"), ("depth_reviewed_at", "DATETIME")):
+        if col not in topics:
+            session.execute(text(f"ALTER TABLE chapter_topics ADD COLUMN {col} {kind}"))
+    # 2026-10-19 (Kea): MAT1340's graded ALEKS reviews ("Review: Chapter 2", the two final reviews) were typed as
+    # readings in August and folded into their reading weeks, so they vanished from the calendar. The database now
+    # refuses to fold anything that looks like graded work (or carries points) into a reading week, lecture or break,
+    # unless the reason given says it isn't graded.
+    session.execute(text("""CREATE TRIGGER IF NOT EXISTS academic_items_no_folding_graded BEFORE UPDATE OF superseded_by_id ON academic_items
+         WHEN NEW.superseded_by_id IS NOT NULL AND OLD.superseded_by_id IS NULL
+          AND (SELECT item_type FROM academic_items WHERE id = NEW.superseded_by_id) IN ('weekly_reading', 'reading', 'lecture', 'break', 'no_class')
+          AND (NEW.points IS NOT NULL OR NEW.item_type NOT IN ('weekly_reading', 'reading', 'lecture', 'break', 'no_class', 'recitation', 'seminar')
+               OR lower(NEW.title) GLOB '*review*' OR lower(NEW.title) GLOB '*quiz*' OR lower(NEW.title) GLOB '*exam*' OR lower(NEW.title) GLOB '*test*'
+               OR lower(NEW.title) GLOB '*homework*' OR lower(NEW.title) GLOB '*hw*' OR lower(NEW.title) GLOB '*assignment*' OR lower(NEW.title) GLOB '*lab*'
+               OR lower(NEW.title) GLOB '*discussion*' OR lower(NEW.title) GLOB '*essay*' OR lower(NEW.title) GLOB '*paper*' OR lower(NEW.title) GLOB '*project*'
+               OR lower(NEW.title) GLOB '*practical*' OR lower(NEW.title) GLOB '*worksheet*' OR lower(NEW.title) GLOB '*report*' OR lower(NEW.title) GLOB '*aleks*')
+          AND COALESCE((SELECT lower(reason) FROM event_context WHERE id = 1), '') NOT GLOB '*not graded*'
+         BEGIN SELECT RAISE(ABORT, 'This looks like graded work: it can''t be folded into a reading week or lecture. If it truly is not graded, say "not graded" in the reason.'); END"""))
+
+
 MIGRATIONS: list[MigrationFn] = [
     _0001_initial_schema,
     _0002_add_item_reference_urls,
@@ -489,6 +511,7 @@ MIGRATIONS: list[MigrationFn] = [
     _0020_add_chapter_summary,
     _0021_add_item_history,
     _0022_add_curriculum,
+    _0023_guard_folding_graded_work,
 ]
 
 

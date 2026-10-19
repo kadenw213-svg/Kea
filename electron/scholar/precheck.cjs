@@ -330,9 +330,20 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     // reason for today's check to fix it, when it's new (an open one isn't re-sent every day; it's in the Inbox).
     try {
       const uv = await workspace.findUv();
-      const rr = await workspace.runHidden(uv, ['run', 'academic-sync', 'd2l-reconcile', '--course', c.code, '--dir', dir, '--fill-instructions', '--json'], { cwd: p.workspace, env: { ...workspace.engineEnv(uv), KEA_RUN_ID: day(), KEA_TASK: 'precheck' } });
+      const rr = await workspace.runHidden(uv, ['run', 'academic-sync', 'd2l-reconcile', '--course', c.code, '--dir', dir, '--fill-instructions', '--restore-hidden', '--json'], { cwd: p.workspace, env: { ...workspace.engineEnv(uv), KEA_RUN_ID: day(), KEA_TASK: 'precheck' } });
       const rec = JSON.parse(rr.out.slice(rr.out.indexOf('{')));
-      const found = [...(rec.unmatched || []).map((u) => `${u.kind} "${u.title}" (${u.d2l_date || 'no date'}) isn't on the calendar [${u.key}]`), ...(rec.drift || []).map((d) => `"${d.title}" is on the calendar for ${d.item_date} but D2L says ${d.d2l_date} [${d.key}]`)];
+      const restored = new Set((rec.restored || []).map((h) => h.item_id));
+      const found = [
+        ...(rec.unmatched || []).map((u) => `${u.kind} "${u.title}" (${u.d2l_date || 'no date'}) isn't on the calendar [${u.key}]`),
+        ...(rec.drift || []).map((d) => `"${d.title}" is on the calendar for ${d.item_date} but D2L says ${d.d2l_date} [${d.key}]`),
+        // Graded work that had been cancelled (only put back by a run that checks why) and graded-looking items folded
+        // into a reading week that D2L doesn't list yet: each judged once.
+        ...(rec.hidden || []).filter((h) => !restored.has(h.item_id)).map((h) => `D2L lists ${h.kind} "${h.title}" as graded work but its calendar item was ${h.how}: restore it (item-restore ${h.item_id.slice(0, 8)} --reason ...) unless the cancellation still holds [${h.key}]`),
+        ...(rec.suspects || []).map((x) => `"${x.title}" (${x.date || 'no date'}) looks like graded work but was folded into "${x.replaced_by}" (${x.how}): item-restore ${x.item_id.slice(0, 8)} --as-type <kind> --reason ... if it's graded, else coverage-dismiss --key ${x.key} --note "not graded: ..." [${x.key}]`)
+      ];
+      // Put back by the check itself (D2L's gradebook says they're graded): the student hears about it, with why.
+      for (const h of rec.restored || [])
+        inboxNote({ id: `restored:${h.item_id}`, course: c.code, kind: 'needs_you', title: `Back on your calendar: ${h.item_title}`, body: `D2L lists it as graded work (${h.kind} "${h.title}"), but it had been ${h.how}${h.replaced_by ? `, folded into "${h.replaced_by}"` : ''}. It's back on your calendar; check its due date on the class site.` });
       seen.reconcile = found;
       const was = new Set(before.reconcile || []);
       const fresh = found.filter((f) => !was.has(f));
@@ -698,6 +709,16 @@ function updateGrades(dir, ous) {
   fs.writeFileSync(inboxFile(), JSON.stringify({ ...box, items: box.items.slice(0, 500) }));
   const { Notification } = require('electron');
   for (const n of add.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.kind === 'grade' ? `${n.score}${n.percent != null ? ` (${n.percent}%)` : ''}` : n.body.slice(0, 200) }).show();
+}
+
+/** One message straight into the Inbox (and a notification), once per id. */
+function inboxNote(n) {
+  const box = readInbox();
+  if ((box.deleted || []).includes(n.id) || box.items.some((i) => i.id === n.id)) return;
+  box.items.unshift({ at: new Date().toISOString(), read: false, links: [], ...n });
+  fs.writeFileSync(inboxFile(), JSON.stringify({ ...box, items: box.items.slice(0, 500) }));
+  const { Notification } = require('electron');
+  if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: String(n.body || '').slice(0, 200) }).show();
 }
 
 function markInboxRead(ids) {

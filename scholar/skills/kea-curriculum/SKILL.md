@@ -53,8 +53,9 @@ picture-only PDF, run `uv run academic-sync doc-text <file>` and read the page i
 ## 3. Each chapter's notes
 
 For every chapter with something missing, fill it from the course's own material with
-`uv run academic-sync chapter-topic-add --course <CODE> --chapter "Chapter N" … --source "<where>"` (it only adds:
-an empty option never blanks what's saved; give `--objective` only with the chapter's complete list).
+`uv run academic-sync chapter-topic-add --course <CODE> --chapter "Chapter N" … --source "<where>"` (an empty
+option never blanks what's saved; add `--append` to add objectives or sections to the saved lists instead of
+replacing them).
 
 - **Sections** (`--section`, one per heading, in order): the chapter's real section headings. Best source: the
   class's own book (its chapter's contents in the eBook, through `d2l_open` on the textbook link). Next: the
@@ -68,11 +69,38 @@ an empty option never blanks what's saved; give `--objective` only with the chap
 - **Objectives, title, summary, reading link**: from the chapter's objectives document, study guide or slides (the
   same rules as in `/academic-import`); `chapter-summary-set` for a missing summary.
 - **A thin outcome** (`outcome_thin`): the chapter is given an outcome its notes barely carry. Find where the course
-  teaches it (the slides, objectives document, book section) and add those objectives (with the chapter's existing
-  ones: the list replaces). When the course's material really has nothing more, add the syllabus outcome itself as
-  an objective, worded as the syllabus words it.
+  teaches it (the slides, objectives document, book section) and add those objectives (`--append`). When the
+  course's material really has nothing more, add the syllabus outcome itself as an objective, worded as the syllabus
+  words it.
 - **A chapter the syllabus names that has no notes** (`syllabus_chapter`): create its notes the same way. If it
   isn't one of the class's chapters (another book's chapter, a lab number), `curriculum-dismiss` it with the reason.
+
+## Depth mode (`<CODE> depth`)
+
+Kea lists the chapters to review, each with three files: its **notes** (objectives, vocabulary, the review sheets and
+keys, and every test's study focus), its **textbook** chapter (the Typst source of the PDF the student reads) and its
+**questions** (every saved question with its type and level). Also run `curriculum --course <CODE> --json` once for
+the chapter's syllabus outcomes and the class's testing guidelines.
+
+For each chapter, judge as an examiner would: if the student learned exactly this textbook chapter and could answer
+exactly these questions, would they get an A on the real tests? Check:
+- every syllabus outcome for the chapter, every objective, every review-sheet problem type and every test-focus line
+  is **taught** in the textbook (explained, with a worked example where it's a skill) and **asked** in the questions;
+- depth matches the tests: the calculations, multi-step problems, comparisons, data and graph reading the tests and
+  review sheets use, not only definitions; questions at least as hard as the review sheets;
+- nothing is wrong (a misstated fact, a wrong worked answer).
+
+Read the textbook source and questions in full (Grep the textbook for each outcome if it's long); don't skim a chapter.
+Then save one verdict per chapter:
+`uv run academic-sync depth-review --course <CODE> --chapter "Chapter 5" --verdict ok|gaps --note "…"`
+- `ok`: say briefly what you checked.
+- `gaps`: list each missing or shallow thing specifically and where (textbook / questions): "Textbook: no worked
+  Dalton's law problem; Questions: no gas stoichiometry at STP, none on reading a vapor-pressure curve; Ch 5.3 vapor
+  pressure barely taught". Kea rewrites the chapter's textbook from this note and writes a harder top-up of questions
+  aimed at it, so make the note precise. A wrong fact in the textbook or a wrong answer is always `gaps`.
+- When the notes themselves miss an outcome or objective, fix them too (`chapter-topic-add`), as in section 3.
+
+Report one line per chapter: the verdict and, for gaps, the main ones.
 
 ## 4. Check again, then report
 

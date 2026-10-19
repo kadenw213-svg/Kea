@@ -197,7 +197,7 @@ function classFiles(code) {
       if (f.isDirectory()) walk(full, depth + 1);
       else if (/\.(txt|md|html?)$/i.test(f.name)) files.push({ path: path.relative(ws, full).replace(/\\/g, '/'), bytes: fs.statSync(full).size });
       // A PDF or Word file with no text copy yet: Kea converts it before Claude starts.
-      else if (/\.(pdf|docx)$/i.test(f.name) && !fs.existsSync(`${full}.txt`)) files.push({ path: path.relative(ws, full).replace(/\\/g, '/'), bytes: fs.statSync(full).size, needs_text: true });
+      else if (/\.(pdf|docx|pptx)$/i.test(f.name) && !fs.existsSync(`${full}.txt`)) files.push({ path: path.relative(ws, full).replace(/\\/g, '/'), bytes: fs.statSync(full).size, needs_text: true });
     }
   };
   walk(path.join(ws, 'data', 'downloads', code));
@@ -450,12 +450,12 @@ async function chapterNotes(req, docText, step = () => {}) {
   for (const f of wanted) {
     const full = path.join(ws, f.path);
     i++;
-    if (/\.(pdf|docx)$/i.test(full) && !fs.existsSync(`${full}.txt`)) {
+    if (/\.(pdf|docx|pptx)$/i.test(full) && !fs.existsSync(`${full}.txt`)) {
       step(`Reading ${path.basename(full)} (${i} of ${wanted.length})…`, Math.round((i / wanted.length) * 2));
       await docText(full).catch(() => null);
     }
   }
-  const classTexts = wanted.map((f) => path.join(ws, /\.(pdf|docx)$/i.test(f.path) ? `${f.path}.txt` : f.path)).filter((f) => fs.existsSync(f));
+  const classTexts = wanted.map((f) => path.join(ws, /\.(pdf|docx|pptx)$/i.test(f.path) ? `${f.path}.txt` : f.path)).filter((f) => fs.existsSync(f));
   const sheets = await fetchSheets(req, nums, docText, step);
   step('Putting the chapters’ notes together…', 8);
 
@@ -476,6 +476,7 @@ async function chapterNotes(req, docText, step = () => {}) {
       if (c.sections?.length) lines.push(`Sections: ${c.sections.map((s) => (typeof s === 'string' ? s : s.title || s.label || JSON.stringify(s))).join('; ')}`, '');
       if (c.objectives?.length) lines.push('## Objectives', ...c.objectives.map((o) => `- ${typeof o === 'string' ? o : o.text || JSON.stringify(o)}`), '');
       if (c.vocabulary) lines.push('## Vocabulary', c.vocabulary, '');
+      if (c.depth_gaps) lines.push('## Kea’s depth review found these missing or too shallow (cover them first)', c.depth_gaps, '');
       for (const f of mine) lines.push(`## Review material: ${path.basename(f).replace(/\.txt$/, '')}`, readText(f), '');
       const tests = (req.tests || []).filter((t) => (t.chapters || []).includes(c.label) && t.study_focus?.length);
       if (tests.length) {

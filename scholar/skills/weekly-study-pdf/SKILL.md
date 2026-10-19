@@ -40,7 +40,8 @@ items it must teach: teach every one, by name, with worked examples where it's a
 chapter is in the student's own book, when the class numbers chapters differently: cite that, never the same-numbered
 chapter of the book). `course_outcomes` are skills every chapter serves (significant figures, reading graphs): use
 them in examples and practice. `guidelines` are how the class tests (formats, what exams draw on, allowed sheets):
-the chapter's practice questions and "what the exam asks" follow them.
+the chapter's practice questions and "what the exam asks" follow them. `depth_gaps`, when present, is what Kea's depth
+review found missing, shallow or wrong in the chapter's last textbook: this rewrite must fix every item in it.
 
 **Kea's chapter notes (read the one for each chapter you write):**
 `data/study/notes/<CODE>/<Chapter N>.md`. Kea builds them before this run, from what the scans saved: the

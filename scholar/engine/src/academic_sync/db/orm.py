@@ -196,6 +196,11 @@ class ChapterTopicRow(Base):
     # (BIO1112 teaches "Chapter 29: Seedless Plants" from Brooker's Ch. 31), e.g. "Brooker, Biology (2025 Release),
     # Ch. 31: Plants and the Conquest of Land".
     textbook_ref: Mapped[str | None] = mapped_column(default=None)
+    # Claude's depth review of the chapter (its notes, its textbook chapter and its question bank, against the
+    # syllabus outcomes and the tests): "ok" or "gaps", what's missing or too shallow, and when.
+    depth_verdict: Mapped[str | None] = mapped_column(default=None)
+    depth_note: Mapped[str | None] = mapped_column(default=None)
+    depth_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     source_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     source_wording: Mapped[str | None] = mapped_column(default=None)
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=_now)

@@ -247,6 +247,8 @@ def _load_document(path: Path, title: str | None) -> ParsedDocument:
             for row in table.rows:
                 lines.append(" | ".join(cell.text.strip().replace("\n", " ") for cell in row.cells))
         return ParsedDocument(text="\n".join(lines).strip(), title=title)
+    if suffix == ".pptx":
+        return ParsedDocument(text=pptx_text(path), title=title)
     text = path.read_text(encoding="utf-8", errors="replace")
     cleaned_text, extracted_title = _strip_get_page_text_header(text)
     return ParsedDocument(text=cleaned_text, title=title or extracted_title)
@@ -391,7 +393,47 @@ def _parse_time(value: str):
 # This check runs the same deterministic extraction over every downloaded file
 # (without saving anything) and reports what isn't there.
 
-_COVERAGE_SUFFIXES = {".txt", ".md", ".html", ".htm", ".pdf", ".docx"}
+_COVERAGE_SUFFIXES = {".txt", ".md", ".html", ".htm", ".pdf", ".docx", ".pptx"}
+
+
+def pptx_text(path: Path) -> str:
+    """A PowerPoint deck's text, slide by slide (no extra library: a .pptx is a zip of XML): each slide's title marked
+    TITLE (lecture decks put their section headings there, "Concept 22.1: ..."), then its text, then the speaker
+    notes."""
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    ns = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main", "p": "http://schemas.openxmlformats.org/presentationml/2006/main"}
+    num = lambda n: int(re.search(r"(\d+)\.xml$", n).group(1))  # noqa: E731
+    parts = []
+    with zipfile.ZipFile(path) as z:
+        names = set(z.namelist())
+        slides = sorted((n for n in names if re.match(r"ppt/slides/slide\d+\.xml$", n)), key=num)
+        for n in slides:
+            root = ET.fromstring(z.read(n))
+            title, body = [], []
+            for sp in root.iter(f"{{{ns['p']}}}sp"):
+                ph = sp.find(".//p:nvPr/p:ph", ns)
+                is_title = ph is not None and ph.get("type") in ("title", "ctrTitle")
+                for para in sp.iter(f"{{{ns['a']}}}p"):
+                    line = "".join(t.text or "" for t in para.iter(f"{{{ns['a']}}}t")).strip()
+                    if line:
+                        (title if is_title else body).append(line)
+            notes_name = f"ppt/notesSlides/notesSlide{num(n)}.xml"
+            notes = []
+            if notes_name in names:
+                for para in ET.fromstring(z.read(notes_name)).iter(f"{{{ns['a']}}}p"):
+                    line = "".join(t.text or "" for t in para.iter(f"{{{ns['a']}}}t")).strip()
+                    if line and not line.isdigit():
+                        notes.append(line)
+            block = [f"--- slide {num(n)} ---"]
+            if title:
+                block.append("TITLE: " + " ".join(title))
+            block += body
+            if notes:
+                block.append("Notes: " + " ".join(notes))
+            parts.append("\n".join(block))
+    return "\n\n".join(parts)
 # (Not class meetings: lectures and lab sessions repeat every week and aren't handed in.)
 _COVERAGE_TYPES = {ItemType.EXAM, ItemType.FINAL_EXAM, ItemType.LAB_PRACTICAL}
 _TITLE_STOP = {
@@ -538,7 +580,7 @@ def course_documents(course: Course) -> list[Path]:
             out.extend(
                 p for p in folder.rglob("*")
                 if p.is_file() and p.suffix.lower() in _COVERAGE_SUFFIXES and not p.name.startswith(("consolidated_events", "raw_notes"))
-                and not p.name.lower().endswith((".pdf.txt", ".docx.txt"))
+                and not p.name.lower().endswith((".pdf.txt", ".docx.txt", ".pptx.txt"))
             )
     return sorted(out)
 
@@ -878,8 +920,13 @@ def reconcile_findings(session, course: Course, folder: Path | None = None) -> d
     not_work = {ItemType.WEEKLY_READING, ItemType.READING, ItemType.LECTURE, ItemType.BREAK, ItemType.NO_CLASS, ItemType.RECITATION, ItemType.SEMINAR}
     items = [i for i in repository.list_items_for_course(session, course.id) if not i.superseded_by_id and i.status not in (ItemStatus.CANCELLED, ItemStatus.SUPERSEDED) and i.item_type not in not_work]
     dismissed = set(repository.get_preference(session, "coverage_dismissed", course_id=course.id, default=[]) or [])
-    unmatched, drift, matched = [], [], []
+    # Items taken off the calendar (replaced, folded into a reading week, cancelled), any kind: when D2L lists graded
+    # work that matches only one of these, it was hidden by mistake (real case: MAT1340's graded ALEKS reviews, read
+    # as readings in August and folded into their reading weeks).
+    hidden_items = [i for i in repository.list_items_for_course(session, course.id) if i.superseded_by_id or i.status in (ItemStatus.CANCELLED, ItemStatus.SUPERSEDED)]
+    unmatched, drift, matched, hidden = [], [], [], []
     taken: set = set()
+    hidden_taken: set = set()
     # Dated objects first (they're the surest), each item matched to one dated object at most.
     objects = sorted(_d2l_objects(folder, course.course_code), key=lambda o: (o["day"] is None, o["kind"] == "grade"))
     for o in objects:
@@ -892,12 +939,53 @@ def reconcile_findings(session, course: Course, folder: Path | None = None) -> d
         if key in dismissed:
             continue
         row = {"key": key, "kind": o["kind"], "id": o["id"], "title": o["title"], "d2l_date": o["day"].isoformat() if o["day"] else None}
-        if hit is None:
+        gone = _reconcile_match(o, hidden_items, hidden_taken) if hit is None else None
+        if gone is not None:
+            hidden_taken.add(gone[0].id)
+            hidden.append({**row, **_hidden_how(session, gone[0])})
+        elif hit is None:
             unmatched.append(row)
         elif o["day"] and hit[0].date and hit[1] > 0:
             # On the calendar on a different day than D2L says (D2L wins; a day off often means a time-zone slip).
             drift.append({**row, "item_id": hit[0].id, "item_title": hit[0].title, "item_date": hit[0].date.isoformat()})
-    return {"folder": str(folder), "unmatched": unmatched, "drift": drift, "_matched": matched}
+    # Graded-looking work folded into a reading week or lecture that D2L doesn't list (yet: future reviews often have
+    # no grade item until they open). Code can't tell a graded "Review: Chapter 2" from a reading week called "Review
+    # Ch. 1-2", so each goes to the daily check to judge once: put it back, or dismiss it (key hidden:<id>) saying why.
+    suspects = []
+    hidden_ids = {h["item_id"] for h in hidden}
+    graded = re.compile(r"\b(review|quiz|exam|test|homework|hw|assignment|lab|discussion|essay|paper|project|practical|worksheet|report|aleks)\b", re.IGNORECASE)
+    for i in hidden_items:
+        if i.id in hidden_ids or not i.superseded_by_id or f"hidden:{i.id}" in dismissed:
+            continue
+        by = next((x for x in repository.list_items_for_course(session, course.id) if x.id == i.superseded_by_id), None) if graded.search(i.title or "") else None
+        # (Not a suspect when the same work is already on the calendar under another name, within a day: "Review:
+        # Chapter 5 & 7" folded away while "HW: Ch 5 & 7 Review" is there.)
+        words = lambda t: set(re.findall(r"[a-z]+|\d+", (t or "").lower().replace("chapter", "ch"))) - {"ch", "the", "and", "of", "hw", "due"}  # noqa: E731
+        twin = any(i.date and x.date and abs((x.date - i.date).days) <= 1 and words(i.title) and len(words(i.title) & words(x.title)) >= 0.6 * len(words(i.title))
+                   for x in items)
+        if by is not None and not twin and by.item_type in not_work and i.item_type in not_work | {ItemType.OTHER_DEADLINE}:
+            suspects.append({"key": f"hidden:{i.id}", "item_id": i.id, "title": i.title, "date": i.date.isoformat() if i.date else None,
+                             **{k: v for k, v in _hidden_how(session, i).items() if k in ("how", "replaced_by")}})
+    return {"folder": str(folder), "unmatched": unmatched, "drift": drift, "hidden": hidden, "suspects": suspects, "_matched": matched}
+
+
+def _hidden_how(session, item: AcademicItem) -> dict:
+    """How and when an item was taken off the calendar: what replaced it, and the history entry that did it (or that it
+    happened before Kea kept history)."""
+    from sqlalchemy import text as sql
+
+    by = session.execute(sql("SELECT title, item_type FROM academic_items WHERE id = :i"), {"i": item.superseded_by_id}).first() if item.superseded_by_id else None
+    ev = session.execute(
+        sql("SELECT ts, run_id, reason FROM item_events WHERE row_id = :i AND op IN ('supersede', 'cancel') ORDER BY ts DESC LIMIT 1"), {"i": item.id}
+    ).first()
+    first = session.execute(sql("SELECT first_seen FROM academic_items WHERE id = :i"), {"i": item.id}).scalar()
+    status = "cancelled" if item.status == ItemStatus.CANCELLED else "superseded"
+    if ev is not None:
+        when = f"{status} {str(ev[0])[:10]} by run {ev[1]}" + (f" ({ev[2]})" if ev[2] else "")
+    else:
+        when = f"{status} before Kea kept history (the item was first seen {str(first)[:10]})"
+    return {"item_id": item.id, "item_title": item.title, "item_type": item.item_type.value, "status": status,
+            "replaced_by": by[0] if by else None, "replaced_by_type": by[1] if by else None, "how": when}
 
 
 @app.command("d2l-reconcile")
@@ -906,6 +994,8 @@ def d2l_reconcile_cmd(
     folder: Annotated[Path | None, typer.Option("--dir", help="A pre-check folder (default: the newest one).")] = None,
     as_json: Annotated[bool, typer.Option("--json")] = False,
     fill_instructions: Annotated[bool, typer.Option("--fill-instructions", help="Copy each matched item's D2L instructions and rubric into its details.")] = False,
+    restore_hidden: Annotated[bool, typer.Option("--restore-hidden", help="Put back graded work D2L lists that had been "
+                                                 "replaced (superseded) by mistake, as graded work; cancelled items are only reported.")] = False,
 ) -> None:
     """Every graded thing D2L lists for this course (assignment folders, quizzes, discussion topics, graded content,
     grade items) matched to the calendar: lists what's missing and what's on a different day. Each one must be added,
@@ -939,13 +1029,41 @@ def d2l_reconcile_cmd(
                     if not current or current.startswith(header) or not current.startswith("From D2L") or len(header + text) > len(current):
                         row.description = header + text
                         filled += 1
+        restored = []
+        if restore_hidden and r["hidden"]:
+            from sqlalchemy import text as sql
+
+            from academic_sync.db.session import EVENT_CONTEXT
+
+            kinds = {"quiz": "quiz", "discussion": "discussion", "dropbox": "assignment", "grade": "assignment", "content": "assignment"}
+            for h in r["hidden"]:
+                if h["status"] != "superseded":
+                    continue
+                # (Each change credited with its own reason in the item's history.)
+                EVENT_CONTEXT["reason"] = (f"D2L lists it as graded work ({h['kind']} \"{h['title']}\"), so it goes back on the calendar; it had been "
+                                           f"{h['how']}" + (f", folded into \"{h['replaced_by']}\"" if h['replaced_by'] else ""))
+                session.execute(sql("UPDATE event_context SET reason = :r WHERE id = 1"), {"r": EVENT_CONTEXT["reason"]})
+                not_work = ("weekly_reading", "reading", "lecture", "break", "no_class", "recitation", "seminar")
+                session.execute(
+                    sql("UPDATE academic_items SET superseded_by_id = NULL, status = 'clear', item_type = CASE WHEN item_type IN ('weekly_reading', 'reading', 'lecture', 'break', 'no_class', 'recitation', 'seminar') THEN :t ELSE item_type END WHERE id = :i"),
+                    {"i": h["item_id"], "t": kinds.get(h["kind"], "assignment")},
+                )
+                restored.append({**h, "retyped": h["item_type"] in not_work})
+        r["restored"] = restored
     r.pop("_matched", None)
     r["instructions_filled"] = filled
     if as_json:
         print(json.dumps({"course": code, **r}, indent=1, default=str))
         return
+    for h in r["hidden"]:
+        done = any(x["item_id"] == h["item_id"] for x in r.get("restored", []))
+        console.print(f"[magenta]{'Put back' if done else 'Hidden'}:[/magenta] {h['kind']} {escape(h['title'])}: it was {escape(h['how'])}"
+                      + (f", folded into {escape(h['replaced_by'])}" if h["replaced_by"] else "") + f"  [dim]{h['key']}[/dim]")
     if not r["unmatched"] and not r["drift"]:
         console.print(f"{code}: everything D2L lists is on the calendar, on D2L's day." + ("" if r["folder"] else " (No pre-check data yet.)"))
+        for sp in r["suspects"]:
+            console.print(f"[yellow]Check:[/yellow] {escape(sp['title'])} ({sp['date']}) looks like graded work but was folded into "
+                          f"{escape(sp['replaced_by'] or '?')}: item-restore it as graded work, or coverage-dismiss --key {sp['key']} --note \"not graded: ...\"")
         return
     for u in r["unmatched"]:
         console.print(f"[red]Not on the calendar:[/red] {u['kind']} {escape(u['title'])} ({u['d2l_date'] or 'no date in D2L'})  [dim]{u['key']}[/dim]")
@@ -1041,7 +1159,7 @@ def changes_cmd(
         console.print(f"{e['ts'][:16]}  {e['course'] or '':<8} {e['op']:<9} {escape(e['title'] or e['id'] or '')[:70]}  [dim]{escape(e['reason'] or '')[:120]}[/dim]")
 
 
-def _item_status_change(item_id: str, reason: str, *, by: str | None = None, cancel: bool = False, restore: bool = False) -> None:
+def _item_status_change(item_id: str, reason: str, *, by: str | None = None, cancel: bool = False, restore: bool = False, as_type: str | None = None) -> None:
     from sqlalchemy import text as sql
 
     if len(reason.strip()) < 8:
@@ -1056,6 +1174,8 @@ def _item_status_change(item_id: str, reason: str, *, by: str | None = None, can
         iid = row[0][0]
         if restore:
             session.execute(sql("UPDATE academic_items SET superseded_by_id = NULL, status = CASE WHEN status IN ('superseded', 'cancelled') THEN 'clear' ELSE status END WHERE id = :i"), {"i": iid})
+            if as_type:
+                session.execute(sql("UPDATE academic_items SET item_type = :t WHERE id = :i"), {"t": ItemType(as_type).value, "i": iid})
         elif cancel:
             session.execute(sql("UPDATE academic_items SET status = 'cancelled' WHERE id = :i"), {"i": iid})
         else:
@@ -1090,9 +1210,11 @@ def item_cancel_cmd(
 def item_restore_cmd(
     item_id: Annotated[str, typer.Argument()],
     reason: Annotated[str, typer.Option("--reason")],
+    as_type: Annotated[str | None, typer.Option("--as-type", help="Its real kind, when it had been read as the wrong one "
+                                                "(a graded review read as a reading): assignment, quiz, exam, discussion, lab...")] = None,
 ) -> None:
     """Bring back a superseded or cancelled item, with the reason."""
-    _item_status_change(item_id, reason, restore=True)
+    _item_status_change(item_id, reason, restore=True, as_type=as_type)
 
 
 # --------------------------------------------------------------------------
@@ -1615,6 +1737,11 @@ def chapter_topic_add_cmd(
         str | None,
         typer.Option("--source", help="Where the notes came from (a document path or page address)."),
     ] = None,
+    append: Annotated[
+        bool,
+        typer.Option("--append", help="Add the given --objective/--section/--added-objective values to the saved ones "
+                     "(no repeats) instead of replacing the lists: for filling a gap without retyping the chapter."),
+    ] = False,
 ) -> None:
     """Save (or refresh) a course's real chapter/unit topic breakdown --
     the durable source of truth `render` auto-pulls from for a weekly
@@ -1627,6 +1754,13 @@ def chapter_topic_add_cmd(
     for the same chapter updates the same row instead of duplicating."""
     with session_scope() as session:
         resolved_course_id = _resolve_course_or_exit(session, course).id
+        if append:
+            old = repository.find_chapter_topic(session, resolved_course_id, chapter)
+            if old is not None:
+                merge = lambda have, new: list(dict.fromkeys([*(have or []), *(new or [])]))  # noqa: E731
+                objective = merge(old.objectives_json, objective)
+                section = merge(old.sections_json, section)
+                added_objective = merge(old.added_objectives_json, added_objective)
         topic = ChapterTopic(
             id=uuid.uuid4().hex,
             course_id=resolved_course_id,
@@ -3188,6 +3322,92 @@ def curriculum_dismiss_cmd(
     console.print(f"Dismissed: {key}")
 
 
+# --------------------------------------------------------------------------
+# Depth: Claude's review of each chapter at exam level (Kea)
+# --------------------------------------------------------------------------
+
+def _depth_rows(session, c: Course) -> list[dict]:
+    """Every chapter with what a depth review reads (its textbook chapter's source, its next test) and whether one is
+    due: never reviewed; its textbook was (re)written since; or a test on it is within 21 days and the last review is
+    over 10 days old; or the last review found gaps and the textbook has changed since."""
+    from sqlalchemy import text as sql
+
+    today = date.today()
+    tests = session.execute(sql(
+        "SELECT title, date, covered_chapters_json FROM academic_items WHERE course_id = :c AND item_type IN "
+        "('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND status NOT IN ('superseded', 'cancelled') AND date >= :d ORDER BY date"),
+        {"c": c.id, "d": today.isoformat()}).all()
+    pdfs = session.execute(sql("SELECT chapters_json, source_path, built_at FROM study_pdfs WHERE course_id = :c AND source_path IS NOT NULL"), {"c": c.id}).all()
+    out = []
+    for t in sorted(repository.list_chapter_topics_for_course(session, c.id), key=lambda t: int((re.findall(r"\d+", t.chapter_label) or ["999"])[0])):
+        key = canonicalize_chapter_label(t.chapter_label)
+        row = repository.find_chapter_topic(session, c.id, t.chapter_label)
+        nxt = next(((title, d) for title, d, cov in tests if any(canonicalize_chapter_label(x) == key for x in (json.loads(cov) if isinstance(cov, str) else cov or []))), None)
+        mine = [(json.loads(ch) if isinstance(ch, str) else ch, src, built) for ch, src, built in pdfs]
+        pdf = max(((src, built) for ch, src, built in mine if any(canonicalize_chapter_label(x) == key for x in ch or [])), key=lambda x: str(x[1]), default=(None, None))
+        reviewed = row.depth_reviewed_at
+        built = datetime.fromisoformat(str(pdf[1])) if pdf[1] else None
+        days_to_test = (date.fromisoformat(str(nxt[1])[:10]) - today).days if nxt else None
+        why = None
+        if reviewed is None:
+            why = "never reviewed"
+        elif built and built > reviewed:
+            why = "its textbook chapter changed since the last review"
+        elif days_to_test is not None and days_to_test <= 21 and (datetime.now() - reviewed).days > 10:
+            why = f"{nxt[0]} is in {days_to_test} days"
+        out.append({"label": t.chapter_label, "title": t.title, "textbook_source": pdf[0], "next_test": {"title": nxt[0], "date": str(nxt[1])[:10]} if nxt else None,
+                    "verdict": row.depth_verdict, "note": row.depth_note, "reviewed_at": reviewed.isoformat() if reviewed else None,
+                    "due": why is not None and pdf[0] is not None, "why": why})
+    return out
+
+
+@app.command("depth-due")
+def depth_due_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Kea: each chapter's depth review -- the last verdict and whether a review is due (never reviewed, its textbook
+    changed, or a test on it within 21 days), with its textbook chapter's source and its next test."""
+    with session_scope() as session:
+        rows = _depth_rows(session, _resolve_course_or_exit(session, course))
+    if as_json:
+        print(json.dumps(rows, indent=1, default=str))
+        return
+    for r in rows:
+        console.print(f"{r['label']:<11} {r['verdict'] or '-':<5} {'DUE: ' + r['why'] if r['due'] else ''}")
+
+
+@app.command("depth-review")
+def depth_review_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    chapter: Annotated[str, typer.Option("--chapter")],
+    verdict: Annotated[str, typer.Option("--verdict", help="ok: the notes, the textbook chapter and the question bank teach "
+                                         "and test every outcome and test-focus line at exam depth. gaps: something is "
+                                         "missing or too shallow (say what in --note).")],
+    note: Annotated[str, typer.Option("--note", help="What is missing or shallow, specifically (each outcome, problem type "
+                                      "or test-focus line, and where: notes, textbook, questions), or for ok what was checked.")],
+) -> None:
+    """Save a chapter's depth review. A "gaps" verdict makes Kea rewrite the chapter's textbook and write a harder
+    question top-up aimed at the note."""
+    if verdict not in ("ok", "gaps"):
+        console.print("[red]--verdict is ok or gaps.[/red]")
+        raise typer.Exit(code=1)
+    if len(note.strip()) < 20:
+        console.print("[red]Say specifically what you checked or what's missing.[/red]")
+        raise typer.Exit(code=1)
+    _set_event_context(f"Depth review of {chapter}: {verdict}")
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        row = repository.find_chapter_topic(session, c.id, chapter)
+        if row is None:
+            console.print(f"[red]{c.course_code} has no notes for {chapter}.[/red]")
+            raise typer.Exit(code=1)
+        row.depth_verdict = verdict
+        row.depth_note = note.strip()
+        row.depth_reviewed_at = datetime.now()
+    console.print(f"Saved: {chapter} {verdict}.")
+
+
 @app.command("chapter-summary-set")
 def chapter_summary_set_cmd(
     course: Annotated[str, typer.Option("--course")],
@@ -3491,7 +3711,7 @@ def study_pdf_preview_cmd(
 def doc_text_cmd(
     path: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
 ) -> None:
-    """Write a downloaded PDF's or Word file's text next to it as `<file>.txt`,
+    """Write a downloaded PDF's, Word file's or PowerPoint deck's text next to it as `<file>.txt`,
     one `--- page N ---` marker per PDF page, and print a JSON summary. Read
     that text file instead of the PDF: reading a PDF directly sends every page
     as a picture, which is many times larger. Pages with no text (a scanned
@@ -3526,8 +3746,12 @@ def doc_text_cmd(
                 cells = [c.text.strip().replace("\n", " ") for c in row.cells]
                 lines.append(" | ".join(cells))
         out.write_text("\n".join(lines).strip(), encoding="utf-8")
+    elif suffix == ".pptx":
+        text = pptx_text(path)
+        pages = text.count("--- slide ")
+        out.write_text(text, encoding="utf-8")
     else:
-        console.print("[red]doc-text reads .pdf and .docx files.[/red]")
+        console.print("[red]doc-text reads .pdf, .docx and .pptx files.[/red]")
         raise typer.Exit(code=1)
     text = out.read_text(encoding="utf-8")
     print(json.dumps({"text_file": str(out), "pages": pages, "chars": len(text), "pages_without_text": images}))

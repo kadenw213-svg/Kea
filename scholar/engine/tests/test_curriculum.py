@@ -82,3 +82,37 @@ def test_save_outcome_keeps_chapters_when_saved_again(session, make_course):
     curriculum.save_outcome(session, course.id, "outline", "A.1", "Classification of matter", ["Chapter 1"], None, "s")
     row = curriculum.save_outcome(session, course.id, "outline", "A.1", "Classification of matter", [], None, None)
     assert row.chapters_json == ["Chapter 1"] and row.source == "s"
+
+
+def _item(session, course, title, item_type, d):
+    from datetime import date as _d
+
+    from academic_sync.models.domain import AcademicItem
+    from academic_sync.models.enums import ItemStatus, ItemType
+
+    it = AcademicItem(id=uuid.uuid4().hex, course_id=course.id, title=title, item_type=ItemType(item_type), date=_d.fromisoformat(d),
+                      status=ItemStatus.CLEAR, fingerprint=uuid.uuid4().hex)
+    repository.upsert_academic_item(session, it)
+    return it
+
+
+def test_database_refuses_folding_graded_work_into_a_reading_week(session, make_course):
+    import pytest
+    from sqlalchemy import text
+
+    from academic_sync.db.migrations import _0021_add_item_history, _0023_guard_folding_graded_work
+
+    _0021_add_item_history(session)
+    _0023_guard_folding_graded_work(session)
+    course = make_course(code="MAT1340")
+    week = _item(session, course, "Chapter 2: Functions and Relations", "weekly_reading", "2026-09-07")
+    review = _item(session, course, "Review: Chapter 2", "reading", "2026-09-12")
+    plain = _item(session, course, "Chapter 2, cont", "reading", "2026-09-09")
+    session.flush()
+    with pytest.raises(Exception, match="graded work"):
+        session.execute(text("UPDATE academic_items SET superseded_by_id = :b, status = 'superseded' WHERE id = :i"), {"b": week.id, "i": review.id})
+    session.rollback()
+    # A plain reading folds in; graded-looking work only with a reason saying it isn't graded.
+    session.execute(text("UPDATE academic_items SET superseded_by_id = :b WHERE id = :i"), {"b": week.id, "i": plain.id})
+    session.execute(text("UPDATE event_context SET reason = 'Review week, not graded: the practice exam is its own item' WHERE id = 1"))
+    session.execute(text("UPDATE academic_items SET superseded_by_id = :b WHERE id = :i"), {"b": week.id, "i": review.id})

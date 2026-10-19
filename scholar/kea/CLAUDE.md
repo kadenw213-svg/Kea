@@ -34,7 +34,8 @@ field.** If a command answers with an error, its message says what's wrong.
   `record-sync <item_id> --event-id kea:<item_id> --calendar-id kea`; `export [--course X]`; `plan --course X --verbose`.
 - Weeks and chapters: `weekly-reading-add --course X --week-start X --week-end X --chapters X [--reference-url ...]
   [--links JSON]`; `chapter-topic-add --course X --chapter X [--title] [--vocabulary] [--objective] [--section]
-  [--exhaustive] [--reading-url] [--reading-label] [--textbook-ref] [--source]`; `chapter-summary-set --course X
+  [--exhaustive] [--reading-url] [--reading-label] [--textbook-ref] [--source] [--append]` (`--append` adds
+  objectives/sections to the saved lists instead of replacing them); `chapter-summary-set --course X
   --chapter X --summary X`.
 - The syllabus (the curriculum is held to it): `curriculum --course X [--json]` checks the chapters against the
   syllabus's outcomes and topical outline, the chapters it names, each chapter's notes, the textbook and the testing
@@ -43,7 +44,14 @@ field.** If a command answers with an error, its message says what's wrong.
   --text X --source X [--chapter X]`, `guideline-remove --course X --text X --reason X`; `course-textbook --course X
   --title X --numbering same|different [--source X]` or `--none "<why>"`; `curriculum-dismiss --course X --key X
   --reason X`. Chapter notes and outcomes keep the same history as items and can't be deleted. `/kea-curriculum`
-  closes the gaps.
+  closes the gaps. Depth: `depth-due --course X [--json]` (each chapter's last depth review and whether one is due),
+  `depth-review --course X --chapter X --verdict ok|gaps --note X` (`/kea-curriculum <CODE> depth`).
+- Hidden work: `d2l-reconcile` also lists `hidden` (graded work D2L lists that matches only a replaced or cancelled
+  item: how and when it was hidden; `--restore-hidden` puts replaced ones back, Kea does this daily) and `suspects`
+  (graded-looking items folded into a reading week or lecture). Judge every suspect: `item-restore <id> --reason X
+  --as-type assignment|quiz|exam|...` when it's graded work, or `coverage-dismiss --key hidden:<id> --note "not
+  graded: <why>"`. The database refuses to fold graded-looking work into a reading week or lecture unless the reason
+  says "not graded".
 - Saved links (the URL registry): `portal-link-set --course X --kind X --url X [--label]` (kinds: home, grades,
   announcements, content, dropbox, quizzes, discussions, calendar, external_home, external_gradebook, assignment, quiz,
   content_topic, grade_item, module, other). Save every page you had to find, so no run has to find it again.

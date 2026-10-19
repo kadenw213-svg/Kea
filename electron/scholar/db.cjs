@@ -411,6 +411,8 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
       vocabulary: [t.vocabulary, t.added_vocabulary].filter(Boolean).join('; '),
       reading_url: t.reading_url || null,
       textbook_source: sources.get(t.chapter_label) || null,
+      // What Claude's depth review found missing or too shallow (questions must cover it).
+      depth_gaps: t.depth_verdict === 'gaps' ? t.depth_note || null : null,
       // Review sheets linked from the chapter's weekly reading (FunSheets, worksheets, study guides): downloaded with
       // the tests' own links, since many tests link none.
       review_links: rows(db, `SELECT title, weekly_links_json, reference_url, reference_url_label, resource_url, resource_url_label FROM academic_items WHERE course_id = ? AND item_type = 'weekly_reading' AND ${ACTIVE}`, [courseId])
