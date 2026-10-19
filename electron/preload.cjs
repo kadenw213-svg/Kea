@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('api', {
     save: (a) => ipcRenderer.invoke('account:save', a),
     verify: () => ipcRenderer.invoke('account:verify'),
     avatar: (clear) => ipcRenderer.invoke('account:avatar', !!clear),
+    crop: (c) => ipcRenderer.invoke('account:crop', c),
     signOut: () => ipcRenderer.invoke('account:signOut')
   },
   scholar: {

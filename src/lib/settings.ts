@@ -510,7 +510,8 @@ export const SECTIONS: Section[] = [
     icon: 'Globe',
     blurb: 'Kea’s own window for your class site and the pages it links to.',
     fields: [
-      { key: 'sites.dark', label: 'Dark mode on class sites', type: 'toggle', default: true, help: 'D2L Brightspace, Canvas, Blackboard, Moodle, Schoology, Google Classroom and publisher sites open dark in Kea’s class-site window. Photos and videos keep their colours; pages that are already dark are left alone.' },
+      { key: 'sites.dark', label: 'Dark mode on class sites', type: 'toggle', default: true, help: 'D2L Brightspace, Canvas, Blackboard, Moodle, Schoology, Google Classroom and publisher sites open dark in Kea’s class-site window. Photos and videos keep their colours; pages that are already dark are left alone. Right-click a page to turn it off for just that site.' },
+      { key: 'sites.darkHeader', label: 'Site headers in Kea’s colours', type: 'toggle', default: true, when: (v) => v['sites.dark'] !== false, help: 'The D2L, Canvas and Moodle header bar takes Kea’s background and your accent colour.' },
       { key: 'sites.darkStrength', label: 'Darkness', type: 'range', default: 0.9, min: 0.7, max: 1, step: 0.02, when: (v) => v['sites.dark'] !== false },
       { key: 'sites.darkBrightness', label: 'Brightness', type: 'range', default: 1, min: 0.7, max: 1.3, step: 0.05, when: (v) => v['sites.dark'] !== false },
       { key: 'sites.darkContrast', label: 'Contrast', type: 'range', default: 1, min: 0.7, max: 1.4, step: 0.05, when: (v) => v['sites.dark'] !== false },

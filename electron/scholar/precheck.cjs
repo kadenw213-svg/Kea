@@ -98,6 +98,29 @@ const AREAS = {
   }
 };
 
+/**
+ * Graded work the student can't see: a grade category that counts more points than the graded items listed under it
+ * (D2L lists each category followed by its items). CHE1011's Lab Reports read 10 / 155 while the lab items shown
+ * added up to 30: 125 points of lab reports, done on an outside lab site with their D2L folders hidden, were counting
+ * as zeros and nothing on Kea's calendar said they existed. Returns [{ category, counted, visible, hidden }].
+ */
+function hiddenWork(values) {
+  const out = [];
+  let cat = null;
+  const close = () => {
+    if (cat && cat.counted - cat.visible > 0.5) out.push({ category: cat.category, counted: cat.counted, visible: cat.visible, hidden: Math.round((cat.counted - cat.visible) * 100) / 100 });
+  };
+  for (const g of Array.isArray(values) ? values : []) {
+    if (g.GradeObjectType === 9 || /category/i.test(g.GradeObjectTypeName || '')) {
+      close();
+      cat = g.PointsDenominator ? { category: String(g.GradeObjectName || '').trim(), counted: +g.PointsDenominator, visible: 0 } : null;
+    } else if (cat && g.PointsDenominator) cat.visible += +g.PointsDenominator;
+  }
+  close();
+  return out;
+}
+const hiddenWords = (h) => `the "${h.category}" grade category counts ${h.counted} points, but the graded items you can see under it add up to ${h.visible}: ${h.hidden} points of work you can't see are counting (hidden assignments, an outside platform, or zeros not shown yet)`;
+
 /** What changed in one area since last time, in words: "2 new announcements: Exam 3 moved; Lab 8 notes". */
 function describe(area, before, now, label = AREAS[area].label) {
   const old = new Map((before || []).map((e) => [String(e.id), e]));
@@ -173,6 +196,13 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
       seen[area] = a.list(r.data).map(a.entry);
       if (before[area]) reasons.push(...describe(area, before[area], seen[area]));
       else if (Object.keys(before).length) reasons.push(`first look at ${area}`);
+      // Points counting for work that isn't listed: the daily check finds out what it is when it first appears or
+      // grows (the folders usually stay hidden, so the same gap isn't sent to Claude again every day).
+      if (area === 'grades') {
+        seen.hiddenWork = hiddenWork(r.data);
+        const was = new Map((before.hiddenWork || []).map((h) => [h.category, h.hidden]));
+        for (const h of seen.hiddenWork) if (was.get(h.category) !== h.hidden) reasons.push(`Hidden graded work: ${hiddenWords(h)}. Find what it is (course schedule, outside platform, hidden folders), make sure every piece is on the calendar, and tell the student which ones are missing`);
+      }
     }
     next.courses[c.code] = { ...before, ...seen };
     if (!Object.keys(before).length) reasons.unshift('first check by Kea');
@@ -462,7 +492,12 @@ function updateGrades(dir, ous) {
       if (g.comment && (!p || p.comment !== g.comment)) fresh.push({ code, g, kind: 'feedback', updated: !!p?.comment });
     }
     const pct = final?.PointsDenominator ? Math.round((final.PointsNumerator / final.PointsDenominator) * 1000) / 10 : null;
-    byCourse[code] = { final: final ? { shown: String(final.DisplayedGrade || '').trim(), percent: pct } : old.byCourse[code]?.final || null, items: list, url: home && ous[code] ? new URL(`/d2l/lms/grades/my_grades/main.d2l?ou=${ous[code]}`, home).href : '', checked: new Date().toISOString() };
+    const hidden = hiddenWork(items);
+    // Hidden graded work goes straight to the Inbox, without waiting for Claude: when it first appears, and again if
+    // it grows.
+    const wasHidden = new Map((old.byCourse[code]?.hidden || []).map((h) => [h.category, h.hidden]));
+    for (const h of hidden) if (!firstLook && wasHidden.get(h.category) !== h.hidden) fresh.push({ code, h, kind: 'hidden' });
+    byCourse[code] = { final: final ? { shown: String(final.DisplayedGrade || '').trim(), percent: pct } : old.byCourse[code]?.final || null, items: list, hidden, url: home && ous[code] ? new URL(`/d2l/lms/grades/my_grades/main.d2l?ou=${ous[code]}`, home).href : '', checked: new Date().toISOString() };
   }
   fs.writeFileSync(gradesFile(), JSON.stringify({ byCourse, seeded: true }));
   if (!old.seeded || !fresh.length) return;
@@ -470,7 +505,13 @@ function updateGrades(dir, ous) {
   const box = readInbox();
   const deleted = new Set(box.deleted || []);
   const add = [];
-  for (const { code, g, kind, updated } of fresh) {
+  for (const { code, g, h, kind, updated } of fresh) {
+    if (kind === 'hidden') {
+      const id = `hidden:${code}:${h.category}:${h.hidden}`;
+      if (!deleted.has(id))
+        add.push({ id, kind: 'needs_you', course: code, title: `${h.category}: ${h.hidden} points counting for work you can't see`, body: `${hiddenWords(h)[0].toUpperCase()}${hiddenWords(h).slice(1)}. Check the course schedule and any outside platform for work in this category, and ask your instructor which items are counting.`, at: new Date().toISOString(), url: byCourse[code].url, links: byCourse[code].url ? [{ label: 'Open grades', url: byCourse[code].url }] : [], read: false });
+      continue;
+    }
     const shown = g.score || g.shown;
     const item =
       kind === 'grade'
@@ -612,6 +653,8 @@ async function syncCheck(code, ou) {
     seen[area] = a.list(got.data).map(a.entry);
     if (before?.[area]) reasons.push(...describe(area, before[area], seen[area], a.label));
   }
+  const missing = brief.not_on_calendar || [];
+  if (missing.length) reasons.push(`${missing.length} dated item${missing.length > 1 ? 's' : ''} written in the class's documents ${missing.length > 1 ? "aren't" : "isn't"} on the calendar: ${missing.map((i) => `${i.title} (${i.date})`).slice(0, 6).join('; ')}`);
   if (brief.next_banner_needed) reasons.push(`the next week's reading still needs building (weeks are built through ${brief.banners_through || 'none yet'})`);
   if (brief.needs_link_refresh.length) reasons.push(`${brief.needs_link_refresh.length} saved item${brief.needs_link_refresh.length > 1 ? 's' : ''} whose link may have unlocked: ${brief.needs_link_refresh.map((i) => i.title).slice(0, 6).join('; ')}`);
   return {

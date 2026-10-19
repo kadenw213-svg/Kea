@@ -311,11 +311,14 @@ export interface AiState {
   presets: { tier: AiTier; contextSize: number; maxTokens: number }[];
   models: AiModelState[];
 }
+export type AvatarCrop = { x: number; y: number; zoom: number; w: number; h: number };
 /** The Kea account (needed for school mode): verified when the email is signed in on this computer. */
 export interface KeaAccount {
   email: string;
   name: string;
   avatar: string | null;
+  /** Where the picture sits in its circle (null: centred). */
+  crop: AvatarCrop | null;
   verified: boolean;
   verifiedBy: string | null;
   /** Kea's creator. */
@@ -328,6 +331,7 @@ export interface AccountApi {
   save(a: { email: string; name: string }): Promise<KeaAccount | null>;
   verify(): Promise<KeaAccount>;
   avatar(clear?: boolean): Promise<KeaAccount | null>;
+  crop(c: AvatarCrop | null): Promise<KeaAccount | null>;
   signOut(): Promise<boolean>;
 }
 

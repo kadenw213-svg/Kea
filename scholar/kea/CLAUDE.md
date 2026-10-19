@@ -40,12 +40,38 @@ field.** If a command answers with an error, its message says what's wrong.
   content_topic, grade_item, module, other). Save every page you had to find, so no run has to find it again.
 - Gaps: `unresolved [--course X]`, `unresolved-add --course X --description X [--kind] [--source-wording]`,
   `unresolved-resolve <id> --note X`.
+- Coverage: `coverage --course X [--json]` lists dated graded work written in the class's downloaded documents
+  (schedules, syllabus tables, lab handouts, transcriptions) that has no calendar item; `coverage-dismiss --course X
+  --key <key from coverage --json> --note "<why it isn't separate work>"`. `completeness` and `kea-brief`
+  (`not_on_calendar`) include it.
 - Daily: `digest-deadlines --course X`, `digest-ingest --file X`, `digest-render --course X`,
   `digest-record-sent --course X [--message-id] [--skipped]`; `shells-check --file X`.
 - Textbooks: `study-pdf-due`, `study-pdf-check --banner X`, `study-pdf-build --banner X`, `study-pdf-skip --banner X
   --reason X`, `study-pdf-image search|get <query> [--banner]`, `study-pdf-plot <script>`, `study-pdf-preview
   --banner X`, `study-pdf-list`. Practice sets: `practice-check <path> [--count N]`.
 - Preferences: `prefs get|set|unset|list`.
+
+## Every piece of graded work goes on the calendar (no exceptions)
+
+In August a CHE1011 scan found the class's lab schedule (Lab reports #1-#10, done on an outside lab site and handed
+in to D2L folders that stayed hidden until a lab kit was verified), transcribed it into `data/downloads/` and wrote
+"add these 11 items" in `raw_notes.md`, then never extracted it. Nothing on the calendar said the labs existed, no
+later check could see the hidden folders, and the student lost the points. So:
+
+- **Notes are not the calendar.** Anything with a date that is graded (or must be done for a grade) is an item in
+  the database before the run ends: `extract` the file it's written in, in the same run you find it. Writing it in
+  `raw_notes.md`, a transcription or a summary does not count.
+- **Run `coverage --course X` before you finish any import or weekly update.** It must say every dated piece of work
+  is on the calendar. For each line it lists: extract the file (or a file with just those lines, like
+  `lab_reports_1-10.txt`), or, if it truly is the same work as an item already there, `coverage-dismiss` with the
+  reason. Never dismiss work just because it's past or hard to place.
+- **Outside platforms and hidden folders count.** A syllabus or content page that sends work to another site (lab
+  kits, ALEKS, Pearson, a lab simulator), a folder that says it unlocks later, or a grade category whose points are
+  more than the items you can see under it, all mean there is graded work Kea can't list from D2L. Find its schedule
+  in the course's own pages and put every piece on the calendar.
+- **Hidden graded work in the pre-check** (`Hidden graded work: ...` in the reasons) means a grade category counts
+  points for items the student can't see. Find what they are, make sure each is on the calendar, and send one
+  `needs_you` notice naming the ones that look missed (due and not handed in) and what to do.
 
 ## Running inside Kea (overrides the skills where they differ)
 

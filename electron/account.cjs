@@ -31,7 +31,7 @@ function get() {
     } catch {}
   }
   const verified = !!a.verified && norm(a.verified.email) === norm(a.email);
-  return { email: a.email, name: a.name || '', avatar, verified, verifiedBy: verified ? a.verified.by : null, owner: verified && norm(a.email) === OWNER };
+  return { email: a.email, name: a.name || '', avatar, crop: avatar ? a.crop || null : null, verified, verifiedBy: verified ? a.verified.by : null, owner: verified && norm(a.email) === OWNER };
 }
 const verified = () => !!get()?.verified;
 
@@ -85,9 +85,10 @@ function register() {
   ipcMain.handle('account:avatar', async (e, clear) => {
     const a = read();
     if (!a) throw new Error('Add your email first.');
-    if (a.avatar) fs.rmSync(path.join(app.getPath('userData'), a.avatar), { force: true });
+    const drop = () => a.avatar && fs.rmSync(path.join(app.getPath('userData'), a.avatar), { force: true });
     if (clear) {
-      write({ ...a, avatar: null });
+      drop();
+      write({ ...a, avatar: null, crop: null });
       return get();
     }
     const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Choose your picture', properties: ['openFile'], filters: [{ name: 'Images', extensions: Object.keys(MIME) }] });
@@ -96,7 +97,18 @@ function register() {
     if (fs.statSync(src).size > 8 * 1024 * 1024) throw new Error('That picture is over 8 MB. Pick a smaller one.');
     const name = `account-avatar-${Date.now().toString(36)}${path.extname(src).toLowerCase()}`;
     fs.copyFileSync(src, path.join(app.getPath('userData'), name));
-    write({ ...a, avatar: name });
+    // The whole picture is kept, so where it sits in the circle can be changed again later.
+    drop();
+    write({ ...a, avatar: name, crop: null });
+    return get();
+  });
+  // Where the picture sits in the circle: the point at its centre (0–1 across and down), how far it's zoomed in (1 =
+  // the short side just fills the circle), and the picture's own size.
+  ipcMain.handle('account:crop', (_e, c) => {
+    const a = read();
+    if (!a?.avatar) throw new Error('Choose a picture first.');
+    const num = (v, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : lo);
+    write({ ...a, crop: c ? { x: num(c.x, 0, 1), y: num(c.y, 0, 1), zoom: num(c.zoom, 1, 8), w: num(c.w, 1, 1e5), h: num(c.h, 1, 1e5) } : null });
     return get();
   });
   ipcMain.handle('account:signOut', () => {

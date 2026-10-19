@@ -17,6 +17,10 @@ user-invocable: true
 > - **Step 2 uses the brief's `needs_link_refresh`**, and opens each item's saved link or its area's portal link
 >   directly.
 > - Record every `to_record` item (`record-sync`) unless it's a duplicate or wrong; say which and why in the summary.
+> - **Close every `not_on_calendar` line** in the brief: dated graded work written in the class's documents with no
+>   item. Extract the file it's in (or a file with just those lines), or `coverage-dismiss` it with the reason when
+>   it's the same work as an item already there. Run `coverage --course <CODE>` again before finishing; it must be
+>   clean.
 
 Arguments passed: `$ARGUMENTS` (may be empty, a term, a course code, or a
 subcommand hint).

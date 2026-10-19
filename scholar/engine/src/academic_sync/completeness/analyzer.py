@@ -39,8 +39,10 @@ def analyze_completeness(
     unlinked_item_count: int = 0,
     missing_chapter_topic_count: int = 0,
     partial_chapter_topic_count: int = 0,
+    uncovered_document_items: list[str] | None = None,
     is_synthetic: bool = False,
 ) -> CourseCompletenessReport:
+    uncovered = uncovered_document_items or []
     open_refs = [r for r in unresolved_references if not r.resolved]
     external_uninspected = [
         r for r in open_refs if r.kind == UnresolvedReferenceKind.EXTERNAL_REFERENCE_UNINSPECTED
@@ -96,8 +98,18 @@ def analyze_completeness(
         or unlinked_item_count > 0
         or missing_chapter_topic_count > 0
         or partial_chapter_topic_count > 0
+        or uncovered
     ):
         status = CompletenessStatus.INCOMPLETE
+        if uncovered:
+            # Dated graded work written in a downloaded course document (a
+            # schedule, syllabus table, lab handout) with no matching item:
+            # `academic-sync coverage --course X` lists them. Each must be
+            # extracted/created or dismissed with coverage-dismiss.
+            notes.append(
+                f"{len(uncovered)} dated item(s) written in this course's documents aren't on the "
+                "calendar (run `coverage`): " + "; ".join(uncovered[:8]) + ("; ..." if len(uncovered) > 8 else "")
+            )
         if external_uninspected:
             notes.append(
                 f"{len(external_uninspected)} reference(s) to material outside what's "

@@ -81,6 +81,7 @@ function getWindow() {
     win.loadURL(url).catch(() => {});
     return { action: 'deny' };
   });
+  win.webContents.on('context-menu', (_e, params) => contextMenu(win, params));
   win.on('close', (e) => {
     // Closing the sign-in window just hides it again (the session stays), unless Kea is quitting.
     if (global.keaQuitting) return;
@@ -119,8 +120,50 @@ function darkSettings() {
     contrast: Number(g('darkContrast', 1)),
     sepia: Number(g('darkWarmth', 0)),
     docs: g('darkDocs', false) === true,
-    sites
+    sites,
+    offHosts: Array.isArray(g('darkOff', [])) ? g('darkOff', []) : [],
+    header: g('darkHeader', true) !== false,
+    theme: keaTheme()
   };
+}
+// Kea's own colours (Settings → Appearance), for the site's header.
+const ACCENTS = { blue: ['#a8c7fa', '#062e6f'], purple: ['#d0bcff', '#381e72'], teal: ['#80d5cf', '#003734'], green: ['#9fd8a8', '#0a3816'], orange: ['#ffb68a', '#4a1f00'], pink: ['#ffb0c8', '#5e1133'] };
+function keaTheme() {
+  const settings = require('../settings.cjs');
+  let [accent, onAccent] = ACCENTS[settings.get('appearance.accent', 'blue')] || ACCENTS.blue;
+  const custom = settings.get('appearance.accentCustom', '');
+  if (settings.get('appearance.accent') === 'custom' && /^#[0-9a-f]{6}$/i.test(custom)) {
+    accent = custom;
+    const n = parseInt(custom.slice(1), 16);
+    onAccent = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 150 ? '#111111' : '#ffffff';
+  }
+  return { surface: '#1b1c1d', text: '#e3e3e3', accent, onAccent };
+}
+
+/** Right-click in the class-site window: back, forward, reload, and dark mode on or off for this site. */
+function contextMenu(w, params) {
+  const { Menu, clipboard } = require('electron');
+  const settings = require('../settings.cjs');
+  const wc = w.webContents;
+  let host = '';
+  try {
+    host = new URL(wc.getURL()).hostname.replace(/^www\./, '');
+  } catch {}
+  const off = settings.get('sites.darkOff', []) || [];
+  const isOff = off.includes(host);
+  const items = [];
+  if (params.isEditable) items.push({ label: 'Cut', role: 'cut' }, { label: 'Copy', role: 'copy' }, { label: 'Paste', role: 'paste' });
+  else if (params.selectionText) items.push({ label: 'Copy', role: 'copy' });
+  if (params.linkURL) items.push({ label: 'Copy link', click: () => clipboard.writeText(params.linkURL) });
+  if (items.length) items.push({ type: 'separator' });
+  items.push(
+    { label: 'Back', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() },
+    { label: 'Forward', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() },
+    { label: 'Reload', click: () => wc.reload() }
+  );
+  if (host && settings.get('sites.dark', true) !== false)
+    items.push({ type: 'separator' }, { label: `Dark mode on ${host}`, type: 'checkbox', checked: !isOff, click: () => settings.set({ 'sites.darkOff': isOff ? off.filter((h) => h !== host) : [...off, host] }) });
+  Menu.buildFromTemplate(items).popup({ window: w });
 }
 ipcMain.on('class-site:dark', (e) => (e.returnValue = darkSettings()));
 require('../settings.cjs').onChange(() => {

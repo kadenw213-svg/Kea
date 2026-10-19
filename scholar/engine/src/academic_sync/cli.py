@@ -350,6 +350,214 @@ def _parse_time(value: str):
 
 
 # --------------------------------------------------------------------------
+# coverage: dated work written down in a course's documents but not on the calendar
+# --------------------------------------------------------------------------
+# Why this exists: CHE1011's lab schedule (Lab reports #1-#10, done on an outside
+# lab platform) was found during the first scan, transcribed into
+# data/downloads/CHE1011/lab_handout/ and summarized in raw_notes.md -- and never
+# extracted, so none of it reached the calendar. The submission folders were
+# hidden until a lab kit was verified, so no later D2L check could see them
+# either. Notes are not the calendar: every dated piece of graded work in any
+# downloaded course document must be an item, or be dismissed with a reason.
+# This check runs the same deterministic extraction over every downloaded file
+# (without saving anything) and reports what isn't there.
+
+_COVERAGE_SUFFIXES = {".txt", ".md", ".html", ".htm", ".pdf"}
+# (Not class meetings: lectures and lab sessions repeat every week and aren't handed in.)
+_COVERAGE_TYPES = {ItemType.EXAM, ItemType.FINAL_EXAM, ItemType.LAB_PRACTICAL}
+_TITLE_STOP = {
+    "due", "the", "and", "for", "with", "from", "report", "reports", "lab", "labs", "assignment",
+    "online", "chapter", "week", "post", "posts", "initial", "response", "submit", "submission",
+    "pdf", "only", "folder", "part", "your", "this", "that", "complete", "other", "deadline",
+}
+# Words that name the same thing.
+_SAME_WORD = {"test": "exam", "tests": "exam", "exams": "exam", "midterm": "exam", "hw": "homework"}
+_FAMILY = {
+    ItemType.LAB_HANDOUT: "lab", ItemType.LAB: "lab", ItemType.LAB_PRACTICAL: "lab",
+    ItemType.QUIZ: "quiz", ItemType.PRE_LAB_QUIZ: "quiz",
+    ItemType.EXAM: "exam", ItemType.FINAL_EXAM: "exam",
+    ItemType.DISCUSSION: "discussion",
+}
+
+
+def _title_words(title: str) -> set[str]:
+    import re
+
+    words = set()
+    for w in re.findall(r"[a-z0-9]+", (title or "").lower()):
+        w = _SAME_WORD.get(w, w)
+        if not (len(w) >= 4 or w.isdigit()) or w in _TITLE_STOP:
+            continue
+        # Plurals are the same word ("Prerequisites", "prerequisite").
+        words.add(w[:-1] if len(w) > 4 and w.endswith("s") and not w.endswith("ss") else w)
+    return words
+
+
+def _same_work(candidate: AcademicItem, existing: AcademicItem) -> bool:
+    """Whether an existing calendar item is this piece of work (same date give or
+    take a day, same kind of work, and the same name). Numbers must agree: "Lab
+    report #6" is never "Online Assignment 7", however many other words match."""
+    if candidate.fingerprint and candidate.fingerprint == existing.fingerprint:
+        return True
+    if candidate.date is None or existing.date is None or abs((candidate.date - existing.date).days) > 1:
+        return False
+    a, b = _title_words(candidate.title), _title_words(existing.title)
+    na, nb = {w for w in a if w.isdigit()}, {w for w in b if w.isdigit()}
+    if na and nb and not (na & nb):
+        return False
+    family = _FAMILY.get(candidate.item_type, "work")
+    same_family = family == _FAMILY.get(existing.item_type, "work")
+    # A class has one exam on a day: an exam line on an exam day is that exam (but a practice exam is
+    # its own thing).
+    if family == "exam" and same_family and candidate.date == existing.date and ("practice" in a) == ("practice" in b):
+        return True
+    # The same numbered piece of the same kind on the same day ("Online Assignment 6" under a new name).
+    if na and nb and same_family:
+        return True
+    # A nameless line ("Due on Oct 14") is covered by any work due that day.
+    if not a:
+        return candidate.date == existing.date and (existing.item_type.is_deadline or existing.item_type in _COVERAGE_TYPES)
+    if not b:
+        return False
+    if same_family:
+        # Measured against the shorter name, so a longer description of the same work still matches.
+        return len(a & b) / min(len(a), len(b)) >= 0.6
+    # Different kinds of work (a lab report and a discussion on the same topic, due the same day) are
+    # separate unless every word of this one is in the other's name.
+    return a <= b
+
+
+def _coverage_key(item: AcademicItem) -> str:
+    return f"{item.date.isoformat() if item.date else ''}|{' '.join(sorted(_title_words(item.title)))}"
+
+
+def course_documents(course: Course) -> list[Path]:
+    """Every downloaded file for this course (folders named after its code, e.g. CHE1011, CHE10111)."""
+    from academic_sync.config import get_db_path
+
+    root = get_db_path().parent / "downloads"
+    if not root.is_dir():
+        return []
+    code = (course.course_code or "").lower()
+    out: list[Path] = []
+    for folder in root.iterdir():
+        if folder.is_dir() and code and folder.name.lower().startswith(code):
+            # (consolidated_events is Kea's own listing of the calendar, not a course document.)
+            out.extend(
+                p for p in folder.rglob("*")
+                if p.is_file() and p.suffix.lower() in _COVERAGE_SUFFIXES and not p.name.startswith("consolidated_events")
+            )
+    return sorted(out)
+
+
+def uncovered_document_items(session, course: Course) -> list[tuple[Path, AcademicItem]]:
+    """Dated graded work found in this course's downloaded documents that has no
+    matching item on the calendar (and wasn't dismissed with coverage-dismiss)."""
+    existing = [i for i in repository.list_items_for_course(session, course.id) if not i.superseded_by_id]
+    dismissed = set(repository.get_preference(session, "coverage_dismissed", course_id=course.id, default=[]) or [])
+    config = get_config()
+    reference_year = course.start_date.year if course.start_date else datetime.now().year
+    # The term: the course's own dates, else the span of what's already on its calendar.
+    dated = sorted(i.date for i in existing if i.date)
+    start = course.start_date or (dated[0] if dated else None)
+    end = course.end_date or (dated[-1] if dated else None)
+    found: list[tuple[Path, AcademicItem]] = []
+    seen: set[str] = set()
+    for path in course_documents(course):
+        try:
+            document = _load_document(path, path.name)
+        except Exception:  # noqa: BLE001 -- an unreadable file can't hide anything we could have read
+            continue
+        ctx = ExtractionContext(
+            course_id=course.id,
+            source_id="coverage-check",
+            reference_year=reference_year,
+            term_start=course.start_date,
+            term_end=course.end_date,
+            reference_phrases=config.completeness.reference_phrases,
+        )
+        try:
+            result = extract_from_document(document, ctx)
+        except Exception:  # noqa: BLE001
+            continue
+        for item in result.items:
+            if item.date is None or not (item.item_type.is_deadline or item.item_type in _COVERAGE_TYPES):
+                continue
+            # Policy prose in a PDF picks up whatever date heading came before it ("Each quiz will..."):
+            # only a line that names its own date, or a dated grid in a page or text file, counts.
+            if path.suffix.lower() == ".pdf" and "date heading" in (item.source_wording or ""):
+                continue
+            if item.title[:1].islower():
+                continue
+            if start and item.date < start - timedelta(days=14):
+                continue
+            if end and item.date > end + timedelta(days=14):
+                continue
+            key = _coverage_key(item)
+            if key in seen or key in dismissed or any(_same_work(item, e) for e in existing):
+                continue
+            seen.add(key)
+            found.append((path, item))
+    return found
+
+
+@app.command("coverage")
+def coverage_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """List dated graded work written in this course's downloaded documents that
+    isn't on the calendar. Each one must be added (extract the file, or create
+    the item) or dismissed with coverage-dismiss and a reason."""
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        code = c.course_code
+        found = uncovered_document_items(session, c)
+        rows = [
+            {
+                "file": str(p),
+                "date": i.date.isoformat() if i.date else None,
+                "type": i.item_type.value,
+                "title": i.title,
+                "key": _coverage_key(i),
+            }
+            for p, i in found
+        ]
+    if as_json:
+        print(json.dumps({"course": code, "uncovered": rows}, indent=1))
+        return
+    if not rows:
+        console.print(f"{code}: every dated piece of work in its documents is on the calendar.")
+        return
+    console.print(f"[red]{code}: {len(rows)} dated item(s) in its documents aren't on the calendar:[/red]")
+    for r in rows:
+        console.print(f"  {r['date']}  {escape(r['title'])}  [dim]({r['type']}; {escape(r['file'])})[/dim]")
+
+
+@app.command("coverage-dismiss")
+def coverage_dismiss_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    key: Annotated[str, typer.Option("--key", help="The item's key from `coverage --json`.")],
+    note: Annotated[str, typer.Option("--note", help="Why it isn't a separate piece of work.")],
+) -> None:
+    """Mark one `coverage` finding as not separate work (e.g. the same lab already
+    on the calendar under another name), with the reason, so it stops being reported."""
+    if len(note.strip()) < 8:
+        console.print("[red]Give the real reason in --note.[/red]")
+        raise typer.Exit(1)
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        current = list(repository.get_preference(session, "coverage_dismissed", course_id=c.id, default=[]) or [])
+        if key not in current:
+            current.append(key)
+        repository.set_preference(session, key="coverage_dismissed", value=current, category="coverage", scope="course", course_id=c.id)
+        repository.log_audit_event(
+            session, event_type="coverage_dismissed", course_id=c.id, summary=f"Dismissed {key}: {note.strip()}", details={"key": key, "note": note.strip()}
+        )
+    console.print(f"Dismissed: {key}")
+
+
+# --------------------------------------------------------------------------
 # completeness / unresolved / plan / audit / status
 # --------------------------------------------------------------------------
 
@@ -440,6 +648,10 @@ def completeness_cmd(course: Annotated[str | None, typer.Option("--course")] = N
                 unlinked_item_count=unlinked_item_count,
                 missing_chapter_topic_count=missing_chapter_topic_count,
                 partial_chapter_topic_count=partial_chapter_topic_count,
+                uncovered_document_items=[
+                    f"{i.date.isoformat()} {i.title} ({p.name})"
+                    for p, i in ([] if c.is_synthetic else uncovered_document_items(session, c))
+                ],
                 is_synthetic=c.is_synthetic,
             )
             console.print(f"\n[bold]{c.course_code} {c.section or ''} -- {c.name}[/bold]")
@@ -1637,6 +1849,12 @@ def kea_brief_cmd(
             "banners_through": through.isoformat() if through else None,
             "next_banner_needed": running and (through is None or through < reach),
             "unresolved_open": len(unresolved),
+            # Dated graded work written in the course's documents with no item (see `coverage`): each
+            # gets added, or dismissed with coverage-dismiss and the reason.
+            "not_on_calendar": [
+                {"title": i.title, "date": i.date.isoformat(), "type": i.item_type.value, "file": str(p), "key": _coverage_key(i)}
+                for p, i in ([] if c.is_synthetic else uncovered_document_items(session, c))
+            ],
         }
     print(json.dumps(out, indent=1))
 

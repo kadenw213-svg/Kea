@@ -223,6 +223,15 @@ versions first with `fetch('/d2l/api/versions/')` and use the newest
      Overview Messages" and has no grade line. It's sent only on days it
      has something.
 
+## Step 2c: hidden graded work
+
+When Kea's pre-check reasons for a class include `Hidden graded work: ...` (a grade category counting more points
+than the items the student can see), find out what that work is: the course schedule, the syllabus's grading table,
+and any outside platform the class uses. Every piece must be on the calendar (`coverage --course <CODE>`, then
+`extract`). Then send one `needs_you` notice that names the pieces that look missed (due and not handed in), whether
+they can still be handed in late, and what to do. Don't guess at zeros you can't see: say which items you found and
+which the instructor needs to confirm.
+
 ## Step 3: ingest
 
 1. Write the crawl to `data/digests/<CODE>/<YYYY-MM-DD>.json`, matching

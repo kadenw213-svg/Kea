@@ -275,7 +275,14 @@ After scanning a course's readily-available areas:
 ```bash
 uv run academic-sync completeness --course <course_id>
 uv run academic-sync unresolved --course <course_id>
+uv run academic-sync coverage --course <course_id>
 ```
+
+**`coverage` must come back clean before this step is done.** It runs the extraction over every file in
+`data/downloads/<CODE>*/` without saving and lists dated graded work that has no item. A schedule you transcribed or
+summarized in `raw_notes.md` is not on the calendar until it's extracted: extract it now (a file holding just the
+missing lines is fine), or `coverage-dismiss --key ... --note ...` when a line truly is an item already there under
+another name. This is how CHE1011's ten lab reports went missing for two months.
 
 Report the completeness status plainly to the user (COMPLETE /
 COMPLETE_FOR_DATED_ITEMS / INCOMPLETE / CONFLICTED / UNKNOWN) with the
