@@ -49,6 +49,7 @@ import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, is
 import { PracticeBox, ResourcesView, StudyPlayer } from './Study';
 import { ReviewBanner } from './StudyModes';
 import { MessagesView } from './Messages';
+import { ChangesBox, ItemHistory } from './History';
 import { quizChapter } from './QuizMe';
 import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
 import '../../styles/scholar.css';
@@ -460,6 +461,7 @@ function WeekView({ ctx }: { ctx: Ctx }) {
         {next ? ` Next: ${next.courseCode} ${TYPE_LABEL[next.type]?.toLowerCase() || ''} at ${clock(next.start)}${next.location && next.location !== 'Online' ? ` in ${shortRoom(next.location)}` : ''}.` : ''}
       </p>
       <ReviewBanner />
+      <ChangesBox />
       {missing.length > 0 && (
         <section className="miss-box">
           <button className="miss-head" onClick={() => setMissOpen(!missOpen)}>
@@ -1363,6 +1365,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
         </section>
       )}
       <LinkGroups links={links} />
+      <ItemHistory key={it.id} id={it.id} />
       {(it.instructor || it.contact) && (
         <section>
           <div className="tb-h">Contact</div>

@@ -138,6 +138,10 @@ export interface KeaApi {
     studyGet(id: string): Promise<StudySetFull | null>;
     /** Open a class-site message with its Reply pressed (the student writes and sends it). */
     replyMessage(url: string, course: string): Promise<{ replied: boolean }>;
+    /** One item's history: created, each change (old → new), replaced or cancelled, with the scan and the reason. */
+    itemHistory(id: string): Promise<{ id: string; title: string; sources: { title: string; source_type: string; url: string | null; retrieved_at: string }[]; events: HistoryEvent[] }>;
+    /** What changed on the calendar since a date (default a week ago). */
+    changes(opts: { since?: string; course?: string }): Promise<{ since: string; events: (HistoryEvent & { title: string | null; course: string | null })[] }>;
     mailList(): Promise<MailList>;
     /** A message in full, read from the class site (cached after the first time). */
     mailRead(id: string, refresh?: boolean): Promise<{ text: string; at: string | null; noLink?: boolean }>;
@@ -561,6 +565,17 @@ export interface ProfileList {
   list: { id: string; name: string; created: string }[];
 }
 export type StudyKind = 'exam' | 'cards';
+export interface HistoryEvent {
+  ts: string;
+  run: string | null;
+  command: string | null;
+  reason: string | null;
+  op: 'baseline' | 'create' | 'update' | 'supersede' | 'cancel' | 'restore' | 'unsync' | 'dismiss' | 'source';
+  table: string;
+  id: string | null;
+  course_id: string | null;
+  changes: Record<string, [unknown, unknown]> | Record<string, unknown> | unknown[] | null;
+}
 export interface MailDraft {
   course: string;
   to?: string;

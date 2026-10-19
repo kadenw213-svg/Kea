@@ -440,6 +440,21 @@ function register() {
   ipcMain.handle('scholar:grades', async (_e, courseId, code) => precheck.readGrades().byCourse[code] || (await db.gradesFromChecks(p().db, courseId)));
   // Links: class-site pages open in Kea's signed-in window; everything else in the web browser.
   // Reply to a class-site message: the message opens with its Reply already pressed (the student writes and sends).
+  // Item history and "what changed" (the engine's append-only record of every change, with runs and reasons).
+  const engineJson = async (args) => {
+    const uv = await workspace.findUv();
+    const r = await workspace.runHidden(uv, ['run', 'academic-sync', ...args], { cwd: p().workspace, env: workspace.engineEnv(uv) });
+    const at = r.out.indexOf('{');
+    if (at < 0) throw new Error((r.err || r.out || 'No answer from the engine.').slice(0, 300));
+    return JSON.parse(r.out.slice(at));
+  };
+  ipcMain.handle('scholar:itemHistory', (_e, id) => engineJson(['item-history', String(id).replace(/[^\w-]/g, ''), '--json']));
+  ipcMain.handle('scholar:changes', (_e, opts = {}) => {
+    const args = ['changes', '--json'];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(opts.since || '')) args.push('--since', opts.since);
+    if (/^[A-Z]{2,5}\d{3,5}[A-Z]?$/i.test(opts.course || '')) args.push('--course', opts.course);
+    return engineJson(args);
+  });
   // Class-site messages like email: read in full, draft and send from Kea (messages.cjs).
   require('./messages.cjs').register({ browser, precheck, db });
   ipcMain.handle('scholar:replyMessage', async (_e, url, course) => {

@@ -2235,3 +2235,51 @@
   gap: 6px;
   font-size: 12.5px;
 }
+
+/* ---------- History (History.tsx) ---------- */
+.hs-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: left;
+}
+.hs-head .flip {
+  transform: rotate(180deg);
+}
+.hs-head svg:last-child {
+  margin-left: auto;
+}
+.hs-changes {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin: 0 0 12px;
+  background: var(--surface);
+}
+.hs-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--surface-4);
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.hs-when {
+  font-size: 11.5px;
+}
+.hs-why {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.hs-sources {
+  font-size: 12px;
+  margin-top: 4px;
+}

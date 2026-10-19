@@ -97,6 +97,8 @@ contextBridge.exposeInMainWorld('api', {
     handIn: (ou, folderId, file) => ipcRenderer.invoke('scholar:handIn', ou, folderId, file),
     openLink: (url) => ipcRenderer.invoke('scholar:openLink', url),
     replyMessage: (url, course) => ipcRenderer.invoke('scholar:replyMessage', url, course),
+    itemHistory: (id) => ipcRenderer.invoke('scholar:itemHistory', id),
+    changes: (opts) => ipcRenderer.invoke('scholar:changes', opts),
     mailList: () => ipcRenderer.invoke('scholar:mailList'),
     mailRead: (id, refresh) => ipcRenderer.invoke('scholar:mailRead', id, !!refresh),
     mailDraft: (key, draft) => ipcRenderer.invoke('scholar:mailDraft', key, draft),
