@@ -1,5 +1,5 @@
 // Kea Scholar: classes, their textbooks and the calendar, for the active profile.
-const { ipcMain, BrowserWindow } = require('electron');
+const { ipcMain, BrowserWindow, app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const profiles = require('./profiles.cjs');
@@ -231,19 +231,24 @@ async function tick() {
     precheck
       .pollAnnouncements()
       .then((ok) => ok && syncSoon(5000))
-      .catch((err) => console.error('Inbox check', err));
+      .catch((err) => console.error('Inbox check', err))
+      // Then the class site's whole mailbox (the primary only: one device reads the class site).
+      .then(() => !devices.follower() && require('./messages.cjs').syncMailbox())
+      .catch((err) => console.error('Mailbox', err));
   }
   try {
     // How often (days) the class check runs: every day unless the student chose otherwise; 0 = only when asked. (The
     // older on/off switch, if it was turned off, still means off.)
     const checkEvery = Number(settings.get('scholar.scanEvery', settings.get('scholar.autoScan', true) === false ? '0' : '1'));
-    if (!checkEvery || runner.status().running) return;
-    // A run paused by a usage limit continues first, once the limit has reset; nothing else starts until then.
+    if (runner.status().running) return;
+    // Runs set aside (a usage limit, a server problem, Kea closing mid-run) continue first, once their time comes, even
+    // when scheduled checks are off (they were started already); nothing else starts until then.
     const waiting = runner.pending();
     if (waiting) {
       if (new Date(waiting.until) <= new Date() && (await ready())) runner.resume();
       return;
     }
+    if (!checkEvery) return;
     const [h, m] = String(settings.get('scholar.scanTime', '05:00')).split(':').map(Number);
     const now = new Date();
     if (now.getHours() * 60 + now.getMinutes() < (h || 0) * 60 + (m || 0)) return;
@@ -252,7 +257,15 @@ async function tick() {
     // Once a day at most, this decides what's due today.
     const today = localDate();
     // (Once today's checks are done, chapters short of questions get them, one at a time.)
-    if (s.lastRuns.daily === today) return keepBanks();
+    if (s.lastRuns.daily === today) {
+      // (The syllabus check has its own day: it also runs on a day whose checks were done before it existed.)
+      if (s.lastRuns.curriculum !== today && settings.get('scholar.curriculumCheck', true) !== false && (await ready())) {
+        s.lastRuns.curriculum = today;
+        writeState(s);
+        await runner.curriculumCheck('schedule').catch((err) => console.error('Curriculum', err));
+      }
+      return keepBanks();
+    }
     if (Date.now() < offlineUntil) return;
     if (!(await ready())) return;
     const daysSince = (d) => (d ? Math.round((new Date(`${today}T12:00`) - new Date(`${d}T12:00`)) / 864e5) : Infinity);
@@ -280,6 +293,14 @@ async function tick() {
       }
     }
     if (syncDue) await runner.run('sync', '', 'schedule');
+    // Every class's chapters against its syllabus (Kea's own check; a curriculum run only for a class with gaps), before
+    // textbook chapters and question banks are written from them.
+    if (settings.get('scholar.curriculumCheck', true) !== false && !runner.pending()) {
+      const st = readState();
+      st.lastRuns = { ...st.lastRuns, curriculum: today };
+      writeState(st);
+      await runner.curriculumCheck('schedule').catch((err) => console.error('Curriculum', err));
+    }
     if ((checkDue || syncDue) && settings.get('scholar.studyPdfs', true) !== false) await runner.run('study', '', 'schedule');
     keepBanks();
   } catch (err) {
@@ -464,6 +485,16 @@ function register() {
     return JSON.parse(r.out.slice(at));
   };
   // (Rules are worked out from every document, so each class's list is kept for ten minutes.)
+  // A class's chapters against its syllabus: outcomes and the chapters that teach each, guidelines, what's missing.
+  const curriculumCache = new Map();
+  ipcMain.handle('scholar:curriculum', async (_e, code, fresh) => {
+    const k = String(code).replace(/[^\w]/g, '');
+    const hit = curriculumCache.get(k);
+    if (!fresh && hit && Date.now() - hit.at < 10 * 60e3) return hit.value;
+    const value = await engineJson(['curriculum', '--course', k, '--json']);
+    curriculumCache.set(k, { at: Date.now(), value });
+    return value;
+  });
   const rulesCache = new Map();
   ipcMain.handle('scholar:courseRules', async (_e, code) => {
     const k = String(code).replace(/[^\w]/g, '');
@@ -496,7 +527,8 @@ function register() {
   const study = require('./study.cjs');
   ipcMain.handle('scholar:studyList', () => {
     const running = runner.status();
-    const busy = new Set([running.running, ...running.queued].filter((j) => j && j.task === 'practice').map((j) => String(j.arg).split(/\s+/)[0]));
+    // (A set whose run is set aside to continue later is still being made.)
+    const busy = new Set([running.running, ...running.queued, ...(runner.pending()?.runs || [])].filter((j) => j && j.task === 'practice').map((j) => String(j.arg).split(/\s+/)[0]));
     // (Another device's sets are settled by the device making them.)
     if (!devices.follower()) study.settle((id) => busy.has(id));
     return study.list();
@@ -568,6 +600,7 @@ function register() {
   try {
     runner.adoptStopped();
   } catch {}
+  app.on('before-quit', () => runner.shutdown());
   ipcMain.handle('scholar:cloudDrives', () => ({ drives: cloud.drives(), target: cloud.target() }));
   ipcMain.handle('scholar:syncNow', async () => {
     await devices.step();

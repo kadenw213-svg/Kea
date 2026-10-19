@@ -35,6 +35,13 @@ titled with, so the PDF never trails the class; each with label, title, `section
 `tests_next_3_weeks` (with `covered_chapters` / `study_focus`), `pdf_title`, `work_dir`,
 `source_path` (where `main.typ` goes) and `output_path`.
 
+**The syllabus.** Each chapter also has `syllabus_outcomes` (the course outcomes, module outcomes and topical-outline
+items it must teach: teach every one, by name, with worked examples where it's a skill) and `textbook_ref` (where the
+chapter is in the student's own book, when the class numbers chapters differently: cite that, never the same-numbered
+chapter of the book). `course_outcomes` are skills every chapter serves (significant figures, reading graphs): use
+them in examples and practice. `guidelines` are how the class tests (formats, what exams draw on, allowed sheets):
+the chapter's practice questions and "what the exam asks" follow them.
+
 **Kea's chapter notes (read the one for each chapter you write):**
 `data/study/notes/<CODE>/<Chapter N>.md`. Kea builds them before this run, from what the scans saved: the
 chapter's objectives and vocabulary, the text of its review material (the instructor's **guided reading**, a
@@ -55,6 +62,10 @@ already have PDFs; don't teach them again (mention them in one line if the new c
 builds on them). Always build a full PDF in this mode: never a review, never a skip. When the student presses **Rewrite** in Kea,
 the chapter's `already_in_pdfs` names its old PDF, which this one replaces: write it fresh to the current guidelines
 (you may Read the old `main.typ` in `work_dir` to keep what was good, but meet every rule in this file).
+
+**Continuing a stopped run** (`resume` in the arguments): an earlier run stopped partway. A chapter whose `main.typ`
+is already in `work_dir` is half written: Read it, keep what's there and finish it, then check and build as usual.
+Never start a written chapter over.
 
 **Weeks already over** (`week_is_past` true): leave out the `= This Week` section and the
 `#due` lines (those dates are history). Keep each chapter's exam-style material: tests

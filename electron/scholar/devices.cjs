@@ -243,7 +243,7 @@ async function lead(dir) {
         console.error(`Devices: ignored a request from an unknown device (${f})`);
         continue;
       }
-      const TASKS = ['stop', 'resume', 'banks', 'inbox', 'practice', 'daily', 'sync', 'import', 'study'];
+      const TASKS = ['stop', 'resume', 'banks', 'inbox', 'practice', 'daily', 'sync', 'import', 'study', 'curriculum'];
       const arg = String(r.arg || '');
       if (!TASKS.includes(r.task) || arg.length > 300 || /[\r\n<>`$|;]/.test(arg) || (arg && !/^[\w .,:#()&'/+-]+$/.test(arg))) {
         console.error(`Devices: ignored a request it doesn't recognize (${r.task})`);

@@ -192,8 +192,36 @@ class ChapterTopicRow(Base):
     # A two-or-three-sentence description of the chapter for the student (Kea
     # shows it instead of the vocabulary/objective lists, which stay internal).
     summary: Mapped[str | None] = mapped_column(default=None)
+    # Where this chapter is in the student's own textbook, when the class numbers chapters differently from the book
+    # (BIO1112 teaches "Chapter 29: Seedless Plants" from Brooker's Ch. 31), e.g. "Brooker, Biology (2025 Release),
+    # Ch. 31: Plants and the Conquest of Land".
+    textbook_ref: Mapped[str | None] = mapped_column(default=None)
     source_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     source_wording: Mapped[str | None] = mapped_column(default=None)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+class CourseOutcomeRow(Base):
+    """One line of what the syllabus says the course must teach: a required course learning outcome, a module
+    outcome, or an item of the (required or recommended) topical outline, with the chapters that teach it. The
+    curriculum check holds every chapter's notes, and so every textbook chapter and question bank, to these."""
+
+    __tablename__ = "course_outcomes"
+    __table_args__ = (UniqueConstraint("course_id", "kind", "ref", name="uq_course_outcome"),)
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"), index=True)
+    # course | module | outline | recommended
+    kind: Mapped[str]
+    # Its number as the syllabus gives it ("3", "Module 2.4", "F.1.b").
+    ref: Mapped[str]
+    text: Mapped[str]
+    # Chapter labels that teach it, or ["all"] for a skill every chapter uses (significant figures).
+    chapters_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Set when it isn't something a study set can test (a lab-safety skill), with why.
+    not_tested: Mapped[str | None] = mapped_column(default=None)
+    source: Mapped[str | None] = mapped_column(default=None)
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=_now)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 

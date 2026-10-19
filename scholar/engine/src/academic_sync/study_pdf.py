@@ -388,6 +388,10 @@ def build_bundle(session: Session, banner: AcademicItem,
                 Path(row.file_path or "").name
             )
     segments = week_segments(session, banner)
+    # What the syllabus says each chapter must teach (and what every chapter carries), and how the class tests.
+    from academic_sync import curriculum as curriculum_mod
+
+    outcomes = curriculum_mod.outcomes_for(session, course.id)
     chapters = []
     for label, text in segments:
         topic = topics.get(canonicalize_chapter_label(label)) if label else None
@@ -401,6 +405,9 @@ def build_bundle(session: Session, banner: AcademicItem,
             "reading_url": topic.reading_url if topic else None,
             "already_in_pdfs": covered.get(canonicalize_chapter_label(label), []) if label else [],
             "summary": topic_summary(session, course.id, label) if label else None,
+            # Where it is in the student's own book, when the class numbers chapters differently.
+            "textbook_ref": topic.textbook_ref if topic else None,
+            "syllabus_outcomes": next((v for k, v in outcomes.items() if label and canonicalize_chapter_label(k) == canonicalize_chapter_label(label)), []),
         })
     if write_only is not None:
         remember_only(work_dir(course, banner), write_only)
@@ -428,6 +435,9 @@ def build_bundle(session: Session, banner: AcademicItem,
         # Kea: a week already over gets no "This Week" section (its dates are history).
         "week_is_past": (banner.date_range_end or banner.date) < date.today(),
         "write_only": write_only,
+        # Outcomes every chapter serves (significant figures, reading graphs) and the class's testing guidelines.
+        "course_outcomes": outcomes.get("all", []),
+        "guidelines": [g.get("text") for g in (repository.get_preference(session, "study_guidelines", course_id=course.id, default=[]) or []) if isinstance(g, dict)],
     }
 
 

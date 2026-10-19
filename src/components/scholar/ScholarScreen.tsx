@@ -49,7 +49,7 @@ import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, is
 import { PracticeBox, ResourcesView, StudyPlayer } from './Study';
 import { ReviewBanner } from './StudyModes';
 import { MessagesView } from './Messages';
-import { ChangesBox, ClassRules, ItemHistory } from './History';
+import { ChangesBox, ClassRules, SyllabusMap, ItemHistory } from './History';
 import { quizChapter } from './QuizMe';
 import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
 import '../../styles/scholar.css';
@@ -137,6 +137,8 @@ export function ScholarScreen() {
   const [grades, setGrades] = useState<Record<string, number | null>>({});
 
   useEffect(() => api.scholar.onChanged(() => reloadScholar()), []);
+  // A new-message notification clicked: its message, open in Messages.
+  useEffect(() => api.scholar.onOpenMail((id) => useScholar.getState().set({ view: { name: 'messages', id } })), []);
   useEffect(() => {
     const inbox = () => api.scholar.inbox().then((n) => setUnread(n.filter((x) => !x.read).length));
     api.scholar.runStatus().then((s) => setScanning(!!s.running));
@@ -193,7 +195,7 @@ export function ScholarScreen() {
     ) : (!hasData && !['scans', 'library', 'inbox', 'resources', 'account'].includes(view.name)) || view.name === 'add' ? (
       <AddClass first={!hasData} />
     ) : view.name === 'messages' ? (
-      <MessagesView courses={ctx.courses} />
+      <MessagesView courses={ctx.courses} openId={view.id} />
     ) : view.name === 'inbox' ? (
       <InboxView ctx={ctx} />
     ) : view.name === 'calendar' ? (
@@ -1074,6 +1076,7 @@ function ClassView({ ctx, courseId }: { ctx: Ctx; courseId: string }) {
         )}
       </div>
       <ClassRules code={c.code} />
+      <SyllabusMap code={c.code} />
       <div className="cls-tabs">
         {(
           [

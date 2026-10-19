@@ -505,7 +505,7 @@ async function notesFor(courseCode, docText, step) {
  * Write `data/study/requests/<id>.md`, Kea's brief for one set, and return its workspace-relative path.
  * docText(file) converts one PDF or Word file to text; step(message, percent) reports progress.
  */
-async function prepare(id, docText, step = () => {}) {
+async function prepare(id, docText, step = () => {}, engine = null) {
   const ws = profiles.paths().workspace;
   const rel = (f) => path.relative(ws, f).replace(/\\/g, '/');
   const req = readJson(path.join(ws, 'data', 'study', 'requests', `${id}.json`), null);
@@ -520,6 +520,20 @@ async function prepare(id, docText, step = () => {}) {
       'The saved questions below were written before Kea checked difficulty, and many are recall or single-step. Write questions at and above exam level: mostly `multistep` and `apply`, with real calculations (each with `calc`), problems in the style of the review sheets and practice exams, and every objective, review-sheet problem type and study-focus line the saved questions miss or cover only once. No fill-in-the-blank definitions.',
       ''
     );
+  // The syllabus: how the class tests (formats, what exams draw on) and what each chapter must teach. From Kea's
+  // curriculum check, which holds the chapters to the syllabus.
+  const cur = engine ? await engine(['curriculum', '--course', req.course.code, '--json']).catch(() => null) : null;
+  const outcomesOf = (label) =>
+    (cur?.outcomes || [])
+      .filter((o) => !o.not_tested && (o.chapters || []).some((c) => String(c).toLowerCase() === String(label).toLowerCase()))
+      .map((o) => `${{ course: 'Course outcome', module: 'Module outcome', outline: 'Topical outline', recommended: 'Recommended topic' }[o.kind] || o.kind} ${o.ref}: ${o.text}`);
+  const everyChapter = outcomesOf('all');
+  const guidelines = (cur?.guidelines || []).map((g) => g.text).filter(Boolean);
+  if (guidelines.length || everyChapter.length) {
+    lines.push('## How this class tests, and what every chapter serves (from the syllabus)', '');
+    if (guidelines.length) lines.push('Write to these: the formats, question types and skills the real tests use.', ...guidelines.map((g) => `- ${g}`), '');
+    if (everyChapter.length) lines.push('Outcomes every chapter serves (work them into questions on any chapter):', ...everyChapter.map((g) => `- ${g}`), '');
+  }
   const tests = (req.tests || []).filter((t) => t.study_focus?.length || t.description);
   if (tests.length) {
     lines.push('## What the real tests cover (scraped from the class site: the top priority)', '');
@@ -535,6 +549,10 @@ async function prepare(id, docText, step = () => {}) {
   const textOf = (k) => texts.find((t) => t.key === k)?.text || '';
   for (const n of notes) {
     lines.push(n.head.replace(/^# /, '## ').replace(/^## (Objectives|Vocabulary)$/gm, '**$1**').trim());
+    const ref = (cur?.chapters || []).find((c) => c.label === n.label)?.textbook_ref;
+    if (ref) lines.push(`In the student's textbook: ${ref}`);
+    const own = outcomesOf(n.label);
+    if (own.length) lines.push('**Syllabus outcomes this chapter teaches (each needs questions)**', ...own.map((o) => `- ${o}`));
     if (n.source) lines.push(`(Kea's textbook chapter, only to check a fact: ${n.source})`);
     const r = textOf(n.label);
     if (r) lines.push('', r.replace(/^## /gm, '### ').trim());

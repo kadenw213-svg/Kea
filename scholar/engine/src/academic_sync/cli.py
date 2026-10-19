@@ -1028,8 +1028,11 @@ def changes_cmd(
         events = _events(session, where, params, limit=5000)
         titles = dict(session.execute(sql("SELECT id, title FROM academic_items")).all())
         codes = dict(session.execute(sql("SELECT id, course_code FROM courses")).all())
+        # (Chapter notes by their chapter, syllabus outcomes by their number.)
+        chapters = dict(session.execute(sql("SELECT id, chapter_label || ' notes' FROM chapter_topics")).all())
+        outcomes = dict(session.execute(sql("SELECT id, 'Syllabus ' || kind || ' ' || ref FROM course_outcomes")).all())
     for e in events:
-        e["title"] = titles.get(e["id"]) if e["table"] == "academic_items" else None
+        e["title"] = {"academic_items": titles, "chapter_topics": chapters, "course_outcomes": outcomes}.get(e["table"], {}).get(e["id"])
         e["course"] = codes.get(e["course_id"])
     if as_json:
         print(json.dumps({"since": start, "events": events}, indent=1, default=str))
@@ -1602,6 +1605,16 @@ def chapter_topic_add_cmd(
         typer.Option("--added-objective", help="Repeatable -- a concept Claude adds to fill a "
                      "real gap; same visible label as --added-vocab."),
     ] = None,
+    textbook_ref: Annotated[
+        str | None,
+        typer.Option("--textbook-ref", help="Where this chapter is in the student's own textbook, when the class "
+                     "numbers chapters differently from the book: \"Brooker, Biology (2025 Release), Ch. 31: Plants "
+                     "and the Conquest of Land\". Checked against the publisher's contents, never guessed."),
+    ] = None,
+    source: Annotated[
+        str | None,
+        typer.Option("--source", help="Where the notes came from (a document path or page address)."),
+    ] = None,
 ) -> None:
     """Save (or refresh) a course's real chapter/unit topic breakdown --
     the durable source of truth `render` auto-pulls from for a weekly
@@ -1627,6 +1640,8 @@ def chapter_topic_add_cmd(
             reading_label=reading_label,
             added_vocabulary=added_vocab,
             added_objectives=added_objective or [],
+            textbook_ref=textbook_ref,
+            source_wording=source,
         )
         row = repository.upsert_chapter_topic(session, topic)
         exhaustive_note = "" if exhaustive else " [yellow](not yet confirmed exhaustive)[/yellow]"
@@ -2978,6 +2993,199 @@ def practice_check_cmd(
     print(json.dumps({"ok": not problems, "count": len(items), "problems": problems[:80]}, indent=1))
     if problems:
         raise typer.Exit(code=1)
+
+
+# --------------------------------------------------------------------------
+# The curriculum held to the syllabus (Kea): outcomes, guidelines, the textbook
+# --------------------------------------------------------------------------
+
+def _doc_text(p: Path) -> str:
+    """A document's text: its saved `.txt` copy when Kea made one (doc-text), else read now."""
+    side = p.with_name(p.name + ".txt")
+    if side.is_file():
+        return side.read_text(encoding="utf-8", errors="replace")
+    return _load_document(p, p.name).text or ""
+
+
+def _curriculum_report(session, c: Course) -> dict:
+    from academic_sync import curriculum as cur
+
+    paths = course_documents(c)
+    docs = cur.syllabus_docs(paths, _doc_text)
+    report = cur.check(session, c, docs)
+    # A syllabus that is only pictures (a scanned PDF) can't be checked until it's read: its pages are images.
+    dismissed = set(repository.get_preference(session, "curriculum_dismissed", course_id=c.id, default=[]) or [])
+    for p in paths:
+        if p.suffix.lower() == ".pdf" and re.search(r"syllab", p.name, re.IGNORECASE):
+            try:
+                text = _doc_text(p)
+            except Exception:  # noqa: BLE001
+                text = ""
+            key = f"syllabus_unreadable:{p.name}"
+            try:
+                import pymupdf
+
+                with pymupdf.open(str(p)) as pdf:
+                    pages = len(pdf)
+            except Exception:  # noqa: BLE001
+                pages = 1
+            # (Under about 300 characters a page is a scan with a few stray words, not a readable syllabus.)
+            if len(text.strip()) < 300 * max(1, pages) * 0.5 and key not in dismissed:
+                report["problems"].append({"key": key, "severity": "fix", "text": f"{p.name} is pictures, not text: "
+                                           "read its page images (doc-text lists them) and save its outcomes and guidelines."})
+                report["ok"] = False
+    return report
+
+
+@app.command("curriculum")
+def curriculum_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Kea: check a class's chapters against its syllabus -- every required outcome, module outcome and topical-outline
+    item taught by a chapter whose notes carry it, every chapter the syllabus names has complete notes (title,
+    sections, objectives, summary, reading link), the textbook recorded with each chapter's place in it when the
+    class numbers chapters differently, and the class's testing guidelines recorded. Problems marked "fix" are what
+    the curriculum run closes."""
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        report = _curriculum_report(session, c)
+    if as_json:
+        print(json.dumps(report, indent=1, default=str))
+        return
+    console.print(f"[bold]{report['course']}[/bold]: {len(report['chapters'])} chapters, {len(report['outcomes'])} outcomes, "
+                  f"{len(report['guidelines'])} guidelines")
+    for p in report["problems"]:
+        colour = "red" if p["severity"] == "fix" else "yellow"
+        console.print(f"[{colour}]{p['severity']}[/{colour}] {escape(p['key'])}: {escape(p['text'])}")
+    if report["ok"]:
+        console.print("[green]Nothing to fix.[/green]")
+
+
+@app.command("outcome-add")
+def outcome_add_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    kind: Annotated[str, typer.Option("--kind", help="course (a required course learning outcome), module (a module "
+                                      "outcome), outline (a required topical-outline item) or recommended (a "
+                                      "recommended topical-outline item).")],
+    ref: Annotated[str, typer.Option("--ref", help='Its number as the syllabus gives it: "3", "Module 2.4", "F.1.b".')],
+    text: Annotated[str, typer.Option("--text", help="The syllabus's own words, verbatim.")],
+    chapter: Annotated[list[str] | None, typer.Option("--chapter", help='Repeatable: a chapter that teaches it ("Chapter '
+                                                      '5"), or "all" for a skill every chapter uses.')] = None,
+    not_tested: Annotated[str | None, typer.Option("--not-tested", help="Only when no study set can test it (a lab "
+                                                   "procedure, a speaking skill): why. An empty value clears it.")] = None,
+    source: Annotated[str | None, typer.Option("--source", help="The document it's from (path under data/downloads, "
+                                               "or the address of the published course outline).")] = None,
+) -> None:
+    """Save (or update) one syllabus outcome or topical-outline item and the chapters that teach it. Idempotent by
+    (course, kind, ref). Never deleted: one that no study set can test is marked --not-tested with the reason."""
+    from academic_sync import curriculum as cur
+
+    if kind not in cur.KINDS:
+        console.print(f"[red]--kind must be one of {', '.join(cur.KINDS)}[/red]")
+        raise typer.Exit(code=1)
+    _set_event_context(f"Syllabus {kind} {ref}")
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        known = {canonicalize_chapter_label(t.chapter_label): t.chapter_label for t in repository.list_chapter_topics_for_course(session, c.id)}
+        labels = []
+        for ch in chapter or []:
+            if ch.strip().lower() == "all":
+                labels.append("all")
+            elif canonicalize_chapter_label(ch) in known:
+                labels.append(known[canonicalize_chapter_label(ch)])
+            else:
+                console.print(f"[red]{c.course_code} has no notes for {ch}.[/red] Save the chapter first (chapter-topic-add).")
+                raise typer.Exit(code=1)
+        cur.save_outcome(session, c.id, kind, ref.strip(), text.strip(), labels, not_tested, source)
+    console.print(f"Saved {kind} {ref} for {course}" + (f" -> {', '.join(labels)}" if labels else ""))
+
+
+@app.command("guideline-add")
+def guideline_add_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    text: Annotated[str, typer.Option("--text", help="One guideline for how the class is tested or what to study, in "
+                                      "plain words: \"Exams 1-4: essay, multiple choice and calculations; written work "
+                                      "uploaded within 30 minutes\".")],
+    source: Annotated[str, typer.Option("--source", help="Where it's written (the document or page).")],
+    chapter: Annotated[list[str] | None, typer.Option("--chapter", help="Repeatable: only for these chapters.")] = None,
+) -> None:
+    """Save a guideline the textbook writer and practice sets must follow (exam formats and question types, what exams
+    draw on, allowed sheets or calculators, sections the class skips). The same text again replaces it."""
+    _set_event_context(f"Study guideline: {text.strip()[:120]}")
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        current = [g for g in (repository.get_preference(session, "study_guidelines", course_id=c.id, default=[]) or [])
+                   if isinstance(g, dict) and g.get("text", "").strip().lower() != text.strip().lower()]
+        current.append({"text": text.strip(), "source": source.strip(), "chapters": chapter or []})
+        repository.set_preference(session, key="study_guidelines", value=current, category="curriculum", scope="course", course_id=c.id)
+    console.print(f"Saved guideline for {course} ({len(current)} in all).")
+
+
+@app.command("guideline-remove")
+def guideline_remove_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    text: Annotated[str, typer.Option("--text", help="The guideline's text as saved.")],
+    reason: Annotated[str, typer.Option("--reason", help="Why it no longer holds (kept in the history).")],
+) -> None:
+    """Remove a guideline that no longer holds (the instructor changed the rule), with the reason."""
+    _set_event_context(f"Removed study guideline ({reason.strip()}): {text.strip()[:120]}")
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        current = repository.get_preference(session, "study_guidelines", course_id=c.id, default=[]) or []
+        keep = [g for g in current if not (isinstance(g, dict) and g.get("text", "").strip().lower() == text.strip().lower())]
+        if len(keep) == len(current):
+            console.print("[red]No guideline with that text.[/red]")
+            raise typer.Exit(code=1)
+        repository.set_preference(session, key="study_guidelines", value=keep, category="curriculum", scope="course", course_id=c.id)
+    console.print("Removed.")
+
+
+@app.command("course-textbook")
+def course_textbook_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    title: Annotated[str | None, typer.Option("--title", help='The book the class uses, as the syllabus names it: '
+                                              '"Brooker, Widmaier, Graham, Stiling: Biology (2025 Release), McGraw Hill".')] = None,
+    numbering: Annotated[str, typer.Option("--numbering", help="same: the class's chapter numbers are the book's. "
+                                           "different: they aren't (every chapter then needs --textbook-ref).")] = "same",
+    none: Annotated[str | None, typer.Option("--none", help="The class has no textbook: why (\"modules only\").")] = None,
+    source: Annotated[str | None, typer.Option("--source")] = None,
+) -> None:
+    """Record the class's textbook and whether its chapter numbers match the class's."""
+    if not none and not title:
+        console.print("[red]Give --title, or --none with the reason.[/red]")
+        raise typer.Exit(code=1)
+    if numbering not in ("same", "different"):
+        console.print("[red]--numbering is same or different.[/red]")
+        raise typer.Exit(code=1)
+    value = {"none": none.strip()} if none else {"title": title.strip(), "numbering": numbering, "source": source}
+    _set_event_context(f"Textbook: {none or title}")
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        repository.set_preference(session, key="textbook", value=value, category="curriculum", scope="course", course_id=c.id)
+    console.print(f"Saved the textbook for {course}.")
+
+
+@app.command("curriculum-dismiss")
+def curriculum_dismiss_cmd(
+    course: Annotated[str, typer.Option("--course")],
+    key: Annotated[str, typer.Option("--key", help="The problem's key, as `curriculum` printed it.")],
+    reason: Annotated[str, typer.Option("--reason", help="Why it isn't a real gap (kept in the history).")],
+) -> None:
+    """Dismiss a curriculum problem that isn't a real gap (the syllabus's "Chapter 1" is another book's), with why."""
+    if len(reason.strip()) < 8:
+        console.print("[red]Say why (a real reason, kept in the history).[/red]")
+        raise typer.Exit(code=1)
+    _set_event_context(f"Dismissed {key}: {reason.strip()}")
+    with session_scope() as session:
+        c = _resolve_course_or_exit(session, course)
+        current = list(repository.get_preference(session, "curriculum_dismissed", course_id=c.id, default=[]) or [])
+        if key not in current:
+            current.append(key)
+        repository.set_preference(session, key="curriculum_dismissed", value=current, category="curriculum", scope="course", course_id=c.id)
+        repository.log_audit_event(session, event_type="curriculum_dismissed", course_id=c.id, summary=f"Dismissed {key}: {reason.strip()}",
+                                   details={"key": key, "reason": reason.strip()})
+    console.print(f"Dismissed: {key}")
 
 
 @app.command("chapter-summary-set")

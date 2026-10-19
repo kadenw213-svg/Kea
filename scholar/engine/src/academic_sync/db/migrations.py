@@ -393,6 +393,79 @@ def _0021_add_item_history(session: Session) -> None:
         session.execute(text(st))
 
 
+def _0022_add_curriculum(session: Session) -> None:
+    # 2026-10-19 (Kea): the curriculum is held to the syllabus. `course_outcomes` (the syllabus's required outcomes,
+    # module outcomes and topical outline, each with the chapters that teach it) is a new table (create_all made it);
+    # chapters get `textbook_ref` (where the chapter is in the student's own book: BIO1112's lecture chapters are
+    # numbered from a different book than the one the class uses). Chapter notes and outcomes get the same
+    # append-only history as calendar items, and can't be deleted: an objective or section heading that goes missing
+    # can always be traced to the run and command that changed it.
+    topics = {row[1] for row in session.execute(text("PRAGMA table_info(chapter_topics)"))}
+    if "textbook_ref" not in topics:
+        session.execute(text("ALTER TABLE chapter_topics ADD COLUMN textbook_ref VARCHAR"))
+    stmts = [
+        """CREATE TRIGGER IF NOT EXISTS chapter_topics_history_insert AFTER INSERT ON chapter_topics BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'create', 'chapter_topics', NEW.id, NEW.course_id, json_object('chapter_label', NEW.chapter_label, 'title', NEW.title, 'vocabulary', NEW.vocabulary, 'objectives_json', NEW.objectives_json, 'sections_json', NEW.sections_json, 'reading_url', NEW.reading_url, 'reading_label', NEW.reading_label, 'added_vocabulary', NEW.added_vocabulary, 'added_objectives_json', NEW.added_objectives_json, 'summary', NEW.summary, 'textbook_ref', NEW.textbook_ref));
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS chapter_topics_history_update AFTER UPDATE ON chapter_topics BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'update', 'chapter_topics', NEW.id, NEW.course_id, ch
+             FROM (SELECT json_group_object(k, json(v)) AS ch FROM (
+          SELECT 'chapter_label' AS k, json_array(OLD.chapter_label, NEW.chapter_label) AS v WHERE OLD.chapter_label IS NOT NEW.chapter_label
+          UNION ALL SELECT 'title' AS k, json_array(OLD.title, NEW.title) AS v WHERE OLD.title IS NOT NEW.title
+          UNION ALL SELECT 'vocabulary' AS k, json_array(OLD.vocabulary, NEW.vocabulary) AS v WHERE OLD.vocabulary IS NOT NEW.vocabulary
+          UNION ALL SELECT 'objectives_json' AS k, json_array(OLD.objectives_json, NEW.objectives_json) AS v WHERE OLD.objectives_json IS NOT NEW.objectives_json
+          UNION ALL SELECT 'sections_json' AS k, json_array(OLD.sections_json, NEW.sections_json) AS v WHERE OLD.sections_json IS NOT NEW.sections_json
+          UNION ALL SELECT 'reading_url' AS k, json_array(OLD.reading_url, NEW.reading_url) AS v WHERE OLD.reading_url IS NOT NEW.reading_url
+          UNION ALL SELECT 'reading_label' AS k, json_array(OLD.reading_label, NEW.reading_label) AS v WHERE OLD.reading_label IS NOT NEW.reading_label
+          UNION ALL SELECT 'added_vocabulary' AS k, json_array(OLD.added_vocabulary, NEW.added_vocabulary) AS v WHERE OLD.added_vocabulary IS NOT NEW.added_vocabulary
+          UNION ALL SELECT 'added_objectives_json' AS k, json_array(OLD.added_objectives_json, NEW.added_objectives_json) AS v WHERE OLD.added_objectives_json IS NOT NEW.added_objectives_json
+          UNION ALL SELECT 'summary' AS k, json_array(OLD.summary, NEW.summary) AS v WHERE OLD.summary IS NOT NEW.summary
+          UNION ALL SELECT 'textbook_ref' AS k, json_array(OLD.textbook_ref, NEW.textbook_ref) AS v WHERE OLD.textbook_ref IS NOT NEW.textbook_ref
+             )) WHERE ch IS NOT NULL AND ch <> '{}';
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS chapter_topics_no_delete BEFORE DELETE ON chapter_topics
+             BEGIN SELECT RAISE(ABORT, 'Chapter notes are never deleted: correct them with chapter-topic-add.'); END""",
+        """CREATE TRIGGER IF NOT EXISTS course_outcomes_history_insert AFTER INSERT ON course_outcomes BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'create', 'course_outcomes', NEW.id, NEW.course_id, json_object('kind', NEW.kind, 'ref', NEW.ref, 'text', NEW.text, 'chapters_json', NEW.chapters_json, 'not_tested', NEW.not_tested, 'source', NEW.source));
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS course_outcomes_history_update AFTER UPDATE ON course_outcomes BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'update', 'course_outcomes', NEW.id, NEW.course_id, ch
+             FROM (SELECT json_group_object(k, json(v)) AS ch FROM (
+          SELECT 'kind' AS k, json_array(OLD.kind, NEW.kind) AS v WHERE OLD.kind IS NOT NEW.kind
+          UNION ALL SELECT 'ref' AS k, json_array(OLD.ref, NEW.ref) AS v WHERE OLD.ref IS NOT NEW.ref
+          UNION ALL SELECT 'text' AS k, json_array(OLD.text, NEW.text) AS v WHERE OLD.text IS NOT NEW.text
+          UNION ALL SELECT 'chapters_json' AS k, json_array(OLD.chapters_json, NEW.chapters_json) AS v WHERE OLD.chapters_json IS NOT NEW.chapters_json
+          UNION ALL SELECT 'not_tested' AS k, json_array(OLD.not_tested, NEW.not_tested) AS v WHERE OLD.not_tested IS NOT NEW.not_tested
+          UNION ALL SELECT 'source' AS k, json_array(OLD.source, NEW.source) AS v WHERE OLD.source IS NOT NEW.source
+             )) WHERE ch IS NOT NULL AND ch <> '{}';
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS course_outcomes_no_delete BEFORE DELETE ON course_outcomes
+             BEGIN SELECT RAISE(ABORT, 'Syllabus outcomes are never deleted: mark one --not-tested with the reason.'); END""",
+        # Study guidelines are a preference: its changes are kept too.
+        """CREATE TRIGGER IF NOT EXISTS preferences_history_guidelines AFTER UPDATE ON preferences
+             WHEN NEW.key IN ('study_guidelines', 'curriculum_dismissed', 'textbook') AND OLD.value_json IS NOT NEW.value_json BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'update', 'preferences', NEW.key, NEW.course_id, json_array(OLD.value_json, NEW.value_json));
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS preferences_history_guidelines_insert AFTER INSERT ON preferences
+             WHEN NEW.key IN ('study_guidelines', 'curriculum_dismissed', 'textbook') BEGIN
+             INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT run_id FROM event_context WHERE id = 1), (SELECT command FROM event_context WHERE id = 1), (SELECT reason FROM event_context WHERE id = 1), 'create', 'preferences', NEW.key, NEW.course_id, json_array(NULL, NEW.value_json));
+           END""",
+        # Where every chapter stands today: the first entry of its history.
+        """INSERT INTO item_events (ts, run_id, command, reason, op, table_name, row_id, course_id, changes_json)
+             SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'migration', 'db upgrade', 'History starts here: the chapter notes as they were when Kea began keeping their history',
+                    'baseline', 'chapter_topics', id, course_id, json_object('chapter_label', chapter_topics.chapter_label, 'title', chapter_topics.title, 'vocabulary', chapter_topics.vocabulary, 'objectives_json', chapter_topics.objectives_json, 'sections_json', chapter_topics.sections_json, 'reading_url', chapter_topics.reading_url, 'reading_label', chapter_topics.reading_label, 'added_vocabulary', chapter_topics.added_vocabulary, 'added_objectives_json', chapter_topics.added_objectives_json, 'summary', chapter_topics.summary, 'textbook_ref', chapter_topics.textbook_ref)
+             FROM chapter_topics""",
+    ]
+    for st in stmts:
+        session.execute(text(st))
+
+
 MIGRATIONS: list[MigrationFn] = [
     _0001_initial_schema,
     _0002_add_item_reference_urls,
@@ -415,6 +488,7 @@ MIGRATIONS: list[MigrationFn] = [
     _0019_add_study_pdfs_table,
     _0020_add_chapter_summary,
     _0021_add_item_history,
+    _0022_add_curriculum,
 ]
 
 

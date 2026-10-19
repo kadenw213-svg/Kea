@@ -135,10 +135,14 @@ function StatusCard({ run, queue, paused, dev, lastRun }: { run: RunProgress | n
         <div className="hero-top">
           <Clock size={20} className="hero-icon" />
           <div className="hero-text">
-            <div className="hero-title">{paused.label} is paused</div>
+            <div className="hero-title">
+              {paused.label} is paused{paused.more ? ` (and ${paused.more} more run${paused.more > 1 ? 's' : ''} waiting)` : ''}
+            </div>
             <div className="hero-sub">
-              Your Claude usage limit was reached. Everything found so far is saved. It continues by itself at {until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-              {until.toDateString() !== new Date().toDateString() ? ` on ${until.toLocaleDateString(undefined, { weekday: 'long' })}` : ''}
+              {paused.reason === 'closed' ? 'Kea closed while it was running.' : paused.reason === 'error' ? 'Claude couldn’t be reached.' : 'Your Claude usage limit was reached.'} Everything found so far is saved, and it
+              continues where it stopped
+              {until.getTime() <= Date.now() ? ' as soon as Kea is ready' : ` at ${until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
+              {until.getTime() > Date.now() && until.toDateString() !== new Date().toDateString() ? ` on ${until.toLocaleDateString(undefined, { weekday: 'long' })}` : ''}
               {where ? ` on ${where}` : ''}.
             </div>
           </div>

@@ -12,6 +12,8 @@ type Compose = MailDraft & { key: string };
 
 const when = (at: string) => {
   const d = new Date(at);
+  // (The class site's own date text, as it shows it, when it isn't one Kea can read.)
+  if (isNaN(d.getTime())) return at;
   const today = new Date().toDateString() === d.toDateString();
   return today ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
@@ -19,7 +21,7 @@ const when = (at: string) => {
 function useMail() {
   const version = useScholar((s) => s.version);
   const [mail, setMail] = useState<MailList | null>(null);
-  const load = () => api.scholar.mailList().then(setMail).catch(() => setMail({ messages: [], sent: [], drafts: [] }));
+  const load = () => api.scholar.mailList().then(setMail).catch(() => setMail({ messages: [], sent: [], drafts: [], checked: null }));
   useEffect(() => {
     load();
     const off = api.scholar.onChanged(load);
@@ -108,10 +110,35 @@ function Composer({ draft, courses, onClose, onSent }: { draft: Compose; courses
   );
 }
 
-export function MessagesView({ courses }: { courses: ScholarCourse[] }) {
+export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; openId?: string }) {
   const [mail, reload] = useMail();
   const [box, setBox] = useState<Box>('inbox');
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(openId || null);
+  const [syncing, setSyncing] = useState(false);
+  // The class site's whole mailbox, read again when this page opens (if it's been a few minutes) or on Refresh.
+  const sync = (quiet = false) => {
+    setSyncing(true);
+    api.scholar
+      .mailSync()
+      .then((r) => {
+        reload();
+        if (!quiet && r?.unreadable) toast('Kea couldn’t read your class site’s message list this time; it kept what it had.', 'error');
+      })
+      .catch((err) => !quiet && toast(err?.message || 'Kea couldn’t reach your class site’s messages.', 'error'))
+      .finally(() => setSyncing(false));
+  };
+  const checkedOnce = useRef(false);
+  useEffect(() => {
+    if (!mail || checkedOnce.current) return;
+    checkedOnce.current = true;
+    if (!mail.checked || Date.now() - new Date(mail.checked).getTime() > 5 * 60e3) sync(true);
+  }, [mail]);
+  useEffect(() => {
+    if (openId) {
+      setBox('inbox');
+      setOpen(openId);
+    }
+  }, [openId]);
   const [full, setFull] = useState<Record<string, string>>({});
   const [reading, setReading] = useState(false);
   const [compose, setCompose] = useState<Compose | null>(null);
@@ -140,8 +167,8 @@ export function MessagesView({ courses }: { courses: ScholarCourse[] }) {
 
   const list = useMemo(() => {
     if (!mail) return [];
-    if (box === 'inbox') return mail.messages.map((m) => ({ id: m.id, who: m.course || 'Class site', title: m.title, sub: m.preview, at: m.at, unread: !m.read, mark: null as any }));
-    if (box === 'sent') return mail.sent.map((m) => ({ id: m.id, who: m.course || '', title: m.subject || '(reply)', sub: m.body, at: m.at, unread: false, mark: m.confirmed ? 'sent' : 'check' }));
+    if (box === 'inbox') return mail.messages.map((m) => ({ id: m.id, who: [m.from, m.course].filter(Boolean).join(' · ') || 'Class site', title: m.title, sub: m.preview, at: m.at, unread: !m.read, mark: null as any }));
+    if (box === 'sent') return mail.sent.map((m) => ({ id: m.id, who: [m.fromSite ? m.to : '', m.course].filter(Boolean).join(' · '), title: m.subject || '(reply)', sub: m.body, at: m.at, unread: false, mark: m.fromSite ? null : m.confirmed ? 'sent' : 'check' }));
     return mail.drafts.map((d) => ({ id: d.key, who: d.course || '', title: d.subject || (d.replyTo ? 'Reply' : 'New message'), sub: d.body, at: d.at, unread: false, mark: 'draft' }));
   }, [mail, box]);
 
@@ -155,6 +182,9 @@ export function MessagesView({ courses }: { courses: ScholarCourse[] }) {
     <div className="sch-page ml-page">
       <div className="ml-top">
         <h1 className="sch-title">Messages</h1>
+        <button className="btn sm" onClick={() => sync()} disabled={syncing} title={mail?.checked ? `Last read from your class site ${when(mail.checked)}` : 'Read your class site’s messages now'}>
+          {syncing ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} Refresh
+        </button>
         <button className="btn primary sm" onClick={() => setCompose({ key: `new:${Date.now().toString(36)}`, course: courses[0]?.code || '', to: '', subject: '', body: '' })}>
           <PenSquare size={14} /> New message
         </button>
@@ -181,7 +211,7 @@ export function MessagesView({ courses }: { courses: ScholarCourse[] }) {
           ) : !list.length ? (
             <div className="sch-empty">
               <Mail size={22} />
-              <div>{box === 'inbox' ? 'No class-site messages yet.' : box === 'sent' ? 'Nothing sent from Kea yet.' : 'No drafts.'}</div>
+              <div>{box === 'inbox' ? (syncing ? 'Reading your class site’s messages…' : 'No class-site messages yet.') : box === 'sent' ? 'Nothing sent yet.' : 'No drafts.'}</div>
             </div>
           ) : (
             list.map((m) => (
@@ -222,7 +252,7 @@ export function MessagesView({ courses }: { courses: ScholarCourse[] }) {
               <div className="ml-msg-head">
                 <h2>{msg.title}</h2>
                 <div className="muted">
-                  {msg.course || 'Class site'} · {new Date(msg.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  {[msg.from, msg.course || 'Class site'].filter(Boolean).join(' · ')} · {isNaN(new Date(msg.at).getTime()) ? msg.at : new Date(msg.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
                 </div>
               </div>
               <div className="ml-actions">
@@ -247,11 +277,20 @@ export function MessagesView({ courses }: { courses: ScholarCourse[] }) {
                 <h2>{sent.subject || 'Reply'}</h2>
                 <div className="muted">
                   {sent.course}
-                  {sent.to ? ` · to ${sent.to}` : ''} · {new Date(sent.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  {sent.to ? ` · to ${sent.to}` : ''} · {isNaN(new Date(sent.at).getTime()) ? sent.at : new Date(sent.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
                 </div>
               </div>
               <div className={`ml-status ${sent.confirmed ? 'ok' : 'warn'}`}>
-                {sent.confirmed ? (
+                {sent.fromSite ? (
+                  <>
+                    <CheckCircle2 size={14} /> In your class site’s Sent folder.
+                    {sent.url && (
+                      <button className="btn sm" onClick={() => api.scholar.openLink(sent.url!)}>
+                        Open on class site
+                      </button>
+                    )}
+                  </>
+                ) : sent.confirmed ? (
                   <>
                     <CheckCircle2 size={14} /> Your class site confirmed it was sent.
                   </>

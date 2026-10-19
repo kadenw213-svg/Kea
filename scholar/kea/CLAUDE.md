@@ -34,7 +34,16 @@ field.** If a command answers with an error, its message says what's wrong.
   `record-sync <item_id> --event-id kea:<item_id> --calendar-id kea`; `export [--course X]`; `plan --course X --verbose`.
 - Weeks and chapters: `weekly-reading-add --course X --week-start X --week-end X --chapters X [--reference-url ...]
   [--links JSON]`; `chapter-topic-add --course X --chapter X [--title] [--vocabulary] [--objective] [--section]
-  [--exhaustive] [--reading-url] [--reading-label]`; `chapter-summary-set --course X --chapter X --summary X`.
+  [--exhaustive] [--reading-url] [--reading-label] [--textbook-ref] [--source]`; `chapter-summary-set --course X
+  --chapter X --summary X`.
+- The syllabus (the curriculum is held to it): `curriculum --course X [--json]` checks the chapters against the
+  syllabus's outcomes and topical outline, the chapters it names, each chapter's notes, the textbook and the testing
+  guidelines (problems marked `fix` are gaps); `outcome-add --course X --kind course|module|outline|recommended --ref X
+  --text "<verbatim>" [--chapter X ... | --chapter all] [--not-tested "<why>"] [--source X]`; `guideline-add --course X
+  --text X --source X [--chapter X]`, `guideline-remove --course X --text X --reason X`; `course-textbook --course X
+  --title X --numbering same|different [--source X]` or `--none "<why>"`; `curriculum-dismiss --course X --key X
+  --reason X`. Chapter notes and outcomes keep the same history as items and can't be deleted. `/kea-curriculum`
+  closes the gaps.
 - Saved links (the URL registry): `portal-link-set --course X --kind X --url X [--label]` (kinds: home, grades,
   announcements, content, dropbox, quizzes, discussions, calendar, external_home, external_gradebook, assignment, quiz,
   content_topic, grade_item, module, other). Save every page you had to find, so no run has to find it again.
@@ -219,9 +228,14 @@ asks. Kea shuffles and grades it itself, offline.
 
 ## Continuing a run that stopped
 
-When the task's arguments include **`resume`**, an earlier run of the same task stopped partway (usually the
-student's Claude usage limit). Everything it saved is still in the database and `data/downloads/`. What it only read
-and never saved is gone. Don't start over:
+A run can stop partway: the student's Claude usage limit, a server or connection problem, or Kea closing. Kea then
+continues **the same conversation** later (you'll be told it was stopped and why): carry on from where you were,
+re-reading nothing you already have; the Kea tools work again (their connection is new). Save as you go (each engine
+command is saved at once), so a stop loses as little as possible.
+
+When the conversation couldn't be kept, Kea starts a new run with **`resume`** in the task's arguments. Everything the
+stopped run saved is still in the database and `data/downloads/`. What it only read and never saved is gone. Don't
+start over:
 
 1. Run `uv run academic-sync status` and `uv run academic-sync completeness`, and read each class's
    `data/downloads/<CODE>/raw_notes.md`, to see what's already there.

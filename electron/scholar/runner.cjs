@@ -33,8 +33,14 @@ const TASKS = {
   study: { prompt: (arg) => `/weekly-study-pdf ${arg || ''}`.trim(), tools: [...BASE, ...REFERENCE, 'WebSearch', 'mcp__kea__kea_progress', 'mcp__kea__kea_notify'], label: 'Writing textbook chapters' },
   // A practice exam or flashcard deck the student asked for, written from the brief Kea prepares (the tests' focus, the
   // chapters' notes and review sheets Kea downloaded itself): Claude only reads that and writes.
-  practice: { prompt: (arg) => require('./study.cjs').prompt(arg), tools: [...BASE, 'mcp__kea__kea_progress'], label: 'Making study material' }
+  practice: { prompt: (arg) => require('./study.cjs').prompt(arg), tools: [...BASE, 'mcp__kea__kea_progress'], label: 'Making study material' },
+  // A class's chapters held to its syllabus: outcomes and topical outline recorded and each taught by a chapter whose
+  // notes carry it, every chapter's notes complete (sections from the slides or the book), the textbook and testing
+  // guidelines recorded. Reads the class site, the book's own contents and the school's published course outlines.
+  curriculum: { prompt: (arg) => `/kea-curriculum ${arg || ''}`.trim(), tools: [...BASE, ...KEA_TOOLS, ...REFERENCE, 'WebSearch'], label: 'Matching chapters to the syllabus' }
 };
+// Publishers' contents pages, for where a chapter is in the class's own book.
+const PUBLISHERS = ['mheducation.com', 'pearson.com', 'cengage.com', 'wiley.com', 'macmillanlearning.com', 'norton.com', 'openstax.org'].map((d) => `WebFetch(domain:${d})`);
 
 // ---------- Plain-code steps before a run (no Claude usage) ----------
 // Each may answer { skip: summary } (nothing for Claude to do), { prompt, after(ok) } (run Claude with this prompt),
@@ -156,13 +162,48 @@ TASKS.study.pre = async (job, step) => {
   return { split: runs.map((r) => r.arg), summary: `Writing ${chapters ? `${chapters} chapter${chapters === 1 ? '' : 's'}` : `${runs.length} weeks' chapters`}, one week at a time.` };
 };
 
+// Only the classes whose chapters fall short of their syllabus (Kea's own check, no Claude), one class per run, with
+// the list of what to fix. The school's own site may be read for its published course outlines.
+TASKS.curriculum.pre = async (job, step) => {
+  const code = String(job.arg || '').trim().split(/\s+/)[0];
+  const list = await db().watchList(profiles.paths().db);
+  if (!code) {
+    const due = [];
+    for (const c of list) {
+      step(`Checking ${c.code}'s chapters against its syllabus…`);
+      const r = await engineJson(['curriculum', '--course', c.code, '--json']).catch(() => null);
+      if (r && !r.ok) due.push(c.code);
+    }
+    if (!due.length) return { skip: 'Every class’s chapters match its syllabus. Checked by Kea itself, so no Claude usage.', ok: true };
+    return { split: due, summary: `Matching ${due.join(', ')} to ${due.length > 1 ? 'their syllabi' : 'its syllabus'}, one class at a time.` };
+  }
+  step(`Checking ${code}'s chapters against its syllabus…`);
+  const r = await engineJson(['curriculum', '--course', code, '--json']).catch(() => null);
+  if (r && r.ok && !/\bresume\b/.test(job.arg)) return { skip: `${code}: its chapters match its syllabus. Checked by Kea itself, so no Claude usage.`, ok: true };
+  const fix = (r?.problems || []).filter((p) => p.severity === 'fix');
+  const site = require('./browser.cjs').schoolInfo().home || '';
+  const root = (() => {
+    try {
+      return new URL(site).hostname.split('.').slice(-2).join('.');
+    } catch {
+      return '';
+    }
+  })();
+  return {
+    prompt: `/kea-curriculum ${job.arg.trim()}${fix.length ? `\n\nWhat Kea's check found (\`curriculum --course ${code} --json\` has the whole report):\n${fix.map((p) => `- ${p.key}: ${p.text}`).join('\n')}` : ''}`,
+    tools: [...PUBLISHERS, ...(root ? [`WebFetch(domain:${root})`] : [])]
+  };
+};
+
+TASKS.practice.afterResume = (job) => (ok) => require('./study.cjs').ingest(job.arg, ok);
+
 TASKS.practice.pre = async (job, step) => {
   const study = require('./study.cjs');
   step('Gathering the chapters, review sheets and what the test covers…', 1);
   const id = String(job.arg || '').split(/\s+/)[0];
   const uv = await workspace.findUv();
   const cwd = profiles.paths().workspace;
-  await study.prepare(id, (file) => docText(uv, cwd, file), step);
+  await study.prepare(id, (file) => docText(uv, cwd, file), step, engineJson);
   step('Writing the set…', 10);
   return { prompt: study.prompt(job.arg), after: (ok) => study.ingest(job.arg, ok) };
 };
@@ -246,6 +287,46 @@ async function coverageCheck(arg) {
   }
 }
 
+/**
+ * Every class's chapters against its syllabus (Kea's own check, no Claude). A class with something to fix gets a
+ * curriculum run, once per new set of problems (and again after a week if they're still open); what a run couldn't
+ * close becomes one "needs you" message, once per change.
+ */
+async function curriculumCheck(why = 'schedule') {
+  const list = await db().watchList(profiles.paths().db);
+  const file = path.join(profiles.paths().dir, 'curriculum-told.json');
+  const told = readJson(file, {});
+  const due = [];
+  for (const c of list) {
+    const r = await engineJson(['curriculum', '--course', c.code, '--json']).catch(() => null);
+    if (!r) continue;
+    const fix = (r.problems || []).filter((p) => p.severity === 'fix');
+    const sig = JSON.stringify(fix.map((p) => p.key).sort());
+    const t = told[c.code] || {};
+    if (!fix.length) {
+      told[c.code] = { sig, at: new Date().toISOString() };
+      continue;
+    }
+    const week = Date.now() - new Date(t.ranAt || 0).getTime() > 7 * 864e5;
+    if (t.ranSig !== sig || week) {
+      due.push(c.code);
+      told[c.code] = { ...t, sig, ranSig: sig, ranAt: new Date().toISOString() };
+    } else if (t.toldSig !== sig) {
+      // A run already tried these: tell the student what's still open, once.
+      told[c.code] = { ...t, sig, toldSig: sig };
+      addNews({
+        course: c.code,
+        kind: 'needs_you',
+        title: `${c.code}'s chapters don't fully match its syllabus yet`,
+        body: `${fix.slice(0, 6).map((p) => `• ${p.text}`).join('\n')}${fix.length > 6 ? `\n…and ${fix.length - 6} more.` : ''}\nKea tries again next week; anything you can find (a syllabus page, the book's contents) helps.`
+      });
+    }
+  }
+  fs.writeFileSync(file, JSON.stringify(told, null, 1));
+  for (const code of due) run('curriculum', code, why);
+  return due;
+}
+
 function addNews(n) {
   const list = readJson(newsFile(), []);
   list.unshift({ id: `${Date.now()}`, at: new Date().toISOString(), read: false, ...n });
@@ -255,11 +336,24 @@ function addNews(n) {
   if (Notification.isSupported()) new Notification({ title: n.course ? `${n.course}: ${n.title}` : n.title, body: n.body.slice(0, 220) }).show();
 }
 
-// ---------- Claude usage limits: pause, then continue where the run stopped ----------
-const LIMIT = /hit your (?:session |usage |weekly |daily )?limit|usage limit reached|limit (?:will )?resets?/i;
+// ---------- A run stopped partway: pause, then continue where it stopped ----------
+// A run can stop partway three ways: the student's Claude usage limit, a server or connection problem Claude Code
+// couldn't get past, or Kea closing (or the computer shutting down) in the middle of it. In each, everything saved so far
+// stays saved (every engine command is its own transaction, and the database is copied before the run). The stopped
+// run is set aside with every run waiting behind it, and continues later in the same Claude conversation (`--resume`),
+// so nothing it had read but not yet saved has to be found again.
+const LIMIT = /hit your (?:session |usage |weekly |daily |5-hour |opus )?limit|usage limit reached|limit (?:will )?resets?|Claude AI usage limit/i;
+// A problem that passes by itself (Claude Code has already retried it a few times by the time it gives up).
+const TRANSIENT = /API Error|overloaded|\b(?:500|502|503|504|529)\b|internal server error|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|socket hang up|fetch failed|connection error|network error|request timed out|timed out|rate.?limit/i;
+// How many times a run that hit server problems is tried again, and how long apart.
+const RETRIES = 3;
+const RETRY_MINUTES = [10, 30, 60];
 
 /** When a "resets 8:10pm" message means the limit is over (local time), or in an hour when it can't be read. */
 function resetTime(msg, now = new Date()) {
+  // (Older Claude Code: "Claude AI usage limit reached|1760035200", the reset time in seconds.)
+  const epoch = /\|(\d{10})\b/.exec(msg || '');
+  if (epoch) return new Date(Number(epoch[1]) * 1000 + 3 * 60000);
   const m = /resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i.exec(msg || '');
   if (!m) return new Date(now.getTime() + 60 * 60000);
   let h = Number(m[1]) % 12;
@@ -273,43 +367,108 @@ function resetTime(msg, now = new Date()) {
 }
 
 const resumeFile = () => path.join(profiles.paths().dir, 'resume.json');
-/** The run waiting to continue after a usage limit, if any: { task, arg, until, label }. */
-const pending = () => readJson(resumeFile(), null);
+// The run Claude is working on right now, kept on disk: if Kea closes in the middle of it, the next start knows.
+const inflightFile = () => path.join(profiles.paths().dir, 'inflight.json');
+
+/**
+ * The runs waiting to continue, if any: { until, reason ('limit' | 'error' | 'closed'), runs: [{ task, arg, label,
+ * session, started, tries }] }, plus the first run's task, arg and label (what the Scans page shows) and how many more.
+ */
+function pending() {
+  const p = readJson(resumeFile(), null);
+  if (!p) return null;
+  // (Before v0.35 only one run waited: { task, arg, label, until }.)
+  const runs = Array.isArray(p.runs) ? p.runs.filter((r) => TASKS[r.task]) : p.task ? [{ task: p.task, arg: p.arg || '', label: p.label, started: true }] : [];
+  if (!runs.length) return null;
+  return { until: p.until, reason: p.reason || 'limit', runs, task: runs[0].task, arg: runs[0].arg, label: runs[0].label || TASKS[runs[0].task].label, more: runs.length - 1 };
+}
 function setPending(p) {
-  if (p) fs.writeFileSync(resumeFile(), JSON.stringify(p, null, 1));
-  else fs.rmSync(resumeFile(), { force: true });
-  send('scholar:resume', p);
+  if (p) {
+    const tmp = `${resumeFile()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ until: p.until, reason: p.reason, runs: p.runs }, null, 1));
+    fs.renameSync(tmp, resumeFile());
+  } else fs.rmSync(resumeFile(), { force: true });
+  send('scholar:resume', pending());
+}
+
+/**
+ * Set runs aside to continue at `until`: the one that stopped (with its Claude conversation) and every run queued
+ * behind it, which would only stop the same way. Runs already waiting stay, each run once.
+ */
+function pause(until, reason, stopped) {
+  const old = pending();
+  const waiting = queue.splice(0);
+  for (const j of waiting) {
+    if (j.batch) batches.delete(j.batch);
+    j.resolve({ paused: until.toISOString(), task: j.task, arg: j.arg });
+  }
+  const runs = [
+    ...(stopped ? [stopped] : []),
+    ...(old?.runs || []),
+    ...waiting.filter((j) => j.profile === profiles.active()).map((j) => ({ task: j.task, arg: j.arg, label: TASKS[j.task].label, session: j.session || null, started: !!j.started, tries: j.tries || 0 }))
+  ];
+  const seen = new Set();
+  const once = runs.filter((r) => {
+    const k = `${r.task}|${String(r.arg || '').replace(/\s*\bresume\b/, '').trim()}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  // (The earliest of the two times when runs were already waiting for a later one.)
+  const at = old && new Date(old.until) < until && old.reason === reason ? new Date(old.until) : until;
+  setPending({ until: at.toISOString(), reason, runs: once });
 }
 
 /** The argument that makes a task continue instead of starting over (see "Continuing a run" in Kea's CLAUDE.md). */
 const resumeArg = (arg) => (/\bresume\b/.test(arg || '') ? arg : `${arg || ''} resume`.trim());
 
-/** Continue the waiting run now (the schedule calls this once its time comes; Scans has a button for it). */
+/** Continue the waiting runs now (the schedule calls this once their time comes; Scans has a button for it). */
 function resume() {
   const p = pending();
   if (!p) return false;
   setPending(null);
-  run(p.task, resumeArg(p.arg), 'resume');
+  for (const r of p.runs) run(r.task, r.started ? resumeArg(r.arg) : r.arg, 'resume', null, { session: r.session || null, started: !!r.started, tries: r.tries || 0, stopReason: p.reason });
   return true;
 }
 
 /** Continue the last stopped run of a task (for a run that stopped before Kea could pause it). */
 function resumeLast(task) {
   const last = readJson(activityFile(), []).find((e) => e.task === task);
-  run(task, resumeArg(last?.arg || ''), 'resume');
+  run(task, resumeArg(last?.arg || ''), 'resume', null, { session: last?.session || null, started: true });
   return true;
 }
 
-/** A run that stopped at a usage limit before Kea could pause runs (v0.21) gets picked up the same way. */
+/**
+ * At start: a run Kea was in the middle of when it closed (or the computer shut down) continues as soon as Kea is
+ * ready; a run that stopped at a usage limit before Kea could pause runs (v0.21) is picked up the same way.
+ */
 function adoptStopped() {
+  const f = readJson(inflightFile(), null);
+  if (f && TASKS[f.task]) {
+    fs.rmSync(inflightFile(), { force: true });
+    const now = new Date();
+    saveActivity({ id: `${Date.now()}`, task: f.task, label: TASKS[f.task].label, arg: f.arg || '', why: f.why || '', start: f.start || now.toISOString(), end: now.toISOString(), ok: false, paused: now.toISOString(), claude: true, session: f.session || null, summary: 'Interrupted: Kea closed (or the computer shut down) during this run. Everything it saved is kept, and it continues where it stopped.', steps: [] });
+    pause(now, 'closed', { task: f.task, arg: f.arg || '', label: TASKS[f.task].label, session: f.session || null, started: true, tries: f.tries || 0 });
+    return;
+  }
   if (pending()) return;
   const last = readJson(activityFile(), [])[0];
   if (!last || last.ok || last.paused || !LIMIT.test(last.summary || '')) return;
   const until = resetTime(last.summary, new Date(last.end || last.start));
   last.paused = until.toISOString();
   saveActivity(last);
-  setPending({ task: last.task, arg: last.arg || '', label: last.label, until: until.toISOString() });
+  setPending({ until: until.toISOString(), reason: 'limit', runs: [{ task: last.task, arg: last.arg || '', label: last.label, session: last.session || null, started: true }] });
 }
+
+/** Kea is quitting: stop Claude (an orphaned run would keep writing with no one watching), but remember the run. */
+function shutdown() {
+  quitting = true;
+  queue.length = 0;
+  try {
+    current?.child?.kill();
+  } catch {}
+}
+let quitting = false;
 
 // ---------- How long a run takes (for the progress bar and "about 4 min left") ----------
 // Typical length of a run that used Claude, before Kea has seen one of its own: minutes.
@@ -352,11 +511,14 @@ function estimatePractice(arg) {
 // Runs split into one per class are a batch: "2 of 4" and one bar across all of them.
 const batches = new Map();
 
-/** Queue a run. Resolves when it finishes, with its summary. */
-function run(task, arg = '', why = 'manual', batch = null) {
+/**
+ * Queue a run. Resolves when it finishes, with its summary. `cont` continues a stopped run: { session (its Claude
+ * conversation), started, tries }.
+ */
+function run(task, arg = '', why = 'manual', batch = null, cont = {}) {
   if (!TASKS[task]) throw new Error(`Unknown run: ${task}`);
   return new Promise((resolve) => {
-    queue.push({ task, arg, why, resolve, batch, profile: profiles.active() });
+    queue.push({ task, arg, why, resolve, batch, profile: profiles.active(), session: cont.session || null, started: !!cont.started, tries: cont.tries || 0, stopReason: cont.stopReason || null });
     next();
   });
 }
@@ -380,7 +542,7 @@ async function next() {
   const b = job.batch && batches.get(job.batch);
   // phase: 'check' while Kea looks by itself, 'claude' once Claude is reading. turns: Claude's steps so far.
   const entry = { id: `${Date.now()}`, task: job.task, label: t.label, arg: job.arg, why: job.why, start: new Date().toISOString(), end: null, ok: null, summary: '', steps: [], phase: 'check', claudeStart: null, expectedMs: est.ms, expectedTurns: est.turns, turns: 0, percent: null, claude: false, batch: b ? { id: job.batch, done: b.done, total: b.total } : null };
-  current = { entry, child: null, server: null };
+  current = { entry, child: null, server: null, job };
   const step = (message, percent) => {
     entry.steps.push({ at: new Date().toISOString(), message });
     if (entry.steps.length > 200) entry.steps.shift();
@@ -388,6 +550,8 @@ async function next() {
     send('scholar:run', { ...entry, running: true });
   };
   const finish = (ok, summary) => {
+    if (quitting) return;
+    fs.rmSync(inflightFile(), { force: true });
     entry.end = new Date().toISOString();
     entry.ok = ok;
     entry.summary = summary;
@@ -410,7 +574,10 @@ async function next() {
     const cwd = workspace.prepare();
     let prompt = t.prompt(job.arg);
     let after = null;
-    if (t.pre) {
+    let extraTools = [];
+    // Continuing a stopped conversation: Claude already has its instructions and everything it read.
+    if (job.session) after = t.afterResume ? t.afterResume(job) : null;
+    else if (t.pre) {
       // A failing pre-check never blocks a run: it falls back to the full run Claude would have done anyway.
       const pre = await t.pre(job, step).catch((err) => {
         step(`Kea's own check didn't work (${String(err?.message || err).slice(0, 120)}), so this is a full check.`);
@@ -425,6 +592,7 @@ async function next() {
       }
       if (pre.prompt) prompt = pre.prompt;
       after = pre.after || null;
+      extraTools = pre.tools || [];
     }
     // Testing Kea's own checks: say what Claude would be asked, without starting it.
     if (process.env.KEA_DRY_RUN) return finish(true, `Dry run, Claude not started. Prompt: ${prompt}`);
@@ -443,7 +611,10 @@ async function next() {
     // the biggest waste in early runs.
     // Nor may it touch the database file or the run logs directly: every change goes through the engine, which keeps
     // the item history.
-    const args = ['-p', prompt, '--model', 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', '--permission-mode', 'dontAsk', '--allowedTools', ...t.tools, '--disallowedTools', 'Read(**/*.pdf)', 'Read(./src/**/*.py)', 'Edit(data/*.db)', 'Write(data/*.db)', 'Edit(data/logs/**)', 'Write(data/logs/**)', 'Edit(data/backups/**)', 'Write(data/backups/**)'];
+    const how = job.session
+      ? ['-p', `Kea stopped this run partway (${{ limit: 'your Claude usage limit', error: 'a server or connection problem', closed: 'Kea closed' }[job.stopReason] || 'it was interrupted'}) and is continuing it now. Carry on exactly where you stopped: everything you saved is still saved, so don't start over or re-read what you already have. Call mcp__kea__kea_progress first if you have it (the connection to Kea is new).`, '--resume', job.session]
+      : ['-p', prompt];
+    const args = [...how, '--model', 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', '--permission-mode', 'dontAsk', '--allowedTools', ...t.tools, ...extraTools, '--disallowedTools', 'Read(**/*.pdf)', 'Read(./src/**/*.py)', 'Edit(data/*.db)', 'Write(data/*.db)', 'Edit(data/logs/**)', 'Write(data/logs/**)', 'Edit(data/backups/**)', 'Write(data/backups/**)'];
     // A copy of the database before every run that can change it (the newest 30 are kept), and the run's id for the
     // item history, so every change can be traced to this run and undone from its copy.
     if (['import', 'sync', 'daily', 'study'].includes(job.task)) {
@@ -464,11 +635,21 @@ async function next() {
     entry.phase = 'claude';
     entry.claude = true;
     entry.claudeStart = new Date().toISOString();
-    step(`${t.label}…`);
+    entry.session = job.session || null;
+    // On disk while Claude works, so a run cut off by Kea closing is found and continued at the next start.
+    const inflight = () => {
+      try {
+        fs.writeFileSync(inflightFile(), JSON.stringify({ task: job.task, arg: job.arg, why: job.why, start: entry.start, session: entry.session, tries: job.tries || 0 }));
+      } catch {}
+    };
+    inflight();
+    step(`${job.session ? 'Continuing: ' : ''}${t.label}…`);
     const child = spawn(claude, args, { cwd, env: { ...workspace.engineEnv(uv), KEA_RUN_ID: String(entry.id), KEA_TASK: job.task }, windowsHide: true });
     current.child = child;
     let buf = '';
     let result = null;
+    let errText = '';
+    let lastText = '';
     child.stdout.on('data', (d) => {
       out.write(d);
       buf += d;
@@ -479,6 +660,12 @@ async function next() {
         if (!line) continue;
         try {
           const ev = JSON.parse(line);
+          // The conversation's id, as soon as Claude Code gives it: what a stopped run continues in.
+          if (ev.session_id && ev.session_id !== entry.session) {
+            entry.session = ev.session_id;
+            inflight();
+          }
+          if (ev.type === 'assistant') for (const c of ev.message?.content || []) if (c.type === 'text' && c.text) lastText = String(c.text).slice(-2000);
           if (ev.type === 'result') {
             result = ev;
             if (ev.num_turns) entry.turns = ev.num_turns;
@@ -490,7 +677,10 @@ async function next() {
         } catch {}
       }
     });
-    child.stderr.on('data', (d) => out.write(d));
+    child.stderr.on('data', (d) => {
+      out.write(d);
+      errText = (errText + d).slice(-4000);
+    });
     child.on('error', (err) => {
       out.end();
       try {
@@ -502,21 +692,44 @@ async function next() {
       out.write(`\n=== exit ${code} ===\n`);
       out.end();
       fs.rmSync(cfg, { force: true });
+      // Kea is quitting: the in-flight record stays, and the next start continues this run.
+      if (quitting) return;
       const text = String(result?.result || '');
-      if (LIMIT.test(text)) {
+      const said = `${text}\n${lastText}\n${errText}`;
+      const stoppedRun = (tries) => ({ task: job.task, arg: job.arg, label: t.label, session: entry.session, started: true, tries });
+      const atTime = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const failed = !result || result.is_error;
+      if (job.stopping) {
+        try {
+          after?.(false);
+        } catch {}
+        finish(false, 'Stopped.');
+      } else if (LIMIT.test(text) || (failed && LIMIT.test(said))) {
         // Out of Claude usage: everything saved so far stays; continue once the limit resets.
-        const until = resetTime(text);
-        const at = until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const until = resetTime(LIMIT.test(text) ? text : said);
         entry.paused = until.toISOString();
-        setPending({ task: job.task, arg: job.arg, label: t.label, until: until.toISOString() });
-        if (Notification.isSupported()) new Notification({ title: 'Class scan paused', body: `Your Claude usage limit was reached. Kea continues where it stopped at ${at}.` }).show();
-        finish(false, `Paused: your Claude usage limit was reached. Everything found so far is saved, and Kea continues where it stopped at ${at}.`);
+        pause(until, 'limit', stoppedRun(job.tries || 0));
+        if (Notification.isSupported()) new Notification({ title: 'Class scan paused', body: `Your Claude usage limit was reached. Kea continues where it stopped at ${atTime(until)}.` }).show();
+        finish(false, `Paused: your Claude usage limit was reached. Everything found so far is saved, and Kea continues where it stopped at ${atTime(until)}.`);
+      } else if (job.session && failed && /no conversation found|session.{0,40}not found|could not (?:find|resume)/i.test(said)) {
+        // The stopped conversation couldn't be reopened (Claude Code cleared it): continue from what's saved instead.
+        queue.unshift({ ...job, session: null, resolve: () => {}, started: true, arg: resumeArg(job.arg) });
+        finish(false, 'Couldn’t reopen the stopped conversation, so this run continues from what was saved.');
+      } else if (failed && (TRANSIENT.test(said) || (!result && code !== 0 && code !== null)) && (job.tries || 0) < RETRIES) {
+        // A server or connection problem (or Claude Code itself crashing): try again later, in the same conversation.
+        const tries = (job.tries || 0) + 1;
+        const until = new Date(Date.now() + RETRY_MINUTES[tries - 1] * 60000);
+        entry.paused = until.toISOString();
+        pause(until, 'error', stoppedRun(tries));
+        finish(false, `Paused: Claude couldn’t be reached (${(said.match(TRANSIENT) || ['the connection dropped'])[0].trim()}). Everything found so far is saved, and Kea continues where it stopped at ${atTime(until)} (try ${tries} of ${RETRIES}).`);
       } else if (result && !result.is_error) {
         try {
           after?.(true);
         } catch {}
         // Every import and weekly update ends with Kea's own coverage check (not left to Claude remembering).
         if (job.task === 'import' || job.task === 'sync' || job.task === 'daily') coverageCheck(job.task === 'daily' ? '' : job.arg).catch((err) => console.error('Coverage', err));
+        // A class's first scan is held to its syllabus straight away.
+        if (job.task === 'import' && job.arg.trim() && !/\bresume\b/.test(job.arg)) run('curriculum', job.arg.trim().split(/\s+/)[0], job.why);
         // A class's first scan is followed by its whole textbook (one week per run).
         if (job.task === 'import' && job.arg.trim() && !/\bresume\b/.test(job.arg) && settings().get('scholar.studyPdfs', true) !== false) run('study', `missing ${job.arg.trim().split(/\s+/)[0]}`, job.why);
         finish(true, text.trim().slice(0, 4000) || 'Done.');
@@ -532,9 +745,13 @@ async function next() {
   }
 }
 
+/** Stop the run (the student's choice: it isn't continued later) and clear the queue. */
 function stop() {
-  queue.length = 0;
-  if (current?.child) current.child.kill();
+  for (const j of queue.splice(0)) j.resolve(null);
+  if (current?.child) {
+    current.job.stopping = true;
+    current.child.kill();
+  }
 }
 
 // Waiting runs carry their own estimate, so the time left covers the whole queue.
@@ -559,4 +776,4 @@ function deleteNews(ids = [], keys = []) {
   return gone.map((n) => inboxKey({ course: n.course || '', title: n.title, body: n.body }));
 }
 
-module.exports = { run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, TASKS };
+module.exports = { run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS };

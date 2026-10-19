@@ -24,7 +24,11 @@ Claude, so every question must stand on its own and grade correctly by its store
 Read the brief (one Read; it's short). Kea built it from what the scans learned, in this order:
 1. **What the real tests cover**: each test on these chapters with the instructor's study focus, scraped from the
    class site (format, allowed sheets, the exact problem types on each FunSheet).
-2. Each chapter's internal notes: summary, sections, objectives and vocabulary.
+2. **How the class tests** (the syllabus's guidelines: formats, what exams draw on, allowed sheets) and each
+   chapter's internal notes: summary, sections, objectives, vocabulary, its place in the student's textbook and the
+   **syllabus outcomes it teaches**. Every one of those outcomes gets at least one question (two or more when it's a
+   skill the tests calculate with); match the question types the guidelines name (essay or short answer when the
+   exams have them, calculations shown step by step when written work is graded).
 3. The review material for those chapters, already converted and trimmed by Kea: FunSheets and their answer keys,
    study guides, guided readings, past quiz notes.
 
@@ -129,8 +133,10 @@ Balance and difficulty:
 
 ## 4. Write the file and check it
 
-Write `output` (inside `data/`) as JSON, **in one Write** (for more than 60 items, two parts: Write the first half,
-then Edit to append the rest, calling `mcp__kea__kea_progress` with `percent` 55 in between):
+Write `output` (inside `data/`) as JSON **in parts of about 25 items**: Write the first part as a complete file,
+then Edit to append each next part (a run can be stopped partway by the student's usage limit, and what's written
+is kept and continued; a set held back to one Write at the end would be lost). Call `mcp__kea__kea_progress` after
+each part with how far along you are:
 
 ```json
 { "questions": [
@@ -150,7 +156,8 @@ Then call `mcp__kea__kea_progress` with `percent` 90 and run `uv run academic-sy
 <count>` once. If it lists problems, fix just those with Edit and check again. Kea drops any malformed item itself, so
 never rewrite the whole file.
 
-With `resume`: if `output` already exists, keep its questions, add the rest, and check again.
+With `resume` (or when Kea continues this conversation after a stop): if `output` already exists, keep its
+questions, add only the ones still missing, and check again. Never rewrite what's there.
 
 ## 5. Report
 

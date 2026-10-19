@@ -1,10 +1,14 @@
 // Class-site messages in Kea, like email: read a message in full, write a reply or a new message here, and Kea sends it
-// through the class site (browser.sendMessage presses the site's own Reply and Send). Drafts and a record of what was
-// sent are kept in the profile's messages.json; the messages themselves come from the class site's alerts (the Inbox).
+// through the class site (browser.sendMessage presses the site's own Reply and Send). The messages come from the class
+// site's whole mailbox (its Inbox and Sent folders, read every 15 minutes by the primary) and its alerts; drafts, what
+// was sent from Kea and the bodies read are kept in the profile's messages.json.
 //   messages.json  { drafts: { [key]: { course, to, subject, body, replyTo, at } }, sent: [{ id, at, course, to,
-//                    subject, body, replyTo, confirmed, why }], bodies: { [inboxId]: { text, at } } }
+//                    subject, body, replyTo, confirmed, why }], bodies: { [id]: { text, at } },
+//                    box: { at, inbox: [msg], sent: [msg], seeded }, seen }   msg = { id, url, subject, from, date,
+//                    unread, course, first }
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { ipcMain, BrowserWindow } = require('electron');
 const profiles = require('./profiles.cjs');
 
@@ -12,9 +16,9 @@ const file = () => path.join(profiles.paths().dir, 'messages.json');
 function read() {
   try {
     const m = JSON.parse(fs.readFileSync(file(), 'utf8'));
-    return { drafts: m.drafts || {}, sent: m.sent || [], bodies: m.bodies || {} };
+    return { drafts: m.drafts || {}, sent: m.sent || [], bodies: m.bodies || {}, box: m.box || { inbox: [], sent: [] }, seen: m.seen || null };
   } catch {
-    return { drafts: {}, sent: [], bodies: {} };
+    return { drafts: {}, sent: [], bodies: {}, box: { inbox: [], sent: [] }, seen: null };
   }
 }
 function write(m) {
@@ -25,25 +29,137 @@ function write(m) {
 }
 const changed = () => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
 
+let deps = null;
+let syncing = null;
+let lastSync = 0;
+const notes = [];
+const mailId = (r) => `mail:${crypto.createHash('sha1').update(r.url || `${r.subject}|${r.from}|${r.date}`).digest('hex').slice(0, 16)}`;
+
+/**
+ * Read the class site's mailbox (Inbox and Sent) into Kea, at most every 15 minutes unless `force`. New unread
+ * messages are notified (clicking one opens it in Kea's Messages). Returns { inbox, sent } counts, or null when skipped.
+ */
+async function syncMailbox(force = false) {
+  if (!deps) return null;
+  if (syncing) return syncing;
+  if (!force && Date.now() - lastSync < 15 * 60e3) return null;
+  lastSync = Date.now();
+  syncing = (async () => {
+    const { browser, db } = deps;
+    if (!(await browser.status()).signedIn) return null;
+    const box = await browser.readMailbox();
+    // Which class a message is about: its code in the subject or text, or its sender teaching the class.
+    const classes = await db.courses(profiles.paths().db, profiles.paths().textbooks, {}).catch(() => []);
+    const courseOf = (r) => {
+      const hay = `${r.subject} ${r.text} ${r.from}`;
+      const byCode = classes.find((c) => c.code && new RegExp(`\\b${c.code.replace(/(\D+)(\d+)/, '$1\\s*$2')}`, 'i').test(hay));
+      if (byCode) return byCode.code;
+      // (The surname: the last plain word, so "Kristin R. Rowan, Ph.D." is Rowan.)
+      const last = (n) => String(n || '').replace(/,.*$/, '').split(/[^A-Za-z'-]+/).filter((w) => w.length > 2).pop() || '';
+      const byTeacher = classes.find((c) => c.instructor && last(c.instructor) && new RegExp(`\\b${last(c.instructor)}\\b`, 'i').test(r.from || ''));
+      return byTeacher?.code || '';
+    };
+    const m = read();
+    const before = new Map((m.box.inbox || []).map((x) => [x.id, x]));
+    const shape = (rows, folder) =>
+      rows.map((r) => {
+        const id = mailId(r);
+        const old = (folder === 'inbox' ? before : new Map((m.box.sent || []).map((x) => [x.id, x]))).get(id);
+        return { id, url: r.url, subject: r.subject, from: r.from, date: r.date, unread: !!r.unread, course: courseOf(r) || old?.course || '', first: old?.first || new Date().toISOString(), preview: r.text };
+      });
+    const inbox = shape(box.inbox, 'inbox');
+    const sent = shape(box.sent, 'sent');
+    // An empty read when messages were there before is a page Kea couldn't read, not an empty mailbox: keep the old.
+    const keepOld = !inbox.length && before.size > 0;
+    const fresh = read();
+    // (Messages that scrolled off the class site's first page are kept: the mailbox in Kea only grows.)
+    const merged = (now, old) => [...now, ...(old || []).filter((o) => !now.some((x) => x.id === o.id))].slice(0, 1000);
+    fresh.box = {
+      at: new Date().toISOString(),
+      inbox: keepOld ? fresh.box.inbox : merged(inbox, fresh.box.inbox),
+      sent: merged(sent, fresh.box.sent),
+      seeded: true
+    };
+    fresh.seen = box.seen;
+    write(fresh);
+    changed();
+    // New unread mail since the last read (not on the very first read, which would notify the whole mailbox).
+    if (m.box.seeded && !keepOld) {
+      const { Notification } = require('electron');
+      for (const n of inbox.filter((x) => x.unread && !before.has(x.id)).slice(0, 5)) {
+        if (!Notification.isSupported()) continue;
+        const note = new Notification({ title: `${n.course ? `${n.course}: ` : ''}${n.from || 'New message'}`, body: `${n.subject}${n.preview ? `\n${n.preview.slice(0, 160)}` : ''}` });
+        note.on('click', () => openInKea(n.id));
+        note.show();
+        notes.push(note);
+        notes.splice(0, Math.max(0, notes.length - 20));
+      }
+    }
+    return { inbox: inbox.length, sent: sent.length, unreadable: keepOld };
+  })().finally(() => {
+    syncing = null;
+  });
+  return syncing;
+}
+
+/** Bring Kea forward on its Messages page, with this message open. */
+function openInKea(id) {
+  const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed() && /index\.html|localhost/.test(x.webContents.getURL()));
+  if (!w) return;
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
+  w.webContents.send('scholar:openMail', id);
+}
+
 function register({ browser, precheck, db }) {
-  const inboxMessages = () => precheck.readInbox().items.filter((i) => i.kind === 'message');
+  deps = { browser, precheck, db };
+  // Every message Kea knows: the class site's mailbox, and alerts for any the mailbox read hasn't caught yet.
+  const inboxMessages = () => {
+    const box = read().box.inbox || [];
+    const urls = new Set(box.map((x) => x.url).filter(Boolean));
+    const alerts = precheck
+      .readInbox()
+      .items.filter((i) => i.kind === 'message' && !(i.url && urls.has(i.url)))
+      .map((i) => ({ id: i.id, course: i.course || '', title: i.title, from: '', preview: i.body || '', at: i.at, url: i.url || '', read: !!i.read }));
+    return [...box.map((x) => ({ id: x.id, course: x.course, title: x.subject, from: x.from, preview: x.preview || '', at: x.date || x.first, sortAt: x.first, url: x.url, read: !x.unread })), ...alerts];
+  };
 
   ipcMain.handle('scholar:mailList', () => {
     const m = read();
+    // Sent: what Kea sent, then the class site's Sent folder (messages sent there directly, or before Kea).
+    const mine = m.sent.slice(0, 200);
+    const siteSent = (m.box.sent || [])
+      .filter((x) => !mine.some((s) => s.confirmed && s.subject && x.subject && s.subject.toLowerCase().includes(x.subject.toLowerCase().replace(/^re:\s*/, ''))))
+      .map((x) => ({ id: x.id, at: x.date || x.first, course: x.course, to: x.from, subject: x.subject, body: x.preview || '', replyTo: null, confirmed: true, why: null, url: x.url, fromSite: true }));
     return {
-      messages: inboxMessages().map((i) => ({ id: i.id, course: i.course || '', title: i.title, preview: i.body || '', at: i.at, url: i.url || '', read: !!i.read, full: m.bodies[i.id]?.text || null })),
-      sent: m.sent.slice(0, 200),
-      drafts: Object.entries(m.drafts).map(([key, d]) => ({ key, ...d }))
+      messages: inboxMessages().map((i) => ({ id: i.id, course: i.course || '', title: i.title, from: i.from || '', preview: i.preview || '', at: i.at, url: i.url || '', read: !!i.read, full: m.bodies[i.id]?.text || null })),
+      sent: [...mine, ...siteSent],
+      drafts: Object.entries(m.drafts).map(([key, d]) => ({ key, ...d })),
+      checked: m.box.at || null
     };
   });
+
+  // Read the class site's mailbox now (the Refresh button).
+  ipcMain.handle('scholar:mailSync', () => syncMailbox(true));
+  // A message opened in Kea counts as read here (the class site marks it read when Kea opens it to read the body).
+  const markRead = (id) => {
+    const m = read();
+    const x = (m.box.inbox || []).find((i) => i.id === id);
+    if (x && x.unread) {
+      x.unread = false;
+      write(m);
+    }
+  };
 
   // The whole message, read from the class site (and kept, so it opens at once next time).
   ipcMain.handle('scholar:mailRead', async (_e, id, refresh) => {
     const m = read();
     if (!refresh && m.bodies[id]) return m.bodies[id];
-    const item = inboxMessages().find((i) => i.id === id);
-    if (!item?.url) return { text: item?.body || '', at: null, noLink: true };
+    const item = inboxMessages().find((i) => i.id === id) || (read().box.sent || []).find((x) => x.id === id);
+    if (!item?.url) return { text: item?.preview || '', at: null, noLink: true };
     const page = await browser.readMessage(item.url);
+    markRead(id);
     const fresh = read();
     fresh.bodies[id] = { text: page.text, at: new Date().toISOString() };
     // (Only the newest 300 are kept.)
@@ -92,4 +208,4 @@ function register({ browser, precheck, db }) {
   });
 }
 
-module.exports = { register };
+module.exports = { register, syncMailbox };

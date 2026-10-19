@@ -581,6 +581,94 @@ async function sendMessageNow({ url = '', ou = '', subject = '', body = '', to =
 }
 
 /**
+ * The class site's whole mailbox (every class's messages, not only the ones its alerts mention): the Inbox and Sent
+ * folders of its message tool, read from the page the way the student sees them. Returns { inbox: [row], sent: [row],
+ * seen } where a row is { url, subject, from, date, unread, text } and `seen` says what the page looked like (kept by
+ * the caller, so a school whose message tool looks different can be fixed rather than silently read as empty).
+ */
+const readMailbox = () => withMail(() => readMailboxNow());
+async function readMailboxNow() {
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const ou = (s.home.match(/\/d2l\/home\/(\d+)/) || [])[1] || '';
+  const start = new URL(`/d2l/lms/email/frame.d2l${ou ? `?ou=${ou}` : ''}`, s.home).href;
+  let w = await mailLoad(start);
+  if (!(await mailSignedIn(w, start))) throw new Error('Kea isn’t signed in to your class site.');
+  w = mailWindow();
+  // Inside each frame: the message rows (a row with a link to one message), and what the page looked like.
+  const collect = `(() => { ${ALL}
+    const dateRe = /\\b(?:\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.? \\d{1,2}(?:,? \\d{4})?|today|yesterday|\\d{1,2}:\\d{2}\\s*(?:am|pm))/i;
+    const msgLink = (a) => { const h = a.getAttribute('href') || ''; const on = a.getAttribute('onclick') || '';
+      return /email|message|msg|mail/i.test(h + ' ' + on) && !/compose|new_?message|folder|addressbook|settings|javascript:void|#$/i.test(h) && (a.textContent || '').trim().length > 0; };
+    const rows = [];
+    const seenRows = new Set();
+    for (const a of all.filter((x) => x.tagName === 'A' && msgLink(x))) {
+      const row = a.closest('tr, [role=row], li, d2l-list-item, .d2l-datalist-item') || a.parentElement;
+      if (!row || seenRows.has(row)) continue;
+      seenRows.add(row);
+      const cells = [...row.querySelectorAll('td, th, [role=cell], [role=gridcell]')].map((c) => (c.innerText || c.textContent || '').trim()).filter(Boolean);
+      const text = (row.innerText || row.textContent || '').replace(/\\s+/g, ' ').trim();
+      const subject = (a.innerText || a.textContent || '').trim();
+      const date = (cells.find((c) => dateRe.test(c) && c !== subject) || (text.match(dateRe) || [''])[0] || '').trim();
+      // The sender: its own cell, or (a list with no cells) what's left of the row's text without the subject and date.
+      const from = cells.find((c) => c !== subject && c !== date && /[a-z]/i.test(c) && !dateRe.test(c) && c.length < 80)
+        || (!cells.length ? text.replace(subject, ' ').replace(date, ' ').replace(/\\s+/g, ' ').trim().slice(0, 80) : '');
+      const bold = getComputedStyle(a).fontWeight;
+      const unread = /unread/i.test(row.className + ' ' + (row.getAttribute('aria-label') || '') + ' ' + [...row.querySelectorAll('img, [title], [aria-label]')].map((i) => i.getAttribute('alt') || i.getAttribute('title') || i.getAttribute('aria-label') || '').join(' ')) || Number(bold) >= 600;
+      let url = '';
+      try { url = new URL(a.getAttribute('href'), location.href).href; } catch {}
+      if (/^javascript:/i.test(url)) url = '';
+      rows.push({ url, subject: subject.slice(0, 300), from: from.slice(0, 120), date: date.slice(0, 60), unread, text: text.slice(0, 400) });
+    }
+    const folders = all.filter((x) => x.tagName === 'A' && /^(sent( items| mail)?|inbox)\\b/i.test((x.textContent || '').trim()))
+      .map((x) => ({ name: (x.textContent || '').trim().slice(0, 40), href: (() => { try { return new URL(x.getAttribute('href') || '', location.href).href; } catch { return ''; } })() }));
+    return { url: location.href, title: document.title, rows, folders, sample: (document.body ? document.body.innerText : '').slice(0, 1500), links: all.filter((x) => x.tagName === 'A').slice(0, 40).map((x) => (x.getAttribute('href') || '').slice(0, 120)) };
+  })()`;
+  // Every frame's answer: the message tool draws its list a moment after loading, inside frames.
+  const scan = async () => {
+    const out = [];
+    for (const f of w.webContents.mainFrame.framesInSubtree) {
+      if (hostOf(f.url) && hostOf(f.url) !== hostOf(s.home)) continue;
+      try {
+        out.push(await f.executeJavaScript(collect));
+      } catch {}
+    }
+    return out;
+  };
+  const settle = async () => {
+    let frames = [];
+    for (let i = 0; i < 12; i++) {
+      frames = await scan();
+      if (frames.some((f) => f.rows.length)) break;
+      await sleep(1000);
+    }
+    return frames;
+  };
+  const uniq = (rows) => {
+    const seen = new Set();
+    return rows.filter((r) => {
+      const k = r.url || `${r.subject}|${r.from}|${r.date}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
+  const inboxFrames = await settle();
+  const inbox = uniq(inboxFrames.flatMap((f) => f.rows));
+  // The Sent folder: its own link in the folder list.
+  const sentLink = inboxFrames.flatMap((f) => f.folders).find((x) => /^sent/i.test(x.name) && x.href && onSite(x.href));
+  let sent = [];
+  let sentFrames = [];
+  if (sentLink) {
+    await mailLoad(sentLink.href);
+    sentFrames = await settle();
+    sent = uniq(sentFrames.flatMap((f) => f.rows));
+  }
+  const seen = { at: new Date().toISOString(), start, frames: inboxFrames.map((f) => ({ url: f.url, title: f.title, rows: f.rows.length, folders: f.folders, links: f.links, sample: f.rows.length ? '' : f.sample })), sentLink: sentLink?.href || null, sentRows: sent.length };
+  return { inbox, sent, seen };
+}
+
+/**
  * Answer a class-site message: open the message itself in Kea's window and press the page's own Reply, so the student
  * lands on a reply already addressed to the sender. Kea never writes or sends anything: the student does. When the
  * message has no link of its own, its class's message list opens instead. Returns { replied }.
@@ -759,4 +847,4 @@ function onLoginSubmitted(e, form) {
 
 const remembering = (e) => (e.returnValue = !!(wantsRemember() && win && !win.isDestroyed() && e.sender === win.webContents));
 
-module.exports = { open, platformsRead, show, reply, readMessage, sendMessage, handIn, isClassSite, fetchText, getJson, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
+module.exports = { open, platformsRead, show, reply, readMessage, readMailbox, sendMessage, handIn, isClassSite, fetchText, getJson, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };

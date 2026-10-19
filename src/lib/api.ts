@@ -121,7 +121,7 @@ export interface KeaApi {
     signInClaude(): Promise<ClaudeAccount>;
     setupEngine(): Promise<boolean>;
     /** On a device that isn't the primary, the primary is asked instead: `relayed` names it. */
-    run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe', arg?: string): Promise<boolean | { relayed: string; online: boolean }>;
+    run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe' | 'curriculum', arg?: string): Promise<boolean | { relayed: string; online: boolean }>;
     /** Your devices: the drive they sync through, which one is the primary, and what it's running. */
     devices(): Promise<DevicesStatus>;
     /** Classes other devices share, found in every drive on this one, and what's missing when there are none. */
@@ -142,9 +142,12 @@ export interface KeaApi {
     itemHistory(id: string): Promise<{ id: string; title: string; sources: { title: string; source_type: string; url: string | null; retrieved_at: string }[]; events: HistoryEvent[] }>;
     /** The rules a class grades by (late work, required uploads, exam environment), with where each was found. */
     courseRules(code: string): Promise<{ course: string; rules: { text: string; where: string; strength: number }[] }>;
+    curriculum(code: string, fresh?: boolean): Promise<ScholarCurriculum | null>;
     /** What changed on the calendar since a date (default a week ago). */
     changes(opts: { since?: string; course?: string }): Promise<{ since: string; events: (HistoryEvent & { title: string | null; course: string | null })[] }>;
     mailList(): Promise<MailList>;
+    mailSync(): Promise<{ inbox: number; sent: number; unreadable?: boolean } | null>;
+    onOpenMail(cb: (id: string) => void): () => void;
     /** A message in full, read from the class site (cached after the first time). */
     mailRead(id: string, refresh?: boolean): Promise<{ text: string; at: string | null; noLink?: boolean }>;
     mailDraft(key: string, draft: MailDraft | null): Promise<boolean>;
@@ -553,6 +556,20 @@ export interface ScholarPending {
   arg: string;
   label: string;
   until: string;
+  /** Why the runs are waiting: the Claude usage limit, a server or connection problem, or Kea closing mid-run. */
+  reason?: 'limit' | 'error' | 'closed';
+  /** How many more runs wait behind the first. */
+  more?: number;
+}
+/** A class's chapters against its syllabus (Kea's curriculum check). */
+export interface ScholarCurriculum {
+  course: string;
+  textbook: { title?: string; numbering?: 'same' | 'different'; none?: string } | null;
+  chapters: { label: string; title: string | null; textbook_ref: string | null; sections: number; objectives: number; missing: string[]; outcomes: string[] }[];
+  outcomes: { kind: 'course' | 'module' | 'outline' | 'recommended'; ref: string; text: string; chapters: string[]; auto: boolean; not_tested: string | null; source: string | null }[];
+  guidelines: { text: string; source: string; chapters: string[] }[];
+  problems: { key: string; severity: 'fix' | 'note'; text: string }[];
+  ok: boolean;
 }
 export interface ScholarNews {
   id: string;
@@ -587,9 +604,12 @@ export interface MailDraft {
   replyTo?: string | null;
 }
 export interface MailList {
-  messages: { id: string; course: string; title: string; preview: string; at: string; url: string; read: boolean; full: string | null }[];
-  sent: { id: string; at: string; course: string; to: string; subject: string; body: string; replyTo: string | null; confirmed: boolean; why: string | null }[];
+  messages: { id: string; course: string; title: string; from?: string; preview: string; at: string; url: string; read: boolean; full: string | null }[];
+  /** What Kea sent, then the class site's own Sent folder (`fromSite`). */
+  sent: { id: string; at: string; course: string; to: string; subject: string; body: string; replyTo: string | null; confirmed: boolean; why: string | null; url?: string; fromSite?: boolean }[];
   drafts: (MailDraft & { key: string; at: string })[];
+  /** When Kea last read the class site's mailbox. */
+  checked?: string | null;
 }
 export interface StudySet {
   id: string;

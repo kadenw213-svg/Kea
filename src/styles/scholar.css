@@ -2294,3 +2294,58 @@
   font-size: 13px;
   line-height: 1.45;
 }
+
+/* The class's chapters against its syllabus */
+.syl-chip {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.syl-chip.ok {
+  background: color-mix(in srgb, var(--good, #2e9e5b) 16%, transparent);
+  color: var(--good, #2e9e5b);
+}
+.syl-chip.warn {
+  background: color-mix(in srgb, var(--warn, #c98a12) 18%, transparent);
+  color: var(--warn, #c98a12);
+}
+.syl-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.syl-book {
+  margin: 0;
+  color: var(--text-2);
+}
+.syl-gaps {
+  border-left: 3px solid var(--warn, #c98a12);
+  padding: 4px 0 4px 12px;
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.syl-gaps ul,
+.syl-group ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.syl-kind {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.syl-ref {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  margin-right: 2px;
+}
+.syl-chs {
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+}

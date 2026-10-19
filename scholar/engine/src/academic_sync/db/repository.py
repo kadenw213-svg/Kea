@@ -741,8 +741,13 @@ def upsert_chapter_topic(session: Session, topic: domain.ChapterTopic) -> Chapte
         row.added_vocabulary = topic.added_vocabulary
     if topic.added_objectives or not row.added_objectives_json:
         row.added_objectives_json = topic.added_objectives
-    row.source_ids_json = topic.source_ids
-    row.source_wording = topic.source_wording
+    if topic.textbook_ref or not row.textbook_ref:
+        row.textbook_ref = topic.textbook_ref
+    # (Provenance is added to, never replaced: an enrichment pass doesn't erase where the first pass came from.)
+    if topic.source_ids:
+        row.source_ids_json = list(dict.fromkeys([*(row.source_ids_json or []), *topic.source_ids]))
+    if topic.source_wording or not row.source_wording:
+        row.source_wording = topic.source_wording
     row.last_seen = now
     session.flush()
     return row

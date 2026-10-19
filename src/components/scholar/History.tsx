@@ -2,7 +2,8 @@
 // each change old → new, replaced or cancelled and why, which scan did it), and a "what changed" list for the week.
 import { useEffect, useState } from 'react';
 import { ChevronDown, History as HistoryIcon } from 'lucide-react';
-import { api, HistoryEvent } from '../../lib/api';
+import { api, HistoryEvent, ScholarCurriculum } from '../../lib/api';
+import { toast } from '../../store';
 import { useScholar } from './scholarStore';
 
 const FIELD: Record<string, string> = {
@@ -170,6 +171,137 @@ export function ClassRules({ code }: { code: string }) {
         <button className="btn sm" onClick={() => setOpen(true)}>
           All {rules.length}
         </button>
+      )}
+    </section>
+  );
+}
+
+
+const KIND: Record<string, string> = { course: 'Course outcomes', module: 'Module outcomes', outline: 'Topical outline', recommended: 'Recommended topics' };
+
+/**
+ * The class's chapters against its syllabus: the textbook, every outcome and topical-outline item with the chapters
+ * that teach it, the testing guidelines, and anything that doesn't match yet (which Kea's curriculum run fixes).
+ */
+export function SyllabusMap({ code }: { code: string }) {
+  const [open, setOpen] = useState(false);
+  const [cur, setCur] = useState<ScholarCurriculum | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = (fresh = false) =>
+    api.scholar
+      .curriculum(code, fresh)
+      .then(setCur)
+      .catch(() => setCur(null));
+  useEffect(() => {
+    setCur(null);
+    load();
+  }, [code]);
+  if (!cur || (!cur.outcomes.length && !cur.problems.length)) return null;
+  const gaps = cur.problems.filter((p) => p.severity === 'fix');
+  // Chapters missing the same thing make one line ("Chapters 19, 22 and 23 have no sections.").
+  const shownGaps = (() => {
+    const same = new Map<string, string[]>();
+    const rest: { key: string; text: string }[] = [];
+    for (const g of gaps) {
+      const m = /^(Chapter \d+|Module \d+|Unit \d+) has no (.+)\.$/.exec(g.text);
+      if (m) same.set(m[2], [...(same.get(m[2]) || []), m[1]]);
+      else rest.push(g);
+    }
+    const grouped = [...same].map(([what, labels]) => ({
+      key: `missing:${what}`,
+      text: labels.length === 1 ? `${labels[0]} has no ${what}.` : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]} have no ${what}.`
+    }));
+    return [...grouped, ...rest];
+  })();
+  const kinds = (['outline', 'recommended', 'module', 'course'] as const).filter((k) => cur.outcomes.some((o) => o.kind === k));
+  const fix = async () => {
+    setBusy(true);
+    try {
+      await api.scholar.run('curriculum', code);
+      toast(`Kea is matching ${code}'s chapters to its syllabus.`, 'success');
+    } catch (e) {
+      toast(String((e as Error)?.message || e), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="hs-changes cls-rules syl-map">
+      <button className="hs-head" onClick={() => setOpen(!open)}>
+        <b>Syllabus</b>
+        <span className={gaps.length ? 'syl-chip warn' : 'syl-chip ok'}>{gaps.length ? `${gaps.length} to fix` : 'chapters match'}</span>
+        <span className="muted">what the course must teach, and the chapters that teach it</span>
+        <ChevronDown size={15} className={open ? 'flip' : ''} />
+      </button>
+      {open && (
+        <div className="syl-body">
+          {cur.textbook && (
+            <p className="syl-book">
+              {cur.textbook.none ? `No textbook (${cur.textbook.none}).` : <>Textbook: {cur.textbook.title}{cur.textbook.numbering === 'different' ? '. The class numbers chapters differently from the book: each chapter below says where it is in your book.' : '.'}</>}
+            </p>
+          )}
+          {gaps.length > 0 && (
+            <div className="syl-gaps">
+              <ul>
+                {shownGaps.slice(0, 12).map((g) => (
+                  <li key={g.key}>{g.text}</li>
+                ))}
+                {shownGaps.length > 12 && <li className="muted">…and {shownGaps.length - 12} more</li>}
+              </ul>
+              <button className="btn sm" disabled={busy} onClick={fix}>
+                Fix with a scan
+              </button>
+            </div>
+          )}
+          {kinds.map((k) => (
+            <div key={k} className="syl-group">
+              <div className="syl-kind">{KIND[k]}</div>
+              <ul>
+                {cur.outcomes
+                  .filter((o) => o.kind === k)
+                  .map((o) => (
+                    <li key={o.ref} className={o.not_tested ? 'muted' : ''}>
+                      <span className="syl-ref">{o.ref}</span> {o.text}{' '}
+                      {o.not_tested ? (
+                        <span className="muted">(not in study sets: {o.not_tested})</span>
+                      ) : o.chapters.length ? (
+                        <span className="syl-chs">{o.chapters.map((c) => (c === 'all' ? 'every chapter' : c.replace(/^Chapter /, 'Ch ').replace(/^Module /, 'Mod '))).join(', ')}</span>
+                      ) : (
+                        <span className="syl-chip warn">no chapter</span>
+                      )}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ))}
+          {cur.chapters.some((c) => c.textbook_ref) && (
+            <div className="syl-group">
+              <div className="syl-kind">Where each chapter is in your book</div>
+              <ul>
+                {cur.chapters
+                  .filter((c) => c.textbook_ref)
+                  .map((c) => (
+                    <li key={c.label}>
+                      <span className="syl-ref">{c.label.replace(/^Chapter /, 'Ch ')}</span> {c.textbook_ref}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
+          {cur.guidelines.length > 0 && (
+            <div className="syl-group">
+              <div className="syl-kind">How the class tests (study sets follow these)</div>
+              <ul>
+                {cur.guidelines.map((g, i) => (
+                  <li key={i}>{g.text}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <button className="btn sm ghost" onClick={() => load(true)}>
+            Check again
+          </button>
+        </div>
       )}
     </section>
   );

@@ -99,8 +99,15 @@ contextBridge.exposeInMainWorld('api', {
     replyMessage: (url, course) => ipcRenderer.invoke('scholar:replyMessage', url, course),
     itemHistory: (id) => ipcRenderer.invoke('scholar:itemHistory', id),
     courseRules: (code) => ipcRenderer.invoke('scholar:courseRules', code),
+    curriculum: (code, fresh) => ipcRenderer.invoke('scholar:curriculum', code, !!fresh),
     changes: (opts) => ipcRenderer.invoke('scholar:changes', opts),
     mailList: () => ipcRenderer.invoke('scholar:mailList'),
+    mailSync: () => ipcRenderer.invoke('scholar:mailSync'),
+    onOpenMail: (cb) => {
+      const h = (_e, id) => cb(id);
+      ipcRenderer.on('scholar:openMail', h);
+      return () => ipcRenderer.removeListener('scholar:openMail', h);
+    },
     mailRead: (id, refresh) => ipcRenderer.invoke('scholar:mailRead', id, !!refresh),
     mailDraft: (key, draft) => ipcRenderer.invoke('scholar:mailDraft', key, draft),
     mailSend: (msg) => ipcRenderer.invoke('scholar:mailSend', msg),

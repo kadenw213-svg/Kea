@@ -281,6 +281,10 @@ class ChapterTopic(BaseModel):
     # 2026-10-15, CLAUDE.md invariant 40.
     added_vocabulary: str | None = None
     added_objectives: list[str] = Field(default_factory=list)
+    # The chapter in the student's own textbook, when the class numbers chapters differently from the book.
+    textbook_ref: str | None = None
+    # The short description the student sees (written with the chapter's textbook; read-only here).
+    summary: str | None = None
     source_ids: list[str] = Field(default_factory=list)
     source_wording: str | None = None
     first_seen: datetime | None = None
