@@ -346,9 +346,11 @@ async function fetchSheets(req, nums, docText, step) {
   const ws = profiles.paths().workspace;
   const dir = path.join(ws, 'data', 'downloads', req.course.code, 'review');
   const seen = new Map();
-  for (const t of req.tests || [])
+  for (const t of [...(req.tests || []), ...(req.chapters || [])])
     for (const l of t.review_links || []) {
       if (!SHEET.test(l.label) || NOT_SHEET.test(l.label) || !/^https?:/.test(l.url)) continue;
+      // Only files (a D2L content file, a PDF or Word document), never a launch link into a platform like ALEKS.
+      if (!/\/viewContent\/\d+|\/topics\/files\/download\/|\.(pdf|docx?)(\?|$)/i.test(l.url)) continue;
       const n = chapterNum(l.label);
       if (n && !nums.has(n)) continue;
       seen.set(safeName(l.label), l.url);

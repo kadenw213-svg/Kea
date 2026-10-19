@@ -393,7 +393,9 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
   const sources = new Map();
   for (const s of rows(db, 'SELECT chapters_json, source_path, file_path FROM study_pdfs WHERE course_id = ? AND source_path IS NOT NULL', [courseId]))
     for (const ch of json(s.chapters_json, [])) if (fs.existsSync(s.source_path)) sources.set(ch, s.source_path);
-  const want = new Set(labels);
+  // (Every chapter, for the textbook run: then every test counts too; an empty set here dropped every test from the
+  // textbook notes, so they were written without the tests' focus or review sheets.)
+  const want = new Set(allChapters ? rows(db, 'SELECT chapter_label FROM chapter_topics WHERE course_id = ?', [courseId]).map((x) => x.chapter_label) : labels);
   const out = rows(db, 'SELECT * FROM chapter_topics WHERE course_id = ?', [courseId])
     .filter((t) => allChapters || want.has(t.chapter_label))
     .sort((a, b) => chapterNumber(a.chapter_label) - chapterNumber(b.chapter_label))
@@ -405,7 +407,13 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
       objectives: [...json(t.objectives_json, []), ...json(t.added_objectives_json, [])],
       vocabulary: [t.vocabulary, t.added_vocabulary].filter(Boolean).join('; '),
       reading_url: t.reading_url || null,
-      textbook_source: sources.get(t.chapter_label) || null
+      textbook_source: sources.get(t.chapter_label) || null,
+      // Review sheets linked from the chapter's weekly reading (FunSheets, worksheets, study guides): downloaded with
+      // the tests' own links, since many tests link none.
+      review_links: rows(db, `SELECT title, weekly_links_json, reference_url, reference_url_label, resource_url, resource_url_label FROM academic_items WHERE course_id = ? AND item_type = 'weekly_reading' AND ${ACTIVE}`, [courseId])
+        .filter((b) => chaptersIn(b.title).includes(t.chapter_label))
+        .flatMap((b) => [...json(b.weekly_links_json, []), ...[b.reference_url && { label: b.reference_url_label, url: b.reference_url }, b.resource_url && { label: b.resource_url_label, url: b.resource_url }].filter(Boolean)])
+        .map((l) => ({ label: l.label || '', url: l.url }))
     }));
   // Every test that covers these chapters, with what the instructor said it covers (scraped from the class site) and
   // its review sheets: the questions should look like these tests.
