@@ -457,7 +457,8 @@ export function CardTest({ set }: { set: StudySetFull }) {
 type Grade = 'again' | 'good' | 'easy';
 const testIn = (t: ReviewItem['test']) => {
   if (!t) return '';
-  const days = Math.round((Date.parse(t.date) - Date.parse(new Date().toISOString().slice(0, 10))) / 864e5);
+  const now = new Date();
+  const days = Math.round((Date.parse(`${t.date}T12:00:00`) - new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12).getTime()) / 864e5);
   return days <= 0 ? `${t.title} is today` : days === 1 ? `${t.title} is tomorrow` : `${t.title} in ${days} days`;
 };
 

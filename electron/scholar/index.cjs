@@ -277,6 +277,9 @@ async function tick() {
 // Every chapter with a textbook keeps a bank of saved questions (50 by default), and gets more when the student runs
 // low. Made by the primary only, one chapter at a time, each bank written once and then reused on every device.
 let banking = false;
+// Question-bank runs allowed in one day.
+const BANK_RUNS = 12;
+let bankRuns = { day: '', n: 0 };
 async function keepBanks() {
   if (banking || devices.follower() || settings.get('scholar.questionBanks', true) === false || !require('../account.cjs').verified()) return;
   if (!(await workspace.check().then((c) => c.account?.loggedIn).catch(() => false))) return;
@@ -284,9 +287,15 @@ async function keepBanks() {
   try {
     const study = require('./study.cjs');
     for (let n = 0; n < 200; n++) {
+      // At most BANK_RUNS a day, so nothing can turn into a loop that spends the student's Claude usage.
+      const today = new Date().toDateString();
+      if (bankRuns.day !== today) bankRuns = { day: today, n: 0 };
+      if (bankRuns.n >= BANK_RUNS) break;
       const p = profiles.paths();
       const need = study.bankNeed(await db.textbookChapters(p.db, p.textbooks), Number(settings.get('scholar.bankSize', 50)) || 50);
       if (!need) break;
+      const had = study.catalog('exam', need.courseId, need.chapters).length;
+      bankRuns.n++;
       const { id } = await study.request(need);
       BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
       const done = await runner.run('practice', id, 'schedule');
@@ -294,6 +303,11 @@ async function keepBanks() {
       // Dropped (a usage-limit pause, a profile switch) or failed: try again on the next check.
       if (!done || study.list().find((e) => e.id === id)?.status !== 'ready') {
         if (!done) study.remove(id);
+        break;
+      }
+      // A finished bank that didn't add to its chapter's count: stop rather than ask for the same chapter again.
+      if (study.catalog('exam', need.courseId, need.chapters).length <= had) {
+        console.error('Question banks: a run added no countable questions to', need.chapters.join(', '));
         break;
       }
     }

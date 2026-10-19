@@ -77,7 +77,13 @@ const stateFile = () => path.join(profiles.paths().dir, 'devices.json');
 /** True when another device is the primary, so this one mustn't scan, poll the class site or write the phone copy. */
 function follower() {
   const p = primaryInfo();
-  return !!(p && p.id && p.id !== me());
+  if (p && p.id) {
+    // Remembered, so a drive that isn't mounted yet (or a file mid-sync) never turns this device into a scanner.
+    if (settings.get('scholar.lastPrimary', '') !== p.id) settings.set({ 'scholar.lastPrimary': p.id });
+    return p.id !== me();
+  }
+  const last = settings.get('scholar.lastPrimary', '');
+  return settings.get('scholar.pcSync', true) !== false && !!last && last !== me();
 }
 
 function copyIfChanged(a, b) {
@@ -174,6 +180,9 @@ async function decide(dir) {
     // Kea 0.27 kept this in a PCs folder: the device that scanned there stays the primary.
     const old = readJson(path.join(path.dirname(dir), 'PCs', 'scanner.json'), null);
     if (old?.id && old.id !== me() && ago(old.at) < 864e5) return 'follower';
+    // Another device scanned before and its file just can't be read right now (mid-sync): stay a follower.
+    const last = settings.get('scholar.lastPrimary', '');
+    if (last && last !== me()) return 'follower';
     // Nobody scans yet: the first device with classes does.
     if (hasDb) return claim(dir), 'primary';
     return 'follower';
@@ -224,6 +233,20 @@ async function lead(dir) {
       const r = readJson(full, null);
       fs.rmSync(full, { force: true });
       if (!r?.task) continue;
+      // Only from a device that's part of this sync, only Kea's own kinds of request, and only an argument shaped like
+      // the ones Kea's own buttons send (a class code, "missing CODE", chapter names), never free text: an argument
+      // becomes the start of a Claude prompt, and the folder is only as private as the cloud account.
+      const from = f.replace(/\.json$/, '').split('-').slice(1).join('-');
+      if (!from || !fs.existsSync(path.join(dir, 'devices', `${from}.json`))) {
+        console.error(`Devices: ignored a request from an unknown device (${f})`);
+        continue;
+      }
+      const TASKS = ['stop', 'resume', 'banks', 'inbox', 'practice', 'daily', 'sync', 'import', 'study'];
+      const arg = String(r.arg || '');
+      if (!TASKS.includes(r.task) || arg.length > 300 || /[\r\n<>`$|;]/.test(arg) || (arg && !/^[\w .,:#()&'/+-]+$/.test(arg))) {
+        console.error(`Devices: ignored a request it doesn't recognize (${r.task})`);
+        continue;
+      }
       console.log(`Devices: ${r.from || 'another device'} asked for ${r.task}`);
       try {
         if (r.task === 'stop') runner.stop();
@@ -337,14 +360,17 @@ async function follow(dir) {
   // Study sets: the primary's list, plus ones asked for here that it hasn't started yet.
   const theirs = readJson(path.join(dir, 'shared', 'study', 'index.json'), null);
   if (theirs) {
-    const ids = new Set(theirs.map((e) => e.id));
+    // Sets the student made or imported belong to the device they were made on (kept in study/mine, never synced
+    // over): this device's own stay, and the primary's own aren't listed here.
+    const shared = theirs.filter((e) => e.source !== 'mine');
+    const ids = new Set(shared.map((e) => e.id));
     // (A set from saved questions is ready here at once; it stays until the primary's copy of it arrives.)
-    const waiting = [...before.values()].filter((e) => !ids.has(e.id) && (e.status === 'making' || e.source === 'saved') && ago(e.createdAt) < 6 * 3600e3);
-    const list = [...theirs, ...waiting];
+    const waiting = [...before.values()].filter((e) => !ids.has(e.id) && (((e.status === 'making' || e.source === 'saved') && ago(e.createdAt) < 6 * 3600e3) || e.source === 'mine'));
+    const list = [...shared, ...waiting];
     if (JSON.stringify(list) !== JSON.stringify([...before.values()])) {
       writeJson(path.join(study, 'index.json'), list);
       any = true;
-      for (const e of theirs) {
+      for (const e of shared) {
         if (e.status === 'ready' && before.get(e.id)?.status === 'making' && Notification.isSupported()) new Notification({ title: e.title, body: `${e.count} ${e.kind === 'exam' ? 'questions' : 'cards'}, ready in My resources.` }).show();
       }
     }

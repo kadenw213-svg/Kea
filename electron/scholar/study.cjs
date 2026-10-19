@@ -94,7 +94,7 @@ function get(id) {
   const e = index().find((x) => x.id === id);
   if (!e) return null;
   // (A set made from saved questions on a device that isn't the primary waits in `local/` until the primary's copy comes.)
-  const s = readJson(file('sets', `${id}.json`), null) || readJson(file('local', `${id}.json`), {});
+  const s = readJson(file('sets', `${id}.json`), null) || readJson(file('mine', `${id}.json`), null) || readJson(file('local', `${id}.json`), {});
   const out = { ...e, known: readJson(file('cards.json'), {})[id]?.known || [] };
   if (s.questions) {
     out.questions = keyed(s.questions);
@@ -110,9 +110,11 @@ function get(id) {
 }
 
 function remove(id) {
+  if (!/^[a-z]+-[a-z0-9]+$/i.test(String(id))) return false;
   saveIndex(index().filter((x) => x.id !== id));
   fs.rmSync(file('sets', `${id}.json`), { force: true });
   fs.rmSync(file('local', `${id}.json`), { force: true });
+  fs.rmSync(file('mine', `${id}.json`), { force: true });
   const attempts = readJson(file('attempts.json'), {});
   delete attempts[id];
   writeJson(file('attempts.json'), attempts);
@@ -612,7 +614,16 @@ function ingest(arg, ok) {
   }
   const e = index().find((x) => x.id === id);
   const kind = e?.kind || (raw.cards ? 'cards' : 'exam');
-  const made = keyed(kind === 'cards' ? (raw.cards || []).map(cleanCard).filter(Boolean) : (raw.questions || []).map(cleanQuestion).filter(Boolean));
+  const labels = e?.chapters || [];
+  // Chapters named the way Kea names them ("Ch. 5" → "Chapter 5"), so every question counts toward its chapter: a
+  // bank whose questions didn't count would be asked for again and again.
+  const fixChapter = (it) => {
+    if (labels.length === 1) return { ...it, chapter: labels[0] };
+    const n = it.chapter ? chapterNum(String(it.chapter)) : null;
+    const hit = n ? labels.find((l) => chapterNum(l) === n) : null;
+    return hit ? { ...it, chapter: hit } : it;
+  };
+  const made = keyed((kind === 'cards' ? (raw.cards || []).map(cleanCard).filter(Boolean) : (raw.questions || []).map(cleanQuestion).filter(Boolean)).map(fixChapter));
   // The saved questions this set reuses, then the new ones (any that repeat a saved question are left out).
   const req = readJson(path.join(profiles.paths().workspace, 'data', 'study', 'requests', `${id}.json`), {});
   const reuse = keyed(req.reuse || []);
@@ -659,7 +670,8 @@ async function saveMine({ id: given, title, courseId = '', cards }) {
   // Chapters: whatever the cards name, so a class's chapter views find them.
   const chapters = [...new Set(clean.map((c) => c.chapter).filter(Boolean))];
   const entry = { id, kind: 'cards', title: name, courseId: courseId || '', courseCode, chapters, itemId: null, itemTitle: null, count: clean.length, reused: 0, createdAt: old?.createdAt || new Date().toISOString(), editedAt: new Date().toISOString(), status: 'ready', source: 'mine' };
-  writeJson(file('sets', `${id}.json`), { cards: clean });
+  // (In study/mine, which device sync never overwrites or prunes.)
+  writeJson(file('mine', `${id}.json`), { cards: clean });
   saveIndex([...index().filter((e) => e.id !== id), entry]);
   return id;
 }
@@ -700,7 +712,8 @@ function matchBest(id, ms) {
 // with a test coming is always due again before that test (the day before, at the latest), so everything gets one
 // last look in time. New items are introduced a few a day, the chapters with the soonest test first.
 const BOX_DAYS = [0, 1, 2, 4, 8, 16, 32, 64];
-const dayStr = (d) => d.toISOString().slice(0, 10);
+// (In the student's own time zone: a UTC date rolls over every evening in the Americas.)
+const dayStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const addDays = (n) => dayStr(new Date(Date.now() + n * 864e5));
 
 /** Every reviewable item of the ready sets (in this class, or all): [{ k, kind, item, setId, courseId, courseCode, chapter }]. */
@@ -708,7 +721,7 @@ function reviewable(courseId) {
   const out = new Map();
   for (const e of index()) {
     if (e.status !== 'ready' || (courseId && e.courseId !== courseId)) continue;
-    const s = readJson(file('sets', `${e.id}.json`), null) || readJson(file('local', `${e.id}.json`), {});
+    const s = readJson(file('sets', `${e.id}.json`), null) || readJson(file('mine', `${e.id}.json`), null) || readJson(file('local', `${e.id}.json`), {});
     const one = (it, kind) => {
       if (out.has(it.k)) return;
       // Written answers need the student to mark them: they stay in practice exams, not in quick review.
@@ -760,7 +773,7 @@ async function reviewMark(k, grade, { courseId = '', chapter = null } = {}) {
   if (courseId && chapter) {
     const t = (await db.nextTests(profiles.paths().db).catch(() => ({})))[`${courseId}|${chapter}`];
     if (t && t.date > today) {
-      const eve = dayStr(new Date(Date.parse(t.date) - 864e5));
+      const eve = dayStr(new Date(Date.parse(`${t.date}T12:00:00`) - 864e5));
       if (due >= t.date) due = eve > today ? eve : addDays(Math.min(1, BOX_DAYS[box]));
     }
   }

@@ -436,8 +436,12 @@ async function updateAlerts(list) {
     }
   }
   if (!fresh.length) return;
-  box.items = [...fresh, ...box.items].sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 500);
-  fs.writeFileSync(inboxFile(), JSON.stringify({ ...box, seeded: true }));
+  // Read again now: the student may have read or deleted messages while the menus were being fetched.
+  const now = readInbox();
+  const gone = new Set(now.deleted || []);
+  const add = fresh.filter((n) => !gone.has(n.id) && !now.items.some((i) => i.id === n.id));
+  now.items = [...add, ...now.items].sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 500);
+  fs.writeFileSync(inboxFile(), JSON.stringify({ ...now, seeded: true }));
   if (box.seeded) {
     const { Notification } = require('electron');
     for (const n of fresh.slice(0, 5)) {

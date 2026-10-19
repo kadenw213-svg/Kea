@@ -13,7 +13,12 @@ function all() {
     try {
       cache = JSON.parse(fs.readFileSync(file(), 'utf8')) || {};
     } catch {
-      cache = {};
+      // A damaged file (a crash mid-save): the last good copy, never an empty start that would save over everything.
+      try {
+        cache = JSON.parse(fs.readFileSync(`${file()}.bak`, 'utf8')) || {};
+      } catch {
+        cache = {};
+      }
     }
   }
   return cache;
@@ -32,7 +37,11 @@ function set(patch) {
   }
   cache = next;
   try {
-    fs.writeFileSync(file(), JSON.stringify(next, null, 2));
+    // Written beside it and swapped in, with the previous good copy kept, so a crash mid-save loses nothing.
+    const tmp = `${file()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
+    if (fs.existsSync(file())) fs.copyFileSync(file(), `${file()}.bak`);
+    fs.renameSync(tmp, file());
   } catch {}
   for (const fn of listeners) {
     try {

@@ -6,6 +6,9 @@ const path = require('path');
 const initSqlJs = require('sql.js');
 
 let SQL = null;
+// Dates in the student's own time zone (a UTC date turns into tomorrow every evening in the Americas).
+const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 async function engine() {
   if (!SQL) SQL = await initSqlJs({ locateFile: (f) => path.join(path.dirname(require.resolve('sql.js')), f) });
   return SQL;
@@ -78,8 +81,8 @@ function readingsFor(db, courseId, code, textbooks) {
 async function courses(file, textbooks, done) {
   const db = await open(file);
   if (!db) return [];
-  const today = new Date().toISOString().slice(0, 10);
-  const week = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+  const today = localDay();
+  const week = localDay(new Date(Date.now() + 7 * 864e5));
   return rows(db, "SELECT * FROM courses WHERE status = 'active' AND course_code != 'MESSAGES' ORDER BY course_code").map((c) => {
     const due = rows(
       db,
@@ -112,7 +115,7 @@ async function courses(file, textbooks, done) {
 async function textbookChapters(file, textbooks) {
   const db = await open(file);
   if (!db) return [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDay();
   const out = [];
   const soon = new Map(); // "courseId|label" → date of the first coming test on it
   for (const c of rows(db, "SELECT * FROM courses WHERE status = 'active' AND course_code != 'MESSAGES' ORDER BY course_code")) {
@@ -133,7 +136,7 @@ async function textbookChapters(file, textbooks) {
 async function nextTests(file) {
   const db = await open(file);
   if (!db) return {};
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDay();
   const out = {};
   for (const t of rows(db, `SELECT course_id, title, date, covered_chapters_json FROM academic_items WHERE item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} AND date >= ? ORDER BY date`, [today]))
     for (const label of json(t.covered_chapters_json, [])) {
