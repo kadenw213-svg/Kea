@@ -353,12 +353,18 @@ async function fetchSheets(req, nums, docText, step) {
     }
   const have = (name) => ['pdf', 'docx', 'html'].map((x) => path.join(dir, `${name}.${x}`)).find((f) => fs.existsSync(f));
   const missing = [...seen].filter(([name]) => !have(name)).slice(0, 16);
+  const failed = [];
   if (missing.length) {
     const browser = require('./browser.cjs');
-    const signedIn = await browser
-      .status()
-      .then((s) => s.signedIn)
-      .catch(() => false);
+    // Signed out: sign in first (the saved login, or Kea's window), the same as a class check does. Writing questions
+    // without the review sheets is what left CHE1011's banks easier than its exams.
+    let signedIn = await browser.status().then((s) => s.signedIn).catch(() => false);
+    if (!signedIn) {
+      step('Signing in to your class site for the review sheets…', 2);
+      await browser.getJson('/d2l/api/lp/1.0/users/whoami').catch(() => null);
+      signedIn = await browser.status().then((s) => s.signedIn).catch(() => false);
+    }
+    if (!signedIn) failed.push(...missing.map(([name]) => `${name} (not signed in to the class site)`));
     let i = 0;
     for (const [name, url] of signedIn ? missing : []) {
       step(`Downloading ${name} from your class site (${++i} of ${missing.length})…`, 2 + Math.round((i / missing.length) * 5));
@@ -371,19 +377,26 @@ async function fetchSheets(req, nums, docText, step) {
         const ext = head.startsWith('%PDF') ? 'pdf' : head.startsWith('PK') ? 'docx' : page ? 'html' : null;
         if (!ext) {
           fs.rmSync(full, { force: true });
+          failed.push(`${name} (the class site sent ${r.contentType || 'something that isn’t a document'})`);
           continue;
         }
         const dest = path.join(dir, `${name}.${ext}`);
         fs.renameSync(full, dest);
         if (ext !== 'html') await docText(dest).catch(() => null);
-      } catch {}
+      } catch (err) {
+        failed.push(`${name} (${String(err?.message || err).slice(0, 80)})`);
+      }
     }
+    if (failed.length) console.error('Review sheets not downloaded:', failed.join('; '));
   }
-  return [...seen.keys()]
+  const files = [...seen.keys()]
     .map(have)
     .filter(Boolean)
     .map((f) => (/\.html$/.test(f) ? f : `${f}.txt`))
     .filter((f) => fs.existsSync(f));
+  // (Which sheets the tests link to that Kea doesn't have: the brief says so plainly.)
+  files.missing = failed;
+  return files;
 }
 
 /** A text file's readable content (HTML stripped), squeezed. */
@@ -436,7 +449,9 @@ async function chapterNotes(req, docText, step = () => {}) {
   step('Putting the chapters’ notes together…', 8);
 
   // Per-chapter notes: one plain text file each, rebuilt when the database or that chapter's material is newer.
-  const sources = [...classTexts, ...sheets];
+  // Review sheets and answer keys first: when a chapter's review text is trimmed to fit, the end goes, and the sheets
+  // are what the exams are built from.
+  const sources = [...sheets, ...classTexts];
   const general = sources.filter((f) => !chapterNum(path.basename(f)));
   const notesDir = path.join(ws, 'data', 'study', 'notes', req.course.code);
   fs.mkdirSync(notesDir, { recursive: true });
@@ -464,7 +479,7 @@ async function chapterNotes(req, docText, step = () => {}) {
     const head = text.slice(0, [at, end].filter((x) => x >= 0).sort((a, b) => a - b)[0] ?? text.length);
     return { label: c.label, path: rel(file), head, review: at < 0 ? '' : text.slice(at + 1, end > at ? end : undefined), source: c.textbook_source };
   });
-  return { notes, general, sources };
+  return { notes, general, sources, missingSheets: sheets.missing || [] };
 }
 
 /** Every chapter's notes for a class (before writing its textbook): the same files practice sets use. */
@@ -484,7 +499,7 @@ async function prepare(id, docText, step = () => {}) {
   const rel = (f) => path.relative(ws, f).replace(/\\/g, '/');
   const req = readJson(path.join(ws, 'data', 'study', 'requests', `${id}.json`), null);
   if (!req) throw new Error('The request for this set is missing.');
-  const { notes, general, sources } = await chapterNotes(req, docText, step);
+  const { notes, general, sources, missingSheets } = await chapterNotes(req, docText, step);
 
   // The brief: the tests first, then each chapter (objectives and vocabulary whole; review text shares the budget).
   const lines = [`# Write ${req.count} new ${req.kind === 'exam' ? 'practice exam questions' : 'flashcards'}${req.bank ? ' for the chapter’s Question bank' : ''}: ${req.course.code} ${req.course.name}`, '', `Output file: ${req.output}`, ''];
@@ -514,6 +529,13 @@ async function prepare(id, docText, step = () => {}) {
     for (const t of wide) lines.push(`### ${t.name}`, t.text, '');
   }
   if (!sources.length) lines.push('(No review material has been downloaded for these chapters: write from the tests, objectives and vocabulary.)', '');
+  if (missingSheets.length)
+    lines.push(
+      '## Review sheets Kea couldn’t download',
+      'The tests link to these, and their problems are what the exams are built from, but Kea doesn’t have them: ' + missingSheets.join('; ') + '.',
+      'Aim every calculation at the hardest version the chapter allows (several steps, unit conversions, combined concepts), never only the textbook’s simplest case, and say in your summary which sheets were missing.',
+      ''
+    );
   // What the student already has: new items must be different (other problems, other angles, gaps in coverage).
   const existing = req.existing || [];
   if (existing.length) {
