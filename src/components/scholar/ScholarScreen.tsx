@@ -48,6 +48,7 @@ import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, setClassColor, setTypeColor, useColors } from './kinds';
 import { PracticeBox, ResourcesView, StudyPlayer } from './Study';
 import { ReviewBanner } from './StudyModes';
+import { MessagesView } from './Messages';
 import { quizChapter } from './QuizMe';
 import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
 import '../../styles/scholar.css';
@@ -190,6 +191,8 @@ export function ScholarScreen() {
       </div>
     ) : (!hasData && !['scans', 'library', 'inbox', 'resources', 'account'].includes(view.name)) || view.name === 'add' ? (
       <AddClass first={!hasData} />
+    ) : view.name === 'messages' ? (
+      <MessagesView courses={ctx.courses} />
     ) : view.name === 'inbox' ? (
       <InboxView ctx={ctx} />
     ) : view.name === 'calendar' ? (
@@ -256,6 +259,9 @@ export function ScholarScreen() {
         <button className={`sch-link ${view.name === 'inbox' ? 'on' : ''}`} onClick={() => go({ name: 'inbox' })}>
           <Inbox size={17} /> Inbox
           {unread > 0 && <span className="sch-badge strong">{unread}</span>}
+        </button>
+        <button className={`sch-link ${view.name === 'messages' ? 'on' : ''}`} onClick={() => go({ name: 'messages' })} disabled={!hasData}>
+          <Mail size={17} /> Messages
         </button>
         <button className={`sch-link ${view.name === 'calendar' ? 'on' : ''}`} onClick={() => go({ name: 'calendar' })} disabled={!hasData}>
           <CalendarDays size={17} /> Calendar
@@ -693,7 +699,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
                       onClick={(e) => {
                         e.stopPropagation();
                         read(i);
-                        api.scholar.replyMessage(i.url || '', i.course || '').then((r) => !r.replied && toast('The message is open on your class site. Press Reply there.', 'info'));
+                        useScholar.getState().set({ view: { name: 'messages' } });
                       }}
                     >
                       <Reply size={12} /> Reply

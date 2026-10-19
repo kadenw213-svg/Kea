@@ -440,6 +440,8 @@ function register() {
   ipcMain.handle('scholar:grades', async (_e, courseId, code) => precheck.readGrades().byCourse[code] || (await db.gradesFromChecks(p().db, courseId)));
   // Links: class-site pages open in Kea's signed-in window; everything else in the web browser.
   // Reply to a class-site message: the message opens with its Reply already pressed (the student writes and sends).
+  // Class-site messages like email: read in full, draft and send from Kea (messages.cjs).
+  require('./messages.cjs').register({ browser, precheck, db });
   ipcMain.handle('scholar:replyMessage', async (_e, url, course) => {
     const ou = course ? (await db.watchList(p().db)).find((c) => c.code === course)?.ou : null;
     return browser.reply(typeof url === 'string' ? url : '', ou);

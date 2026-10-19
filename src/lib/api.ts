@@ -138,6 +138,12 @@ export interface KeaApi {
     studyGet(id: string): Promise<StudySetFull | null>;
     /** Open a class-site message with its Reply pressed (the student writes and sends it). */
     replyMessage(url: string, course: string): Promise<{ replied: boolean }>;
+    mailList(): Promise<MailList>;
+    /** A message in full, read from the class site (cached after the first time). */
+    mailRead(id: string, refresh?: boolean): Promise<{ text: string; at: string | null; noLink?: boolean }>;
+    mailDraft(key: string, draft: MailDraft | null): Promise<boolean>;
+    /** Send through the class site. sent: confirmed by the class site; otherwise the page was opened to finish there. */
+    mailSend(msg: MailDraft & { draftKey?: string }): Promise<{ sent: boolean; shown?: boolean; why?: string }>;
     /** Create or replace a set the student made or imported. Returns its id. */
     studySaveMine(set: { id?: string; title: string; courseId: string; cards: { front: string; back: string; chapter?: string | null }[] }): Promise<string>;
     studyStar(k: string, on: boolean): Promise<boolean>;
@@ -555,6 +561,19 @@ export interface ProfileList {
   list: { id: string; name: string; created: string }[];
 }
 export type StudyKind = 'exam' | 'cards';
+export interface MailDraft {
+  course: string;
+  to?: string;
+  subject?: string;
+  body: string;
+  /** The Inbox id of the message this replies to. */
+  replyTo?: string | null;
+}
+export interface MailList {
+  messages: { id: string; course: string; title: string; preview: string; at: string; url: string; read: boolean; full: string | null }[];
+  sent: { id: string; at: string; course: string; to: string; subject: string; body: string; replyTo: string | null; confirmed: boolean; why: string | null }[];
+  drafts: (MailDraft & { key: string; at: string })[];
+}
 export interface StudySet {
   id: string;
   kind: StudyKind;

@@ -356,6 +356,159 @@ async function show(url) {
   return true;
 }
 
+// ---------- Messages: read and send class-site mail from Kea ----------
+// A second hidden window on the same signed-in session, used only for messages, so reading or sending never moves the
+// page a scan is reading. Kea finds the class site's own Reply, editor and Send on the page (inside frames and web
+// components), the same as the student pressing them, and reports "sent" only when the class site confirms it.
+let mailWin = null;
+let mailProfile = '';
+function mailWindow() {
+  if (mailWin && !mailWin.isDestroyed() && mailProfile === profiles.active()) return mailWin;
+  if (mailWin && !mailWin.isDestroyed()) mailWin.destroy();
+  mailProfile = profiles.active();
+  mailWin = new BrowserWindow({
+    show: false,
+    width: 1100,
+    height: 820,
+    title: 'Kea: class-site messages',
+    autoHideMenuBar: true,
+    webPreferences: { partition: partition(), sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'browser-preload.cjs') }
+  });
+  prepareSession(session.fromPartition(partition()));
+  mailWin.webContents.setWindowOpenHandler(({ url }) => {
+    mailWin.loadURL(url).catch(() => {});
+    return { action: 'deny' };
+  });
+  mailWin.on('close', (e) => {
+    if (global.keaQuitting) return;
+    e.preventDefault();
+    mailWin.hide();
+  });
+  return mailWin;
+}
+async function mailLoad(url) {
+  const w = mailWindow();
+  const done = new Promise((resolve) => {
+    const t = setTimeout(resolve, PAGE_TIMEOUT);
+    w.webContents.once('did-stop-loading', () => (clearTimeout(t), resolve()));
+  });
+  w.loadURL(url).catch(() => {});
+  await done;
+  await sleep(1500);
+  return w;
+}
+/** Run a script in every frame of the mail window; the first frame that answers truthy wins. */
+async function inFrames(w, script) {
+  for (const f of w.webContents.mainFrame.framesInSubtree) {
+    try {
+      const r = await f.executeJavaScript(script);
+      if (r) return r;
+    } catch {}
+  }
+  return null;
+}
+async function mailSignedIn(w, url) {
+  if (onSite(w.webContents.getURL())) return true;
+  // Signed out: sign in through Kea's usual window, then come back.
+  const main = await load(readSchool().home);
+  if (!(await ensureSignedIn(main))) return false;
+  await mailLoad(url);
+  return onSite(mailWindow().webContents.getURL());
+}
+
+/** A message's page as text (what the class site shows: sender, subject, date, body). */
+async function readMessage(url) {
+  if (!url || !onSite(url)) throw new Error('This message has no class-site link to open.');
+  const w = await mailLoad(url);
+  if (!(await mailSignedIn(w, url))) throw new Error('Kea isn’t signed in to your class site.');
+  let text = '';
+  for (const f of w.webContents.mainFrame.framesInSubtree) {
+    if (hostOf(f.url) && hostOf(f.url) !== hostOf(readSchool().home)) continue;
+    try {
+      const sub = await f.executeJavaScript(`(${extract.toString()})()`);
+      if (sub.text.trim()) text += `${text ? '\n\n' : ''}${sub.text.trim()}`;
+    } catch {}
+  }
+  return { url: w.webContents.getURL(), text: text.slice(0, 20000) };
+}
+
+// Inside the page: the elements of every shadow root and the document, for finding D2L's own controls.
+const ALL = `const all = []; const walk = (r) => { for (const el of r.querySelectorAll('*')) { all.push(el); if (el.shadowRoot) walk(el.shadowRoot); } }; walk(document);
+  const label = (b) => (b.getAttribute('text') || b.getAttribute('aria-label') || b.getAttribute('title') || b.value || b.textContent || '').trim();
+  const shown = (el) => el.offsetParent !== null || el.getClientRects().length > 0;`;
+
+/**
+ * Send a message through the class site: a reply to the message at `url` (its own Reply is pressed), or a new message
+ * (`to` addresses) from the class's message tool. The body is put in the class site's own editor above any quoted
+ * text, then its Send is pressed. Returns { sent: true } once the class site shows it went, otherwise opens the page
+ * with everything filled in for the student to check and send ({ sent: false, shown: true, why }).
+ */
+async function sendMessage({ url = '', ou = '', subject = '', body = '', to = '' }) {
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const text = String(body || '').trim();
+  if (!text) throw new Error('Write something first.');
+  const reply = !!url;
+  const start = reply ? url : new URL(`/d2l/lms/email/frame.d2l?ou=${encodeURIComponent(ou)}`, s.home).href;
+  if (reply && !onSite(url)) throw new Error('This message has no class-site link to reply through.');
+  let w = await mailLoad(start);
+  if (!(await mailSignedIn(w, start))) throw new Error('Kea isn’t signed in to your class site.');
+  w = mailWindow();
+  const show = (why) => {
+    w.setTitle('Kea: check and send your message');
+    w.show();
+    w.focus();
+    return { sent: false, shown: true, why };
+  };
+  const press = (re) => `(() => { ${ALL} const b = all.find((x) => /^(BUTTON|A|D2L-BUTTON|D2L-BUTTON-SUBTLE|D2L-BUTTON-ICON|INPUT)$/.test(x.tagName) && ${re}.test(label(x)) && shown(x)); if (b) { b.click(); return true; } return false; })()`;
+  // 1. Open the editor: the message's Reply, or the message tool's New Message.
+  let opened = false;
+  for (let i = 0; i < 12 && !opened; i++) {
+    opened = !!(await inFrames(w, press(reply ? '/^reply$/i' : '/^(new message|compose|new)$/i')));
+    if (!opened) await sleep(800);
+  }
+  if (!opened) return show(reply ? 'Kea couldn’t find the message’s Reply button.' : 'Kea couldn’t find New Message in your class’s messages.');
+  await sleep(2000);
+  // 2. Fill it in: To (new messages), Subject (only when empty), and the body above any quoted text.
+  const html = text
+    .split(/\n{2,}/)
+    .map((p) => `<p>${p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`)
+    .join('');
+  const fill = `((html, subject, to, plain) => { ${ALL}
+    const set = (el, v) => { const proto = Object.getPrototypeOf(el); const d = Object.getOwnPropertyDescriptor(proto, 'value'); d && d.set ? d.set.call(el, v) : (el.value = v); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+    const field = (re) => all.find((x) => (x.tagName === 'INPUT' || x.tagName === 'TEXTAREA') && shown(x) && re.test([x.name, x.id, x.getAttribute('aria-label'), x.placeholder].join(' ')));
+    if (to) { const t = field(/(^|\\b)to\\b|recipient/i); if (t) set(t, to); }
+    if (subject) { const sj = field(/subject/i); if (sj && !sj.value) set(sj, subject); }
+    if (window.tinymce && window.tinymce.activeEditor) { const ed = window.tinymce.activeEditor; ed.setContent(html + ed.getContent()); ed.fire('change'); ed.save && ed.save(); return 'tinymce'; }
+    const editable = all.filter((x) => x.isContentEditable && shown(x) && !(x.parentElement && x.parentElement.isContentEditable)).sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+      || (document.body && document.body.isContentEditable ? document.body : null);
+    if (editable) { editable.focus(); editable.insertAdjacentHTML('afterbegin', html); editable.dispatchEvent(new InputEvent('input', { bubbles: true })); return 'editable'; }
+    const ta = field(/body|message|content/i) || all.find((x) => x.tagName === 'TEXTAREA' && shown(x));
+    if (ta) { set(ta, plain + (ta.value ? '\\n\\n' + ta.value : '')); return 'textarea'; }
+    return '';
+  })(${JSON.stringify(html)}, ${JSON.stringify(String(subject || ''))}, ${JSON.stringify(String(to || ''))}, ${JSON.stringify(text)})`;
+  let how = '';
+  for (let i = 0; i < 10 && !how; i++) {
+    how = await inFrames(w, fill);
+    if (!how) await sleep(800);
+  }
+  if (!how) return show('Kea couldn’t find the place to type in the class site’s message editor. Your message is below in Kea; paste it there.');
+  // The text must really be in the editor before anything is sent.
+  const probe = text.slice(0, 40).replace(/\s+/g, ' ');
+  const present = `(() => { ${ALL} return all.some((x) => (x.isContentEditable || x.tagName === 'TEXTAREA' || x.tagName === 'BODY') && (x.innerText || x.value || '').replace(/\\s+/g, ' ').includes(${JSON.stringify(probe)})); })()`;
+  if (!(await inFrames(w, present))) return show('Kea filled the editor but couldn’t confirm your text is in it. Check it and press Send.');
+  // 3. Send, then watch for the class site to confirm (the editor closes, or it says the message was sent).
+  const before = w.webContents.getURL();
+  if (!(await inFrames(w, press('/^send$/i')))) return show('Kea couldn’t find the Send button. Everything is filled in: press Send.');
+  for (let i = 0; i < 15; i++) {
+    await sleep(1000);
+    const gone = !(await inFrames(w, present));
+    const said = await inFrames(w, `(() => /message (has been |was )?sent|sent successfully/i.test(document.body ? document.body.innerText : ''))()`);
+    if (said || (gone && w.webContents.getURL() !== before) || (gone && i >= 4)) return { sent: true, how };
+  }
+  return show('Kea pressed Send but the class site didn’t confirm it. Check your Sent folder on the class site before sending again.');
+}
+
 /**
  * Answer a class-site message: open the message itself in Kea's window and press the page's own Reply, so the student
  * lands on a reply already addressed to the sender. Kea never writes or sends anything: the student does. When the
@@ -535,4 +688,4 @@ function onLoginSubmitted(e, form) {
 
 const remembering = (e) => (e.returnValue = !!(wantsRemember() && win && !win.isDestroyed() && e.sender === win.webContents));
 
-module.exports = { open, show, reply, handIn, isClassSite, fetchText, getJson, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
+module.exports = { open, show, reply, readMessage, sendMessage, handIn, isClassSite, fetchText, getJson, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
