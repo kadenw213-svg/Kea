@@ -1,13 +1,13 @@
 // Study materials: practice exams and flashcard decks. Claude writes a whole set at once, only when the student asks;
 // Kea keeps it and shuffles, samples and grades it here, as often as the student likes, with no Claude involved.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, ClipboardList, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Plus, Pencil, ClipboardPaste, Star, Brain, Shapes, FileCheck, Repeat } from 'lucide-react';
 import { api, ScholarCourse, ScholarCourseDetail, StudyCard, StudyHistory, StudyKind, StudyQuestion, StudySet, StudySetFull } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
 import { useScholar } from './scholarStore';
 import { Bar, progressOf, span, useLiveRun, useNow } from './ScansView';
-import { ReadingButton, ReadingContext, ReadingPane, ReadingTarget } from './ReadingPane';
+import { ReadingButton, ReadingContext, ReadingPane, ReadingTarget, useMissReading } from './ReadingPane';
 import { judgeBlank } from '../../lib/blank';
 import { CardTest, Learn, Match, Review, ReviewBanner, SetEditor, SpeakButton, StarButton } from './StudyModes';
 import '../../styles/study.css';
@@ -361,6 +361,7 @@ export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
   // The class's textbook chapters, so each question can open its reading beside the quiz.
   const [pdfs, setPdfs] = useState<Map<string, string>>(new Map());
   const [reading, setReading] = useState<ReadingTarget | null>(null);
+  const [pdfCourse, setPdfCourse] = useState('');
   const review = id.startsWith('review:') ? id.slice(7) : null;
   const edit = id.startsWith('edit:') ? id.slice(5) : null;
   useEffect(() => {
@@ -370,9 +371,14 @@ export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
     api.scholar.studyGet(id).then((s) => {
       if (!s) return onClose();
       setSet(s);
-      if (s.courseId) api.scholar.course(s.courseId).then((c) => setPdfs(new Map((c?.chapters || []).filter((ch) => ch.pdf).map((ch) => [ch.label, ch.pdf!.file]))));
+      if (s.courseId) setPdfCourse(s.courseId);
     });
   }, [id]);
+  // The textbook chapters of the class in front of the student (Review moves between classes).
+  useEffect(() => {
+    if (!pdfCourse) return setPdfs(new Map());
+    api.scholar.course(pdfCourse).then((c) => setPdfs(new Map((c?.chapters || []).filter((ch) => ch.pdf).map((ch) => [ch.label, ch.pdf!.file]))));
+  }, [pdfCourse]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === 'Escape' && (reading ? setReading(null) : onClose());
     window.addEventListener('keydown', key);
@@ -399,7 +405,7 @@ export function StudyPlayer({ id, onClose }: { id: string; onClose(): void }) {
       <Cards set={set} />
     );
   return (
-    <ReadingContext.Provider value={{ has: (ch) => !!ch && pdfs.has(ch), open: setReading, current: reading }}>
+    <ReadingContext.Provider value={{ has: (ch) => !!ch && pdfs.has(ch), open: setReading, current: reading, course: (cid) => cid !== pdfCourse && (setReading(null), setPdfCourse(cid)) }}>
       <div className={`st-player ${file ? 'with-reading' : ''}`}>
         <div className="st-player-head">
           <button className="icon-btn" onClick={onClose} title="Close (Esc)">
@@ -513,6 +519,7 @@ export function Exam({ set }: { set: StudySetFull }) {
   const [saved, setSaved] = useState(false);
 
   const start = () => {
+    opened.current = new Set();
     const picked = choose(all, n, set.history || {});
     setRun(picked.map((q) => ({ q, order: 'choices' in q ? shuffle(q.choices.map((_, i) => i)) : [] })));
     setAnswers(picked.map(() => null));
@@ -540,6 +547,24 @@ export function Exam({ set }: { set: StudySetFull }) {
   }, [run, submitted, checked]);
   const score = results.filter((r) => r === true).length;
   const unmarked = results.filter((r) => r === null).length;
+  // A miss opens the reading that teaches it: as soon as it's checked, or (at the end) the first one missed.
+  const missReading = useMissReading();
+  const opened = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    if (!run) return;
+    const target = (i: number) => {
+      const q = run[i].q;
+      opened.current.add(i);
+      missReading({ chapter: q.chapter, section: q.section, topic: q.topic, query: `${q.q} ${answerText(q)}`, key: q.k });
+    };
+    if (submitted) {
+      const first = results.findIndex((r) => r === false);
+      if (first >= 0 && !opened.current.size) target(first);
+      return;
+    }
+    const miss = results.findIndex((r, i) => r === false && checked[i] && !opened.current.has(i));
+    if (miss >= 0) target(miss);
+  }, [results, submitted, checked]);
   // Save the attempt once everything is marked (short answers need the student's own mark).
   useEffect(() => {
     if (submitted && !saved && run && unmarked === 0) {
@@ -749,7 +774,9 @@ function Cards({ set }: { set: StudySetFull }) {
     setFlipped(false);
     setPos((p) => Math.max(0, Math.min(deck.length - 1, p + d)));
   };
+  const missReading = useMissReading();
   const mark = (isKnown: boolean) => {
+    if (!isKnown && card) missReading({ chapter: card.chapter, section: card.section, topic: card.topic, query: `${card.front} ${card.back}`, key: card.k });
     const next = isKnown ? [...new Set([...known, idx])] : known.filter((x) => x !== idx);
     setKnown(next);
     api.scholar.studyKnown(set.id, next);

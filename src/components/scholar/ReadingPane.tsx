@@ -20,11 +20,24 @@ export interface ReadingTarget {
 }
 
 /** What the player offers its questions: which chapters have a textbook PDF, and a way to open one. */
-export const ReadingContext = createContext<{ has(chapter?: string | null): boolean; open(t: ReadingTarget): void; current: ReadingTarget | null }>({
+export const ReadingContext = createContext<{ has(chapter?: string | null): boolean; open(t: ReadingTarget): void; current: ReadingTarget | null; course?(id: string): void }>({
   has: () => false,
   open: () => {},
   current: null
 });
+
+/**
+ * Opens the reading where the answer is when the student gets one wrong (Settings → Scholar → "Open the reading when
+ * you miss one"), so a miss turns straight into the part of the textbook that teaches it.
+ */
+export function useMissReading() {
+  const r = useContext(ReadingContext);
+  const on = useSetting<boolean>('scholar.autoReading') !== false;
+  return (t: { chapter?: string | null; section?: string | null; topic?: string | null; query?: string; key?: string }) => {
+    if (!on || !t.chapter || !r.has(t.chapter)) return;
+    r.open({ chapter: t.chapter, section: t.section, topic: t.topic, query: t.query, key: t.key || `${t.chapter}|${t.section || ''}|${t.topic || ''}` });
+  };
+}
 
 /** The book icon on a question or card. */
 export function ReadingButton({ chapter, section, topic, query, id }: { chapter?: string | null; section?: string | null; topic?: string | null; query?: string; id?: string }) {

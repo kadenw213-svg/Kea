@@ -2,13 +2,14 @@
 // typing it, until every card is mastered), Match (pair terms with definitions against the clock), a Test made from a
 // deck, spaced Review across every set (timed so each card comes back before the test it's on), and sets the student
 // makes or pastes in from Quizlet.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronRight, ClipboardPaste, Plus, RotateCcw, Star, Timer, Trash2, Trophy, Volume2, X } from 'lucide-react';
 import { api, ReviewItem, ReviewQueue, ScholarCourse, StudyCard, StudyQuestion, StudySetFull } from '../../lib/api';
 import { toast } from '../../store';
 import { judgeBlank } from '../../lib/blank';
 import { reloadScholar, useScholar } from './scholarStore';
 import { Exam, grade, QuestionCard, Shown, Answer, shuffle } from './Study';
+import { ReadingContext, useMissReading } from './ReadingPane';
 
 // ---------- Small shared pieces ----------
 /** Read a side aloud with the computer's own voice (nothing leaves the computer). */
@@ -126,6 +127,7 @@ export function Learn({ set }: { set: StudySetFull }) {
   const reset = () => (setGiven(''), setPicked(null), setResult(null));
   const q = queue?.[pos];
   const save = (next: Record<string, number>) => (setLevels(next), api.scholar.studyLearn(set.id, next));
+  const missReading = useMissReading();
 
   const answered = (ok: boolean) => {
     if (!q) return;
@@ -135,6 +137,7 @@ export function Learn({ set }: { set: StudySetFull }) {
     setBefore(lvl);
     const next = { ...levels, [k]: ok ? Math.min(2, lvl + 1) : 0 };
     save(next);
+    if (!ok) missReading({ chapter: q.card.chapter || set.chapters[0], section: q.card.section, topic: q.card.topic, query: `${q.card.front} ${q.card.back}`, key: k });
     if (ok && next[k] === 2) {
       setRoundDone((d) => [...d, q.card]);
       api.scholar.studyReviewMark(k, 'good', { courseId: set.courseId, chapter: q.card.chapter || set.chapters[0] || null }).catch(() => {});
@@ -493,6 +496,20 @@ export function Review({ courseId }: { courseId: string }) {
     return { q, order: 'choices' in q ? shuffle(q.choices.map((_, i) => i)) : [] };
   }, [it?.k, pos]);
   const result = shown && revealed ? grade(shown, answer, self, judged) : null;
+  const reading = useContext(ReadingContext);
+  const missReading = useMissReading();
+  // The textbook beside it is the class of the item in front of the student.
+  useEffect(() => {
+    if (it) reading.course?.(it.courseId);
+  }, [it?.courseId]);
+  const lookUp = () => {
+    if (!it) return;
+    const x = it.item as StudyCard & StudyQuestion;
+    missReading({ chapter: it.chapter, section: x.section, topic: x.topic, query: it.kind === 'card' ? `${x.front} ${x.back}` : `${x.q} ${typeof x.answer === 'string' ? x.answer : ''}`, key: it.k });
+  };
+  useEffect(() => {
+    if (result === false) lookUp();
+  }, [result]);
   useEffect(() => {
     if (!shown || !revealed || shown.q.type !== 'blank' || judged !== undefined) return;
     const q = shown.q;
@@ -500,6 +517,7 @@ export function Review({ courseId }: { courseId: string }) {
   }, [revealed, shown]);
   const mark = (g: Grade) => {
     if (!it) return;
+    if (g === 'again' && it.kind === 'card') lookUp();
     api.scholar.studyReviewMark(it.k, g, { courseId: it.courseId, chapter: it.chapter });
     setTally((t) => ({ ...t, [g]: t[g] + 1 }));
     // Missed: it comes again at the end of this session.
