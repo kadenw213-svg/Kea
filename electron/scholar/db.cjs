@@ -149,7 +149,10 @@ async function textbookChapters(file, textbooks) {
       for (const label of coveredOf(t)) if (!soon.has(`${c.id}|${label}`)) soon.set(`${c.id}|${label}`, t.date);
   }
   const when = (x) => soon.get(`${x.courseId}|${x.label}`) || '9999';
-  return out.map((x, i) => ({ x, i })).sort((a, b) => when(a.x).localeCompare(when(b.x)) || a.i - b.i).map(({ x }) => x);
+  return out
+    .map((x, i) => ({ x, i }))
+    .sort((a, b) => when(a.x).localeCompare(when(b.x)) || a.i - b.i)
+    .map(({ x }) => ({ ...x, test: soon.get(`${x.courseId}|${x.label}`) || null }));
 }
 
 /**

@@ -216,7 +216,7 @@ const REUSE = 0.6;
  * files, and the questions that already exist so it writes different ones). Adds the set to the index and returns
  * { id, ready }: ready when no Claude run is needed. `pick` (keys) repeats another device's choice of saved items.
  */
-async function request({ id: given, kind, courseId, chapters = [], itemId = null, count, mode = 'mix', pick: picked = null, bank = false }) {
+async function request({ id: given, kind, courseId, chapters = [], itemId = null, count, mode = 'mix', pick: picked = null, bank = false, upgrade = false }) {
   if (!['exam', 'cards'].includes(kind)) throw new Error('Unknown kind of study set.');
   const p = profiles.paths();
   const src = await db.practiceSources(p.db, p.textbooks, { courseId, chapters, itemId });
@@ -233,7 +233,7 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
   const fresh = mode === 'saved' ? 0 : n - reuse.length;
   const topic = src.item ? src.item.title : src.chapters.map((c) => (c.title ? `${c.label}: ${c.title}` : c.label)).join(', ');
   const title = `${bank ? 'Question bank' : kind === 'exam' ? 'Practice exam' : 'Flashcards'}: ${topic}`;
-  const entry = { id, kind, title, ...(bank ? { bank: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
+  const entry = { id, kind, title, ...(bank ? { bank: true } : {}), ...(upgrade ? { upgrade: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
   const list = index().filter((e) => e.id !== id);
   if (!fresh) {
     writeJson(file('sets', `${id}.json`), kind === 'cards' ? { cards: reuse } : { questions: reuse });
@@ -257,6 +257,7 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
     existing: all.map((it) => ({ k: it.k, chapter: it.chapter || null, topic: it.topic || null, text: String(it.q ?? it.front).slice(0, 140) })),
     reuse,
     bank,
+    upgrade,
     output: `data/study/out/${id}.json`
   };
   writeJson(path.join(p.workspace, 'data', 'study', 'requests', `${id}.json`), req);
@@ -281,12 +282,18 @@ function bankNeed(chapters, size = 50) {
   const all = index();
   if (all.some((e) => e.bank && e.status === 'making')) return null;
   const h = history();
-  for (const { courseId, label } of chapters) {
+  for (const { courseId, label, test } of chapters) {
     const have = catalog('exam', courseId, [label]);
     // (A chapter whose last bank failed waits a day before trying again.)
     const failed = all.find((e) => e.bank && e.courseId === courseId && e.chapters?.[0] === label && e.status === 'failed' && Date.now() - Date.parse(e.createdAt) < 864e5);
     if (failed) continue;
     if (have.length < size) return { kind: 'exam', courseId, chapters: [label], count: Math.max(SIZES.exam[0], size - have.length), mode: 'new', bank: true };
+    // A test coming within two weeks on a bank written before the difficulty rules (no levels, no worked arithmetic):
+    // one top-up of harder questions aimed at what the old ones miss, once.
+    const soon = test && (Date.parse(test) - Date.now()) / 864e5 <= 14;
+    const old = have.length && !have.some((q) => q.level);
+    const upgraded = all.some((e) => e.bank && e.upgrade && e.courseId === courseId && e.chapters?.[0] === label && e.status !== 'failed');
+    if (soon && old && !upgraded) return { kind: 'exam', courseId, chapters: [label], count: 25, mode: 'new', bank: true, upgrade: true };
     const left = have.filter((it) => !h[it.k] || h[it.k].lastRight === false).length;
     if (left < BANK_LOW) return { kind: 'exam', courseId, chapters: [label], count: BANK_MORE, mode: 'new', bank: true };
   }
@@ -507,6 +514,12 @@ async function prepare(id, docText, step = () => {}) {
 
   // The brief: the tests first, then each chapter (objectives and vocabulary whole; review text shares the budget).
   const lines = [`# Write ${req.count} new ${req.kind === 'exam' ? 'practice exam questions' : 'flashcards'}${req.bank ? ' for the chapter’s Question bank' : ''}: ${req.course.code} ${req.course.name}`, '', `Output file: ${req.output}`, ''];
+  if (req.upgrade)
+    lines.push(
+      '## This is a harder top-up before the test',
+      'The saved questions below were written before Kea checked difficulty, and many are recall or single-step. Write questions at and above exam level: mostly `multistep` and `apply`, with real calculations (each with `calc`), problems in the style of the review sheets and practice exams, and every objective, review-sheet problem type and study-focus line the saved questions miss or cover only once. No fill-in-the-blank definitions.',
+      ''
+    );
   const tests = (req.tests || []).filter((t) => t.study_focus?.length || t.description);
   if (tests.length) {
     lines.push('## What the real tests cover (scraped from the class site: the top priority)', '');
