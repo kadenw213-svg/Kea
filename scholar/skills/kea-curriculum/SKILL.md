@@ -96,7 +96,12 @@ exactly these questions, would they get an A on the real tests? Check:
 **Explanations.** Every question in the questions file shows its answer and explanation; Kea's check marks the clearly
 weak ones `WEAK`. Rewrite every `WEAK` explanation, and any other that wouldn't teach a student who got the question
 wrong, into `<the fixes file Kea named>` as JSON:
-`[{"k": "<the question's k>", "explain": "<the new explanation>"}]`
+`[{"k": "<the question's k>", "explain": "<the new explanation>", "steps": ["…", "…"]}]`
+Every question marked `NO-STEPS` also gets `steps` (its worked solution, shown when the student misses it), with or
+without a new explanation: calculations 3 to 8 steps (what's asked and given with units; the formula by name with every
+symbol defined; conversions first, with why; rearrange, substitute, compute; the answer with units and a sense check),
+concept questions 2 to 5 steps of reasoning (the deciding rule, how it applies, why the tempting wrong choice fails).
+Plain sentences, not numbered (Kea numbers them). Add `"wrong_answer": true` when the stored answer is wrong.
 Each new explanation: the concept or rule behind the answer; for a calculation the formula, then what every symbol
 stands for with its unit ("where M is the molarity in mol/L, n the moles of solute, V the volume in L"), each step with
 its reason, and a check of the answer's size or units; for multiple choice, also why the most tempting wrong choice is

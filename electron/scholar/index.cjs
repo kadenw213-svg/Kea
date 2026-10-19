@@ -347,8 +347,9 @@ async function keepBanks() {
         break;
       }
     }
-    // Then worked step-by-step solutions for the questions that have none, a chapter at a time, soonest test first.
-    for (let n = 0; n < 50 && settings.get('scholar.workedSteps', true) !== false; n++) {
+    // (Worked steps are written by the depth review, in the same pass that rewrites weak explanations; a separate run
+    // per chapter only when the student asks for one, from a missed question.)
+    for (let n = 0; n < 50 && settings.get('scholar.workedStepsRuns', false) === true; n++) {
       const today = new Date().toDateString();
       if (bankRuns.day !== today) bankRuns = { day: today, n: 0 };
       if (bankRuns.n >= BANK_RUNS) break;

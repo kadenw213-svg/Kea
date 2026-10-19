@@ -219,11 +219,12 @@ async function depthPre(job, step, code) {
         '',
         ...qs.map((q, i) =>
           [
-            `${i + 1}. k=${q.k} [${q.type}${q.level ? `, ${q.level}` : ''}${q.section ? `, ${q.section}` : ''}]${weak.has(i) ? ` WEAK: ${weak.get(i).join('; ')}` : ''}`,
+            `${i + 1}. k=${q.k} [${q.type}${q.level ? `, ${q.level}` : ''}${q.section ? `, ${q.section}` : ''}]${weak.has(i) ? ` WEAK: ${weak.get(i).join('; ')}` : ''}${q.type !== 'short' && !(q.steps || []).length ? ' NO-STEPS' : ''}`,
             `   Q: ${String(q.q).replace(/\s+/g, ' ')}`,
             ...(q.choices ? [`   Choices: ${q.choices.join(' | ')}`] : []),
             `   Answer: ${answerOf(q)}${q.unit ? ` ${q.unit}` : ''}`,
-            `   Explanation: ${String(q.explain || '').replace(/\s+/g, ' ')}`
+            `   Explanation: ${String(q.explain || '').replace(/\s+/g, ' ')}`,
+            ...((q.steps || []).length ? [`   Steps: ${q.steps.join(' / ')}`] : [])
           ].join('\n')
         )
       ].join('\n')

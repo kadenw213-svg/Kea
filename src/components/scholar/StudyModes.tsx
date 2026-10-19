@@ -535,7 +535,7 @@ export function Review({ courseId, chapters = [], sections = [] }: { courseId: s
       if (!it || (e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
       if (it.kind === 'card') {
         if ((e.key === ' ' || e.key === 'Enter') && !flipped) (e.preventDefault(), setFlipped(true));
-        else if (flipped && ['1', '2', '3'].includes(e.key)) mark((['again', 'good', 'easy'] as const)[Number(e.key) - 1]);
+        else if (flipped && ['1', '2'].includes(e.key)) mark((['again', 'good'] as const)[Number(e.key) - 1]);
       }
     };
     window.addEventListener('keydown', key);
@@ -602,9 +602,6 @@ export function Review({ courseId, chapters = [], sections = [] }: { courseId: s
                 <button className="btn primary" onClick={() => mark('good')} title="2">
                   Knew it
                 </button>
-                <button className="btn tonal" onClick={() => mark('easy')} title="3">
-                  Easy
-                </button>
               </>
             ) : (
               <button className="btn primary" onClick={() => setFlipped(true)}>
@@ -620,14 +617,9 @@ export function Review({ courseId, chapters = [], sections = [] }: { courseId: s
             {revealed && result !== null && (
               <div className="st-cards-nav">
                 {result ? (
-                  <>
-                    <button className="btn primary" onClick={() => mark('good')}>
-                      Next
-                    </button>
-                    <button className="btn tonal" onClick={() => mark('easy')}>
-                      That was easy
-                    </button>
-                  </>
+                  <button className="btn primary" onClick={() => mark('good')}>
+                    Next
+                  </button>
                 ) : (
                   <button className="btn primary" onClick={() => mark('again')}>
                     Next (it comes back)
