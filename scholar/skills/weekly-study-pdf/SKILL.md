@@ -161,6 +161,13 @@ is the floor, not the target. A student who reads only this PDF should be able t
   mechanism step by step and say why each step happens. For "compare A and B", give a
   table plus the deciding difference. For "calculate", give the formula, its units, and a
   worked example.
+- **Every formula is explained, symbol by symbol.** Right after a formula, say what each symbol stands for and its
+  unit ("where $P$ is pressure in atm, $V$ volume in L, $n$ moles of gas, $R$ = 0.08206 L·atm/(mol·K) and $T$
+  temperature in K"), when the formula applies (and when it doesn't), and how to rearrange it for each quantity the
+  tests ask for. Every worked example says why each step is taken, not only what it is, and ends by checking the
+  answer's units and size.
+- **No answers to practice questions anywhere** (no "Check yourself", "Practice test", "Try it" or answer key): the
+  question bank and Quiz me do that. Worked examples, which teach a method step by step, are the only solved problems.
 - **Every vocabulary term** is explained in context (enforced by `study-pdf-check`). It
   must be taught in a sentence that uses it. A bare list of terms doesn't count, so never
   pad one in to pass the check.

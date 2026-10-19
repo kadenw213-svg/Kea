@@ -199,7 +199,9 @@ def check(session: Session, course: Course, docs: list[tuple[str, str]]) -> dict
             if want and said and said[-1] not in want:
                 problem(f"reading_wrong_chapter:{t.chapter_label}", "fix",
                         f"{t.chapter_label}'s reading link says Ch. {said[-1]}, but in the textbook it is {t.textbook_ref}.")
+        depth_row = repository.find_chapter_topic(session, course.id, t.chapter_label)
         chapters_out.append({"label": t.chapter_label, "title": t.title, "textbook_ref": t.textbook_ref,
+                             "depth": getattr(depth_row, "depth_verdict", None), "depth_note": getattr(depth_row, "depth_note", None),
                              "sections": len(t.sections or []), "objectives": len(t.objectives or []) + len(t.added_objectives or []),
                              "missing": missing, "outcomes": []})
     by_label = {c["label"]: c for c in chapters_out}

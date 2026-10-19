@@ -87,21 +87,9 @@
 
 // ---- self-check ------------------------------------------------------------
 
-// #selfcheck(([Question?], [Answer.]), ([Q2], [A2]))
-#let selfcheck(..pairs) = block(
-  width: 100%,
-  stroke: 0.6pt + rule,
-  inset: 12pt,
-  radius: 3pt,
-  above: 1.4em,
-)[
-  #text(font: sans, size: 8pt, weight: "bold", fill: accent, tracking: 0.7pt)[CHECK YOURSELF]
-  #v(2pt)
-  #for (i, pair) in pairs.pos().enumerate() [
-    #block(above: 0.8em, below: 0.4em)[*#(i + 1).* #pair.at(0)]
-    #block(above: 0.2em, inset: (left: 14pt))[#text(size: 9.5pt, fill: muted)[_Answer:_ #pair.at(1)]]
-  ]
-]
+// Retired: textbooks carry no practice questions or answer keys (the question bank and Quiz me do that). Kept so
+// an older source still compiles; it draws nothing.
+#let selfcheck(..pairs) = none
 
 // ---- document --------------------------------------------------------------
 

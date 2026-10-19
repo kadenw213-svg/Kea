@@ -3014,6 +3014,29 @@ def _calc_value(expr: str) -> float:
     return ev(tree)
 
 
+# A formula in an explanation: a symbol (or two run together, PV) set equal to an expression with letters in it.
+# (Not the unknowns of an algebra step, "x = (−b ± …)": x, y and z are what is being solved for.)
+_FORMULA = re.compile(r"(?<![\w.])(?![xyz]\s*=)([A-Za-zΔλρμ][A-Za-z₀-₉ₐ-ₜ]{0,3})\s*=\s*[^=,.;]*?[A-Za-zΔλρμ√(]")
+_DEFINES = re.compile(r"\bwhere\b|\bstands? for\b|\brepresents?\b|\bmeans\b|\bis the\b|\bare the\b|\bis (?:its|their|your)\b|\(the\b", re.IGNORECASE)
+_LATEX = re.compile(r"\\(?:frac|times|cdot|text|mathrm|sqrt|Delta|left|right|le|ge)\b|\$[^$\d][^$]*\$|\*\*")
+
+
+def _explain_problems(q: dict, explain: str) -> list[str]:
+    """What's wrong with a question's explanation as teaching: math written as code, a formula whose symbols are never
+    said, or a bare result with no reasoning."""
+    out = []
+    every = " ".join(str(q.get(k, "")) for k in ("q", "answer", "explain")) + " " + " ".join(map(str, q.get("choices") or []))
+    if _LATEX.search(every):
+        out.append("math written as LaTeX or code (\\frac, $...$, **): use Unicode, and ^(…)/_(…) for longer exponents")
+    formula = _FORMULA.search(explain)
+    if formula and not _DEFINES.search(explain):
+        out.append(f"the explanation uses a formula ({formula.group(0).strip()[:40]}) without saying what its symbols stand for: add \"where …\" with each symbol's meaning and unit")
+    # A calculation or a reasoning question needs more than the result.
+    if (q.get("type") == "num" or str(q.get("level", "")).lower() in ("apply", "multistep")) and len(explain) < 90:
+        out.append("the explanation is too thin to learn from: say why each step is taken (2 to 5 sentences)")
+    return out
+
+
 @app.command("practice-check")
 def practice_check_cmd(
     path: Annotated[Path, typer.Argument(help="The practice set JSON (data/study/out/<id>.json).")],
@@ -3054,8 +3077,11 @@ def practice_check_cmd(
             elif stem.lower() in seen:
                 problems.append(f"{where}: duplicate stem")
             seen.add(stem.lower())
-            if not str(q.get("explain", "")).strip():
+            explain = str(q.get("explain", "")).strip()
+            if not explain:
                 problems.append(f"{where}: no explanation")
+            else:
+                problems.extend(f"{where}: {p}" for p in _explain_problems(q, explain))
             if kind in ("mc", "multi"):
                 choices = q.get("choices")
                 if not isinstance(choices, list) or len(choices) < 3 or not all(str(c).strip() for c in choices):
@@ -3453,9 +3479,11 @@ def study_pdf_check_cmd(
         path = _study_source(session, item, source)
         only = study_pdf_mod.remembered_only(_study_work(session, item))
         terms = study_pdf_mod.week_terms(session, item, only)
-    missing = study_pdf_mod.missing_terms(path.read_text(encoding="utf-8"), terms)
-    print(json.dumps({"terms": len(terms), "missing": missing}))
-    if missing:
+    source_text = path.read_text(encoding="utf-8")
+    missing = study_pdf_mod.missing_terms(source_text, terms)
+    problems = study_pdf_mod.forbidden_parts(source_text)
+    print(json.dumps({"terms": len(terms), "missing": missing, "problems": problems}))
+    if missing or problems:
         raise typer.Exit(code=1)
 
 
@@ -3483,6 +3511,10 @@ def study_pdf_build_cmd(
         missing = study_pdf_mod.missing_terms(path.read_text(encoding="utf-8"), terms)
         if missing and not allow_missing:
             print(json.dumps({"built": False, "missing": missing}))
+            raise typer.Exit(code=1)
+        problems = study_pdf_mod.forbidden_parts(path.read_text(encoding="utf-8"))
+        if problems:
+            print(json.dumps({"built": False, "problems": problems}))
             raise typer.Exit(code=1)
         bundle = study_pdf_mod.build_bundle(session, item, only)
         output = Path(bundle["output_path"])

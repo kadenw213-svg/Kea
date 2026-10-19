@@ -225,6 +225,17 @@ export function SyllabusMap({ code }: { code: string }) {
       setBusy(false);
     }
   };
+  const depth = async () => {
+    setBusy(true);
+    try {
+      await api.scholar.run('curriculum', `${code} depth`);
+      toast(`Kea is checking ${code}'s chapters at exam depth, a few at a time.`, 'success');
+    } catch (e) {
+      toast(String((e as Error)?.message || e), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <section className="hs-changes cls-rules syl-map">
       <button className="hs-head" onClick={() => setOpen(!open)}>
@@ -298,6 +309,32 @@ export function SyllabusMap({ code }: { code: string }) {
               </ul>
             </div>
           )}
+          {(() => {
+            const done = cur.chapters.filter((c) => c.depth);
+            const gapped = cur.chapters.filter((c) => c.depth === 'gaps');
+            return (
+              <div className="syl-group">
+                <div className="syl-kind">Depth</div>
+                <p className="syl-book">
+                  {done.length
+                    ? `${done.length} of ${cur.chapters.length} chapters checked at exam depth (textbook, notes and every question's explanation).${gapped.length ? ` ${gapped.map((c) => c.label).join(', ')} had gaps and ${gapped.length > 1 ? 'are' : 'is'} being rewritten.` : ''}`
+                    : 'No chapter has had its depth checked yet: Kea reviews every chapter, starting with the ones tested soonest.'}
+                </p>
+                {gapped.length > 0 && (
+                  <ul>
+                    {gapped.map((c) => (
+                      <li key={c.label}>
+                        <span className="syl-ref">{c.label.replace(/^Chapter /, 'Ch ')}</span> {String(c.depth_note || '').slice(0, 300)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <button className="btn sm" disabled={busy} onClick={depth}>
+                  Check depth now
+                </button>
+              </div>
+            );
+          })()}
           <button className="btn sm ghost" onClick={() => load(true)}>
             Check again
           </button>

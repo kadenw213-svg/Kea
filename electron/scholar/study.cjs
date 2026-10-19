@@ -816,4 +816,32 @@ async function reviewMark(k, grade, { courseId = '', chapter = null } = {}) {
   return state[k];
 }
 
-module.exports = { list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };
+/**
+ * Better explanations (and notation fixes) for saved questions, from a depth review: [{ k, explain, q? }]. Each
+ * question keeps its key, so stars, Learn progress and spaced review carry on. Returns how many were changed.
+ */
+function applyFixes(courseId, fixes) {
+  const byKey = new Map((Array.isArray(fixes) ? fixes : []).filter((f) => f && typeof f.k === 'string' && str(f.explain).length >= 40).map((f) => [f.k, f]));
+  if (!byKey.size) return 0;
+  let changed = 0;
+  for (const e of index()) {
+    if (e.courseId !== courseId || e.kind !== 'exam' || e.status !== 'ready') continue;
+    const f = file('sets', `${e.id}.json`);
+    const s = readJson(f, null);
+    if (!s?.questions) continue;
+    let touched = false;
+    s.questions = s.questions.map((q) => {
+      const k = q.k || keyOf(q);
+      const fix = byKey.get(k);
+      if (!fix) return q;
+      touched = true;
+      changed++;
+      // (The key stays the question's old one even when its wording is fixed.)
+      return { ...q, k, explain: str(fix.explain), ...(str(fix.q) ? { q: str(fix.q) } : {}) };
+    });
+    if (touched) writeJson(f, s);
+  }
+  return changed;
+}
+
+module.exports = { applyFixes, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };

@@ -88,7 +88,22 @@ exactly these questions, would they get an A on the real tests? Check:
   is **taught** in the textbook (explained, with a worked example where it's a skill) and **asked** in the questions;
 - depth matches the tests: the calculations, multi-step problems, comparisons, data and graph reading the tests and
   review sheets use, not only definitions; questions at least as hard as the review sheets;
-- nothing is wrong (a misstated fact, a wrong worked answer).
+- every formula, in the textbook and in the explanations, says what each of its symbols stands for (with units),
+  when it applies, and why each step of a worked example is taken; nothing is left as a bare calculation;
+- nothing is wrong (a misstated fact, a wrong worked answer);
+- the textbook has no practice questions or answer keys (no "Check yourself", "Practice test"): that's `gaps`.
+
+**Explanations.** Every question in the questions file shows its answer and explanation; Kea's check marks the clearly
+weak ones `WEAK`. Rewrite every `WEAK` explanation, and any other that wouldn't teach a student who got the question
+wrong, into `<the fixes file Kea named>` as JSON:
+`[{"k": "<the question's k>", "explain": "<the new explanation>"}]`
+Each new explanation: the concept or rule behind the answer; for a calculation the formula, then what every symbol
+stands for with its unit ("where M is the molarity in mol/L, n the moles of solute, V the volume in L"), each step with
+its reason, and a check of the answer's size or units; for multiple choice, also why the most tempting wrong choice is
+wrong. Plain text with Unicode (x², H₂O, Na⁺, Δ, →), and `^(…)`/`_(…)` for longer exponents and subscripts; never
+LaTeX. Add `"q"` only to fix a question's wording or notation (never what it asks). A wrong answer can't be fixed this
+way: note it in the chapter's verdict (`gaps`), and the top-up replaces it. Kea saves the fixes into the questions
+(each keeps the student's progress).
 
 Read the textbook source and questions in full (Grep the textbook for each outcome if it's long); don't skim a chapter.
 Then save one verdict per chapter:

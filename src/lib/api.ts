@@ -565,7 +565,7 @@ export interface ScholarPending {
 export interface ScholarCurriculum {
   course: string;
   textbook: { title?: string; numbering?: 'same' | 'different'; none?: string } | null;
-  chapters: { label: string; title: string | null; textbook_ref: string | null; sections: number; objectives: number; missing: string[]; outcomes: string[] }[];
+  chapters: { label: string; title: string | null; textbook_ref: string | null; sections: number; objectives: number; missing: string[]; outcomes: string[]; depth?: 'ok' | 'gaps' | null; depth_note?: string | null }[];
   outcomes: { kind: 'course' | 'module' | 'outline' | 'recommended'; ref: string; text: string; chapters: string[]; auto: boolean; not_tested: string | null; source: string | null }[];
   guidelines: { text: string; source: string; chapters: string[] }[];
   problems: { key: string; severity: 'fix' | 'note'; text: string }[];

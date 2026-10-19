@@ -197,12 +197,37 @@ async function depthPre(job, step, code) {
     const qs = course ? study.catalog('exam', course.id, [c.label]) : [];
     const file = path.join(dir, `${c.label}.md`);
     const levels = ['recall', 'apply', 'multistep'].map((l) => `${qs.filter((q) => q.level === l).length} ${l}`).join(', ');
+    // Kea's own check of each explanation (math as code, formulas with unexplained symbols, too thin to learn from).
+    const tmp = path.join(dir, `${c.label}.check.json`);
+    fs.writeFileSync(tmp, JSON.stringify({ questions: qs }));
+    const weak = new Map();
+    try {
+      const r = await workspace.runHidden(uv, ['run', 'academic-sync', 'practice-check', tmp], { cwd, env: workspace.engineEnv(uv) });
+      for (const p of JSON.parse(r.out.slice(r.out.indexOf('{'))).problems || []) {
+        const m = /^question (\d+) \([^)]*\): (.*)$/.exec(p);
+        if (m) weak.set(Number(m[1]) - 1, [...(weak.get(Number(m[1]) - 1) || []), m[2]]);
+      }
+    } catch {}
+    fs.rmSync(tmp, { force: true });
+    const answerOf = (q) => (q.type === 'mc' ? q.choices?.[q.answer] : q.type === 'multi' ? (q.answer || []).map((i) => q.choices?.[i]).join('; ') : String(q.answer));
     fs.writeFileSync(
       file,
-      [`# ${code} ${c.label}: the ${qs.length} saved questions (${levels})`, '', ...qs.map((q, i) => `${i + 1}. [${q.type}${q.level ? `, ${q.level}` : ''}${q.section ? `, ${q.section}` : ''}] ${String(q.q).replace(/\s+/g, ' ').slice(0, 400)}`)].join('\n')
+      [
+        `# ${code} ${c.label}: the ${qs.length} saved questions (${levels}; ${weak.size} explanations flagged WEAK by Kea's check)`,
+        '',
+        ...qs.map((q, i) =>
+          [
+            `${i + 1}. k=${q.k} [${q.type}${q.level ? `, ${q.level}` : ''}${q.section ? `, ${q.section}` : ''}]${weak.has(i) ? ` WEAK: ${weak.get(i).join('; ')}` : ''}`,
+            `   Q: ${String(q.q).replace(/\s+/g, ' ')}`,
+            ...(q.choices ? [`   Choices: ${q.choices.join(' | ')}`] : []),
+            `   Answer: ${answerOf(q)}${q.unit ? ` ${q.unit}` : ''}`,
+            `   Explanation: ${String(q.explain || '').replace(/\s+/g, ' ')}`
+          ].join('\n')
+        )
+      ].join('\n')
     );
     const notes = path.join(cwd, 'data', 'study', 'notes', code, `${c.label}.md`);
-    lines.push(`- ${c.label}${c.title ? `: ${c.title}` : ''} (${c.why}${c.next_test ? `; next: ${c.next_test.title} on ${c.next_test.date}` : ''})\n  notes: ${fs.existsSync(notes) ? rel(notes) : '(none)'}\n  textbook: ${c.textbook_source ? rel(c.textbook_source) : '(none)'}\n  questions: ${rel(file)} (${qs.length})`);
+    lines.push(`- ${c.label}${c.title ? `: ${c.title}` : ''} (${c.why}${c.next_test ? `; next: ${c.next_test.title} on ${c.next_test.date}` : ''})\n  notes: ${fs.existsSync(notes) ? rel(notes) : '(none)'}\n  textbook: ${c.textbook_source ? rel(c.textbook_source) : '(none)'}\n  questions: ${rel(file)} (${qs.length}, ${weak.size} WEAK)\n  explanation fixes go in: ${rel(path.join(dir, `${c.label}.fixes.json`))}`);
   }
   const started = localStamp();
   return {
@@ -217,7 +242,23 @@ const localStamp = (t = Date.now()) => new Date(t - new Date(t).getTimezoneOffse
 /** After a depth review: each chapter found to have gaps gets its textbook rewritten and a harder question top-up. */
 async function depthAfter(code, course, started) {
   if (!course) course = (await db().courses(profiles.paths().db, profiles.paths().textbooks, {}).catch(() => [])).find((c) => c.code === code);
+  // The explanations the review rewrote go into the saved questions (each keeps its key, so progress carries on).
+  const dir = path.join(profiles.paths().workspace, 'data', 'study', 'depth', code);
+  let fixed = 0;
+  for (const f of fs.existsSync(dir) ? fs.readdirSync(dir).filter((x) => x.endsWith('.fixes.json')) : []) {
+    try {
+      if (course) fixed += require('./study.cjs').applyFixes(course.id, readJson(path.join(dir, f), []));
+      fs.renameSync(path.join(dir, f), path.join(dir, `${f}.applied-${Date.now()}`));
+    } catch (err) {
+      console.error('Explanation fixes', err);
+    }
+  }
+  if (fixed) send('scholar:changed');
+  // More chapters waiting: the next review starts right after (each chapter reviewed once, so this ends).
   const rows = (await engineJson(['depth-due', '--course', code, '--json']).catch(() => null)) || [];
+  if (rows.some((r) => r.due)) run('curriculum', `${code} depth`, 'depth');
+  if (fixed)
+    addNews({ course: code, kind: 'update', title: `${code}: ${fixed} question explanation${fixed > 1 ? 's' : ''} rewritten to teach better`, body: 'Each now names what every symbol in its formula stands for and why each step is taken. Your progress on those questions is kept.' });
   const gaps = rows.filter((r) => r.verdict === 'gaps' && r.reviewed_at && r.reviewed_at.slice(0, 19) >= started);
   if (!gaps.length) return;
   const study = require('./study.cjs');

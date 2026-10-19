@@ -11,6 +11,7 @@ import { ReadingButton, ReadingContext, ReadingPane, ReadingTarget, useMissReadi
 import { judgeBlank } from '../../lib/blank';
 import { CardTest, Learn, Match, Review, ReviewBanner, SetEditor, SpeakButton, StarButton } from './StudyModes';
 import '../../styles/study.css';
+import { MathText } from './MathText';
 
 // ---------- Shared state ----------
 /** Every set, reloaded when Kea says something changed (a set finished) and while one is being made. */
@@ -671,7 +672,7 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
     <div className={`st-q ${state}`}>
       <div className="st-q-head">
         <span className="st-num">{num}</span>
-        <div className="st-stem">{q.q}</div>
+        <div className="st-stem"><MathText text={q.q} /></div>
         <ReadingButton id={q.k} chapter={q.chapter} section={q.section} topic={q.topic} query={`${q.q} ${answerText(q)}`} />
       </div>
       {(q.type === 'mc' || q.type === 'multi') && (
@@ -686,7 +687,7 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
                 onClick={() => (q.type === 'mc' ? setAnswer(pos) : setAnswer(on ? (answer as number[]).filter((x) => x !== pos) : [...((answer as number[]) || []), pos]))}
               >
                 <span className="st-letter">{String.fromCharCode(65 + pos)}</span>
-                <span>{q.choices[orig]}</span>
+                <span><MathText text={q.choices[orig]} /></span>
               </button>
             );
           })}
@@ -736,10 +737,10 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
         <div className="st-explain">
           {q.type === 'short' && (
             <div className="st-model">
-              <b>Model answer:</b> {q.answer}
+              <b>Model answer:</b> <MathText text={q.answer} />
             </div>
           )}
-          <div>{q.explain}</div>
+          <div><MathText text={q.explain} /></div>
           {q.type === 'short' && (
             <div className="st-self">
               <span className="muted">Did you get it?</span>
@@ -814,7 +815,7 @@ function Cards({ set }: { set: StudySetFull }) {
       {card ? (
         <>
           <button className={`st-card ${flipped ? 'flipped' : ''}`} onClick={() => setFlipped(!flipped)} title="Click or press Space to flip">
-            <div className="st-card-side">{flipped ? card.back : card.front}</div>
+            <div className="st-card-side"><MathText text={flipped ? card.back : card.front} /></div>
             <div className="muted st-card-foot">
               {flipped ? 'Answer' : 'Click to flip'}
               {card.chapter ? ` · ${card.chapter}` : ''}

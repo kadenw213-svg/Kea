@@ -94,8 +94,13 @@ notes and review sheets: "multiple choice, calculation problems and short essays
   in 1 to 4 sentences, with the points a grader would look for. The student marks their own answer against it.
 
 Every question has:
-- `explain`: why the answer is right, in 1 to 3 sentences. For calculations, the worked solution, each step. For
-  `mc`, also why the most tempting wrong choice is wrong.
+- `explain`: teaches the idea, so a student who got it wrong learns it from this alone (2 to 5 sentences):
+  - why the answer is right: the concept or rule behind it, not just the result;
+  - for a calculation: name the formula, then say what **every symbol** stands for, with its unit ("M = n/V, where M is
+    the molarity in mol/L, n the moles of solute and V the solution's volume in liters"), then each step with its
+    reason ("convert mL to L first, because molarity is per liter"), and a sanity check of the answer's size or units;
+  - for `mc`: also why the most tempting wrong choice is wrong (the mistake it comes from).
+  Kea's check rejects explanations that use a formula without saying what its symbols mean.
 - `chapter`: the chapter label it tests ("Chapter 5"); `topic`: the idea it tests in a few words, using the
   textbook's own term ("Boyle's law", "molarity").
 - `section`: the textbook section that teaches the answer, exactly as the chapter's `Sections:` line in the brief
@@ -118,7 +123,9 @@ Balance and difficulty:
 - Each question tests one thing and doesn't give away another question's answer. No duplicates or near-duplicates,
   except calculations: the same problem format with new numbers is fine (better still if what's asked changes too).
 - Plain text only, no LaTeX or Markdown. Use Unicode: x², x³, √, ≤, ≥, ≠, ±, π, Δ, →, ⇌, °, subscripts like H₂O and
-  CO₂, superscripts like Na⁺ and SO₄²⁻, and fractions like (x + 1)/(x − 2).
+  CO₂, superscripts like Na⁺ and SO₄²⁻, and fractions like (x + 1)/(x − 2). An exponent or subscript that isn't a
+  single Unicode character is written `^(…)` or `_(…)`: `(1.00375)^(72)`, `e^(rt)`, `log_(b)(x)`, `10^(−4)`; Kea draws
+  these as real superscripts and subscripts. Never `**`, `\frac` or `$…$`.
 - Be accurate: check every answer by working it, and keep the explanation's numbers consistent with the answer.
 
 ## 3. Flashcards (`kind: cards`)

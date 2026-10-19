@@ -138,6 +138,19 @@ def _term_variants(term: str) -> list[str]:
     return [v for v in variants if v]
 
 
+def forbidden_parts(source_text: str) -> list[str]:
+    """Parts a textbook chapter must not have: practice questions with an answer key ("Check yourself", "Practice
+    test"): the question bank and Quiz me do that, and the reading Kea opens beside a missed question must land on the
+    teaching, never on an answer key."""
+    found = []
+    if "#selfcheck(" in source_text:
+        found.append("a #selfcheck block (practice questions with answers): remove it")
+    for m in re.finditer(r"(?m)^=+\s+(.*)$", source_text):
+        if re.search(r"\b(practice test|practice questions|check yourself|self-?check|test yourself|quick check|check your understanding|answer key|answers)\b", m.group(1), re.IGNORECASE):
+            found.append(f'the section "{m.group(1).strip()}" (practice questions or answers): remove it')
+    return found
+
+
 def missing_terms(source_text: str, terms: list[str]) -> list[str]:
     """Terms that never appear in the PDF's text (case-insensitive,
     singular/plural tolerant). The build refuses while any are missing,

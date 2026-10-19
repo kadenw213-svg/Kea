@@ -10,6 +10,7 @@ import { judgeBlank } from '../../lib/blank';
 import { reloadScholar, useScholar } from './scholarStore';
 import { Exam, grade, QuestionCard, Shown, Answer, shuffle } from './Study';
 import { ReadingContext, useMissReading } from './ReadingPane';
+import { MathText } from './MathText';
 
 // ---------- Small shared pieces ----------
 /** Read a side aloud with the computer's own voice (nothing leaves the computer). */
@@ -202,7 +203,7 @@ export function Learn({ set }: { set: StudySetFull }) {
             <div className="muted">Mastered this round:</div>
             {roundDone.map((c) => (
               <div key={c.k} className="sm-round-row">
-                <Check size={14} /> <b>{c.front}</b> <span className="muted">{c.back}</span>
+                <Check size={14} /> <b><MathText text={c.front} /></b> <span className="muted"><MathText text={c.back} /></span>
               </div>
             ))}
           </div>
@@ -275,7 +276,7 @@ export function Learn({ set }: { set: StudySetFull }) {
             <SpeakButton text={prompt} />
           </span>
         </div>
-        <div className="sm-prompt-text">{prompt}</div>
+        <div className="sm-prompt-text"><MathText text={prompt} /></div>
       </div>
       {q.mode === 'write' ? (
         <div className="sm-write">
@@ -293,7 +294,7 @@ export function Learn({ set }: { set: StudySetFull }) {
             return (
               <button key={i} className={`st-choice ${picked === i ? 'on' : ''} ${result !== null && isRight ? 'correct' : ''} ${result === false && picked === i ? 'incorrect' : ''}`} onClick={() => result === null && setPicked(i)} disabled={result !== null}>
                 <span className="st-letter">{i + 1}</span>
-                <span>{c}</span>
+                <span><MathText text={c} /></span>
               </button>
             );
           })}
@@ -307,7 +308,7 @@ export function Learn({ set }: { set: StudySetFull }) {
       {result === 'checking' && <div className="muted sm-feedback">Checking…</div>}
       {(result === true || result === false) && (
         <div className={`sm-feedback ${result ? 'right' : 'wrong'}`}>
-          <b>{result ? 'Right.' : 'Not quite.'}</b> {!result && <span>The answer is <b>{rightText}</b>.</span>}
+          <b>{result ? 'Right.' : 'Not quite.'}</b> {!result && <span>The answer is <b><MathText text={rightText} /></b>.</span>}
           {result === false && q.mode === 'write' && (
             <button className="btn sm" onClick={override} title="Kea marked this wrong, but it means the same thing">
               <Check size={13} /> I was right
@@ -573,7 +574,7 @@ export function Review({ courseId }: { courseId: string }) {
       {card ? (
         <>
           <button className={`st-card ${flipped ? 'flipped' : ''}`} onClick={() => setFlipped(true)}>
-            <div className="st-card-side">{flipped ? card.back : card.front}</div>
+            <div className="st-card-side"><MathText text={flipped ? card.back : card.front} /></div>
             <div className="muted st-card-foot">{flipped ? 'How well did you know it?' : 'Think of the answer, then tap or press Space'}</div>
           </button>
           <div className="st-cards-nav">

@@ -116,3 +116,23 @@ def test_database_refuses_folding_graded_work_into_a_reading_week(session, make_
     session.execute(text("UPDATE academic_items SET superseded_by_id = :b WHERE id = :i"), {"b": week.id, "i": plain.id})
     session.execute(text("UPDATE event_context SET reason = 'Review week, not graded: the practice exam is its own item' WHERE id = 1"))
     session.execute(text("UPDATE academic_items SET superseded_by_id = :b WHERE id = :i"), {"b": week.id, "i": review.id})
+
+
+def test_explanations_must_teach():
+    from academic_sync.cli import _explain_problems
+
+    bare = {"type": "num", "level": "apply", "q": "Density?", "answer": 1.26}
+    assert any("symbols" in p for p in _explain_problems(bare, "d = m/V = 31.5 g / 25.0 mL = 1.26 g/mL, three significant figures kept throughout."))
+    good = "Density is mass per volume: d = m/V, where d is the density in g/mL, m the mass in grams and V the volume in mL. 31.5 g / 25.0 mL = 1.26 g/mL."
+    assert _explain_problems(bare, good) == []
+    assert any("thin" in p for p in _explain_problems(bare, "31.5 / 25.0 = 1.26 g/mL."))
+    # Solving for x is algebra, not a formula with symbols to define.
+    assert not any("symbols" in p for p in _explain_problems({"type": "mc"}, "Subtract 3 from both sides, then x = (12 - 3)/3 = 3."))
+    assert any("LaTeX" in p for p in _explain_problems({"type": "tf", "q": "Is \\frac{1}{2} half?"}, "Yes, one half is 0.5 of the whole."))
+
+
+def test_textbooks_carry_no_answer_keys():
+    from academic_sync.study_pdf import forbidden_parts
+
+    assert forbidden_parts("= Ch 5\n#selfcheck(([Q], [A]))") and forbidden_parts("== Practice test\nWork these")
+    assert forbidden_parts("== Gas laws\n#example[...]\n*Answer:* 22.") == []
