@@ -166,9 +166,23 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
     }
   }, [open]);
 
+  // D2L's raw sender ('"Kristin Rowan" <krowa...') and its course-name boilerplate in subjects, made readable.
+  const who = (from?: string | null) => String(from || '').replace(/<[^>]*>?.*$/, '').replace(/"/g, '').trim().replace(/^Automated - No Reply$/i, 'Class site');
+  const subject = (s: string) => {
+    const t = String(s || '').trim();
+    const re = /^(RE:\s*)+/i.test(t) ? 'RE: ' : '';
+    const from = t.match(/^(?:RE:\s*)*(.+?)\s*\(Student\)\s*from\b/i);
+    const rest = t
+      .replace(/^(RE:\s*)+/i, '')
+      .replace(/^.*?\b[A-Z]{3}\d{4}\w*\s.*?\([^)]*\)\s*(?:(?:FA|SP|SU|WI)\d{0,4}\b\s*)?/, '')
+      .trim();
+    // (D2L's subject for a reply to the student's own message: "RE: <student> (Student) from <class>".)
+    if (from && !rest) return `${re}Your message`;
+    return re + (rest || t.replace(/^(RE:\s*)+/i, ''));
+  };
   const list = useMemo(() => {
     if (!mail) return [];
-    if (box === 'inbox') return mail.messages.map((m) => ({ id: m.id, who: [m.from, m.course].filter(Boolean).join(' · ') || 'Class site', title: m.title, sub: m.preview, at: m.at, unread: !m.read, mark: null as any }));
+    if (box === 'inbox') return mail.messages.map((m) => ({ id: m.id, who: [who(m.from), m.course].filter(Boolean).join(' · ') || 'Class site', title: subject(m.title), sub: (m.full || (m.preview.startsWith(m.title) ? '' : m.preview)).replace(/\s+/g, ' ').trim(), at: m.at, unread: !m.read, mark: null as any }));
     if (box === 'sent') return mail.sent.map((m) => ({ id: m.id, who: [m.fromSite ? m.to : '', m.course].filter(Boolean).join(' · '), title: m.subject || '(reply)', sub: m.body, at: m.at, unread: false, mark: m.fromSite ? null : m.confirmed ? 'sent' : 'check' }));
     return mail.drafts.map((d) => ({ id: d.key, who: d.course || '', title: d.subject || (d.replyTo ? 'Reply' : 'New message'), sub: d.body, at: d.at, unread: false, mark: 'draft' }));
   }, [mail, box]);
@@ -188,6 +202,7 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
     <div className="sch-page ml-page">
       <div className="ml-top">
         <h1 className="sch-title">Messages</h1>
+        <span className="ml-top-gap" />
         <button className="btn sm" onClick={() => sync()} disabled={syncing} title={mail?.checked ? `Last read from your class site ${when(mail.checked)}` : 'Read your class site’s messages now'}>
           {syncing ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} Refresh
         </button>
@@ -221,7 +236,7 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
           </div>
         </div>
       )}
-      <p className="sch-sub">Your class-site messages, read and answered here. Kea sends what you write through your class site, the same as pressing Reply and Send there, and marks it sent once the site confirms.</p>
+      <p className="sch-sub">Your class-site messages. Replies go out through your class site, and show as sent once it confirms.</p>
       <div className="ml-wrap">
         <aside className="ml-list">
           <div className="st-seg ml-boxes">
@@ -254,7 +269,7 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
                   {m.mark === 'check' && <Clock size={13} className="ml-warn" />}
                   <span className="muted ml-at">{m.at ? when(m.at) : ''}</span>
                 </div>
-                <div className="ml-title">{m.title}</div>
+                <div className="ml-title" title={m.title}>{m.title}</div>
                 <div className="muted ml-sub">{m.sub.slice(0, 120)}</div>
               </button>
             ))
@@ -282,9 +297,9 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
           {!compose && msg && box === 'inbox' && (
             <article className="ml-msg">
               <div className="ml-msg-head">
-                <h2>{msg.title}</h2>
+                <h2 title={msg.title}>{subject(msg.title)}</h2>
                 <div className="muted">
-                  {[msg.from, msg.course || 'Class site'].filter(Boolean).join(' · ')} · {isNaN(new Date(msg.at).getTime()) ? msg.at : new Date(msg.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  {[who(msg.from), msg.course || 'Class site'].filter(Boolean).join(' · ')} · {isNaN(new Date(msg.at).getTime()) ? msg.at : new Date(msg.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
                 </div>
               </div>
               <div className="ml-actions">

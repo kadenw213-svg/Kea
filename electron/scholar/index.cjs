@@ -347,6 +347,21 @@ async function keepBanks() {
         break;
       }
     }
+    // Picture questions for the chapters that test identification (lab practicals, structures), soonest test first.
+    for (let n = 0; n < 40 && settings.get('scholar.pictureQuestions', true) !== false; n++) {
+      const today = new Date().toDateString();
+      if (bankRuns.day !== today) bankRuns = { day: today, n: 0 };
+      if (bankRuns.n >= BANK_RUNS) break;
+      const p = profiles.paths();
+      const need = study.pictureNeed(await db.textbookChapters(p.db, p.textbooks), await db.identifyingChapters(p.db));
+      if (!need) break;
+      bankRuns.n++;
+      const { id } = await study.request(need);
+      BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
+      const done = await runner.run('practice', id, 'schedule');
+      BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
+      if (!done || done.paused || study.list().find((e) => e.id === id)?.status !== 'ready') break;
+    }
     // (Worked steps are written by the depth review, in the same pass that rewrites weak explanations; a separate run
     // per chapter only when the student asks for one, from a missed question.)
     for (let n = 0; n < 50 && settings.get('scholar.workedStepsRuns', false) === true; n++) {

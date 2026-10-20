@@ -2052,8 +2052,11 @@
   align-items: center;
   gap: 12px;
 }
-.ml-top .btn {
-  margin-left: auto;
+.ml-top {
+  gap: 8px;
+}
+.ml-top-gap {
+  flex: 1;
 }
 .ml-wrap {
   display: grid;

@@ -191,7 +191,7 @@ export function SetRow({ s, showCourse = false }: { s: StudySet; showCourse?: bo
       <div className="st-text">
         <div className="st-title">
           {showCourse && <span className="st-code">{s.courseCode}</span>}
-          {s.itemTitle || s.title.replace(/^(Practice exam|Flashcards): /, '')}
+          {s.itemTitle || (s.chapters.length > 2 ? `Chapters ${s.chapters.map((c) => c.replace(/^Chapter /, '')).join(', ')}` : s.title.replace(/^(Practice exam|Flashcards): /, ''))}
         </div>
         <div className="muted st-meta">
           {s.kind === 'exam' ? 'Practice exam' : s.source === 'mine' ? 'Your set' : 'Flashcards'} · {meta}
@@ -255,7 +255,9 @@ export function PracticeBox({ courseId, itemId, chapters, title = 'Practice' }: 
 export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[]; courseId?: string }) {
   const sets = useStudySets();
   const [filter, setFilter] = useState<string>(courseId || '');
-  const shown = (sets || []).filter((s) => !filter || s.courseId === filter);
+  // A copy opened from saved questions and never taken is just a view of the bank: not worth a row. Banks get their
+  // own folded list under each class.
+  const shown = (sets || []).filter((s) => (!filter || s.courseId === filter) && !(s.source === 'saved' && s.status === 'ready' && !s.attempts));
   const byCourse = new Map<string, StudySet[]>();
   for (const s of shown) byCourse.set(s.courseId, [...(byCourse.get(s.courseId) || []), s]);
   return (
@@ -296,10 +298,22 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
           <section key={cid}>
             {!courseId && <h2 className="sch-h2">{cid ? courses.find((c) => c.id === cid)?.code || list[0].courseCode : 'Your own sets'}</h2>}
             <div className="st-list">
-              {list.map((s) => (
+              {list.filter((s) => !s.bank).map((s) => (
                 <SetRow key={s.id} s={s} />
               ))}
             </div>
+            {list.some((s) => s.bank) && (
+              <details className="st-banks">
+                <summary className="muted">
+                  Question banks ({list.filter((s) => s.bank).length}): the saved questions behind every practice exam
+                </summary>
+                <div className="st-list">
+                  {list.filter((s) => s.bank).map((s) => (
+                    <SetRow key={s.id} s={s} />
+                  ))}
+                </div>
+              </details>
+            )}
           </section>
         ))
       )}
@@ -422,7 +436,7 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
     ) : !set ? (
       <div className="spinner" />
     ) : set.kind === 'exam' ? (
-      <Exam set={set} />
+      <Exam set={set} auto={(startMode as string) === 'exam-instant' ? 'instant' : (startMode as string) === 'exam' ? 'end' : undefined} />
     ) : mode === 'learn' ? (
       <Learn set={set} />
     ) : mode === 'test' ? (
@@ -534,10 +548,11 @@ function choose(all: StudyQuestion[], n: number, history: Record<string, StudyHi
   );
 }
 
-export function Exam({ set }: { set: StudySetFull }) {
+/** `auto`: opened from the Study page, already sized: start at once, answers at the end or after each question. */
+export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant' }) {
   const all = set.questions || [];
-  const [n, setN] = useState(Math.min(all.length, 25));
-  const [instant, setInstant] = useState(false);
+  const [n, setN] = useState(auto ? all.length : Math.min(all.length, 25));
+  const [instant, setInstant] = useState(auto === 'instant');
   const [run, setRun] = useState<Shown[] | null>(null);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [selfMarks, setSelfMarks] = useState<(boolean | undefined)[]>([]);
@@ -557,6 +572,9 @@ export function Exam({ set }: { set: StudySetFull }) {
     setSubmitted(false);
     setSaved(false);
   };
+  useEffect(() => {
+    if (auto && all.length) start();
+  }, [set.id]);
   const results = useMemo(() => (run ? run.map((s, i) => grade(s, answers[i], selfMarks[i], judged[i])) : []), [run, answers, selfMarks, judged]);
   // Blanks are marked as they're revealed: Kea's own matching, then the local model for anything it can't place.
   useEffect(() => {

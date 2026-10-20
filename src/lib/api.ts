@@ -627,6 +627,9 @@ export interface StudySet {
   createdAt: string;
   status: 'making' | 'ready' | 'failed';
   source: 'claude' | 'saved' | 'library' | 'mine';
+  /** A chapter's saved question bank (written by Kea in the background); `pictures`: its identification set. */
+  bank?: boolean;
+  pictures?: boolean;
   editedAt?: string;
   /** How many of its items were reused from saved sets. */
   reused?: number;

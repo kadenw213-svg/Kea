@@ -25,6 +25,8 @@ export interface Field {
   restart?: boolean;
   /** Only shown when this returns true. */
   when?: (v: Record<string, any>) => boolean;
+  /** A heading shown above this field (the start of a group of related settings). */
+  group?: string;
 }
 
 export interface Section {
@@ -421,11 +423,20 @@ export const SECTIONS: Section[] = [
     fields: [
       {
         key: 'scholar.scanEvery',
+        group: 'Checking your classes',
         label: 'Check my classes',
         type: 'select',
         default: '1',
         options: [['1', 'Every day'], ['2', 'Every 2 days'], ['3', 'Every 3 days'], ['7', 'Once a week'], ['0', 'Only when I ask (Scans → Check my classes now)']].map(([value, label]) => ({ value, label })),
         help: 'Anything that needs you, missed work, and any new class (scanned in full). Kea checks first by itself and only uses your Claude plan for classes where something changed.'
+      },
+      {
+        key: 'scholar.scanTime',
+        label: 'Run the checks after',
+        type: 'select',
+        default: '05:00',
+        options: ['03:00', '04:00', '05:00', '06:00', '07:00', '08:00', '12:00', '18:00'].map((t) => ({ value: t, label: new Date(`2000-01-01T${t}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })),
+        help: 'If Kea is closed then, the check runs the next time it opens.'
       },
       {
         key: 'scholar.inboxMinutes',
@@ -436,7 +447,41 @@ export const SECTIONS: Section[] = [
         help: 'A quick look done by Kea itself (no Claude usage). Each new thing shows in the Inbox as its own message, with a notification.'
       },
       {
+        key: 'scholar.weeklyDay',
+        label: 'Update readings, links and class changes',
+        type: 'select',
+        default: 'daily',
+        options: [{ value: 'daily', label: 'Every day' }, ...['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map((d) => ({ value: d, label: `Every ${d[0].toUpperCase() + d.slice(1)}` }))],
+        help: 'Kea compares each class with last time by itself; Claude only reads a class when something moved or next week’s reading needs building, so checking daily rarely costs anything.'
+      },
+      {
+        key: 'scholar.fullCheckDays',
+        label: 'Full check (outside platforms like ALEKS) every',
+        type: 'select',
+        default: '1',
+        options: [['1', 'Day'], ['2', '2 days'], ['3', '3 days'], ['7', 'Week']].map(([value, label]) => ({ value, label })),
+        help: 'Outside platforms’ gradebooks can’t be checked without Claude, so on the other days only classes with something new are read. Every day uses a little more of your Claude plan.'
+      },
+      { key: 'scholar.curriculumCheck', label: 'Match chapters to each syllabus', type: 'toggle', default: true, help: 'Every day Kea compares each class’s chapters with its syllabus outcomes and topical outline by itself; Claude only fixes a class when something doesn’t match. Shown under each class → Textbook → Syllabus.' },
+      { key: 'scholar.background', label: 'Keep checking when Kea’s window is closed', type: 'toggle', default: true, help: 'Closing the window leaves Kea in the notification area (by the clock), so the class checks and paused scans still run. Quit from its icon there.' },
+      { key: 'scholar.studyPdfs', group: 'Textbooks and study', label: "Write each week's textbook chapters", type: 'toggle', default: true, help: "Each class's chapters for the week ahead, written from what the class covers and its tests." },
+      { key: 'scholar.questionBanks', label: 'Keep a question bank for every chapter', type: 'toggle', default: true, help: 'Each chapter with a textbook gets saved practice questions (Quiz me in the textbook), and more are written when you run low. Written once, then free to take on every device.' },
+      {
+        key: 'scholar.bankSize',
+        label: 'Questions per chapter',
+        type: 'select',
+        default: '50',
+        options: ['25', '50', '75', '100'].map((n) => ({ value: n, label: n })),
+        advanced: true
+      },
+      { key: 'scholar.pictureQuestions', label: 'Picture questions for identification', type: 'toggle', default: true, help: 'Chapters that test recognizing things (lab practicals, specimens, structures, anatomy, glassware, molecular shapes) get a set of questions that show a real picture from Wikimedia Commons and ask what it is. Pictures are saved with the questions, so they work offline.' },
+      { key: 'scholar.autoReading', label: 'Open the reading when you miss one', type: 'toggle', default: true, help: 'A wrong answer opens the textbook beside it, at the section that teaches it, when Kea is sure it found that section. Otherwise the explanation under the question is shown on its own (the book icon still opens the chapter).' },
+      { key: 'scholar.depthReviews', label: 'Review chapters at exam depth', type: 'toggle', default: true, advanced: true, help: 'Before a test, Claude checks each chapter’s textbook and questions against the syllabus and review sheets, rewrites weak explanations and adds worked steps. Every 3 days with a test within three weeks, otherwise weekly.' },
+      { key: 'scholar.mailSignature', group: 'Messages', label: 'Message signature', type: 'text', default: '', help: 'Added under every new message you write in Messages (edit it there, under Signature).', advanced: true },
+      { key: 'scholar.mailSignatureReplies', label: 'Add the signature to replies too', type: 'toggle', default: true, advanced: true },
+      {
         key: 'scholar.cloud',
+        group: 'Your devices',
         label: 'Sync your phone and other devices through',
         type: 'select',
         default: 'auto',
@@ -466,44 +511,6 @@ export const SECTIONS: Section[] = [
         default: '0',
         options: [['0', 'Never (I choose the primary in Scans → Devices)'], ['24', 'A day'], ['48', '2 days'], ['72', '3 days'], ['168', 'A week']].map(([value, label]) => ({ value, label })),
         advanced: true
-      },
-      { key: 'scholar.background', label: 'Keep checking when Kea’s window is closed', type: 'toggle', default: true, help: 'Closing the window leaves Kea in the notification area (by the clock), so the class checks and paused scans still run. Quit from its icon there.' },
-      {
-        key: 'scholar.scanTime',
-        label: 'Run the checks after',
-        type: 'select',
-        default: '05:00',
-        options: ['03:00', '04:00', '05:00', '06:00', '07:00', '08:00', '12:00', '18:00'].map((t) => ({ value: t, label: new Date(`2000-01-01T${t}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })),
-        help: 'If Kea is closed then, the check runs the next time it opens.'
-      },
-      { key: 'scholar.mailSignature', label: 'Message signature', type: 'text', default: '', help: 'Added under every new message you write in Messages (edit it there, under Signature).', advanced: true },
-      { key: 'scholar.mailSignatureReplies', label: 'Add the signature to replies too', type: 'toggle', default: true, advanced: true },
-      { key: 'scholar.autoReading', label: 'Open the reading when you miss one', type: 'toggle', default: true, help: 'A wrong answer opens the textbook beside it, at the section that teaches it, when Kea is sure it found that section. Otherwise the explanation under the question is shown on its own (the book icon still opens the chapter).' },
-      { key: 'scholar.questionBanks', label: 'Keep a question bank for every chapter', type: 'toggle', default: true, help: 'Each chapter with a textbook gets saved practice questions (Quiz me in the textbook), and more are written when you run low. Written once, then free to take on every device.' },
-      {
-        key: 'scholar.bankSize',
-        label: 'Questions per chapter',
-        type: 'select',
-        default: '50',
-        options: ['25', '50', '75', '100'].map((n) => ({ value: n, label: n })),
-        advanced: true
-      },
-      { key: 'scholar.studyPdfs', label: "Write each week's textbook chapters", type: 'toggle', default: true, help: "Each class's chapters for the week ahead, written from what the class covers and its tests." },
-      {
-        key: 'scholar.weeklyDay',
-        label: 'Update readings, links and class changes',
-        type: 'select',
-        default: 'daily',
-        options: [{ value: 'daily', label: 'Every day' }, ...['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map((d) => ({ value: d, label: `Every ${d[0].toUpperCase() + d.slice(1)}` }))],
-        help: 'Kea compares each class with last time by itself; Claude only reads a class when something moved or next week’s reading needs building, so checking daily rarely costs anything.'
-      },
-      {
-        key: 'scholar.fullCheckDays',
-        label: 'Full check (outside platforms like ALEKS) every',
-        type: 'select',
-        default: '1',
-        options: [['1', 'Day'], ['2', '2 days'], ['3', '3 days'], ['7', 'Week']].map(([value, label]) => ({ value, label })),
-        help: 'Outside platforms’ gradebooks can’t be checked without Claude, so on the other days only classes with something new are read. Every day uses a little more of your Claude plan.'
       }
     ]
   },

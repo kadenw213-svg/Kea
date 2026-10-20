@@ -1,5 +1,5 @@
 import { Logo } from '../Logo';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { BookOpen, Circle, Cloud, FileCode2, FileText, FileType2, GraduationCap, Home, Mic, Palette, Presentation, RefreshCw, Save, Settings, Sheet, Shield, SpellCheck } from 'lucide-react';
 
 // Only the icons the sections use (importing the whole icon set put ~1,500 icons into Kea's start-up code).
@@ -305,9 +305,24 @@ export function SettingsDialog() {
       <>
         {cur.blurb && <p className="sblurb">{cur.blurb}</p>}
         {cur.id === 'google' && <GooglePanel />}
-        {visibleFields(cur.fields).map((f) => (
-          <Row key={f.key} f={f} />
-        ))}
+        {(() => {
+          // Each field belongs to the group heading above it; a heading shows above the first visible field of its group.
+          const groupOf = new Map<string, string>();
+          let g = '';
+          for (const f of cur.fields) groupOf.set(f.key, (g = f.group || g));
+          let last = '';
+          return visibleFields(cur.fields).map((f) => {
+            const head = groupOf.get(f.key) || '';
+            const show = head && head !== last;
+            last = head;
+            return (
+              <Fragment key={f.key}>
+                {show && <div className="sgroup-title sgroup-in">{head}</div>}
+                <Row f={f} />
+              </Fragment>
+            );
+          });
+        })()}
         {!showAdvanced && advCount > 0 && (
           <button className="link-btn more-adv" onClick={() => useSettings.getState().set({ 'ui.showAdvanced': true })}>
             Show {advCount} advanced setting{advCount === 1 ? '' : 's'}

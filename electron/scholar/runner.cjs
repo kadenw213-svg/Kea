@@ -478,7 +478,7 @@ async function curriculumCheck(why = 'schedule') {
   // Depth: a class with chapters due for review (never reviewed, rewritten since, or a test within three weeks) gets a
   // depth review every 3 days while any has a test within three weeks, else once a week.
   const deep = [];
-  for (const c of list) {
+  for (const c of settings().get('scholar.depthReviews', true) === false ? [] : list) {
     const rows = (await engineJson(['depth-due', '--course', c.code, '--json']).catch(() => null)) || [];
     const dueRows = rows.filter((r) => r.due);
     if (!dueRows.length) continue;

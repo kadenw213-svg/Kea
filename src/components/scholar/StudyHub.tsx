@@ -55,6 +55,22 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   const [q, setQ] = useState<ReviewQueue | null>(null);
   const [saved, setSaved] = useState<{ exam: number; cards: number } | null>(null);
   const [size, setSize] = useState(25);
+  // Answers at the end (like the real exam) or after each question; remembered on this device.
+  const [instant, setInstantState] = useState(() => {
+    try {
+      return localStorage.getItem('kea.examInstant') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setInstant = (v: boolean) => {
+    setInstantState(v);
+    try {
+      localStorage.setItem('kea.examInstant', v ? '1' : '0');
+    } catch {}
+  };
+  // Opens the exam straight away (no second setup screen).
+  const go = instant ? '#exam-instant' : '#exam';
   const [busy, setBusy] = useState('');
   // What to study: the topics (textbook sections) picked, none meaning all; and which of their questions.
   const [pool, setPool] = useState<PoolItem[] | null>(null);
@@ -96,7 +112,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
       if (kind === 'exam' && narrowed) {
         const keys = [...shuffled(picked.filter(isMissed)), ...shuffled(picked.filter((p) => !isMissed(p)))].slice(0, count).map((p) => p.k);
         const id = await api.scholar.studyMake({ id: stableId('exam-pick', scope), kind: 'exam', courseId: scope.courseId, ...target, mode: 'saved', count: keys.length, pick: keys });
-        useScholar.getState().set({ study: id });
+        useScholar.getState().set({ study: id + go });
         return;
       }
       // No flashcards yet (or a narrowed choice): the saved questions, as cards.
@@ -107,7 +123,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
         return;
       }
       const id = await api.scholar.studyMake({ id: stableId(kind, scope), kind, courseId: scope.courseId, ...target, mode: 'saved', count });
-      useScholar.getState().set({ study: mode ? `${id}#${mode}` : id });
+      useScholar.getState().set({ study: mode ? `${id}#${mode}` : kind === 'exam' ? id + go : id });
     } catch (err: any) {
       toast(err?.message || 'Kea couldn’t open it.', 'error');
     } finally {
@@ -146,6 +162,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
         <div className="hub-pick">
           <div className="hub-pick-row">
             <span className="hub-pick-label">Topics</span>
+            <div className="hub-chips">
             <button className={`st-chip ${!topics.length ? 'on' : ''}`} onClick={() => setTopics([])}>
               All
             </button>
@@ -158,9 +175,11 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
                 </button>
               );
             })}
+            </div>
           </div>
           <div className="hub-pick-row">
             <span className="hub-pick-label">Questions</span>
+            <div className="hub-chips">
             {WHICH.map(([w, label]) => {
               const n = inTopics.filter((p) => (w === 'new' ? !p.seen && p.box == null : w === 'missed' ? isMissed(p) : w === 'starred' ? p.starred : true)).length;
               return (
@@ -169,6 +188,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
                 </button>
               );
             })}
+            </div>
           </div>
         </div>
       )}
@@ -187,6 +207,16 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
               ))}
               <button className={size >= exam ? 'on' : ''} onClick={() => setSize(exam)}>
                 All {exam}
+              </button>
+            </div>
+          )}
+          {exam > 0 && (
+            <div className="hub-sizes" title="When you see what's right">
+              <button className={!instant ? 'on' : ''} onClick={() => setInstant(false)}>
+                Answers at the end
+              </button>
+              <button className={instant ? 'on' : ''} onClick={() => setInstant(true)}>
+                After each
               </button>
             </div>
           )}

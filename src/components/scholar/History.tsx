@@ -102,6 +102,15 @@ export function ItemHistory({ id }: { id: string }) {
   );
 }
 
+// Changes a student cares about: dates and times, names, kinds, points, added, removed, cancelled. Filling in links or
+// instructions is bookkeeping and stays in each item's History.
+const MEANINGFUL = new Set(['title', 'item_type', 'date', 'start_time', 'end_time', 'due_time', 'date_range_end', 'status', 'points', 'is_optional']);
+const meaningful = (e: HistoryEvent) => {
+  if (e.op === 'source' || e.op === 'baseline') return false;
+  if (e.op !== 'update') return true;
+  return Object.keys(e.changes || {}).some((k) => MEANINGFUL.has(k));
+};
+
 /** "What changed": everything added, moved, renamed, replaced or cancelled on the calendar this week, and why. */
 export function ChangesBox() {
   const version = useScholar((s) => s.version);
@@ -110,7 +119,7 @@ export function ChangesBox() {
   useEffect(() => {
     api.scholar
       .changes({})
-      .then((r) => setEvents(r.events.filter((e) => e.table === 'academic_items' || e.op === 'dismiss')))
+      .then((r) => setEvents(r.events.filter((e) => (e.table === 'academic_items' || e.op === 'dismiss') && meaningful(e))))
       .catch(() => setEvents([]));
   }, [version]);
   if (!events || !events.length) return null;
@@ -118,7 +127,7 @@ export function ChangesBox() {
     <section className="hs-changes">
       <button className="hs-head" onClick={() => setOpen(!open)}>
         <HistoryIcon size={15} /> <b>{events.length} calendar change{events.length === 1 ? '' : 's'} this week</b>
-        <span className="muted">what was added, moved or removed, and why</span>
+        <span className="muted">added, moved, renamed or removed, and why</span>
         <ChevronDown size={15} className={open ? 'flip' : ''} />
       </button>
       {open && (
@@ -152,25 +161,21 @@ export function ClassRules({ code }: { code: string }) {
       .catch(() => setRules([]));
   }, [code]);
   if (!rules || !rules.length) return null;
-  const shown = open ? rules : rules.slice(0, 5);
   return (
     <section className="hs-changes cls-rules">
       <button className="hs-head" onClick={() => setOpen(!open)}>
-        <b>Class rules</b>
+        <b>Class rules ({rules.length})</b>
         <span className="muted">what can cost points, from the syllabus and announcements</span>
         <ChevronDown size={15} className={open ? 'flip' : ''} />
       </button>
-      <ul className="cls-rule-list">
-        {shown.map((r, i) => (
-          <li key={i}>
-            {r.text} <span className="muted">({r.where})</span>
-          </li>
-        ))}
-      </ul>
-      {!open && rules.length > 5 && (
-        <button className="btn sm" onClick={() => setOpen(true)}>
-          All {rules.length}
-        </button>
+      {open && (
+        <ul className="cls-rule-list">
+          {rules.map((r, i) => (
+            <li key={i}>
+              {r.text} <span className="muted">({r.where})</span>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );

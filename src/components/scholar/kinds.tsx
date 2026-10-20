@@ -231,6 +231,12 @@ export function LinkGroups({ links, compact = false, onOpen = openLink }: { link
 }
 
 /** The one link that matters most for an item, for its row's quick button: where to hand it in, or its quiz. */
+/** The assignment's own document (the handout or instructions file), when it has one besides the hand-in page. */
+export function assignmentDoc(it: ScholarItem): ScholarLink | null {
+  const own = it.links.filter((l) => l.kind !== 'submit' && !/dropbox|folder_submit|quiz_summary|discussions\/topics/i.test(l.url));
+  return own.find((l) => l.kind === 'handout') || own.find((l) => /\.(pdf|docx?)\b|instructions|assignment|handout|rubric|prompt/i.test(`${l.label} ${l.url}`)) || null;
+}
+
 export function primaryLink(it: ScholarItem): { url: string; label: string; icon: typeof Upload } | null {
   const submit = it.links.find((l) => l.kind === 'submit') || it.links.find((l) => /dropbox|submit|discussion|quiz/i.test(`${l.label} ${l.url}`));
   if (!submit || !TODO.has(it.type)) return null;

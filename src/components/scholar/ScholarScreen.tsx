@@ -13,6 +13,7 @@ import {
   Circle,
   X,
   FileText,
+  Upload,
   Lock,
   FolderInput,
   ChevronDown,
@@ -45,7 +46,7 @@ import { useScholar, reloadScholar, ScholarView } from './scholarStore';
 import { MenuButton } from '../Popover';
 import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
-import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, setClassColor, setTypeColor, useColors } from './kinds';
+import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, assignmentDoc, setClassColor, setTypeColor, useColors } from './kinds';
 import { ResourcesView, StudyPlayer } from './Study';
 import { MessagesView } from './Messages';
 import { ChangesBox, ClassRules, SyllabusMap, ItemHistory } from './History';
@@ -282,7 +283,7 @@ export function ScholarScreen() {
               </span>
               <span className="sch-cname">{c.name}</span>
             </span>
-            {c.dueThisWeek > 0 && <span className="sch-badge">{c.dueThisWeek}</span>}
+            {c.dueThisWeek > 0 && <span className="sch-badge" title={`${c.dueThisWeek} due this week`}>{c.dueThisWeek}</span>}
           </button>
         ))}
         <button className={`sch-link sch-add ${view.name === 'add' ? 'on' : ''}`} onClick={() => go({ name: 'add' })}>
@@ -382,7 +383,7 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
             </span>
           )}
           <span className="sch-type" style={{ color: ctx.colors.type(it.type) }}>
-            {TYPE_LABEL[it.type] || it.type}
+            {typeLabel(it)}
           </span>
           {showDate && <span>· {dayName(it.date)}</span>}
           {whenOf(it) && <span>· {whenOf(it)}</span>}
@@ -438,6 +439,9 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
   );
 }
 
+/** An item's kind in words (a lab report filed as a lab handout reads "Lab report"). */
+const typeLabel = (it: ScholarItem) => (it.type === 'lab_handout' && /\breport\b/i.test(it.title) ? 'Lab report' : TYPE_LABEL[it.type] || it.type);
+
 // ---------- This week ----------
 function WeekView({ ctx }: { ctx: Ctx }) {
   const from = today();
@@ -466,11 +470,23 @@ function WeekView({ ctx }: { ctx: Ctx }) {
   const days = [...new Set(due.map((i) => i.date))];
   const open = due.filter((i) => TODO.has(i.type) && !isDone(i)).length;
   const next = due.find((i) => i.date === from && i.start && minutes(i.start) > new Date().getHours() * 60 + new Date().getMinutes());
+  const daySection = (d: string) => (
+    <section key={d}>
+      <h2 className="sch-h2">{dayName(d)}</h2>
+      <div className="sch-list">
+        {due
+          .filter((i) => i.date === d)
+          .map((i) => (
+            <ItemRow key={i.id} ctx={ctx} it={i} />
+          ))}
+      </div>
+    </section>
+  );
   return (
     <div className="sch-page">
       <h1 className="sch-title">This week</h1>
       <p className="sch-sub">
-        {open ? `${open} thing${open === 1 ? '' : 's'} to do in the next two weeks.` : 'Nothing left to do in the next two weeks.'}
+        {open ? `${open} thing${open === 1 ? '' : 's'} due in the next 14 days.` : 'Nothing due in the next 14 days.'}
         {next ? ` Next: ${next.courseCode} ${TYPE_LABEL[next.type]?.toLowerCase() || ''} at ${clock(next.start)}${next.location && next.location !== 'Online' ? ` in ${shortRoom(next.location)}` : ''}.` : ''}
       </p>
       <ChangesBox />
@@ -497,8 +513,8 @@ function WeekView({ ctx }: { ctx: Ctx }) {
         <section className="unc-box">
           <button className="miss-head unc" onClick={() => setUncOpen(!uncOpen)}>
             <Circle size={15} />
-            <b>{unconfirmed.length} past due, not checked off</b>
-            <span className="muted">Kea couldn't confirm these on your class site (no grade or hand-in folder yet).</span>
+            <b>{unconfirmed.length} done? Check {unconfirmed.length === 1 ? 'it' : 'them'} off</b>
+            <span className="muted">Past items your class site can't confirm (no grade or hand-in folder). Check off what you did.</span>
             <ChevronDown size={15} className={uncOpen ? 'flip' : ''} />
           </button>
           {uncOpen && (
@@ -515,9 +531,10 @@ function WeekView({ ctx }: { ctx: Ctx }) {
           )}
         </section>
       )}
+      {days.filter((d) => d === from).map(daySection)}
       {banners.length > 0 && (
         <section>
-          <h2 className="sch-h2">Reading</h2>
+          <h2 className="sch-h2">Reading and topics</h2>
           <div className="sch-banners">
             {banners.map((b) => (
               <ReadingCard key={b.id} ctx={ctx} b={b} />
@@ -525,18 +542,7 @@ function WeekView({ ctx }: { ctx: Ctx }) {
           </div>
         </section>
       )}
-      {days.map((d) => (
-        <section key={d}>
-          <h2 className="sch-h2">{dayName(d)}</h2>
-          <div className="sch-list">
-            {due
-              .filter((i) => i.date === d)
-              .map((i) => (
-                <ItemRow key={i.id} ctx={ctx} it={i} />
-              ))}
-          </div>
-        </section>
-      ))}
+      {days.filter((d) => d !== from).map(daySection)}
     </div>
   );
 }
@@ -930,7 +936,7 @@ function WeekGrid({ ctx, items, start, showCourse }: { ctx: Ctx; items: ScholarI
             {items
               .filter((i) => i.date === d && !i.start && i.type !== 'weekly_reading')
               .map((i) => (
-                <button key={i.id} className={`wk-chip ${isDone(i) ? 'done' : ''} ${isMissing(i) ? 'missing' : ''}`} style={{ ['--kc' as any]: ctx.colors.item(i) }} onClick={() => ctx.open(i)} title={`${i.courseCode} · ${TYPE_LABEL[i.type] || i.type}: ${i.title}${i.due ? ` · due ${clock(i.due)}` : ''}`}>
+                <button key={i.id} className={`wk-chip ${isDone(i) ? 'done' : ''} ${isMissing(i) ? 'missing' : ''}`} style={{ ['--kc' as any]: ctx.colors.item(i) }} onClick={() => ctx.open(i)} title={`${i.courseCode} · ${typeLabel(i)}: ${i.title}${i.due ? ` · due ${clock(i.due)}` : ''}`}>
                   {isMissing(i) && <AlertTriangle size={11} />}
                   {showCourse && <b>{i.courseCode}</b>} {i.title}
                 </button>
@@ -963,11 +969,11 @@ function WeekGrid({ ctx, items, start, showCourse }: { ctx: Ctx; items: ScholarI
                     className={`wk-block ${i.done ? 'done' : ''}`}
                     style={{ top: ((s - first * 60) / 60) * HOUR, height: Math.max(22, ((e - s) / 60) * HOUR - 2), ['--kc' as any]: ctx.colors.item(i) }}
                     onClick={() => ctx.open(i)}
-                    title={`${i.courseCode} · ${TYPE_LABEL[i.type] || i.type}: ${i.title}`}
+                    title={`${i.courseCode} · ${typeLabel(i)}: ${i.title}`}
                   >
                     <span className="wk-block-title">
                       {showCourse && <b>{i.courseCode} </b>}
-                      {TYPE_LABEL[i.type] || i.type}
+                      {typeLabel(i)}
                     </span>
                     <span className="wk-block-sub">{i.title.replace(/^.*?(Lecture|Lab)\s*[—–-]\s*/, '')}</span>
                     <span className="wk-block-sub">
@@ -1021,7 +1027,7 @@ function MonthGrid({ ctx, items, start, month, showCourse }: { ctx: Ctx; items: 
                         key={i.id}
                         className={`cal-item ${isDone(i) ? 'done' : ''} ${TEST.has(i.type) ? 'test' : ''} ${isMissing(i) ? 'missing' : ''}`}
                         onClick={() => ctx.open(i)}
-                        title={`${i.courseCode} · ${TYPE_LABEL[i.type] || i.type}: ${i.title}`}
+                        title={`${i.courseCode} · ${typeLabel(i)}: ${i.title}`}
                       >
                         <span className="sch-dot" style={{ background: ctx.colors.item(i) }} />
                         {i.start && <span className="cal-item-time">{clock(i.start).replace(':00', '').replace(' ', '').toLowerCase()}</span>}
@@ -1274,7 +1280,13 @@ function RewriteButton({ code, chapter }: { code: string; chapter: string }) {
 function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; onClose(): void }) {
   const links = useMemo(() => [...it.links, ...it.weeklyLinks], [it]);
   // (Some items' only description is their own title: nothing more to say.)
-  const instructions = [it.description, it.sourceWording].find((t) => t && t.trim() !== it.title.trim()) || '';
+  // (Nor one that only repeats the title and the date: "Saturday, October 24, 2026 11:59 PM: <title> due".)
+  const restOf = (t: string) =>
+    t
+      .replace(it.title, '')
+      .replace(/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?|\b\d{1,4}\b|\b(am|pm|due)\b|[,:.\s-]/gi, '')
+      .trim();
+  const instructions = [it.description, it.sourceWording].find((t) => t && t.trim() !== it.title.trim() && restOf(t).length > 12) || '';
   // What a test is like ("Exam format: essay, multiple choice…"); the rest of its study focus stays internal and goes
   // into practice exams and flashcards instead of a wall of topics here.
   const format = it.studyFocus.find((f) => /^(exam |test |quiz )?format\b/i.test(f));
@@ -1284,7 +1296,10 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
   const practice = it.readings.length > 0 && !['administrative_deadline', 'break', 'no_class'].includes(it.type);
   const missing = isMissing(it);
   const quick = primaryLink(it);
+  const doc = assignmentDoc(it);
   const cat = categoryOf(it.type);
+  // Graded work with no hand-in page: say so, so a missing button doesn't look like a bug.
+  const handsIn = TODO.has(it.type) && !['weekly_reading', 'lecture', 'reading'].includes(it.type);
   // Handing in a file from here: pick it, and Kea opens this assignment's folder page with the file attached.
   const handInFile = async () => {
     const files = await api.openDialog({ title: 'Choose the file to hand in', filters: [{ name: 'Documents', extensions: ['pdf', 'docx', 'doc', 'pptx', 'xlsx', 'png', 'jpg', 'jpeg', 'txt'] }] }).catch(() => []);
@@ -1305,7 +1320,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           {it.courseCode}
         </span>
         <span className="sch-type" style={{ color: ctx.colors.type(it.type) }} title={cat.label}>
-          {TYPE_LABEL[it.type] || it.type}
+          {typeLabel(it)}
         </span>
         <button className="icon-btn sm" onClick={onClose} title="Close">
           <X size={16} />
@@ -1343,6 +1358,20 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
             <span>{it.module}</span>
           </div>
         )}
+        {handsIn && (
+          <div>
+            <Upload size={14} />
+            <span>
+              {quick
+                ? quick.label === 'Hand in'
+                  ? 'Hand in: the assignment folder on your class site'
+                  : `Done on: ${quick.label}`
+                : it.location && /class|lab|room|hall|in person/i.test(it.location)
+                  ? 'Hand in: in class'
+                  : <span className="muted">No hand-in page on your class site yet (it may still be hidden or locked)</span>}
+            </span>
+          </div>
+        )}
       </div>
       <div className="pn-actions">
         {TODO.has(it.type) && (
@@ -1355,9 +1384,14 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
             <quick.icon size={15} /> {quick.label === 'Hand in' ? 'Open hand-in page' : `Open ${quick.label}`}
           </button>
         )}
+        {doc && (
+          <button className="btn" onClick={() => openLink(doc.url)} title={doc.label}>
+            <FileText size={15} /> Open assignment
+          </button>
+        )}
         {quick?.label === 'Hand in' && (
           <button className="btn" onClick={handInFile} title="Choose a file; Kea attaches it on the hand-in page, and you press Submit there">
-            <FileText size={15} /> Hand in a file…
+            <Upload size={15} /> Hand in a file…
           </button>
         )}
       </div>

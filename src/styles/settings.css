@@ -622,3 +622,11 @@
   gap: 8px;
   margin-top: 8px;
 }
+
+/* A group heading inside a section (Scholar: Checking your classes, Textbooks and study, …) */
+.sgroup-title.sgroup-in {
+  margin: 22px 0 4px;
+}
+.sgroup-title.sgroup-in:first-of-type {
+  margin-top: 6px;
+}

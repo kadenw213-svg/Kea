@@ -233,7 +233,7 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
   const fresh = mode === 'saved' ? 0 : n - reuse.length;
   const topic = src.item ? src.item.title : src.chapters.map((c) => (c.title ? `${c.label}: ${c.title}` : c.label)).join(', ');
   const title = `${bank ? 'Question bank' : kind === 'exam' ? 'Practice exam' : 'Flashcards'}: ${topic}`;
-  const entry = { id, kind, title, ...(bank ? { bank: true } : {}), ...(upgrade ? { upgrade: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
+  const entry = { id, kind, title: pictures ? title.replace(/^Question bank/, 'Picture questions') : title, ...(bank ? { bank: true } : {}), ...(upgrade ? { upgrade: true } : {}), ...(pictures ? { pictures: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
   const list = index().filter((e) => e.id !== id);
   if (!fresh) {
     writeJson(file('sets', `${id}.json`), kind === 'cards' ? { cards: reuse } : { questions: reuse });
@@ -279,6 +279,25 @@ const BANK_MORE = 25;
  * The next chapter whose bank needs questions, as a request for request(), or null. `size` is the bank's target;
  * `chapters` lists { courseId, label } for every chapter with a textbook. Nothing while a bank is being made.
  */
+/**
+ * The next chapter (soonest test first) that tests identification and has few picture questions yet, as a request for
+ * a picture set (25, saved with the chapter's bank), or null. Nothing while a set is being made, and a chapter whose
+ * picture set failed waits a day.
+ */
+function pictureNeed(chapters, identifying) {
+  const all = index();
+  if (all.some((e) => e.status === 'making')) return null;
+  for (const { courseId, label } of chapters) {
+    if (!identifying.has(`${courseId}|${label}`)) continue;
+    const pictured = catalog('exam', courseId, [label]).filter((q) => q.image).length;
+    if (pictured >= 10) continue;
+    const tried = all.find((e) => e.pictures && e.courseId === courseId && e.chapters?.[0] === label && Date.now() - Date.parse(e.createdAt) < 864e5);
+    if (tried) continue;
+    return { kind: 'exam', courseId, chapters: [label], count: 25, mode: 'new', bank: true, pictures: true };
+  }
+  return null;
+}
+
 function bankNeed(chapters, size = 50) {
   const all = index();
   if (all.some((e) => e.bank && e.status === 'making')) return null;
@@ -1005,4 +1024,4 @@ function whereIs(k) {
   return null;
 }
 
-module.exports = { applyFixes, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };
+module.exports = { applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };

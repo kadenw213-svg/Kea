@@ -503,4 +503,22 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
   return { course: { id: c.id, code: c.course_code, name: c.name }, item, chapters: out, tests };
 }
 
-module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests };
+/**
+ * Chapters whose tests ask the student to recognize things from pictures: every chapter of a class with lab practicals,
+ * and any chapter whose own notes are about identifying structures, shapes, anatomy or lab equipment. A Set of
+ * "courseId|Chapter N".
+ */
+async function identifyingChapters(file) {
+  const db = await open(file);
+  if (!db) return new Set();
+  const out = new Set();
+  const practical = new Set(rows(db, `SELECT DISTINCT course_id FROM academic_items WHERE item_type = 'lab_practical' AND lower(title) NOT LIKE '%report%' AND ${ACTIVE}`).map((r) => r.course_id));
+  const visual = /\b(identification|labele?d|anatom\w*|morpholog\w*|glassware|lab equipment|organelles?|tissues?|specimens?|vsepr|molecular geometr\w*|molecular shapes?|electron geometr\w*)\b/i;
+  for (const t of rows(db, 'SELECT course_id, chapter_label, objectives_json, sections_json, vocabulary FROM chapter_topics')) {
+    const text = `${json(t.objectives_json, []).join(' ')} ${json(t.sections_json, []).join(' ')} ${t.vocabulary || ''}`;
+    if (practical.has(t.course_id) || visual.test(text)) out.add(`${t.course_id}|${t.chapter_label}`);
+  }
+  return out;
+}
+
+module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters };
