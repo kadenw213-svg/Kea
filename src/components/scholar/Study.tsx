@@ -327,6 +327,8 @@ function Maker({ courses, courseId }: { courses: ScholarCourse[]; courseId: stri
   const [cid, setCid] = useState(courseId || courses[0]?.id || '');
   const [detail, setDetail] = useState<ScholarCourseDetail | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
+  // (Folded to one button: each class's chapters, tests and weeks have their own Study; this is for several at once.)
+  const [shown, setShown] = useState(false);
   useEffect(() => setCid(courseId || courses[0]?.id || ''), [courseId, courses]);
   useEffect(() => {
     setPicked([]);
@@ -334,6 +336,14 @@ function Maker({ courses, courseId }: { courses: ScholarCourse[]; courseId: stri
   }, [cid]);
   if (!courses.length) return null;
   const toggle = (l: string) => setPicked((p) => (p.includes(l) ? p.filter((x) => x !== l) : [...p, l]));
+  if (!shown)
+    return (
+      <div className="st-own">
+        <button className="btn sm" onClick={() => setShown(true)}>
+          <ClipboardList size={14} /> Study several chapters
+        </button>
+      </div>
+    );
   return (
     <section className="st-maker">
       <div className="st-maker-head">
