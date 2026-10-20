@@ -10,6 +10,9 @@
     DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\bc898bdc-6a6b-520e-b4f4-79b3dd076ef4"
     DeleteRegKey HKCU "Software\bc898bdc-6a6b-520e-b4f4-79b3dd076ef4"
   old_done:
+  ; The earlier name's update downloads and (empty) data folder.
+  RMDir /r "$LOCALAPPDATA\slate-office-updater"
+  RMDir "$APPDATA\Slate Office"
   WriteRegStr HKCU "Software\Classes\Applications\Kea.exe" "FriendlyAppName" "Kea"
   WriteRegStr HKCU "Software\Classes\Applications\Kea.exe\shell\open\command" "" '"$INSTDIR\Kea.exe" "%1"'
   WriteRegStr HKCU "Software\Kea\Capabilities" "ApplicationName" "Kea"

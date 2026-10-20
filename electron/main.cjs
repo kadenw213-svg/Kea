@@ -14,6 +14,15 @@ let rendererReady = false;
 let pendingOpen = collectFileArgs(process.argv);
 
 // Small rolling log in the user data folder, for diagnosing problems on real machines.
+// Errors from Kea's background work (scans, sync, checks) are kept in kea.log too, so a problem can be found later.
+for (const level of ['error', 'warn']) {
+  const original = console[level].bind(console);
+  console[level] = (...args) => {
+    original(...args);
+    if (level === 'error' || /fail|error|couldn/i.test(String(args[0]))) log(level, ...args);
+  };
+}
+
 function log(...parts) {
   try {
     if (require('./settings.cjs').get('privacy.log', true) === false) return;
@@ -57,11 +66,32 @@ if (!app.requestSingleInstanceLock()) {
       if (app.isReady()) createWindow();
       return;
     }
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    if (!mainWindow.isVisible()) mainWindow.show();
-    mainWindow.focus();
+    bringToFront(mainWindow);
     sendOpen(files);
   });
+}
+
+/**
+ * Show the window and really bring it forward: back onto a screen if it was left on one that's gone, and past
+ * Windows' focus-stealing guard (a hidden or background app's focus() is often ignored, so clicking Kea seemed to do
+ * nothing: 10/19, fifteen clicks in a minute).
+ */
+function bringToFront(win) {
+  try {
+    if (win.isMinimized()) win.restore();
+    if (!win.isVisible()) win.show();
+    const { screen } = require('electron');
+    const b = win.getBounds();
+    const area = screen.getDisplayMatching(b).workArea;
+    const onScreen = b.x < area.x + area.width - 80 && b.x + b.width > area.x + 80 && b.y < area.y + area.height - 80 && b.y + 40 > area.y;
+    if (!onScreen) win.setBounds({ x: area.x + 40, y: area.y + 40, width: Math.min(b.width, area.width - 80), height: Math.min(b.height, area.height - 80) });
+    win.setAlwaysOnTop(true);
+    win.focus();
+    app.focus({ steal: true });
+    setTimeout(() => !win.isDestroyed() && win.setAlwaysOnTop(false), 300);
+  } catch (err) {
+    log('bringToFront', err);
+  }
 }
 
 function sendOpen(files) {
@@ -241,9 +271,7 @@ function backgroundWanted() {
 }
 function showWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return createWindow();
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+  bringToFront(mainWindow);
 }
 function ensureTray() {
   if (tray && !tray.isDestroyed()) return;

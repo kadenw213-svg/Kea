@@ -721,8 +721,26 @@ function run(task, arg = '', why = 'manual', batch = null, cont = {}) {
   });
 }
 
+// While a run goes, the computer doesn't fall asleep under it (a laptop that slept at 6 AM left the 10/20 daily check
+// waiting five hours on one command). The screen may still turn off; only system sleep waits.
+let awake = null;
+function stayAwake(on) {
+  try {
+    const { powerSaveBlocker } = require('electron');
+    if (on && (awake === null || !powerSaveBlocker.isStarted(awake))) awake = powerSaveBlocker.start('prevent-app-suspension');
+    else if (!on && awake !== null) {
+      if (powerSaveBlocker.isStarted(awake)) powerSaveBlocker.stop(awake);
+      awake = null;
+    }
+  } catch {}
+}
+
 async function next() {
-  if (current || !queue.length) return;
+  if (current || !queue.length) {
+    if (!current && !queue.length) stayAwake(false);
+    return;
+  }
+  stayAwake(true);
   const job = queue.shift();
   // A run belongs to the profile it was queued for (profiles can't be switched while one runs).
   if (job.profile !== profiles.active()) {
