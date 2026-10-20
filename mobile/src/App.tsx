@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, BookOpen, CalendarDays, Camera, CheckCircle2, ChevronLeft, Circle, Download, ExternalLink, Share2, FolderOpen, GraduationCap, Inbox, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, Award, BookOpen, Brain, CalendarDays, Camera, CheckCircle2, ChevronLeft, Circle, ClipboardCheck, Download, ExternalLink, Share2, FolderOpen, GraduationCap, Inbox, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, Upload, X } from 'lucide-react';
 import type { ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
 import { CATEGORIES, LinkGroups, TODO, categoryOf, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
-import { Kea, KeaData, cachedData, doneOf, folders, handInUrl, inboxKey, loadData, phoneDeleted, phoneDone, phoneRead, setPhoneDeleted, setPhoneDone, setPhoneRead, watchClasses } from './kea';
+import { Kea, KeaData, cachedData, doneOf, folders, handInUrl, inboxKey, loadData, phoneDeleted, phoneDone, phoneRead, setPhoneDeleted, setPhoneDone, setPhoneRead, syncOut, watchClasses } from './kea';
+import { loadStudy, onStudyChange } from './study';
+import { setDesktopData, studyChanged } from './desktopApi';
+import { OpenedView, Reader, ReaderTarget, StudyHost, StudyTab } from './StudyTab';
+import type { OpenedFile } from './kea';
+import { openStudyHub } from '../../src/components/scholar/StudyHub';
+import { reloadScholar } from '../../src/components/scholar/scholarStore';
 
 // ---------- Dates ----------
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -31,7 +37,30 @@ const ago = (at: string) => {
 const typeColor = (t: string) => categoryOf(t).color;
 const LABEL: Record<string, string> = { lecture: 'Lecture', lab: 'Lab', exam: 'Exam', final_exam: 'Final exam', lab_practical: 'Lab practical', quiz: 'Quiz', assignment: 'Assignment', discussion: 'Discussion', paper: 'Paper', peer_review: 'Peer review', lab_handout: 'Lab handout', other_deadline: 'To do', administrative_deadline: 'Deadline', break: 'Break', reading: 'Reading', weekly_reading: 'This week', project: 'Project' };
 
-type Tab = 'today' | 'inbox' | 'calendar' | 'classes' | 'scan';
+type Tab = 'today' | 'inbox' | 'calendar' | 'classes' | 'study' | 'scan';
+
+/** The PC's copy into the shared study code and screens (and once, what changes here goes back to the PC). */
+let studyHooked = false;
+function useStudyData(data: KeaData | null) {
+  useEffect(() => {
+    if (!studyHooked) {
+      studyHooked = true;
+      onStudyChange(() => {
+        syncOut();
+        studyChanged();
+      });
+    }
+    if (!data) return;
+    try {
+      loadStudy(data);
+    } catch (e) {
+      console.error('Study', e);
+    }
+    setDesktopData(data);
+    studyChanged();
+    reloadScholar();
+  }, [data]);
+}
 
 export function App() {
   const [data, setData] = useState<KeaData | null>(cachedData());
@@ -46,6 +75,36 @@ export function App() {
   // Starting up: which step it's on, and what went wrong (shown instead of an endless spinner).
   const [step, setStep] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // The library (textbooks, question pictures): unpacked when the PC wrote a new one, with how far along it is.
+  const [library, setLibrary] = useState<{ busy: boolean; files: number; missing?: boolean } | null>(null);
+  const [reader, setReader] = useState<ReaderTarget | null>(null);
+  // A file another app opened with Kea.
+  const [opened, setOpened] = useState<OpenedFile | null>(null);
+  useEffect(() => {
+    Kea.takeOpenedFile()
+      .then((r) => r.file && setOpened(r.file))
+      .catch(() => {});
+    const sub = Kea.addListener('opened', (f) => setOpened(f));
+    return () => {
+      sub.then((s) => s.remove());
+    };
+  }, []);
+  useStudyData(data);
+  useEffect(() => {
+    const sub = Kea.addListener('library', (p) => setLibrary({ busy: true, files: p.files }));
+    return () => {
+      sub.then((s) => s.remove());
+    };
+  }, []);
+  const syncLibrary = async () => {
+    setLibrary((l) => ({ busy: true, files: l?.files || 0 }));
+    const r = await Kea.syncLibrary().catch(() => null);
+    setLibrary({ busy: false, files: r?.files || 0, missing: r?.missing });
+    if (r?.root) {
+      setDesktopData(cachedData(), r.root);
+      if (r.changed) studyChanged();
+    }
+  };
 
   // The classes come from the drive file first and alone: signing in to the class site and its own check run after,
   // in the background, so a slow sign-in never holds up the screen.
@@ -65,6 +124,8 @@ export function App() {
           watchClasses(r.data).catch(() => {});
         }
         if (r.error) setLoadError(r.error);
+        // (The textbooks after the classes: the screen is up while they come.)
+        syncLibrary();
       }
       setRefreshing(false);
       if (st.home && st.hasLogin) await Kea.checkNow().catch(() => null);
@@ -149,7 +210,7 @@ export function App() {
       </div>
     );
 
-  const ctx = { data, items, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')) };
+  const ctx = { data, items, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')), read: (t: ReaderTarget) => setReader(t) };
   return (
     <div className="app">
       <header className="top">
@@ -170,7 +231,13 @@ export function App() {
         {tab === 'today' && <Today ctx={ctx} missing={missing} />}
         {tab === 'inbox' && <InboxView items={inbox} readIds={readIds} markRead={markRead} remove={remove} />}
         {tab === 'calendar' && <Agenda ctx={ctx} />}
+        {library?.busy && (
+          <div className="stale lib">
+            <Loader2 size={14} className="spin" /> Getting your textbooks from your PC{library.files ? ` · ${library.files} files` : ''}…
+          </div>
+        )}
         {tab === 'classes' && <Classes ctx={ctx} code={course} setCode={setCourse} />}
+        {tab === 'study' && <StudyTab data={data} read={(t) => setReader(t)} />}
         {tab === 'scan' && <Scan data={data} />}
       </main>
       <nav className="tabs">
@@ -180,6 +247,7 @@ export function App() {
             ['inbox', Inbox, 'Inbox', unread],
             ['calendar', CalendarDays, 'Calendar', 0],
             ['classes', GraduationCap, 'Classes', 0],
+            ['study', Brain, 'Study', 0],
             ['scan', Camera, 'Scan', 0]
           ] as const
         ).map(([id, Icon, label, badge]) => (
@@ -191,11 +259,14 @@ export function App() {
         ))}
       </nav>
       {item && <Sheet ctx={ctx} it={item} onClose={() => setItem(null)} />}
+      <StudyHost />
+      {reader && <Reader target={reader} onClose={() => setReader(null)} />}
+      {opened && <OpenedView file={opened} onClose={() => setOpened(null)} />}
     </div>
   );
 }
 
-type Ctx = { data: KeaData; items: ScholarItem[]; open(it: ScholarItem): void; toggle(it: ScholarItem): void; openCourse(code: string): void };
+type Ctx = { data: KeaData; items: ScholarItem[]; open(it: ScholarItem): void; toggle(it: ScholarItem): void; openCourse(code: string): void; read(t: ReaderTarget): void };
 
 function Row({ ctx, it, date }: { ctx: Ctx; it: ScholarItem; date?: boolean }) {
   const miss = isMissing(it);
@@ -278,8 +349,24 @@ function Today({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
         <section>
           <h2>Reading this week</h2>
           {banners.map((b) => (
-            <div key={b.id} className="card" onClick={() => ctx.open(b)}>
-              <b>{b.courseCode}</b> {b.readings.map((r) => `${r.chapter}${r.title ? `: ${r.title}` : ''}`).join(' · ') || b.title}
+            <div key={b.id} className="card read-card" onClick={() => ctx.open(b)}>
+              <span>
+                <b>{b.courseCode}</b> {b.readings.map((r) => `${r.chapter}${r.title ? `: ${r.title}` : ''}`).join(' · ') || b.title}
+              </span>
+              {b.readings.length > 0 && (
+                <div className="actions" onClick={(e) => e.stopPropagation()}>
+                  <button className="btn" onClick={() => openStudyHub({ courseId: b.courseId, code: b.courseCode, title: b.readings.map((r) => r.chapter).join(', '), chapters: b.readings.map((r) => r.chapter) })}>
+                    <ClipboardCheck size={16} /> Study
+                  </button>
+                  {b.readings
+                    .filter((r) => r.pdf)
+                    .map((r) => (
+                      <button key={r.chapter} className="btn" onClick={() => ctx.read({ file: r.pdf!.file, chapter: r.chapter, title: r.title || r.chapter })}>
+                        <BookOpen size={16} /> {r.chapter.replace(/^Chapter /, 'Ch ')}
+                      </button>
+                    ))}
+                </div>
+              )}
             </div>
           ))}
         </section>
@@ -464,10 +551,15 @@ function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCod
           {c.chapters
             .filter((ch) => ch.pdf)
             .map((ch) => (
-              <button key={ch.label} className="card link" onClick={() => Kea.openFile({ path: ch.pdf!.file }).catch((e) => alertLine(e))}>
-                <BookOpen size={16} /> {ch.label}
-                {ch.title ? `: ${ch.title}` : ''}
-              </button>
+              <div key={ch.label} className="card st-m-ch">
+                <button className="link-row" onClick={() => ctx.read({ file: ch.pdf!.file, chapter: ch.label, title: ch.title || ch.label })}>
+                  <BookOpen size={16} /> {ch.label}
+                  {ch.title ? `: ${ch.title}` : ''}
+                </button>
+                <button className="btn" onClick={() => openStudyHub({ courseId: c.id, code: c.code, title: ch.title ? `${ch.label}: ${ch.title}` : ch.label, chapters: [ch.label] })}>
+                  <ClipboardCheck size={16} /> Study
+                </button>
+              </div>
             ))}
         </>
       )}
@@ -639,7 +731,7 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           <>
             <h2>{TEST.has(it.type) ? 'Covers' : 'Reading'}</h2>
             {it.readings.map((r) => (
-              <button key={r.chapter} className="card link" disabled={!r.pdf} onClick={() => r.pdf && Kea.openFile({ path: r.pdf.file }).catch(alertLine)}>
+              <button key={r.chapter} className="card link" disabled={!r.pdf} onClick={() => r.pdf && (onClose(), ctx.read({ file: r.pdf.file, chapter: r.chapter, title: r.title || r.chapter }))}>
                 <BookOpen size={16} />
                 <span>
                   {r.chapter}
@@ -650,6 +742,14 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
               </button>
             ))}
           </>
+        )}
+        {it.readings.length > 0 && !['administrative_deadline', 'break', 'no_class'].includes(it.type) && (
+          <button
+            className="btn primary"
+            onClick={() => (onClose(), openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: it.readings.map((r) => r.chapter), itemId: TEST.has(it.type) ? it.id : undefined }))}
+          >
+            <ClipboardCheck size={16} /> Study {it.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ')}
+          </button>
         )}
         {instructions && (
           <>
@@ -697,10 +797,11 @@ function Setup({ state, onDone }: { state: Awaited<ReturnType<typeof Kea.state>>
   const dataFile = async () => {
     setBusy('folder');
     try {
-      await Kea.pickDataFile();
+      const picked = await Kea.pickFiles();
       const r = await Kea.readFile({ path: 'kea-data.json' });
       const d = JSON.parse(r.text);
-      setMsg(`Found your classes: ${(d.courses || []).map((c: any) => c.code).join(', ')}.`);
+      const left = ['kea-data.json', 'kea-library.zip', 'phone.json'].filter((f) => !picked.files.includes(f));
+      setMsg(`Found your classes: ${(d.courses || []).map((c: any) => c.code).join(', ')}.${left.length ? ` Still to choose: ${left.join(', ')}.` : ' All set.'}`);
     } catch (e: any) {
       setMsg(/No file/.test(String(e?.message)) ? '' : `That isn't Kea's data file: choose kea-data.json in Kea → School. (${String(e?.message || e).slice(0, 80)})`);
     }
@@ -722,9 +823,10 @@ function Setup({ state, onDone }: { state: Awaited<ReturnType<typeof Kea.state>>
       <p className="muted small">
         Kea on your PC keeps your classes in the drive it syncs through (on the PC: Scans → Devices), in Kea → School. Google Drive and OneDrive can't share a whole folder with other apps on Android, so for those choose the file kea-data.json in that folder.
       </p>
-      <button className="btn" disabled={!!busy} onClick={dataFile}>
-        <FolderOpen size={16} /> {state?.dataFolder ? 'Choose kea-data.json again' : 'Choose kea-data.json'}
+      <button className="btn primary" disabled={!!busy} onClick={dataFile}>
+        <FolderOpen size={16} /> {state?.files?.length ? `Choose Kea's files again (${state.files.length} of 3 chosen)` : "Choose Kea's files"}
       </button>
+      <p className="muted small">In the drive's Kea → School folder, select all three: kea-data.json (your classes and study sets), kea-library.zip (your textbooks) and phone.json (what you do here, sent back to your PC).</p>
       <button className="btn" disabled={!!busy} onClick={folder}>
         <FolderOpen size={16} /> Or choose the whole folder (a synced folder on the phone)
       </button>

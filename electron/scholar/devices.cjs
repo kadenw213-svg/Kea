@@ -151,8 +151,18 @@ function marksOf(st) {
     done: s.doneLog || {},
     read: readIds(true).filter((id) => wasUnread.has(id)),
     deleted: precheck.readInbox().deletedKeys || [],
-    study: { attempts: readJson(path.join(study, 'attempts.json'), {}), cards: readJson(path.join(study, 'cards.json'), {}) }
+    study: progressOf(study)
   };
+}
+
+/** This device's study progress files ({ file: contents }), and the sets made here from saved questions. */
+function progressOf(study) {
+  const { PROGRESS } = require('./studyMerge.cjs');
+  const out = Object.fromEntries(PROGRESS.map((f) => [f, readJson(path.join(study, f), {})]));
+  // (Old devices sent only these two, under these names.)
+  out.attempts = out['attempts.json'];
+  out.cards = out['cards.json'];
+  return out;
 }
 
 /** Write this device's card: who it is, that it's on, which drive it uses, and (on other devices) its changes. */
@@ -243,26 +253,7 @@ async function lead(dir) {
         console.error(`Devices: ignored a request from an unknown device (${f})`);
         continue;
       }
-      const TASKS = ['stop', 'resume', 'banks', 'inbox', 'practice', 'daily', 'sync', 'import', 'study', 'curriculum', 'steps', 'transcribe'];
-      const arg = String(r.arg || '');
-      if (!TASKS.includes(r.task) || arg.length > 300 || /[\r\n<>`$|;]/.test(arg) || (arg && !/^[\w .,:#()&'/+-]+$/.test(arg))) {
-        console.error(`Devices: ignored a request it doesn't recognize (${r.task})`);
-        continue;
-      }
-      console.log(`Devices: ${r.from || 'another device'} asked for ${r.task}`);
-      try {
-        if (r.task === 'stop') runner.stop();
-        else if (r.task === 'resume') runner.pending() ? runner.resume() : runner.resumeLast(r.arg || 'import');
-        else if (r.task === 'banks') hooks.banks?.();
-        else if (r.task === 'inbox') precheck.pollAnnouncements().then((ok) => ok && hooks.syncSoon(5000)).catch(() => {});
-        else if (r.task === 'practice') {
-          const { id, ready } = await require('./study.cjs').request(r.req || {});
-          if (ready) soon(1000);
-          else runner.run('practice', id, 'manual').then(() => soon(3000));
-        } else if (runner.TASKS[r.task] && r.task !== 'probe') runner.run(r.task, r.arg || '', 'manual').then(() => soon(3000));
-      } catch (err) {
-        console.error('Devices request', err);
-      }
+      await serveRequest(r);
     }
   }
   const p = primaryInfo(dir) || {};
@@ -293,32 +284,62 @@ async function lead(dir) {
 }
 
 // ---------- Another device: copy the results in, send this one's changes out ----------
-/** Study progress from another device: every attempt kept, and the newer flashcard progress per set. */
+/**
+ * Study progress from another device (a computer or the phone), merged by studyMerge.cjs: every attempt, the newer
+ * flashcard, star and review progress, the higher Learn level, the faster Match. Sets made there from saved questions
+ * (`made`: [{ entry, set }]) are added here too, so their attempts show with them.
+ */
 function mergeStudy(other) {
   if (!other) return false;
+  const { PROGRESS, mergeProgress } = require('./studyMerge.cjs');
   const study = path.join(profiles.paths().dir, 'study');
-  const attempts = readJson(path.join(study, 'attempts.json'), {});
-  const cards = readJson(path.join(study, 'cards.json'), {});
-  let any = false;
-  for (const [id, list] of Object.entries(other.attempts || {})) {
-    const have = new Set((attempts[id] || []).map((a) => a.at));
-    const add = (list || []).filter((a) => a?.at && !have.has(a.at));
-    if (add.length) {
-      attempts[id] = [...(attempts[id] || []), ...add].sort((a, b) => String(a.at).localeCompare(String(b.at)));
-      any = true;
-    }
+  const base = Object.fromEntries(PROGRESS.map((f) => [f, readJson(path.join(study, f), {})]));
+  // (Older devices send attempts and cards under short names.)
+  const theirs = { ...other, 'attempts.json': other['attempts.json'] || other.attempts, 'cards.json': other['cards.json'] || other.cards };
+  const { files, changed } = mergeProgress(base, theirs);
+  if (changed) for (const f of PROGRESS) writeJson(path.join(study, f), files[f]);
+  let any = changed;
+  const index = readJson(path.join(study, 'index.json'), []);
+  for (const m of Array.isArray(other.made) ? other.made : []) {
+    const e = m?.entry;
+    if (!e || typeof e.id !== 'string' || !/^(exam|cards)-[a-z0-9-]+$/.test(e.id) || index.some((x) => x.id === e.id)) continue;
+    if (!m.set || typeof m.set !== 'object') continue;
+    writeJson(path.join(study, 'sets', `${e.id}.json`), m.set);
+    index.push({ ...e, status: 'ready', source: 'saved' });
+    any = true;
   }
-  for (const [id, c] of Object.entries(other.cards || {})) {
-    if (c && (!cards[id] || String(c.at || '') > String(cards[id].at || ''))) {
-      if (JSON.stringify(c) !== JSON.stringify(cards[id])) any = true;
-      cards[id] = c;
-    }
-  }
-  if (any) {
-    writeJson(path.join(study, 'attempts.json'), attempts);
-    writeJson(path.join(study, 'cards.json'), cards);
-  }
+  if (any) writeJson(path.join(study, 'index.json'), index);
   return any;
+}
+
+/**
+ * Do what another device (a computer or the phone) asked for. Only Kea's own kinds of request, and only an argument
+ * shaped like the ones Kea's own buttons send (a class code, "missing CODE", chapter names), never free text: an
+ * argument becomes the start of a Claude prompt, and the drive folder is only as private as the cloud account.
+ */
+async function serveRequest(r) {
+  const TASKS = ['stop', 'resume', 'banks', 'inbox', 'practice', 'daily', 'sync', 'import', 'study', 'curriculum', 'steps', 'transcribe'];
+  const arg = String(r?.arg || '');
+  if (!r || !TASKS.includes(r.task) || arg.length > 300 || /[\r\n<>`$|;]/.test(arg) || (arg && !/^[\w .,:#()&'/+-]+$/.test(arg))) {
+    console.error(`Devices: ignored a request it doesn't recognize (${r?.task})`);
+    return false;
+  }
+  console.log(`Devices: ${r.from || 'another device'} asked for ${r.task}`);
+  try {
+    if (r.task === 'stop') runner.stop();
+    else if (r.task === 'resume') runner.pending() ? runner.resume() : runner.resumeLast(r.arg || 'import');
+    else if (r.task === 'banks') hooks.banks?.();
+    else if (r.task === 'inbox') precheck.pollAnnouncements().then((ok) => ok && hooks.syncSoon(5000)).catch(() => {});
+    else if (r.task === 'practice') {
+      const { id, ready } = await require('./study.cjs').request(r.req || {});
+      if (ready) soon(1000);
+      else runner.run('practice', id, 'manual').then(() => (soon(3000), hooks.syncSoon(3000)));
+    } else if (runner.TASKS[r.task] && r.task !== 'probe') runner.run(r.task, r.arg || '', 'manual').then(() => soon(3000));
+    return true;
+  } catch (err) {
+    console.error('Devices request', err);
+    return false;
+  }
 }
 
 async function follow(dir) {
@@ -561,4 +582,4 @@ function status() {
   return { ...base, role, folder: path.dirname(dir), primary: p ? { id: p.id, name: p.name, at: p.at, online: p.id === me() || ago(p.at) < ONLINE } : null, devices, phone, run: role === 'follower' ? p.run || null : null, queue: role === 'follower' ? p.queue || [] : [], pending: role === 'follower' ? p.pending || null : null, elsewhere, waiting: role === 'follower' ? st.waiting || null : null, pulledAt: st.pulledAt || null };
 }
 
-module.exports = { configure, follower, step, soon, relay, status, mergeStudy, find, join, makePrimary };
+module.exports = { serveRequest, configure, follower, step, soon, relay, status, mergeStudy, find, join, makePrimary };

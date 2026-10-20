@@ -48,6 +48,56 @@ public class KeaPlugin extends Plugin {
     public void load() {
         scanLauncher = getActivity().registerForActivityResult(new ActivityResultContracts.StartIntentSenderForResult(), this::onScanned);
         CheckWorker.schedule(getContext());
+        takeOpened(getActivity().getIntent());
+    }
+
+    // ---------- Files opened with Kea (Open with, Share) ----------
+    private JSObject opened;
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        super.handleOnNewIntent(intent);
+        if (takeOpened(intent)) notifyListeners("opened", opened, true);
+    }
+
+    /** A file another app handed to Kea: copied where the reader can load it. True when there was one. */
+    private boolean takeOpened(Intent intent) {
+        if (intent == null) return false;
+        Uri uri = null;
+        if (Intent.ACTION_VIEW.equals(intent.getAction())) uri = intent.getData();
+        else if (Intent.ACTION_SEND.equals(intent.getAction())) uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (uri == null) return false;
+        try {
+            String name = displayName(uri);
+            if (name == null) name = uri.getLastPathSegment() == null ? "File" : uri.getLastPathSegment();
+            String type = getContext().getContentResolver().getType(uri);
+            File dir = new File(getContext().getCacheDir(), "opened");
+            dir.mkdirs();
+            File out = new File(dir, name.replaceAll("[^A-Za-z0-9 ._()-]", "_"));
+            try (InputStream in = getContext().getContentResolver().openInputStream(uri); OutputStream os = new FileOutputStream(out)) {
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+            }
+            opened = new JSObject();
+            opened.put("path", out.getAbsolutePath());
+            opened.put("name", name);
+            opened.put("type", type == null ? "" : type);
+            // (Handled once: a later launch from the home screen doesn't open it again.)
+            intent.setAction(Intent.ACTION_MAIN);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** The file Kea was opened with, if any (once). */
+    @PluginMethod
+    public void takeOpenedFile(PluginCall call) {
+        JSObject r = new JSObject();
+        if (opened != null) r.put("file", opened);
+        opened = null;
+        call.resolve(r);
     }
 
     // ---------- Settings and sign-in ----------
@@ -71,6 +121,9 @@ public class KeaPlugin extends Plugin {
             String tree = Store.plain(getContext()).getString("tree", "");
             r.put("dataFolder", tree.isEmpty() ? Store.plain(getContext()).getString("dataFile", "") : tree);
             r.put("dataFileOnly", tree.isEmpty() && !Store.plain(getContext()).getString("dataFile", "").isEmpty());
+            JSArray chosen = new JSArray();
+            for (String f : KEA_FILES) if (!tree.isEmpty() || !Store.plain(getContext()).getString("file:" + f, "").isEmpty()) chosen.put(f);
+            r.put("files", chosen);
             r.put("notifications", Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
             call.resolve(r);
         }).start();
@@ -252,34 +305,91 @@ public class KeaPlugin extends Plugin {
     }
 
     /**
-     * Just the data file, for drives whose Android app can't share a whole folder (Google Drive, OneDrive): the student
-     * picks kea-data.json itself, and the phone reads that file (always its newest copy) from then on.
+     * Kea's files chosen by themselves, for drives whose Android app can't share a whole folder (Google Drive,
+     * OneDrive): kea-data.json, kea-library.zip and phone.json, picked together once. Each is held by name, and read
+     * (always its newest copy) or, for phone.json, written from then on.
      */
     @PluginMethod
-    public void pickDataFile(PluginCall call) {
+    public void pickFiles(PluginCall call) {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
         i.setType("*/*");
-        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-        startActivityForResult(call, i, "onDataFile");
+        i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(call, i, "onFiles");
+    }
+
+    /** The older single-file choice (kea-data.json alone): the same picker. */
+    @PluginMethod
+    public void pickDataFile(PluginCall call) {
+        pickFiles(call);
+    }
+
+    private static final String[] KEA_FILES = { "kea-data.json", "kea-library.zip", "phone.json" };
+
+    /** Which of Kea's files a chosen file is, by its name (a drive may add " (1)" to a copy): null when none. */
+    private static String keaFile(String name) {
+        if (name == null) return null;
+        String plain = name.replaceAll(" \\(\\d+\\)(?=\\.[a-z]+$)", "");
+        for (String f : KEA_FILES) if (plain.equals(f)) return f;
+        return null;
     }
 
     @ActivityCallback
-    private void onDataFile(PluginCall call, ActivityResult result) {
-        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+    private void onFiles(PluginCall call, ActivityResult result) {
+        Intent data = result.getData();
+        if (result.getResultCode() != Activity.RESULT_OK || data == null) {
             call.reject("No file chosen");
             return;
         }
-        Uri file = result.getData().getData();
-        try {
-            getContext().getContentResolver().takePersistableUriPermission(file, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        } catch (SecurityException e) {
-            // (Some drives grant only this session: the phone keeps its last copy until the file is chosen again.)
+        List<Uri> uris = new java.util.ArrayList<>();
+        if (data.getClipData() != null) for (int k = 0; k < data.getClipData().getItemCount(); k++) uris.add(data.getClipData().getItemAt(k).getUri());
+        else if (data.getData() != null) uris.add(data.getData());
+        JSArray found = new JSArray();
+        android.content.SharedPreferences.Editor ed = Store.plain(getContext()).edit();
+        for (Uri u : uris) {
+            String which = keaFile(displayName(u));
+            if (which == null) continue;
+            try {
+                getContext().getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            } catch (SecurityException e) {
+                try {
+                    getContext().getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (SecurityException e2) {
+                    // (This session only: chosen again next time.)
+                }
+            }
+            ed.putString("file:" + which, u.toString());
+            if ("kea-data.json".equals(which)) ed.putString("dataFile", u.toString());
+            found.put(which);
         }
-        Store.plain(getContext()).edit().putString("dataFile", file.toString()).apply();
+        ed.apply();
+        if (found.length() == 0) {
+            call.reject("None of Kea's files were chosen. In your drive, open Kea, then your profile folder (School), and select kea-data.json, kea-library.zip and phone.json.");
+            return;
+        }
         JSObject r = new JSObject();
-        r.put("file", file.toString());
+        r.put("files", found);
         call.resolve(r);
+    }
+
+    private String displayName(Uri u) {
+        try (android.database.Cursor c = getContext().getContentResolver().query(u, new String[] { android.provider.OpenableColumns.DISPLAY_NAME }, null, null, null)) {
+            if (c != null && c.moveToFirst()) return c.getString(0);
+        } catch (Exception e) {
+            // (Unnamed: not one of Kea's files.)
+        }
+        return null;
+    }
+
+    /** A chosen file's size and last change, as a short signature (to tell a new copy from the one already read). */
+    private String signature(Uri u) {
+        try (android.database.Cursor c = getContext().getContentResolver().query(u, new String[] { android.provider.OpenableColumns.SIZE, android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED }, null, null, null)) {
+            if (c != null && c.moveToFirst()) return c.getLong(0) + ":" + c.getLong(1);
+        } catch (Exception e) {
+            // (No details: always read it.)
+        }
+        return "";
     }
 
     /** A file inside the chosen folder by its path ("kea-data.json", "Textbooks/BIO1112/x.pdf"). */
@@ -294,30 +404,36 @@ public class KeaPlugin extends Plugin {
         return f;
     }
 
+    /** One of Kea's files: in the chosen folder, or chosen by itself. Null when it's neither. */
+    private Uri fileUri(String name) {
+        DocumentFile f = find(name);
+        if (f != null && f.exists()) return f.getUri();
+        String one = Store.plain(getContext()).getString("file:" + name, "");
+        if (one.isEmpty() && "kea-data.json".equals(name)) one = Store.plain(getContext()).getString("dataFile", "");
+        return one.isEmpty() ? null : Uri.parse(one);
+    }
+
     @PluginMethod
     public void readFile(PluginCall call) {
         String rel = call.getString("path", "kea-data.json");
         new Thread(() -> {
             try {
-                DocumentFile f = find(rel);
-                Uri uri = f != null && f.exists() ? f.getUri() : null;
-                long modified = uri != null ? f.lastModified() : 0;
-                // The data file chosen on its own (a drive that can't share folders).
-                String one = Store.plain(getContext()).getString("dataFile", "");
-                if (uri == null && "kea-data.json".equals(rel) && !one.isEmpty()) uri = Uri.parse(one);
+                Uri uri = fileUri(rel);
                 if (uri == null) {
-                    call.reject(Store.plain(getContext()).getString("tree", "").isEmpty() && one.isEmpty() ? "No Kea folder or file chosen yet" : "not found");
+                    boolean none = Store.plain(getContext()).getString("tree", "").isEmpty() && Store.plain(getContext()).getString("file:kea-data.json", "").isEmpty() && Store.plain(getContext()).getString("dataFile", "").isEmpty();
+                    call.reject(none ? "No Kea folder or file chosen yet" : "not found");
                     return;
                 }
-                InputStream in = getContext().getContentResolver().openInputStream(uri);
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
-                byte[] buf = new byte[65536];
-                int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-                in.close();
+                try (InputStream in = getContext().getContentResolver().openInputStream(uri)) {
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                }
                 JSObject r = new JSObject();
                 r.put("text", out.toString("UTF-8"));
-                r.put("modified", modified);
+                r.put("modified", 0);
+                r.put("sig", signature(uri));
                 call.resolve(r);
             } catch (Exception e) {
                 call.reject(e.getMessage());
@@ -325,26 +441,25 @@ public class KeaPlugin extends Plugin {
         }).start();
     }
 
-    /** Write the phone's own file in the folder (phone.json: what it checked off and read), for Kea on the PC. */
+    /** Write the phone's own file (phone.json: what it checked off, read and studied), for Kea on the PC. */
     @PluginMethod
     public void writeFile(PluginCall call) {
         String name = call.getString("path", "phone.json");
         String text = call.getString("text", "");
         new Thread(() -> {
             try {
+                Uri uri = fileUri(name);
                 String tree = Store.plain(getContext()).getString("tree", "");
-                if (tree.isEmpty()) {
-                    call.reject("No folder chosen");
+                if (uri == null && !tree.isEmpty()) {
+                    DocumentFile dir = DocumentFile.fromTreeUri(getContext(), Uri.parse(tree));
+                    DocumentFile f = dir == null ? null : dir.createFile("application/json", name);
+                    if (f != null) uri = f.getUri();
+                }
+                if (uri == null) {
+                    call.reject("phone.json isn't chosen yet");
                     return;
                 }
-                DocumentFile dir = DocumentFile.fromTreeUri(getContext(), Uri.parse(tree));
-                DocumentFile f = dir == null ? null : dir.findFile(name);
-                if (f == null && dir != null) f = dir.createFile("application/json", name);
-                if (f == null) {
-                    call.reject("Couldn't write to the Kea folder");
-                    return;
-                }
-                try (OutputStream os = getContext().getContentResolver().openOutputStream(f.getUri(), "wt")) {
+                try (OutputStream os = getContext().getContentResolver().openOutputStream(uri, "wt")) {
                     os.write(text.getBytes("UTF-8"));
                 }
                 call.resolve();
@@ -354,15 +469,126 @@ public class KeaPlugin extends Plugin {
         }).start();
     }
 
-    /** Open a file from the folder (a textbook PDF) in the phone's PDF viewer. */
+    private static String readAll(File f) throws java.io.IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (InputStream in = new java.io.FileInputStream(f)) {
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        }
+        return out.toString("UTF-8");
+    }
+
+    /** Where the library (textbooks, question pictures) is unpacked on the phone. */
+    private File libraryDir() {
+        return new File(getContext().getFilesDir(), "library");
+    }
+
+    /**
+     * Unpack kea-library.zip when the PC has written a new one: only the files that changed are written, and files the
+     * new one no longer has are removed. Reports progress ("library" events). { root, changed, files, missing, error }.
+     */
+    @PluginMethod
+    public void syncLibrary(PluginCall call) {
+        new Thread(() -> {
+            JSObject r = new JSObject();
+            File root = libraryDir();
+            r.put("root", root.getAbsolutePath());
+            try {
+                Uri uri = fileUri("kea-library.zip");
+                if (uri == null) {
+                    r.put("changed", false);
+                    r.put("missing", true);
+                    call.resolve(r);
+                    return;
+                }
+                String sig = signature(uri);
+                if (!sig.isEmpty() && sig.equals(Store.plain(getContext()).getString("libSig", "")) && root.isDirectory()) {
+                    r.put("changed", false);
+                    call.resolve(r);
+                    return;
+                }
+                root.mkdirs();
+                File manifestFile = new File(root, ".manifest.json");
+                JSONObject manifest = new JSONObject();
+                if (manifestFile.exists()) {
+                    try {
+                        manifest = new JSONObject(readAll(manifestFile));
+                    } catch (Exception e) {
+                        // (Unreadable: every file is written again.)
+                    }
+                }
+                JSONObject next = new JSONObject();
+                long total = 0;
+                int count = 0;
+                try (InputStream in = getContext().getContentResolver().openInputStream(uri); java.util.zip.ZipInputStream zip = new java.util.zip.ZipInputStream(new java.io.BufferedInputStream(in, 1 << 16))) {
+                    java.util.zip.ZipEntry e;
+                    byte[] buf = new byte[1 << 16];
+                    while ((e = zip.getNextEntry()) != null) {
+                        String name = e.getName();
+                        if (e.isDirectory() || name.contains("..")) continue;
+                        File out = new File(root, name);
+                        String crc = Long.toString(e.getCrc());
+                        next.put(name, crc);
+                        count++;
+                        if (crc.equals(manifest.optString(name)) && out.exists() && out.length() == e.getSize()) {
+                            zip.closeEntry();
+                            continue;
+                        }
+                        out.getParentFile().mkdirs();
+                        File tmp = new File(out.getPath() + ".part");
+                        try (OutputStream os = new FileOutputStream(tmp)) {
+                            int n;
+                            while ((n = zip.read(buf)) > 0) {
+                                os.write(buf, 0, n);
+                                total += n;
+                            }
+                        }
+                        out.delete();
+                        tmp.renameTo(out);
+                        JSObject p = new JSObject();
+                        p.put("files", count);
+                        p.put("bytes", total);
+                        p.put("name", name);
+                        notifyListeners("library", p);
+                    }
+                }
+                // Files the new library doesn't have any more.
+                java.util.Iterator<String> old = manifest.keys();
+                while (old.hasNext()) {
+                    String name = old.next();
+                    if (!next.has(name)) new File(root, name).delete();
+                }
+                try (OutputStream os = new FileOutputStream(manifestFile)) {
+                    os.write(next.toString().getBytes("UTF-8"));
+                }
+                Store.plain(getContext()).edit().putString("libSig", sig).apply();
+                r.put("changed", true);
+                r.put("files", count);
+                call.resolve(r);
+            } catch (Exception e) {
+                r.put("changed", false);
+                r.put("error", String.valueOf(e.getMessage()));
+                call.resolve(r);
+            }
+        }).start();
+    }
+
+    /** Open a file (a textbook PDF) in another app: from the chosen folder, or from the phone's library. */
     @PluginMethod
     public void openFile(PluginCall call) {
-        DocumentFile f = find(call.getString("path", ""));
-        if (f == null || !f.exists()) {
-            call.reject("That file isn't in the Kea folder yet.");
+        String rel = call.getString("path", "");
+        DocumentFile f = find(rel);
+        Uri uri = f != null && f.exists() ? f.getUri() : null;
+        if (uri == null) {
+            File local = new File(libraryDir(), rel);
+            if (local.exists()) uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", local);
+        }
+        if (uri == null) {
+            call.reject("That file isn't on the phone yet.");
             return;
         }
-        Intent i = new Intent(Intent.ACTION_VIEW).setDataAndType(f.getUri(), "application/pdf").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        Intent i = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/pdf").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
         getActivity().startActivity(Intent.createChooser(i, "Open with"));
         call.resolve();
     }

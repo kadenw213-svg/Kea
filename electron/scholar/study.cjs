@@ -814,6 +814,10 @@ function star(k, on) {
   if (on) stars[k] = true;
   else delete stars[k];
   writeJson(file('stars.json'), stars);
+  // (With the time, so un-starring on one device carries to the others: studyMerge.cjs.)
+  const log = readJson(file('stars-log.json'), {});
+  log[k] = { on: !!on, at: new Date().toISOString() };
+  writeJson(file('stars-log.json'), log);
   return true;
 }
 const starred = () => readJson(file('stars.json'), {});

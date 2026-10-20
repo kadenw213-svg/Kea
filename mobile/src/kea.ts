@@ -2,12 +2,21 @@
 // drive (classes, calendar, grades) and what the phone reads from the class site itself (announcements, grades,
 // assignment folders).
 import { registerPlugin } from '@capacitor/core';
+import { phoneRequests, studyOut } from './study';
 import type { ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 
 interface KeaNative {
   setup(o: { home: string; user?: string; pass?: string }): Promise<void>;
-  state(): Promise<{ home: string; hasLogin: boolean; signedIn: boolean; dataFolder: string; dataFileOnly?: boolean; notifications: boolean }>;
-  pickDataFile(): Promise<{ file: string }>;
+  state(): Promise<{ home: string; hasLogin: boolean; signedIn: boolean; dataFolder: string; dataFileOnly?: boolean; files?: string[]; notifications: boolean }>;
+  pickDataFile(): Promise<{ files: string[] }>;
+  /** Kea's three files, chosen together (kea-data.json, kea-library.zip, phone.json). */
+  pickFiles(): Promise<{ files: string[] }>;
+  /** Unpack the library when the PC wrote a new one. */
+  syncLibrary(): Promise<{ root: string; changed: boolean; files?: number; missing?: boolean; error?: string }>;
+  addListener(event: 'library', cb: (p: { files: number; bytes: number; name: string }) => void): Promise<{ remove(): void }>;
+  addListener(event: 'opened', cb: (f: OpenedFile) => void): Promise<{ remove(): void }>;
+  /** The file Kea was opened with (Open with, Share), once. */
+  takeOpenedFile(): Promise<{ file?: OpenedFile }>;
   signIn(o?: { show?: boolean }): Promise<{ signedIn: boolean }>;
   get(o: { url: string }): Promise<{ status: number; body: string }>;
   open(o: { url: string }): Promise<void>;
@@ -25,7 +34,11 @@ interface KeaNative {
   saveCopy(o: { file: string; name: string }): Promise<{ name: string }>;
 }
 
-export const Kea = registerPlugin<KeaNative>('Kea');
+// (A test can stand in for the native side: window.__keaMock, set before the app loads. The app never sets it.)
+/** A file another app opened with Kea, copied where the reader can load it. */
+export type OpenedFile = { path: string; name: string; type: string };
+
+export const Kea: KeaNative = (globalThis as any).__keaMock || registerPlugin<KeaNative>('Kea');
 
 /** What Kea on the PC wrote to the cloud drive. */
 export interface KeaData {
@@ -156,10 +169,14 @@ export const inboxKey = (i: { course: string; title: string; body: string }) => 
 
 let timer: any = null;
 /** Write phone.json for Kea on the PC (a moment after the last change, so a burst of taps is one write). */
-function syncOut() {
+export function syncOut() {
   clearTimeout(timer);
   timer = setTimeout(() => {
-    Kea.writeFile({ path: 'phone.json', text: JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000), deleted: phoneDeleted().slice(-1000) }) }).catch(() => {});
+    let study = null;
+    try {
+      study = studyOut();
+    } catch {}
+    Kea.writeFile({ path: 'phone.json', text: JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000), deleted: phoneDeleted().slice(-1000), study, requests: phoneRequests() }) }).catch(() => {});
   }, 1500);
 }
 export function setPhoneDeleted(keys: string[]) {

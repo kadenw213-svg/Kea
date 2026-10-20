@@ -618,3 +618,107 @@ b.low {
   width: 100%;
   margin: 8px 0;
 }
+
+/* ---------- Studying: the PC's study screens and reader, full screen on the phone ---------- */
+.m-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.m-overlay .st-player {
+  position: absolute;
+  inset: 0;
+}
+/* The book under the quiz, not beside it, and big enough to read. */
+.m-overlay .st-player.with-reading .st-player-body {
+  flex-direction: column;
+}
+.m-overlay .st-player.with-reading .st-main {
+  flex: 1 1 45%;
+}
+.m-overlay .st-reading {
+  flex: 1 1 55%;
+  border-left: 0;
+  border-top: 1px solid var(--border);
+}
+.m-reader .st-reading {
+  flex: 1;
+  border-top: 0;
+}
+.m-overlay .hub,
+.m-overlay .st-exam,
+.m-overlay .st-setup {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.m-overlay .hub-modes {
+  grid-template-columns: 1fr 1fr;
+}
+.m-overlay .hub-pick-row {
+  grid-template-columns: 1fr;
+}
+.st-m-ch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.st-m-ch .actions {
+  margin-top: 2px;
+}
+.link-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+}
+.review-all {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  border-color: var(--accent);
+}
+.stale.lib {
+  background: var(--accent-soft);
+}
+.block {
+  display: block;
+}
+/* The shared screens' own headings, not the phone's small section labels. */
+.m-overlay h2 {
+  display: block;
+  font-size: 19px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  margin: 4px 0;
+}
+.read-card {
+  flex-direction: column;
+  align-items: stretch;
+}
+.m-opened {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+}
+.m-opened img {
+  max-width: 100%;
+}
+.m-opened pre {
+  white-space: pre-wrap;
+  font-size: 13px;
+}

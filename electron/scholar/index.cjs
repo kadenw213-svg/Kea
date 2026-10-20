@@ -102,6 +102,19 @@ function applyMarks(phone) {
     }
   }
   if (phone.study && devices.mergeStudy(phone.study)) changed = true;
+  // What the phone asked for (more questions, worked steps, a check now), each done once, through the same checks as
+  // another computer's requests (devices.cjs).
+  const asks = (Array.isArray(phone.requests) ? phone.requests : []).filter((r) => r && typeof r.id === 'string');
+  if (asks.length) {
+    const s2 = readState();
+    const seen = new Set(s2.phoneRequests || []);
+    const fresh = asks.filter((r) => !seen.has(r.id) && Date.now() - Date.parse(r.at || 0) < 7 * 864e5);
+    if (fresh.length) {
+      s2.phoneRequests = [...seen, ...fresh.map((r) => r.id)].slice(-500);
+      writeState(s2);
+      for (const r of fresh) devices.serveRequest({ ...r, from: 'your phone' }).then(() => syncSoon(5000));
+    }
+  }
   if (changed) BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
   return changed;
 }
@@ -137,7 +150,32 @@ async function snapshot() {
   };
   // What was deleted on the PC, so the phone also hides its own copies.
   const inboxDeleted = (precheck.readInbox().deletedKeys || []).slice(-1500);
-  return fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, courses, items, details, grades, inbox, inboxDeleted, doneLog });
+  return {
+    ...fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, courses, items, details, grades, inbox, inboxDeleted, doneLog }),
+    // The study folder as it is here (sets, saved questions, progress), for the phone to study from; its pictures are in
+    // the library zip. A set still being written stays out until it's ready.
+    study: studyFiles()
+  };
+}
+
+/** The study folder's files (not its pictures) as { "sets/exam-x.json": contents }. */
+function studyFiles() {
+  const dir = path.join(profiles.paths().dir, 'study');
+  const out = {};
+  const walk = (d, rel) => {
+    if (!fs.existsSync(d)) return;
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (e.isDirectory()) {
+        if (e.name !== 'images') walk(path.join(d, e.name), `${rel}${e.name}/`);
+      } else if (e.name.endsWith('.json')) {
+        try {
+          out[`${rel}${e.name}`] = JSON.parse(fs.readFileSync(path.join(d, e.name), 'utf8'));
+        } catch {}
+      }
+    }
+  };
+  walk(dir, '');
+  return out;
 }
 // The phone copy is written by the computer that scans; any other computer only sends its changes to that one.
 const syncSoon = (delay) => {
@@ -151,6 +189,7 @@ devices.configure({ readState, writeState, applyMarks, syncSoon: (d) => syncSoon
 
 // ---------- Tell the window when a scan changes the classes ----------
 let watcher = null;
+let studyWatcher = null;
 function watch() {
   watcher?.close();
   watcher = null;
@@ -166,6 +205,14 @@ function watch() {
         syncSoon();
       }, 800);
     });
+  } catch {}
+  // Study sets and progress changing (a set finished, an answer, a star) go to the phone too.
+  studyWatcher?.close();
+  studyWatcher = null;
+  const sd = path.join(profiles.paths().dir, 'study');
+  try {
+    fs.mkdirSync(sd, { recursive: true });
+    studyWatcher = fs.watch(sd, { recursive: true }, () => syncSoon());
   } catch {}
 }
 
