@@ -12,6 +12,7 @@ import { Exam, grade, QuestionCard, Shown, Answer, shuffle } from './Study';
 import { ReadingContext, useMissReading } from './ReadingPane';
 import { MathText } from './MathText';
 import { openStudyHub } from './StudyHub';
+import { StudyImage } from './StudyImage';
 
 // ---------- Small shared pieces ----------
 /** Read a side aloud with the computer's own voice (nothing leaves the computer). */
@@ -277,6 +278,7 @@ export function Learn({ set }: { set: StudySetFull }) {
             <SpeakButton text={prompt} />
           </span>
         </div>
+        {q.mode === 'choose' && <StudyImage src={q.card.image} credit={q.card.image_credit} />}
         <div className="sm-prompt-text"><MathText text={prompt} /></div>
       </div>
       {q.mode === 'write' ? (
@@ -589,7 +591,10 @@ export function Review({ courseId, chapters = [], sections = [] }: { courseId: s
       {card ? (
         <>
           <button className={`st-card ${flipped ? 'flipped' : ''}`} onClick={() => setFlipped(true)}>
-            <div className="st-card-side"><MathText text={flipped ? card.back : card.front} /></div>
+            <div className="st-card-side">
+              {!flipped && <StudyImage src={card.image} credit={card.image_credit} />}
+              <MathText text={flipped ? card.back : card.front} />
+            </div>
             <div className="muted st-card-foot">{flipped ? 'How well did you know it?' : 'Think of the answer, then tap or press Space'}</div>
           </button>
           <div className="st-cards-nav">

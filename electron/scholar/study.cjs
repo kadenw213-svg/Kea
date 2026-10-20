@@ -216,7 +216,7 @@ const REUSE = 0.6;
  * files, and the questions that already exist so it writes different ones). Adds the set to the index and returns
  * { id, ready }: ready when no Claude run is needed. `pick` (keys) repeats another device's choice of saved items.
  */
-async function request({ id: given, kind, courseId, chapters = [], itemId = null, count, mode = 'mix', pick: picked = null, bank = false, upgrade = false }) {
+async function request({ id: given, kind, courseId, chapters = [], itemId = null, count, mode = 'mix', pick: picked = null, bank = false, upgrade = false, pictures = false }) {
   if (!['exam', 'cards'].includes(kind)) throw new Error('Unknown kind of study set.');
   const p = profiles.paths();
   const src = await db.practiceSources(p.db, p.textbooks, { courseId, chapters, itemId });
@@ -258,6 +258,7 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
     reuse,
     bank,
     upgrade,
+    pictures: !!pictures,
     output: `data/study/out/${id}.json`
   };
   writeJson(path.join(p.workspace, 'data', 'study', 'requests', `${id}.json`), req);
@@ -515,6 +516,20 @@ async function prepare(id, docText, step = () => {}, engine = null) {
 
   // The brief: the tests first, then each chapter (objectives and vocabulary whole; review text shares the budget).
   const lines = [`# Write ${req.count} new ${req.kind === 'exam' ? 'practice exam questions' : 'flashcards'}${req.bank ? ' for the chapter’s Question bank' : ''}: ${req.course.code} ${req.course.name}`, '', `Output file: ${req.output}`, ''];
+  // Identification: lab practicals (and tests that ask to identify specimens or structures) are answered from pictures.
+  const identifies = (req.tests || []).some((t) => t.type === 'lab_practical' || /\bidentif|\blabel(ed)?\b|specimen|structure/i.test(`${t.title} ${(t.study_focus || []).join(' ')}`));
+  if (req.pictures)
+    lines.push(
+      '## This is a picture set',
+      'Most items show a picture and ask what it is or what a labeled part is: specimens, organisms, cell and tissue structures, anatomy, lab equipment, molecular shapes, whatever these chapters ask the student to recognize. Find each picture with `uv run academic-sync study-image search "<words>"`, save it with `study-image get "<File:...>" --course ' + req.course.code + ' --name <code>-id-<n>` (a name that never gives the answer away), and put its `image` and `image_credit` on the question or card.',
+      ''
+    );
+  else if (identifies)
+    lines.push(
+      '## Picture questions',
+      'This class tests identification (lab practicals or identify-the-structure questions). Make about 15 to 25% of the questions picture questions: show a specimen, structure or labeled diagram and ask what it is or what a label points to (see the skill, "Pictures").',
+      ''
+    );
   if (req.upgrade)
     lines.push(
       '## This is a harder top-up before the test',
@@ -611,7 +626,7 @@ const cleanSteps = (steps) => (Array.isArray(steps) ? steps.map(str).filter(Bool
 /** One question, cleaned, or null when it can't be used. */
 function cleanQuestion(q) {
   if (!q || typeof q !== 'object') return null;
-  const base = { type: q.type, q: str(q.q), explain: str(q.explain), chapter: str(q.chapter) || null, section: str(q.section) || null, topic: str(q.topic) || null, source: str(q.source) || null, ...(['recall', 'apply', 'multistep'].includes(q.level) ? { level: q.level } : {}), ...(cleanSteps(q.steps).length ? { steps: cleanSteps(q.steps) } : {}), ...(q.answerDisputed ? { answerDisputed: true } : {}) };
+  const base = { type: q.type, q: str(q.q), explain: str(q.explain), chapter: str(q.chapter) || null, section: str(q.section) || null, topic: str(q.topic) || null, source: str(q.source) || null, ...(['recall', 'apply', 'multistep'].includes(q.level) ? { level: q.level } : {}), ...(cleanSteps(q.steps).length ? { steps: cleanSteps(q.steps) } : {}), ...(q.answerDisputed ? { answerDisputed: true } : {}), ...picture(q) };
   if (!base.q) return null;
   if (q.type === 'mc' || q.type === 'multi') {
     const choices = Array.isArray(q.choices) ? q.choices.map(str).filter(Boolean) : [];
@@ -637,7 +652,40 @@ function cleanQuestion(q) {
 
 function cleanCard(c) {
   if (!c || !str(c.front) || !str(c.back)) return null;
-  return { front: str(c.front), back: str(c.back), chapter: str(c.chapter) || null, section: str(c.section) || null, topic: str(c.topic) || null };
+  return { front: str(c.front), back: str(c.back), chapter: str(c.chapter) || null, section: str(c.section) || null, topic: str(c.topic) || null, ...picture(c) };
+}
+
+/**
+ * A question's or card's picture (an identification question: a specimen, a structure, a labeled diagram), as
+ * { image: 'images/<CODE>/<name>.jpg', image_credit }. The writer saves it in the workspace (study-image get); it's
+ * copied into the student's study folder, where it's kept with the sets (and synced to their other devices).
+ */
+function picture(it) {
+  const src = str(it.image);
+  if (!src) return {};
+  const m = /(?:^|\/)(?:data\/study\/)?images\/([A-Za-z0-9]+)\/([a-z0-9-]+\.(?:jpg|jpeg|png|webp|gif))$/i.exec(src.replace(/\\/g, '/'));
+  if (!m) return {};
+  const rel = `images/${m[1].toUpperCase()}/${m[2].toLowerCase()}`;
+  const dest = file(rel);
+  if (!fs.existsSync(dest)) {
+    const from = path.join(profiles.paths().workspace, 'data', 'study', 'images', m[1].toUpperCase(), m[2]);
+    if (!fs.existsSync(from)) return {};
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(from, dest);
+  }
+  return { image: rel, ...(str(it.image_credit) ? { image_credit: str(it.image_credit).slice(0, 200) } : {}) };
+}
+
+/** A saved picture as a data URL, for the study screens. */
+function imageData(rel) {
+  const m = /^images\/[A-Z0-9]+\/[a-z0-9-]+\.(jpg|jpeg|png|webp|gif)$/.exec(String(rel || ''));
+  if (!m) return null;
+  try {
+    const type = m[1] === 'jpg' ? 'jpeg' : m[1];
+    return `data:image/${type};base64,${fs.readFileSync(file(rel)).toString('base64')}`;
+  } catch {
+    return null;
+  }
 }
 
 /** After the run: take Claude's file, keep what's usable, and mark the set ready (or failed, with the reason). */
@@ -957,4 +1005,4 @@ function whereIs(k) {
   return null;
 }
 
-module.exports = { applyFixes, pool, stepsNeed, stepsBrief, whereIs, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };
+module.exports = { applyFixes, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };

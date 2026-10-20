@@ -330,7 +330,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     // reason for today's check to fix it, when it's new (an open one isn't re-sent every day; it's in the Inbox).
     try {
       const uv = await workspace.findUv();
-      const rr = await workspace.runHidden(uv, ['run', 'academic-sync', 'd2l-reconcile', '--course', c.code, '--dir', dir, '--fill-instructions', '--restore-hidden', '--json'], { cwd: p.workspace, env: { ...workspace.engineEnv(uv), KEA_RUN_ID: day(), KEA_TASK: 'precheck' } });
+      const rr = await workspace.runHidden(uv, ['run', 'academic-sync', 'd2l-reconcile', '--course', c.code, '--dir', dir, '--fill-instructions', '--fill-links', '--restore-hidden', '--json'], { cwd: p.workspace, env: { ...workspace.engineEnv(uv), KEA_RUN_ID: day(), KEA_TASK: 'precheck' } });
       const rec = JSON.parse(rr.out.slice(rr.out.indexOf('{')));
       const restored = new Set((rec.restored || []).map((h) => h.item_id));
       const found = [

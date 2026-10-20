@@ -574,6 +574,7 @@ function register() {
     return id;
   });
   ipcMain.handle('scholar:studySaved', (_e, req) => study.saved(req));
+  ipcMain.handle('scholar:studyImage', (_e, rel) => study.imageData(String(rel || '')));
   // Worked steps for a question's chapter, now (the student missed one that has none yet).
   ipcMain.handle('scholar:studyStepsFor', (_e, k) => {
     const w = study.whereIs(String(k));

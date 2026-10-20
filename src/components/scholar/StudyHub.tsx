@@ -3,7 +3,7 @@
 // flashcards, Learn and Match, by topic), with past practice exams and their scores. No pacing: you choose what to study. Opened by the one Study button wherever there's
 // something to study, so there aren't different buttons doing the same thing in different places.
 import { useEffect, useState } from 'react';
-import { Brain, ClipboardList, Layers, Loader2, Shapes, Sparkles } from 'lucide-react';
+import { Brain, ClipboardList, Image, Layers, Loader2, Shapes, Sparkles } from 'lucide-react';
 import { api, PoolItem, ReviewQueue } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
@@ -237,6 +237,24 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
         >
           {(close) => <MakeMenu kind="exam" courseId={scope.courseId} target={target} canMake={canMake} close={close} />}
         </MenuButton>
+        <button
+          className="btn sm"
+          disabled={canMake === false || !!busy}
+          title="Questions that show a specimen, structure or labeled diagram and ask what it is (pictures from Wikimedia Commons)"
+          onClick={async () => {
+            setBusy('pictures');
+            try {
+              await api.scholar.studyMake({ kind: 'exam', courseId: scope.courseId, ...target, count: 25, mode: 'new', pictures: true });
+              toast('Writing 25 picture questions. They’ll be ready in a few minutes.', 'success');
+            } catch (err: any) {
+              toast(err?.message || 'Kea couldn’t start that.', 'error');
+            } finally {
+              setBusy('');
+            }
+          }}
+        >
+          <Image size={13} /> Picture questions
+        </button>
         <MenuButton
           button={() => (
             <button className="btn sm" disabled={canMake === false}>

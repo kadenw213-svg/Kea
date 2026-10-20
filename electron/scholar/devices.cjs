@@ -25,7 +25,7 @@ const precheck = require('./precheck.cjs');
 
 // What the primary shares, relative to the profile folder. (kea.json and study progress are merged, not copied.)
 const FILES = ['inbox.json', 'news.json', 'grades.json', 'submissions.json', 'precheck.json', 'sync-state.json', 'activity.json'];
-const DIRS = [path.join('scholar', 'data', 'digests', 'kea-inbox'), path.join('study', 'sets')];
+const DIRS = [path.join('scholar', 'data', 'digests', 'kea-inbox'), path.join('study', 'sets'), path.join('study', 'images')];
 const MERGED = ['kea.json', path.join('study', 'index.json'), path.join('study', 'attempts.json'), path.join('study', 'cards.json')];
 const HEARTBEAT = 5 * 60000;
 // A device not heard from in this long shows as off.

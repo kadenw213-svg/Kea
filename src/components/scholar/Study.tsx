@@ -13,6 +13,7 @@ import { CardTest, Learn, Match, Review, ReviewBanner, SetEditor, SpeakButton, S
 import { openStudyHub, parseScope, StudyHub } from './StudyHub';
 import '../../styles/study.css';
 import { MathText } from './MathText';
+import { StudyImage } from './StudyImage';
 
 // ---------- Shared state ----------
 /** Every set, reloaded when Kea says something changed (a set finished) and while one is being made. */
@@ -698,7 +699,7 @@ function questionCards(s: StudySetFull): StudySetFull {
     q.type === 'tf' ? (q.answer ? 'True' : 'False') : q.type === 'num' ? `${q.answer}${q.unit ? ` ${q.unit}` : ''}` : answerText(q);
   const cards = (s.questions || [])
     .filter((q) => q.type !== 'short')
-    .map((q) => ({ k: q.k, front: q.type === 'tf' ? `True or false: ${q.q}` : q.q, back: back(q), chapter: q.chapter, section: q.section, topic: q.topic }));
+    .map((q) => ({ k: q.k, front: q.type === 'tf' ? `True or false: ${q.q}` : q.q, back: back(q), chapter: q.chapter, section: q.section, topic: q.topic, image: q.image, image_credit: q.image_credit }));
   // (The same id as the questions' own set, so Learn and known-card progress are kept between sessions.)
   return { ...s, kind: 'cards', cards, questions: undefined, count: cards.length };
 }
@@ -764,7 +765,10 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
     <div className={`st-q ${state}`}>
       <div className="st-q-head">
         <span className="st-num">{num}</span>
-        <div className="st-stem"><MathText text={q.q} /></div>
+        <div className="st-stem">
+          <MathText text={q.q} />
+          <StudyImage src={q.image} credit={q.image_credit} />
+        </div>
         <ReadingButton id={q.k} chapter={q.chapter} section={q.section} topic={q.topic} query={`${q.q} ${answerText(q)}`} steps={q.steps} />
       </div>
       {(q.type === 'mc' || q.type === 'multi') && (
@@ -908,7 +912,10 @@ function Cards({ set }: { set: StudySetFull }) {
       {card ? (
         <>
           <button className={`st-card ${flipped ? 'flipped' : ''}`} onClick={() => setFlipped(!flipped)} title="Click or press Space to flip">
-            <div className="st-card-side"><MathText text={flipped ? card.back : card.front} /></div>
+            <div className="st-card-side">
+              {!flipped && <StudyImage src={card.image} credit={card.image_credit} />}
+              <MathText text={flipped ? card.back : card.front} />
+            </div>
             <div className="muted st-card-foot">
               {flipped ? 'Answer' : 'Click to flip'}
               {card.chapter ? ` · ${card.chapter}` : ''}

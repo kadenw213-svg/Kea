@@ -164,10 +164,11 @@ export interface KeaApi {
     studyReviewMark(k: string, grade: 'again' | 'good' | 'easy', ctx: { courseId: string; chapter: string | null }): Promise<{ box: number; due: string }>;
     /** Ask Claude for a new set (for a test or assignment, or for chapters). Resolves with its id once queued. */
     /** mode: 'mix' reuses up to 60% saved questions and has Claude write the rest; 'saved' uses saved ones only (ready at once); 'new' writes them all. */
-    studyMake(req: { id?: string; kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number; mode?: 'mix' | 'saved' | 'new'; /** Exactly these saved questions (keys). */ pick?: string[] }): Promise<string>;
+    studyMake(req: { id?: string; kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number; mode?: 'mix' | 'saved' | 'new'; /** Exactly these saved questions (keys). */ pick?: string[]; /** An identification set: pictures. */ pictures?: boolean }): Promise<string>;
     /** How many saved questions (or cards) a set on these chapters, or for this test, could reuse. */
     studySaved(req: { kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null }): Promise<{ count: number }>;
     studyPool(req: { courseId: string; chapters: string[] }): Promise<PoolItem[]>;
+    studyImage(rel: string): Promise<string | null>;
     studyStepsFor(k: string): Promise<{ queued: boolean; courseCode: string; chapter: string }>;
     /** Which class and chapters a textbook PDF is (for Quiz me), or null. */
     textbookOf(file: string): Promise<{ courseId: string; code: string; chapters: string[] } | null>;
@@ -655,7 +656,7 @@ export interface PoolItem {
  * k: the question's key (the same question in two sets has the same key); section: the textbook section that answers
  * it; steps: its worked solution; answerDisputed: the steps writer found the stored answer may be wrong.
  */
-type QuestionBase = { k?: string; explain: string; chapter: string | null; section?: string | null; topic: string | null; source: string | null; steps?: string[]; answerDisputed?: boolean };
+type QuestionBase = { k?: string; explain: string; chapter: string | null; section?: string | null; topic: string | null; source: string | null; steps?: string[]; answerDisputed?: boolean; image?: string; image_credit?: string };
 export type StudyQuestion = QuestionBase &
   (
   | { type: 'mc'; q: string; choices: string[]; answer: number; explain: string; chapter: string | null; topic: string | null; source: string | null }
@@ -677,6 +678,9 @@ export interface StudyCard {
   k?: string;
   front: string;
   back: string;
+  /** A picture on the front (identify what it shows), with its credit. */
+  image?: string;
+  image_credit?: string;
   chapter: string | null;
   section?: string | null;
   topic?: string | null;

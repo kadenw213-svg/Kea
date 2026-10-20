@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld('api', {
     studyMake: (req) => ipcRenderer.invoke('scholar:studyMake', req),
     studySaved: (req) => ipcRenderer.invoke('scholar:studySaved', req),
     studyPool: (req) => ipcRenderer.invoke('scholar:studyPool', req),
+    studyImage: (rel) => ipcRenderer.invoke('scholar:studyImage', rel),
     studyStepsFor: (k) => ipcRenderer.invoke('scholar:studyStepsFor', k),
     textbookOf: (file) => ipcRenderer.invoke('scholar:textbookOf', file),
     studyBanks: () => ipcRenderer.invoke('scholar:studyBanks'),

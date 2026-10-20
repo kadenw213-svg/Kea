@@ -133,6 +133,20 @@ Balance and difficulty:
   these as real superscripts and subscripts. Never `**`, `\frac` or `$…$`.
 - Be accurate: check every answer by working it, and keep the explanation's numbers consistent with the answer.
 
+## Pictures (identification)
+
+When the brief asks for picture questions (or a picture set), find real pictures, freely licensed, from Wikimedia
+Commons through Kea:
+1. `uv run academic-sync study-image search "<words>"` (e.g. "Volvox colony micrograph", "fern sorus", "sea star
+   aboral surface", "Erlenmeyer flask", "trigonal pyramidal molecule"); pick a clear one whose description says what
+   it shows. Never a picture you can't verify from its description.
+2. `uv run academic-sync study-image get "<File:...>" --course <CODE> --name <code>-id-<n>`: it prints `image` and
+   `image_credit`; put both on the question or card exactly as printed. The name never gives the answer away.
+3. Ask what's shown, or what a labeled part is ("What structure is labeled B?" only when the picture has labels).
+   Multiple choice with plausible look-alikes (other organisms or structures from the same chapter), or a blank.
+   The explanation says what identifies it in the picture (the features to look for), like a lab instructor would.
+For flashcards, put the picture on the card (front: "Identify this organism", back: the name and its key features).
+
 ## 3. Flashcards (`kind: cards`)
 
 - `front`: a term, a concept prompt ("What happens to a gas's volume when its temperature doubles at constant

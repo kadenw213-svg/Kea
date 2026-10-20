@@ -46,6 +46,14 @@ field.** If a command answers with an error, its message says what's wrong.
   --reason X`. Chapter notes and outcomes keep the same history as items and can't be deleted. `/kea-curriculum`
   closes the gaps. Depth: `depth-due --course X [--json]` (each chapter's last depth review and whether one is due),
   `depth-review --course X --chapter X --verdict ok|gaps --note X` (`/kea-curriculum <CODE> depth`).
+- Hand-in links: every piece of work needs **both** its document (the instructions, handout or reading:
+  `--reference-url`) **and** where it's handed in (`--submission-url`: the assignment folder's submission page, the quiz,
+  the discussion topic, or the outside platform's launch link for platform work). `d2l-reconcile --fill-links` (Kea runs
+  it daily) adds the hand-in place for everything matched to a D2L folder, quiz or topic, and platform links for
+  platform work; set the rest yourself with `render <id> --submission-url ... --submission-url-label ... --save`. Work
+  handed in on paper in class has no hand-in link: say so in its details.
+- Pictures for identification questions: `study-image search "<words>"`, `study-image get "<File:...>" --course X
+  --name <code>-id-<n>` (freely licensed Wikimedia Commons images, saved small under data/study/images/).
 - Hidden work: `d2l-reconcile` also lists `hidden` (graded work D2L lists that matches only a replaced or cancelled
   item: how and when it was hidden; `--restore-hidden` puts replaced ones back, Kea does this daily) and `suspects`
   (graded-looking items folded into a reading week or lecture). Judge every suspect: `item-restore <id> --reason X

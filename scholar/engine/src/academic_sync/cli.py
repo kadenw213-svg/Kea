@@ -996,6 +996,8 @@ def d2l_reconcile_cmd(
     fill_instructions: Annotated[bool, typer.Option("--fill-instructions", help="Copy each matched item's D2L instructions and rubric into its details.")] = False,
     restore_hidden: Annotated[bool, typer.Option("--restore-hidden", help="Put back graded work D2L lists that had been "
                                                  "replaced (superseded) by mistake, as graded work; cancelled items are only reported.")] = False,
+    fill_links: Annotated[bool, typer.Option("--fill-links", help="Give each matched item the place to hand it in: the "
+                                             "assignment folder's submission page, the quiz, or the discussion topic.")] = False,
 ) -> None:
     """Every graded thing D2L lists for this course (assignment folders, quizzes, discussion topics, graded content,
     grade items) matched to the calendar: lists what's missing and what's on a different day. Each one must be added,
@@ -1029,6 +1031,54 @@ def d2l_reconcile_cmd(
                     if not current or current.startswith(header) or not current.startswith("From D2L") or len(header + text) > len(current):
                         row.description = header + text
                         filled += 1
+        # Where to hand each one in, from what D2L itself says it is: an item with only its document (a reading's
+        # PDF, "Your Inner Fish CH 1") gets its assignment folder's submission page too.
+        linked = 0
+        if fill_links:
+            from urllib.parse import urlsplit
+
+            from sqlalchemy import text as sql_text
+
+            from academic_sync.db.orm import AcademicItemRow
+
+            parts = urlsplit(c.d2l_url or "")
+            base = f"{parts.scheme}://{parts.netloc}" if parts.netloc else ""
+            ou = c.d2l_identifier or ""
+            where = {
+                "dropbox": ("Submit", "/d2l/lms/dropbox/user/folder_submit_files.d2l?db={id}&grpid=0&isprv=0&bp=0&ou={ou}"),
+                "quiz": ("Take the quiz", "/d2l/lms/quizzing/user/quiz_summary.d2l?qi={id}&ou={ou}"),
+                "discussion": ("Open the discussion", "/d2l/le/{ou}/discussions/topics/{id}/View"),
+            }
+            if base and ou:
+                # (A folder first: when a quiz and a folder both match, the folder is where work is handed in.)
+                for o, item in sorted(r["_matched"], key=lambda x: ["dropbox", "quiz", "discussion"].index(x[0]["kind"]) if x[0]["kind"] in where else 9):
+                    if o["kind"] not in where:
+                        continue
+                    row = session.get(AcademicItemRow, item.id)
+                    if row is None or row.submission_url:
+                        continue
+                    label, path = where[o["kind"]]
+                    _set_event_context(f"Hand-in link from D2L ({o['kind']} \"{o['title']}\")")
+                    session.execute(sql_text("UPDATE event_context SET reason = :r WHERE id = 1"), {"r": f"Hand-in link from D2L ({o['kind']} \"{o['title']}\")"})
+                    row.submission_url = base + path.format(id=o["id"], ou=ou)
+                    row.submission_url_label = label
+                    # (D2L says it's an assignment folder: an item read as a bare deadline is an assignment.)
+                    if o["kind"] == "dropbox" and row.item_type == "other_deadline":
+                        row.item_type = "assignment"
+                    linked += 1
+            # Work done on the class's outside platform (ALEKS homework): its launch link is where it's handed in.
+            platform = session.execute(sql_text("SELECT label, url FROM course_portal_links WHERE course_id = :c AND kind = 'external_home'"), {"c": c.id}).first()
+            if platform and platform[1]:
+                work = ("assignment", "quiz", "exam", "paper", "project", "other_deadline", "lab_handout")
+                for row in session.query(AcademicItemRow).filter(AcademicItemRow.course_id == c.id, AcademicItemRow.status.notin_(["superseded", "cancelled"])).all():
+                    if row.submission_url or row.item_type not in work or platform[1] not in (row.reference_url, row.resource_url):
+                        continue
+                    session.execute(sql_text("UPDATE event_context SET reason = :r WHERE id = 1"), {"r": f"Done and handed in on {platform[0]}: its launch link is the hand-in place"})
+                    row.submission_url = platform[1]
+                    row.submission_url_label = f"Do it in {platform[0]}"
+                    linked += 1
+            session.flush()
+        r["links_filled"] = linked
         restored = []
         if restore_hidden and r["hidden"]:
             from sqlalchemy import text as sql
@@ -3081,6 +3131,8 @@ def practice_check_cmd(
             elif stem.lower() in seen:
                 problems.append(f"{where}: duplicate stem")
             seen.add(stem.lower())
+            if q.get("image") and not (path.parent.parent.parent / str(q["image"])).is_file() and not Path(str(q["image"])).is_file():
+                problems.append(f"{where}: its image {q['image']} isn't there (save it with study-image get)")
             explain = str(q.get("explain", "")).strip()
             if not explain:
                 problems.append(f"{where}: no explanation")
@@ -3586,6 +3638,59 @@ def study_pdf_image_cmd(
         raise typer.Exit(code=1) from exc
     info["typst_path"] = "img/" + Path(info["path"]).name
     print(json.dumps(info, indent=1))
+
+
+@app.command("study-image")
+def study_image_cmd(
+    action: Annotated[str, typer.Argument(help="'search' or 'get'.")],
+    query: Annotated[str, typer.Argument(help="Search words, or the Commons file title for 'get'.")],
+    course: Annotated[str | None, typer.Option("--course", help="'get': the class the picture is for.")] = None,
+    name: Annotated[str | None, typer.Option("--name", help="'get': a file name that doesn't give the answer away "
+                                             "(e.g. 'bio-id-07', never 'paramecium').")] = None,
+    limit: Annotated[int, typer.Option("--limit")] = 8,
+) -> None:
+    """Pictures for identification questions and flashcards (a specimen, a structure, a labeled diagram, lab glassware,
+    a molecule's shape): freely licensed images from Wikimedia Commons only. 'search' lists candidates with what they
+    show and their credit; 'get' saves one under data/study/images/<CODE>/ (as a JPEG of a few hundred KB at most) and
+    prints its path, to put in the question's "image", and its credit, for "image_credit"."""
+    if action == "search":
+        try:
+            print(json.dumps(study_pdf_mod.commons_search(query, limit), indent=1))
+        except study_pdf_mod.RateLimited as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        return
+    if action != "get" or not course:
+        console.print("[red]Use 'search <words>' or 'get <File:...> --course <CODE> --name <stem>'.[/red]")
+        raise typer.Exit(code=1)
+    from academic_sync.config import get_db_path
+
+    code = re.sub(r"[^A-Za-z0-9]", "", course).upper()
+    dest = get_db_path().parent / "study" / "images" / code
+    try:
+        info = study_pdf_mod.commons_fetch(query, dest, re.sub(r"[^a-z0-9-]+", "-", (name or "").lower()).strip("-") or None)
+    except (ValueError, study_pdf_mod.RateLimited) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    path = Path(info["path"])
+    # Small enough to keep: a JPEG at the 1280 px Commons gives (a photo or diagram stays readable; a few hundred KB).
+    try:
+        import pymupdf
+
+        pix = pymupdf.Pixmap(str(path))
+        if pix.alpha:
+            pix = pymupdf.Pixmap(pix, 0)
+        while pix.width > 1400:
+            pix.shrink(1)
+        jpg = path.with_suffix(".jpg")
+        jpg.write_bytes(pix.tobytes("jpg", jpg_quality=82))
+        if jpg != path:
+            path.unlink(missing_ok=True)
+        path = jpg
+    except Exception:  # noqa: BLE001 -- keep the original file when it can't be converted
+        pass
+    rel = path.relative_to(get_db_path().parent.parent).as_posix()
+    print(json.dumps({"image": rel, "image_credit": info.get("credit"), "license": info.get("license"), "kb": round(path.stat().st_size / 1024)}, indent=1))
 
 
 # Figure scripts are written by Claude from course material, which can carry instructions planted by anyone who can
