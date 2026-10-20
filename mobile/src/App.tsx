@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, BookOpen, CalendarDays, Camera, CheckCircle2, ChevronLeft, Circle, ExternalLink, FolderOpen, GraduationCap, Inbox, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, Award, BookOpen, CalendarDays, Camera, CheckCircle2, ChevronLeft, Circle, Download, ExternalLink, Share2, FolderOpen, GraduationCap, Inbox, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, Upload, X } from 'lucide-react';
 import type { ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
 import { CATEGORIES, LinkGroups, TODO, categoryOf, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
@@ -43,19 +43,30 @@ export function App() {
   const [phoneInbox, setPhoneInbox] = useState<ScholarInboxItem[]>([]);
   const [done, setDone] = useState(phoneDone());
   const [refreshing, setRefreshing] = useState(false);
+  // Starting up: which step it's on, and what went wrong (shown instead of an endless spinner).
+  const [step, setStep] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
+  // The classes come from the drive file first and alone: signing in to the class site and its own check run after,
+  // in the background, so a slow sign-in never holds up the screen.
   const refresh = async () => {
     setRefreshing(true);
+    setLoadError(null);
     try {
+      setStep(1);
       const st = await Kea.state();
       setState(st);
       if (st.dataFolder) {
-        const d = await loadData();
-        if (d) {
-          setData(d);
-          watchClasses(d).catch(() => {});
+        setStep(2);
+        const r = await loadData();
+        setStep(3);
+        if (r.data) {
+          setData(r.data);
+          watchClasses(r.data).catch(() => {});
         }
+        if (r.error) setLoadError(r.error);
       }
+      setRefreshing(false);
       if (st.home && st.hasLogin) await Kea.checkNow().catch(() => null);
       setPhoneInbox((await Kea.phoneInbox()).items || []);
     } finally {
@@ -108,7 +119,35 @@ export function App() {
 
   const needsSetup = state && (!state.home || !state.hasLogin || !state.dataFolder);
   if (setup || needsSetup) return <Setup state={state} onDone={() => (setSetup(false), refresh())} />;
-  if (!data) return <div className="center"><Loader2 className="spin" /> Loading your classes…</div>;
+  if (!data)
+    return (
+      <div className="page loading">
+        <h1>Kea</h1>
+        {!loadError ? (
+          <>
+            <div className="bar">
+              <span style={{ width: `${[8, 30, 70, 100][step] || 8}%` }} />
+            </div>
+            <p className="muted">{['Starting…', 'Checking your setup…', 'Reading your classes from your drive…', 'Opening…'][step]}</p>
+            <p className="muted small">This takes a few seconds. Kea only reads the copy your PC already made; it never scans anything here.</p>
+          </>
+        ) : (
+          <>
+            <p className="note">{loadError}</p>
+            <button className="btn primary" onClick={refresh}>
+              <RefreshCw size={16} /> Try again
+            </button>
+            <button className="btn" onClick={() => Kea.pickDataFile().then(refresh).catch(() => {})}>
+              <FolderOpen size={16} /> Choose the kea-data.json file
+            </button>
+            <p className="muted small">On your drive: Kea → School → kea-data.json (Google Drive: My Drive → Kea → School). Your PC shows which drive it uses under Scans → Devices.</p>
+            <button className="btn" onClick={() => setSetup(true)}>
+              <Settings size={16} /> Setup
+            </button>
+          </>
+        )}
+      </div>
+    );
 
   const ctx = { data, items, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')) };
   return (
@@ -123,6 +162,11 @@ export function App() {
         </button>
       </header>
       <main className="body">
+        {loadError && (
+          <button className="stale" onClick={() => setSetup(true)}>
+            <AlertTriangle size={14} /> Showing your last copy: {loadError} Tap to fix.
+          </button>
+        )}
         {tab === 'today' && <Today ctx={ctx} missing={missing} />}
         {tab === 'inbox' && <InboxView items={inbox} readIds={readIds} markRead={markRead} remove={remove} />}
         {tab === 'calendar' && <Agenda ctx={ctx} />}
@@ -462,6 +506,7 @@ function Scan({ data }: { data: KeaData }) {
   const [scan, setScan] = useState<{ file: string; pages: number; name: string } | null>(null);
   const [targets, setTargets] = useState<Awaited<ReturnType<typeof folders>> | null>(null);
   const [code, setCode] = useState<string | null>(null);
+  const [name, setName] = useState(`Scan ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`);
   const start = async () => {
     try {
       const s = await Kea.scan({ name: 'Scan' });
@@ -492,6 +537,19 @@ function Scan({ data }: { data: KeaData }) {
               <X size={18} />
             </button>
           </div>
+          <input className="scan-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
+          <div className="actions">
+            <button className="btn" onClick={() => Kea.share({ file: scan.file, name })}>
+              <Share2 size={16} /> Share
+            </button>
+            <button className="btn" onClick={() => Kea.saveCopy({ file: scan.file, name }).then((r) => alertLine(`Saved to Downloads as ${r.name}`)).catch(alertLine)}>
+              <Download size={16} /> Save to Downloads
+            </button>
+            <button className="btn" onClick={start}>
+              <Camera size={16} /> Scan again
+            </button>
+          </div>
+          <h2>Hand it in</h2>
           {!targets ? (
             <div className="center">
               <Loader2 className="spin" /> Finding your assignment folders…
@@ -506,7 +564,7 @@ function Scan({ data }: { data: KeaData }) {
                 ))}
               </div>
               {c?.folders.map((f) => (
-                <button key={f.id} className={`card link ${f.closed ? 'closed' : ''}`} disabled={f.closed} onClick={() => Kea.handIn({ url: handInUrl(data.home, c.ou, f.id), file: scan.file })}>
+                <button key={f.id} className={`card link ${f.closed ? 'closed' : ''}`} disabled={f.closed} onClick={() => (setName(f.name), Kea.handIn({ url: handInUrl(data.home, c.ou, f.id), file: scan.file }))}>
                   <Upload size={16} />
                   <span>
                     {f.name}
@@ -559,6 +617,21 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           {quick && (
             <button className="btn primary" onClick={() => Kea.open({ url: quick.url })}>
               <quick.icon size={16} /> {quick.label}
+            </button>
+          )}
+          {quick?.label === 'Hand in' && (
+            <button
+              className="btn primary"
+              onClick={async () => {
+                try {
+                  const s = await Kea.scan({ name: it.title });
+                  await Kea.handIn({ url: quick.url, file: s.file });
+                } catch (e: any) {
+                  if (!/No scan/.test(String(e?.message))) alertLine(e);
+                }
+              }}
+            >
+              <Camera size={16} /> Scan &amp; hand in
             </button>
           )}
         </div>
@@ -621,6 +694,18 @@ function Setup({ state, onDone }: { state: Awaited<ReturnType<typeof Kea.state>>
     }
     setBusy('');
   };
+  const dataFile = async () => {
+    setBusy('folder');
+    try {
+      await Kea.pickDataFile();
+      const r = await Kea.readFile({ path: 'kea-data.json' });
+      const d = JSON.parse(r.text);
+      setMsg(`Found your classes: ${(d.courses || []).map((c: any) => c.code).join(', ')}.`);
+    } catch (e: any) {
+      setMsg(/No file/.test(String(e?.message)) ? '' : `That isn't Kea's data file: choose kea-data.json in Kea → School. (${String(e?.message || e).slice(0, 80)})`);
+    }
+    setBusy('');
+  };
   return (
     <div className="page setup">
       <h1>Kea</h1>
@@ -633,10 +718,15 @@ function Setup({ state, onDone }: { state: Awaited<ReturnType<typeof Kea.state>>
         {busy === 'signin' ? <Loader2 size={16} className="spin" /> : null} Sign in {state?.signedIn ? '(signed in)' : ''}
       </button>
       <p className="muted small">Saved in Android's encrypted storage. Kea signs in by itself after this, the way it does on your PC.</p>
-      <h2>2. Your Kea folder</h2>
-      <p className="muted small">Kea on your PC keeps your classes in OneDrive → Kea → School. Choose that folder.</p>
+      <h2>2. Your classes from your PC</h2>
+      <p className="muted small">
+        Kea on your PC keeps your classes in the drive it syncs through (on the PC: Scans → Devices), in Kea → School. Google Drive and OneDrive can't share a whole folder with other apps on Android, so for those choose the file kea-data.json in that folder.
+      </p>
+      <button className="btn" disabled={!!busy} onClick={dataFile}>
+        <FolderOpen size={16} /> {state?.dataFolder ? 'Choose kea-data.json again' : 'Choose kea-data.json'}
+      </button>
       <button className="btn" disabled={!!busy} onClick={folder}>
-        <FolderOpen size={16} /> {state?.dataFolder ? 'Change folder' : 'Choose folder'}
+        <FolderOpen size={16} /> Or choose the whole folder (a synced folder on the phone)
       </button>
       <h2>3. Notifications</h2>
       <button className="btn" onClick={() => Kea.allowNotifications()}>

@@ -133,15 +133,22 @@ function start(hooks) {
       case 'kea_progress':
         hooks.progress?.(String(a.message || '').slice(0, 200), Number(a.percent));
         return { ok: true };
-      case 'kea_notify':
+      case 'kea_notify': {
+        // An outside platform's own sign-in page doesn't work on its own: send the student through the class's link.
+        const platformLink = (code, l) => {
+          if (!code || !/\/(login|signin|sign-in|log-in)\b|^https?:\/\/[^/]+\/?$/i.test(l.url)) return l;
+          const own = require('./precheck.cjs').classLaunch(code, l.url);
+          return own ? { label: l.label, url: own.url } : l;
+        };
         hooks.notify?.({
           course: a.course || '',
           kind: ['needs_you', 'attention', 'missed', 'grade', 'feedback', 'message', 'update'].includes(a.kind) ? a.kind : 'update',
           title: String(a.title || '').slice(0, 120),
           body: String(a.body || '').slice(0, 1500),
-          links: (Array.isArray(a.links) ? a.links : []).filter((l) => l && /^https?:\/\//i.test(l.url)).slice(0, 4).map((l) => ({ label: String(l.label || 'Open').slice(0, 40), url: String(l.url) }))
+          links: (Array.isArray(a.links) ? a.links : []).filter((l) => l && /^https?:\/\//i.test(l.url)).slice(0, 4).map((l) => platformLink(a.course, { label: String(l.label || 'Open').slice(0, 40), url: String(l.url) }))
         });
         return { ok: true };
+      }
       default:
         throw new Error(`Unknown tool: ${name}`);
     }

@@ -585,6 +585,17 @@ def course_documents(course: Course) -> list[Path]:
     return sorted(out)
 
 
+def _transcription(path: Path) -> str | None:
+    """A scanned file's transcription: `<file>.transcribed.txt` or `<stem>.transcribed.txt` beside it, when it holds
+    real text (not just the doc-text page markers)."""
+    for t in (path.with_name(path.name + ".transcribed.txt"), path.with_name(path.stem + ".transcribed.txt")):
+        if t.is_file():
+            text = t.read_text(encoding="utf-8", errors="replace").strip()
+            if len(text) > 200:
+                return text
+    return None
+
+
 def _coverage_documents(session, course: Course) -> tuple[list[tuple[str, ParsedDocument]], list[str]]:
     """Every document to check: the downloaded files and the saved text of every source (announcements and pages
     read live, whose files may be gone). Returns (documents, files that couldn't be read)."""
@@ -599,8 +610,12 @@ def _coverage_documents(session, course: Course) -> tuple[list[tuple[str, Parsed
             unreadable.append(f"{path} ({type(err).__name__})")
             continue
         if path.suffix.lower() in (".pdf", ".docx") and len((doc.text or "").strip()) < 40:
-            # A scanned handout: there may be dates in it that no text can show.
-            unreadable.append(f"{path} (no text: scanned or image-only)")
+            # A scanned handout: its transcription (written once by Claude from the page images) stands in for it.
+            done = _transcription(path)
+            if done:
+                doc = ParsedDocument(text=done, title=path.name)
+            else:
+                unreadable.append(f"{path} (no text: scanned or image-only)")
         docs.append((str(path), doc))
     rows = session.execute(
         sql("SELECT title, raw_text FROM sources WHERE course_id = :c AND raw_text IS NOT NULL AND length(raw_text) > 40"),

@@ -68,7 +68,9 @@ public class KeaPlugin extends Plugin {
             r.put("home", Store.home(getContext()));
             r.put("hasLogin", !Store.secure(getContext()).getString("pass", "").isEmpty());
             r.put("signedIn", ClassSite.signedIn(getContext()));
-            r.put("dataFolder", Store.plain(getContext()).getString("tree", ""));
+            String tree = Store.plain(getContext()).getString("tree", "");
+            r.put("dataFolder", tree.isEmpty() ? Store.plain(getContext()).getString("dataFile", "") : tree);
+            r.put("dataFileOnly", tree.isEmpty() && !Store.plain(getContext()).getString("dataFile", "").isEmpty());
             r.put("notifications", Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
             call.resolve(r);
         }).start();
@@ -134,6 +136,51 @@ public class KeaPlugin extends Plugin {
         String file = call.getString("file");
         getActivity().startActivity(new Intent(getContext(), SiteActivity.class).putExtra("mode", "handin").putExtra("url", url).putExtra("file", file));
         call.resolve();
+    }
+
+    /** Share a scan (or any Kea file) through Android's share sheet: email, Messages, Drive, anything. */
+    @PluginMethod
+    public void share(PluginCall call) {
+        Uri uri = Uri.parse(call.getString("file", ""));
+        Intent send = new Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        String title = call.getString("name", "");
+        if (!title.isEmpty()) send.putExtra(Intent.EXTRA_SUBJECT, title);
+        getActivity().startActivity(Intent.createChooser(send, "Share"));
+        call.resolve();
+    }
+
+    /** Save a copy of a scan in the phone's Downloads, under a name the student chose. */
+    @PluginMethod
+    public void saveCopy(PluginCall call) {
+        Uri from = Uri.parse(call.getString("file", ""));
+        String name = call.getString("name", "Scan").replaceAll("[^A-Za-z0-9 ._()#-]", "").trim();
+        if (!name.toLowerCase().endsWith(".pdf")) name += ".pdf";
+        final String fileName = name;
+        new Thread(() -> {
+            try {
+                android.content.ContentValues v = new android.content.ContentValues();
+                v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf");
+                Uri to;
+                if (Build.VERSION.SDK_INT >= 29) {
+                    v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS);
+                    to = getContext().getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                } else {
+                    File dir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+                    to = Uri.fromFile(new File(dir, fileName));
+                }
+                try (InputStream in = getContext().getContentResolver().openInputStream(from); OutputStream os = getContext().getContentResolver().openOutputStream(to)) {
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                }
+                JSObject r = new JSObject();
+                r.put("name", fileName);
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject(e.getMessage());
+            }
+        }).start();
     }
 
     // ---------- Notifications ----------
@@ -204,6 +251,37 @@ public class KeaPlugin extends Plugin {
         call.resolve(r);
     }
 
+    /**
+     * Just the data file, for drives whose Android app can't share a whole folder (Google Drive, OneDrive): the student
+     * picks kea-data.json itself, and the phone reads that file (always its newest copy) from then on.
+     */
+    @PluginMethod
+    public void pickDataFile(PluginCall call) {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(call, i, "onDataFile");
+    }
+
+    @ActivityCallback
+    private void onDataFile(PluginCall call, ActivityResult result) {
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+            call.reject("No file chosen");
+            return;
+        }
+        Uri file = result.getData().getData();
+        try {
+            getContext().getContentResolver().takePersistableUriPermission(file, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException e) {
+            // (Some drives grant only this session: the phone keeps its last copy until the file is chosen again.)
+        }
+        Store.plain(getContext()).edit().putString("dataFile", file.toString()).apply();
+        JSObject r = new JSObject();
+        r.put("file", file.toString());
+        call.resolve(r);
+    }
+
     /** A file inside the chosen folder by its path ("kea-data.json", "Textbooks/BIO1112/x.pdf"). */
     private DocumentFile find(String rel) {
         String tree = Store.plain(getContext()).getString("tree", "");
@@ -222,11 +300,16 @@ public class KeaPlugin extends Plugin {
         new Thread(() -> {
             try {
                 DocumentFile f = find(rel);
-                if (f == null || !f.exists()) {
-                    call.reject("not found");
+                Uri uri = f != null && f.exists() ? f.getUri() : null;
+                long modified = uri != null ? f.lastModified() : 0;
+                // The data file chosen on its own (a drive that can't share folders).
+                String one = Store.plain(getContext()).getString("dataFile", "");
+                if (uri == null && "kea-data.json".equals(rel) && !one.isEmpty()) uri = Uri.parse(one);
+                if (uri == null) {
+                    call.reject(Store.plain(getContext()).getString("tree", "").isEmpty() && one.isEmpty() ? "No Kea folder or file chosen yet" : "not found");
                     return;
                 }
-                InputStream in = getContext().getContentResolver().openInputStream(f.getUri());
+                InputStream in = getContext().getContentResolver().openInputStream(uri);
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 byte[] buf = new byte[65536];
                 int n;
@@ -234,7 +317,7 @@ public class KeaPlugin extends Plugin {
                 in.close();
                 JSObject r = new JSObject();
                 r.put("text", out.toString("UTF-8"));
-                r.put("modified", f.lastModified());
+                r.put("modified", modified);
                 call.resolve(r);
             } catch (Exception e) {
                 call.reject(e.getMessage());

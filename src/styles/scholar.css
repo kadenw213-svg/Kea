@@ -891,6 +891,15 @@
   font-size: 11px;
   font-weight: 600;
 }
+/* Work not open yet on the class site */
+.opens-tag {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-2) 16%, transparent);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
 .unc-box {
   margin: 0 0 18px;
   padding: 8px 12px;
@@ -2395,4 +2404,81 @@
   gap: 4px;
   font-size: 13.5px;
   line-height: 1.45;
+}
+
+/* Messages: the earlier message a reply quotes, folded */
+.ml-earlier {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.ml-earlier summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+.ml-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A class's weeks, start to end */
+.wbw-weeks {
+  display: grid;
+  gap: 8px;
+}
+.wbw-week {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 4px 14px;
+}
+.wbw-week.now {
+  border-color: var(--accent);
+}
+.wbw-week > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.wbw-week > summary::-webkit-details-marker {
+  display: none;
+}
+.wbw-now {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.wbw-count {
+  margin-left: auto;
+  font-size: 12.5px;
+}
+.wbw-ch {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.wbw-ch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.wbw-topics {
+  margin: 6px 0 2px;
+  padding-left: 20px;
+  font-size: 13.5px;
+  color: var(--text-2);
+  columns: 2 280px;
+}
+.wbw-due {
+  padding: 8px 0 12px;
+  border-top: 1px solid var(--border);
+}
+.sch-banner-head .wbw-all {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 12.5px;
 }

@@ -6,7 +6,8 @@ import type { ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxIte
 
 interface KeaNative {
   setup(o: { home: string; user?: string; pass?: string }): Promise<void>;
-  state(): Promise<{ home: string; hasLogin: boolean; signedIn: boolean; dataFolder: string; notifications: boolean }>;
+  state(): Promise<{ home: string; hasLogin: boolean; signedIn: boolean; dataFolder: string; dataFileOnly?: boolean; notifications: boolean }>;
+  pickDataFile(): Promise<{ file: string }>;
   signIn(o?: { show?: boolean }): Promise<{ signedIn: boolean }>;
   get(o: { url: string }): Promise<{ status: number; body: string }>;
   open(o: { url: string }): Promise<void>;
@@ -20,6 +21,8 @@ interface KeaNative {
   readFile(o: { path?: string }): Promise<{ text: string; modified: number }>;
   openFile(o: { path: string }): Promise<void>;
   scan(o?: { name?: string }): Promise<{ file: string; pages: number; name: string }>;
+  share(o: { file: string; name?: string }): Promise<void>;
+  saveCopy(o: { file: string; name: string }): Promise<{ name: string }>;
 }
 
 export const Kea = registerPlugin<KeaNative>('Kea');
@@ -49,17 +52,30 @@ export function cachedData(): KeaData | null {
   }
 }
 
-/** Read the data file from the chosen folder (falls back to the last copy when offline). */
-export async function loadData(): Promise<KeaData | null> {
+/**
+ * Read the data file from the chosen folder (or the file chosen on its own), giving up after `ms` (a drive app that's
+ * still downloading it). Falls back to the last copy; `error` says why the fresh one couldn't be read.
+ */
+export async function loadData(ms = 45000): Promise<{ data: KeaData | null; error: string | null }> {
   try {
-    const r = await Kea.readFile({ path: 'kea-data.json' });
+    const r = await Promise.race([Kea.readFile({ path: 'kea-data.json' }), new Promise<never>((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
     const d = JSON.parse(r.text) as KeaData;
     try {
       localStorage.setItem(CACHE, r.text);
     } catch {}
-    return d;
-  } catch {
-    return cachedData();
+    return { data: d, error: null };
+  } catch (e: any) {
+    const m = String(e?.message || e);
+    const error = /timeout/.test(m)
+      ? 'Your drive app is taking too long to hand Kea the file (it may still be downloading it).'
+      : /not found/.test(m)
+        ? 'The chosen folder has no kea-data.json in it.'
+        : /No Kea folder/.test(m)
+          ? 'No Kea folder or file is chosen yet.'
+          : /JSON|Unexpected/.test(m)
+            ? 'kea-data.json was only partly downloaded. Try again in a moment.'
+            : m;
+    return { data: cachedData(), error };
   }
 }
 

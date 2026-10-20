@@ -82,7 +82,7 @@ const AREAS = {
   grades: {
     rel: (v, ou) => `/d2l/api/le/${v.le}/${ou}/grades/values/myGradeValues/`,
     list: (d) => (Array.isArray(d) ? d : []),
-    entry: (g) => ({ id: g.GradeObjectIdentifier, title: g.GradeObjectName, grade: g.DisplayedGrade, points: g.PointsNumerator, comment: hash(g.Comments?.Text || '') }),
+    entry: (g) => ({ id: g.GradeObjectIdentifier, title: g.GradeObjectName, grade: g.DisplayedGrade, points: g.PointsNumerator, comment: hash(g.Comments?.Text || ''), ...(isCategory(g) ? { category: true } : {}) }),
     label: 'grade'
   },
   final: {
@@ -231,6 +231,41 @@ function classPlatforms(toc) {
   walk(toc?.Modules);
   return [...found.values()];
 }
+/**
+ * The class's own way into an outside platform (its D2L launch tool or course enrollment link), for a link to that
+ * platform's generic sign-in page: those fail on their own (Science Interactive answers "No instance_id in the
+ * session!") because the platform only knows the class when it's opened from the class site. Null when it's not one.
+ */
+function classLaunch(code, url) {
+  let host;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  const kind = PLATFORM_KINDS.find((k) => (k.hosts || [k.host]).some((x) => host === x || host.endsWith(`.${x}`)));
+  if (!kind) return null;
+  const base = path.join(profiles.paths().workspace, 'data', 'digests', 'kea-precheck');
+  let days = [];
+  try {
+    days = fs.readdirSync(base).sort().reverse();
+  } catch {}
+  for (const d of days.slice(0, 7)) {
+    let toc;
+    try {
+      toc = JSON.parse(fs.readFileSync(path.join(base, d, `${code}-content.json`), 'utf8'));
+    } catch {
+      continue;
+    }
+    const hit = classPlatforms(toc).find((x) => x.host === kind.host);
+    if (!hit?.launch) return null;
+    if (/^https?:/i.test(hit.launch)) return { url: hit.launch, label: `Open ${kind.name} from your class` };
+    const home = browser.schoolInfo().home;
+    return home ? { url: new URL(hit.launch, home).href, label: `Open ${kind.name} from your class` } : null;
+  }
+  return null;
+}
+
 const lastRead = (host) =>
   Object.entries(browser.platformsRead())
     .filter(([h]) => (PLATFORM_KINDS.find((k) => k.host === host)?.hosts || [host]).some((x) => h === x || h.endsWith(`.${x}`)))
@@ -379,6 +414,31 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
   const ous = Object.fromEntries((await db.watchList(p.db)).map((c) => [c.code, c.ou]));
   updateGrades(dir, ous);
   updateInbox(dir, ous);
+  // Past work Kea still can't confirm either way (no grade, folder, quiz attempt or post it can see): each asked of
+  // Claude once, to look up where it's done (an outside platform's list or gradebook) and record what it finds.
+  try {
+    const iso = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
+    let done = {};
+    try {
+      done = JSON.parse(fs.readFileSync(p.state, 'utf8')).done || {};
+    } catch {}
+    const SKIP = new Set(['weekly_reading', 'reading', 'lecture', 'lab', 'recitation', 'seminar', 'office_hours', 'break', 'no_class', 'administrative_deadline']);
+    const open = (await db.items(p.db, p.textbooks, done, { from: iso(-45), to: iso(-2) })).filter((i) => !SKIP.has(i.type) && !i.handIn && !i.done && !i.optional);
+    for (const code of [...new Set(open.map((i) => i.courseCode))]) {
+      const course = (next.courses[code] = next.courses[code] || {});
+      const asked = new Set(course.askedUnconfirmed || []);
+      const ask = open.filter((i) => i.courseCode === code && !asked.has(i.id)).slice(0, 12);
+      if (!ask.length) continue;
+      course.askedUnconfirmed = [...asked, ...ask.map((i) => i.id)].slice(-300);
+      (changed[code] = (changed[code] || []).filter((r) => !/^regular full check/.test(r))).push(
+        `Past work Kea can't confirm was done (due over two days ago; D2L shows no grade, hand-in, quiz attempt or post for it): ${ask.map((i) => `"${i.title}" (${i.date}, item ${i.id})`).join('; ')}. Look each one up where it's done (its outside platform's assignment list or gradebook, such as Science Interactive or ALEKS, or its D2L page) and record what you see with grade-snapshot-add --course ${code} --title "<the calendar's title, exactly>" --week-start <the Monday of its due week> --item-id <id>, adding --missing if it wasn't done and --score-percent if there's a score. Record nothing you can't see; if a platform needs the student to sign in, say so once`
+      );
+      const qi = quiet.indexOf(code);
+      if (qi >= 0) quiet.splice(qi, 1);
+    }
+  } catch (err) {
+    console.error('Unconfirmed', err);
+  }
   return {
     signedIn: true,
     setUp: true,
@@ -392,6 +452,18 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
 }
 
 // ---------- What's been handed in (so "missing" means missing) ----------
+/** A gradebook category row (its total), not a graded item: D2L's GradeObjectType 9. */
+const isCategory = (g) => g?.GradeObjectType === 9 || /^category$/i.test(String(g?.GradeObjectTypeName || ''));
+
+/** The signed-in student's D2L user id (for telling their own posts apart), read once. */
+let myId = null;
+async function whoami(v) {
+  if (myId) return myId;
+  const r = await browser.getJson(`/d2l/api/lp/${v.lp}/users/whoami`).catch(() => null);
+  myId = r?.data?.Identifier || null;
+  return myId;
+}
+
 const submissionsFile = () => path.join(profiles.paths().dir, 'submissions.json');
 
 /**
@@ -405,6 +477,8 @@ async function refreshSubmissions(dir, v, list) {
     prev = JSON.parse(fs.readFileSync(submissionsFile(), 'utf8')).byCourse || {};
   } catch {}
   const byCourse = {};
+  // When each piece of work opens on the class site (its unlock date), for work that isn't open yet.
+  const opens = {};
   const now = Date.now();
   for (const c of list) {
     const out = [];
@@ -416,6 +490,8 @@ async function refreshSubmissions(dir, v, list) {
       }
     };
     for (const g of AREAS.grades.list(read('grades'))) {
+      // (A category's total, "Module 1: 100 %", is a group of grades, never one piece of work.)
+      if (isCategory(g)) continue;
       if (g.PointsNumerator != null || (g.DisplayedGrade && String(g.DisplayedGrade).trim() && !/^-+$/.test(g.DisplayedGrade))) out.push({ title: g.GradeObjectName, state: 'graded' });
     }
     const known = new Map((prev[c.code] || []).filter((x) => x.folder).map((x) => [x.folder, x]));
@@ -438,9 +514,50 @@ async function refreshSubmissions(dir, v, list) {
       if (subs.length) out.push({ title: f.Name, folder: f.Id, state: 'submitted', at: subs[subs.length - 1].SubmissionDate });
       else if (due < now) out.push({ title: f.Name, folder: f.Id, state: 'not_submitted' });
     }
+    // Quizzes and discussions due in the last four weeks: whether the student made an attempt or posted (once seen,
+    // it stays seen). A discussion's thread starts are its initial posts; replies are its response posts.
+    const knownBy = new Map((prev[c.code] || []).filter((x) => x.ref).map((x) => [x.ref, x]));
+    const recent = (at) => at && Date.parse(at) < now && Date.parse(at) > now - 28 * 864e5;
+    for (const q of AREAS.quizzes.list(read('quizzes'))) {
+      const ref = `quiz:${q.QuizId}`;
+      if (knownBy.get(ref)?.state === 'submitted') {
+        out.push(knownBy.get(ref));
+        continue;
+      }
+      if (!recent(q.DueDate || q.EndDate)) continue;
+      const r = await browser.getJson(`/d2l/api/le/${v.le}/${c.ou}/quizzes/${q.QuizId}/attempts/`).catch(() => null);
+      if (!r?.data) continue;
+      const tries = Array.isArray(r.data) ? r.data : r.data.Objects || [];
+      out.push({ title: q.Name, ref, state: tries.length ? 'submitted' : 'not_submitted' });
+    }
+    const me = await whoami(v);
+    if (me)
+      for (const t of AREAS.discussions.list(read('discussions'))) {
+        const ref = `topic:${t.TopicId}`;
+        const had = (prev[c.code] || []).filter((x) => x.ref === ref || x.ref === `${ref}:reply`);
+        if (had.length === 2 && had.every((x) => x.state === 'submitted')) {
+          out.push(...had);
+          continue;
+        }
+        if (!recent(t.DueDate || t.EndDate || t.UnlockEndDate) || !t.ForumId) continue;
+        const r = await browser.getJson(`/d2l/api/le/${v.le}/${c.ou}/discussions/forums/${t.ForumId}/topics/${t.TopicId}/posts/`).catch(() => null);
+        if (!r?.data) continue;
+        const mine = (Array.isArray(r.data) ? r.data : r.data.Objects || []).filter((x) => String(x.PostingUserId) === String(me));
+        const started = mine.some((x) => !x.ParentPostId);
+        const replied = mine.some((x) => x.ParentPostId);
+        out.push({ title: `${t.Name} initial post`, ref, state: started ? 'submitted' : 'not_submitted' });
+        out.push({ title: `${t.Name} response posts`, ref: `${ref}:reply`, state: replied ? 'submitted' : 'not_submitted' });
+      }
     byCourse[c.code] = out;
+    const ahead = [];
+    const later = (at) => at && Date.parse(at) > now;
+    for (const t of AREAS.discussions.list(read('discussions'))) if (later(t.StartDate ?? t.UnlockStartDate)) ahead.push({ title: t.Name, opens: t.StartDate ?? t.UnlockStartDate });
+    for (const f of AREAS.dropbox.list(read('dropbox'))) if (later(f.Availability?.StartDate)) ahead.push({ title: f.Name, opens: f.Availability.StartDate });
+    for (const q of AREAS.quizzes.list(read('quizzes'))) if (later(q.StartDate)) ahead.push({ title: q.Name, opens: q.StartDate });
+    for (const t of AREAS.content.list(read('content'))) if (later(t.StartDateTime)) ahead.push({ title: t.Title, opens: t.StartDateTime });
+    opens[c.code] = ahead;
   }
-  fs.writeFileSync(submissionsFile(), JSON.stringify({ checked: new Date().toISOString(), byCourse }));
+  fs.writeFileSync(submissionsFile(), JSON.stringify({ checked: new Date().toISOString(), byCourse, opens }));
 }
 
 // ---------- The Inbox: announcements, straight from D2L (no Claude) ----------
@@ -514,8 +631,12 @@ function updateInbox(dir, ous = {}) {
     const { Notification, BrowserWindow } = require('electron');
     for (const n of fresh.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.body.slice(0, 200) }).show();
     BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:news', { course: '', title: '', body: '' }));
+    // An announcement telling the class what to practice for a test counts like an instructor's message.
+    const { noteHint } = require('./messages.cjs');
+    for (const n of fresh.filter((x) => !x.updated)) noteHint({ id: n.id, course: n.course, from: '', subject: n.title, folder: 'inbox' }, key0(n.body));
   }
 }
+const key0 = (s) => String(s || '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
 
 /**
  * A light check for new announcements between daily checks: one request per class, only while Kea is already signed
@@ -857,4 +978,4 @@ async function syncCheck(code, ou) {
   };
 }
 
-module.exports = { run, pollAnnouncements, readInbox, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck };
+module.exports = { classLaunch, run, pollAnnouncements, readInbox, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck };

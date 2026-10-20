@@ -580,3 +580,41 @@ b.low {
   display: block;
   margin-top: 2px;
 }
+
+/* Starting up: a real progress bar, and what went wrong instead of an endless spinner */
+.loading {
+  display: grid;
+  gap: 12px;
+  padding-top: 30vh;
+}
+.loading .bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2, #2a2a2a);
+  overflow: hidden;
+}
+.loading .bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent, #8ab4f8);
+  transition: width 0.6s ease;
+}
+.stale {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, #fdd663 16%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.scan-name {
+  width: 100%;
+  margin: 8px 0;
+}

@@ -149,7 +149,7 @@ export interface KeaApi {
     mailSync(): Promise<{ inbox: number; sent: number; unreadable?: boolean } | null>;
     onOpenMail(cb: (id: string) => void): () => void;
     /** A message in full, read from the class site (cached after the first time). */
-    mailRead(id: string, refresh?: boolean): Promise<{ text: string; at: string | null; noLink?: boolean }>;
+    mailRead(id: string, refresh?: boolean): Promise<{ text: string; quoted?: string; at: string | null; noLink?: boolean }>;
     mailDraft(key: string, draft: MailDraft | null): Promise<boolean>;
     /** Send through the class site. sent: confirmed by the class site; otherwise the page was opened to finish there. */
     mailSend(msg: MailDraft & { draftKey?: string }): Promise<{ sent: boolean; shown?: boolean; why?: string }>;
@@ -607,7 +607,7 @@ export interface MailDraft {
   replyTo?: string | null;
 }
 export interface MailList {
-  messages: { id: string; course: string; title: string; from?: string; preview: string; at: string; url: string; canOpen?: boolean; read: boolean; full: string | null }[];
+  messages: { id: string; course: string; title: string; from?: string; preview: string; at: string; url: string; canOpen?: boolean; read: boolean; full: string | null; quoted?: string | null }[];
   /** What Kea sent, then the class site's own Sent folder (`fromSite`). */
   sent: { id: string; at: string; course: string; to: string; subject: string; body: string; replyTo: string | null; confirmed: boolean; why: string | null; url?: string; fromSite?: boolean }[];
   drafts: (MailDraft & { key: string; at: string })[];
@@ -763,6 +763,8 @@ export interface ScholarItem {
   done: string | null;
   /** What the class site says: graded or handed in, confirmed not handed in, or null when Kea can't tell. */
   handIn: 'graded' | 'submitted' | 'not_submitted' | null;
+  /** When it opens on the class site, while that's still ahead (its link leads to a locked page until then). */
+  opensAt?: string | null;
   readings: ScholarReading[];
 }
 export interface ScholarCourse {

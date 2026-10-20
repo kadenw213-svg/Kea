@@ -201,7 +201,7 @@ export function ScholarScreen() {
     ) : view.name === 'calendar' ? (
       <CalendarView ctx={ctx} />
     ) : view.name === 'class' ? (
-      <ClassView ctx={ctx} courseId={view.courseId} />
+      <ClassView ctx={ctx} courseId={view.courseId} startTab={view.tab} />
     ) : view.name === 'library' ? (
       <LibraryView />
     ) : view.name === 'resources' ? (
@@ -394,11 +394,12 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
           )}
           {it.points ? <span>· {it.points} pts</span> : null}
           {it.tentative && <span title="The date isn't confirmed by the class yet">· date to confirm</span>}
+          {it.opensAt && <span className="opens-tag" title={`Opens on your class site ${opensText(it.opensAt)}`}>Opens {new Date(it.opensAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
           {!it.done && (it.handIn === 'graded' || it.handIn === 'submitted') && <span className="hand-tag">{it.handIn === 'graded' ? 'Graded' : 'Handed in'}</span>}
         </div>
       </div>
       <div className="sch-row-actions">
-        {quick && (
+        {quick && !it.opensAt && (
           <button
             className="btn sm sch-quick"
             title={`${quick.label}: opens the page on your class site`}
@@ -438,6 +439,9 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
     </div>
   );
 }
+
+/** "Mon, Oct 26, 12:01 AM": when locked work opens. */
+const opensText = (at: string) => new Date(at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 /** An item's kind in words (a lab report filed as a lab handout reads "Lab report"). */
 const typeLabel = (it: ScholarItem) => (it.type === 'lab_handout' && /\breport\b/i.test(it.title) ? 'Lab report' : TYPE_LABEL[it.type] || it.type);
@@ -554,6 +558,18 @@ function ReadingCard({ ctx, b, showCourse = true }: { ctx: Ctx; b: ScholarItem; 
     <div className="sch-banner" style={{ borderLeftColor: ctx.colors.course(b.courseId) }} onClick={() => ctx.open(b)}>
       <div className="sch-banner-head">
         {showCourse && <span className="sch-code">{b.courseCode}</span>}
+        {showCourse && (
+          <button
+            className="link-btn sm wbw-all"
+            title="Every week of this class: its topics and what's due"
+            onClick={(e) => {
+              e.stopPropagation();
+              useScholar.getState().set({ view: { name: 'class', courseId: b.courseId, tab: 'weeks' } });
+            }}
+          >
+            All weeks
+          </button>
+        )}
         <span className="muted">
           {shortDate(b.date)}
           {b.dateEnd ? ` – ${shortDate(b.dateEnd)}` : ''}
@@ -1047,10 +1063,91 @@ function MonthGrid({ ctx, items, start, month, showCourse }: { ctx: Ctx; items: 
 }
 
 // ---------- One class ----------
-function ClassView({ ctx, courseId }: { ctx: Ctx; courseId: string }) {
+/**
+ * Every week of the class, start to end: what it covers (each chapter's topics, with the textbook and Study) and
+ * everything due in it. This week first and open; the weeks before it folded at the bottom.
+ */
+function WeeksView({ ctx, c }: { ctx: Ctx; c: ScholarCourseDetail }) {
+  const items = useItems(iso(addDays(new Date(), -150)), iso(addDays(new Date(), 200)), c.id);
+  const now = today();
+  if (!items) return <Loading />;
+  const weeks = items.filter((i) => i.type === 'weekly_reading').sort((a, b) => a.date.localeCompare(b.date));
+  if (!weeks.length) return <div className="sch-empty">No weeks are built for this class yet. Kea builds them from the class schedule on its weekly update.</div>;
+  const chapter = new Map(c.chapters.map((ch) => [ch.label, ch]));
+  const end = (w: ScholarItem) => w.dateEnd || iso(addDays(new Date(`${w.date}T12:00`), 6));
+  const due = (w: ScholarItem) => items.filter((i) => i.type !== 'weekly_reading' && i.type !== 'lecture' && i.date >= w.date && i.date <= end(w));
+  const current = weeks.filter((w) => end(w) >= now);
+  const past = weeks.filter((w) => end(w) < now).reverse();
+  const week = (w: ScholarItem, open: boolean) => (
+    <details key={w.id} className={`wbw-week ${w.date <= now && end(w) >= now ? 'now' : ''}`} open={open}>
+      <summary>
+        <b>
+          {shortDate(w.date)} – {shortDate(end(w))}
+        </b>
+        {w.date <= now && end(w) >= now && <span className="wbw-now">This week</span>}
+        <span className="muted">{w.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ') || w.title}</span>
+        <span className="muted wbw-count">{due(w).length ? `${due(w).length} due` : ''}</span>
+      </summary>
+      {w.readings.map((r) => {
+        const ch = chapter.get(r.chapter);
+        return (
+          <div key={r.chapter} className="wbw-ch">
+            <div className="wbw-ch-head">
+              <span>
+                <b>{r.chapter}</b>
+                {r.title ? `: ${r.title}` : ''}
+              </span>
+              <span className="sch-chapter-btns">
+                {r.pdf && (
+                  <button className="btn sm tonal" onClick={() => openReading(r)}>
+                    <BookOpen size={14} /> Read
+                  </button>
+                )}
+                <button className="btn sm" onClick={() => openStudyHub({ courseId: c.id, code: c.code, title: r.title ? `${r.chapter}: ${r.title}` : r.chapter, chapters: [r.chapter] })}>
+                  <ClipboardCheck size={14} /> Study
+                </button>
+              </span>
+            </div>
+            {ch?.sections?.length ? (
+              <ul className="wbw-topics">
+                {ch.sections.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            ) : ch?.objectives?.length ? (
+              <ul className="wbw-topics">
+                {ch.objectives.slice(0, 8).map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            ) : (
+              r.summary && <div className="rd-summary">{r.summary}</div>
+            )}
+          </div>
+        );
+      })}
+      {due(w).length > 0 && (
+        <div className="sch-list wbw-due">
+          {due(w).map((i) => (
+            <ItemRow key={i.id} ctx={ctx} it={i} showCourse={false} showDate />
+          ))}
+        </div>
+      )}
+    </details>
+  );
+  return (
+    <div className="wbw-weeks">
+      {current.map((w, k) => week(w, k < 2))}
+      {past.length > 0 && <h2 className="sch-h2">Earlier weeks</h2>}
+      {past.map((w) => week(w, false))}
+    </div>
+  );
+}
+
+function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; startTab?: 'weeks' }) {
   const version = useScholar((s) => s.version);
   const [c, setC] = useState<ScholarCourseDetail | null>(null);
-  const [tab, setTab] = useState<'week' | 'calendar' | 'textbook' | 'grades' | 'study'>('week');
+  const [tab, setTab] = useState<'week' | 'weeks' | 'calendar' | 'textbook' | 'grades' | 'study'>(startTab || 'week');
   const [grades, setGrades] = useState<ScholarGrades | null>(null);
   useEffect(() => {
     let live = true;
@@ -1063,7 +1160,7 @@ function ClassView({ ctx, courseId }: { ctx: Ctx; courseId: string }) {
       live = false;
     };
   }, [courseId, version]);
-  useEffect(() => setTab('week'), [courseId]);
+  useEffect(() => setTab(startTab || 'week'), [courseId, startTab]);
   const items = useItems(iso(addDays(new Date(), -28)), iso(addDays(new Date(), 20)), courseId);
   if (!c) return <Loading />;
   const missing = (items || []).filter((i) => isMissing(i));
@@ -1109,6 +1206,7 @@ function ClassView({ ctx, courseId }: { ctx: Ctx; courseId: string }) {
         {(
           [
             ['week', 'Coming up'],
+            ['weeks', 'Week by week'],
             ['textbook', 'Textbook'],
             ['calendar', 'Calendar'],
             ['grades', 'Grades'],
@@ -1167,6 +1265,7 @@ function ClassView({ ctx, courseId }: { ctx: Ctx; courseId: string }) {
             )}
           </>
         ))}
+      {tab === 'weeks' && <WeeksView ctx={ctx} c={c} />}
       {tab === 'textbook' && <Textbook c={c} />}
       {tab === 'grades' &&
         (!grades || !grades.items.length ? (
@@ -1295,8 +1394,9 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
   // Anything that covers chapters (an exam, an assignment, a lab, a lecture) can be studied.
   const practice = it.readings.length > 0 && !['administrative_deadline', 'break', 'no_class'].includes(it.type);
   const missing = isMissing(it);
-  const quick = primaryLink(it);
-  const doc = assignmentDoc(it);
+  // Not open yet on the class site: its links lead to a locked page, so show when it opens instead.
+  const quick = it.opensAt ? null : primaryLink(it);
+  const doc = it.opensAt ? null : assignmentDoc(it);
   const cat = categoryOf(it.type);
   // Graded work with no hand-in page: say so, so a missing button doesn't look like a bug.
   const handsIn = TODO.has(it.type) && !['weekly_reading', 'lecture', 'reading'].includes(it.type);
@@ -1362,7 +1462,9 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           <div>
             <Upload size={14} />
             <span>
-              {quick
+              {it.opensAt
+                ? <b>Opens {opensText(it.opensAt)}</b>
+                : quick
                 ? quick.label === 'Hand in'
                   ? 'Hand in: the assignment folder on your class site'
                   : `Done on: ${quick.label}`

@@ -103,6 +103,8 @@ async function syncMailbox(force = false) {
         const now = read();
         now.bodies[x.id] = { text: page.text, at: new Date().toISOString() };
         write(now);
+        // (Only messages that arrived since the mailbox was first read: old mail isn't a new hint.)
+        if (m.box.seeded && !before.has(x.id)) await noteHint(x, cleanMessage(page.text).body);
       } catch {}
     }
     if (inbox.length) changed();
@@ -111,6 +113,81 @@ async function syncMailbox(force = false) {
     syncing = null;
   });
   return syncing;
+}
+
+/**
+ * Just the message from a read class-site page: D2L's page around it (the site header, "Message Preview", the
+ * From/To/Received/Subject lines, the Reply/Forward buttons) and its messaging disclaimer are dropped, and an earlier
+ * message quoted under a reply ("At 12:48 AM on Monday, … wrote") is split off. { body, quoted }.
+ */
+function cleanMessage(text) {
+  let t = String(text || '').replace(/\r/g, '');
+  // The message starts after the Subject line (or the Received line when there's no subject).
+  const lines = t.split('\n');
+  let start = lines.findIndex((l) => /^Subject\s*\S/.test(l.trim()));
+  if (start < 0) start = lines.findIndex((l) => /^Received\s*\S/.test(l.trim()));
+  if (start >= 0) t = lines.slice(start + 1).join('\n');
+  // …and ends at the page's own buttons.
+  t = t.replace(/\n\s*Reply\s*Reply All[\s\S]*$/i, '');
+  t = t.replace(/D2L internal messaging may be used by your instructor[^\n]*/gi, '');
+  // An earlier message quoted under this one.
+  let quoted = '';
+  const q = t.search(/\n-{6,}\s*\n\s*At [^\n]{0,120}wrote|\nAt [^\n]{0,120}wrote\s*\n|\nOn [^\n]{0,120}wrote:?\s*\n/);
+  if (q >= 0) {
+    quoted = t
+      .slice(q)
+      .replace(/^\s*-{6,}\s*/, '')
+      .trim();
+    t = t.slice(0, q);
+  }
+  const tidy = (s) => s.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return { body: tidy(t), quoted: tidy(quoted) };
+}
+
+// A message that tells the class what to practice for a test ("practice this, the practical will have more like it").
+const TESTISH = /\b(exams?|tests?|quiz(zes)?|practicals?|midterms?|finals?)\b/i;
+const PRACTICE = /\b(similar|like (this|these|it|that|the ones?)|more (of|like)|will (have|include|look like|be like)|same (type|kind|format|style)|focus on|make sure (you )?(know|can)|practice (this|these|that|those|problems?|questions?|exercises?)|be able to)\b/i;
+
+/**
+ * A new instructor message that's a study hint: kept for the class's practice sets, and 25 new questions in that
+ * style written now for the class's next test (or the test it names). Only messages from someone else than the
+ * student, about a class Kea knows.
+ */
+async function noteHint(x, body) {
+  try {
+    if (!x.course || !body || !TESTISH.test(body) || !PRACTICE.test(body)) return;
+    if (require('../settings.cjs').get('scholar.instructorHints', true) === false) return;
+    if (/no.?reply|automated/i.test(x.from || '') || x.folder === 'sent') return;
+    const { db } = deps;
+    const p = profiles.paths();
+    const course = (await db.courses(p.db, p.textbooks, {})).find((c) => c.code === x.course);
+    if (!course) return;
+    const study = require('./study.cjs');
+    const from = String(x.from || '').replace(/<[^>]*>?.*$/, '').replace(/"/g, '').trim();
+    if (!study.addHint(course.id, { id: x.id, at: new Date().toISOString(), from, subject: x.subject, text: body })) return;
+    // Which test: one the message names ("the practical", "Exam 3"), else the class's next one.
+    const next = await db.nextTests(p.db);
+    const tests = new Map();
+    for (const [key, t] of Object.entries(next)) {
+      const [cid, label] = key.split('|');
+      if (cid !== course.id) continue;
+      const k = `${t.date}|${t.title}`;
+      if (!tests.has(k)) tests.set(k, { ...t, chapters: [] });
+      tests.get(k).chapters.push(label);
+    }
+    const list = [...tests.values()].sort((a, b) => a.date.localeCompare(b.date));
+    const words = (s) => String(s).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !/^(the|and|for|chapters?|exam|test|quiz)$/.test(w));
+    const named = list.find((t) => words(t.title).some((w) => new RegExp(`\b${w}\b`, 'i').test(body))) || list[0];
+    if (!named) return;
+    // (One new set per class every three days, however many hints arrive.)
+    const recent = study.list().find((e) => e.courseId === course.id && e.fromHint && Date.now() - Date.parse(e.createdAt) < 3 * 864e5);
+    if (recent) return;
+    const { id } = await study.request({ kind: 'exam', courseId: course.id, chapters: named.chapters, count: 25, mode: 'new', fromHint: true });
+    require('./runner.cjs').run('practice', id, 'schedule');
+    changed();
+  } catch (err) {
+    console.error('Study hint', err);
+  }
 }
 
 /** Bring Kea forward on its Messages page, with this message open. */
@@ -143,9 +220,14 @@ function register({ browser, precheck, db }) {
     const mine = m.sent.slice(0, 200);
     const siteSent = (m.box.sent || [])
       .filter((x) => !mine.some((s) => s.confirmed && s.subject && x.subject && s.subject.toLowerCase().includes(x.subject.toLowerCase().replace(/^re:\s*/, ''))))
-      .map((x) => ({ id: x.id, at: x.date || x.first, course: x.course, to: x.from, subject: x.subject, body: m.bodies[x.id]?.text || x.preview || '', replyTo: null, confirmed: true, why: null, url: x.url, fromSite: true }));
+      .map((x) => ({ id: x.id, at: x.date || x.first, course: x.course, to: x.from, subject: x.subject, body: m.bodies[x.id]?.text ? cleanMessage(m.bodies[x.id].text).body : '', replyTo: null, confirmed: true, why: null, url: x.url, fromSite: true }));
     return {
-      messages: inboxMessages().map((i) => ({ id: i.id, course: i.course || '', title: i.title, from: i.from || '', preview: i.preview || '', at: i.at, url: i.url || '', canOpen: !!(i.url || i.loc), read: !!i.read, full: m.bodies[i.id]?.text || null })),
+      messages: inboxMessages().map((i) => {
+        const c = m.bodies[i.id]?.text ? cleanMessage(m.bodies[i.id].text) : null;
+        // (The mailbox row's own text is the subject, sender and size run together: no use as a preview.)
+        const preview = c?.body || (String(i.preview || '').startsWith(i.title) ? '' : i.preview || '');
+        return { id: i.id, course: i.course || '', title: i.title, from: i.from || '', preview: preview.replace(/\s+/g, ' ').slice(0, 200), at: i.at, url: i.url || '', canOpen: !!(i.url || i.loc), read: !!i.read, full: c?.body || null, quoted: c?.quoted || null };
+      }),
       sent: [...mine, ...siteSent],
       drafts: Object.entries(m.drafts).map(([key, d]) => ({ key, ...d })),
       checked: m.box.at || null
@@ -167,7 +249,8 @@ function register({ browser, precheck, db }) {
   // The whole message, read from the class site (and kept, so it opens at once next time).
   ipcMain.handle('scholar:mailRead', async (_e, id, refresh) => {
     const m = read();
-    if (!refresh && m.bodies[id]) return m.bodies[id];
+    const out = (b) => ({ ...b, ...(b.text ? { text: cleanMessage(b.text).body, quoted: cleanMessage(b.text).quoted } : {}) });
+    if (!refresh && m.bodies[id]) return out(m.bodies[id]);
     const box = inboxMessages().find((i) => i.id === id);
     const sentItem = (read().box.sent || []).find((x) => x.id === id);
     const item = box || (sentItem && { ...sentItem, loc: { folder: 'sent', subject: sentItem.subject, date: sentItem.date } });
@@ -180,7 +263,7 @@ function register({ browser, precheck, db }) {
     const keys = Object.keys(fresh.bodies);
     for (const k of keys.slice(0, Math.max(0, keys.length - 300))) delete fresh.bodies[k];
     write(fresh);
-    return fresh.bodies[id];
+    return out(fresh.bodies[id]);
   });
 
   ipcMain.handle('scholar:mailDraft', (_e, key, draft) => {
@@ -222,4 +305,4 @@ function register({ browser, precheck, db }) {
   });
 }
 
-module.exports = { register, syncMailbox };
+module.exports = { noteHint, register, syncMailbox };

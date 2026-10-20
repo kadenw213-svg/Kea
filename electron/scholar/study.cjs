@@ -43,6 +43,26 @@ function writeJson(f, v) {
 }
 
 const index = () => readJson(file('index.json'), []);
+
+// ---------- What the instructor said to practice ----------
+// A message like "practice this; the practical will have more like it", kept word for word per class, and given to
+// every practice set Kea writes for that class from then on (newest first).
+const hintsFile = () => file('hints.json');
+/** The class's instructor hints from the last 120 days: [{ at, from, subject, text }]. */
+function hints(courseId) {
+  const all = readJson(hintsFile(), {});
+  return (all[courseId] || []).filter((h) => Date.now() - Date.parse(h.at) < 120 * 864e5);
+}
+/** Keep a hint (once per message). True when it's new. */
+function addHint(courseId, h) {
+  const all = readJson(hintsFile(), {});
+  const list = all[courseId] || [];
+  if (list.some((x) => x.id === h.id)) return false;
+  all[courseId] = [{ ...h, text: String(h.text || '').slice(0, 3000) }, ...list].slice(0, 30);
+  fs.mkdirSync(dir(), { recursive: true });
+  fs.writeFileSync(hintsFile(), JSON.stringify(all, null, 1));
+  return true;
+}
 const saveIndex = (list) => writeJson(file('index.json'), list);
 function update(id, patch) {
   const list = index();
@@ -216,7 +236,7 @@ const REUSE = 0.6;
  * files, and the questions that already exist so it writes different ones). Adds the set to the index and returns
  * { id, ready }: ready when no Claude run is needed. `pick` (keys) repeats another device's choice of saved items.
  */
-async function request({ id: given, kind, courseId, chapters = [], itemId = null, count, mode = 'mix', pick: picked = null, bank = false, upgrade = false, pictures = false }) {
+async function request({ id: given, kind, courseId, chapters = [], itemId = null, count, mode = 'mix', pick: picked = null, bank = false, upgrade = false, pictures = false, fromHint = false }) {
   if (!['exam', 'cards'].includes(kind)) throw new Error('Unknown kind of study set.');
   const p = profiles.paths();
   const src = await db.practiceSources(p.db, p.textbooks, { courseId, chapters, itemId });
@@ -233,7 +253,7 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
   const fresh = mode === 'saved' ? 0 : n - reuse.length;
   const topic = src.item ? src.item.title : src.chapters.map((c) => (c.title ? `${c.label}: ${c.title}` : c.label)).join(', ');
   const title = `${bank ? 'Question bank' : kind === 'exam' ? 'Practice exam' : 'Flashcards'}: ${topic}`;
-  const entry = { id, kind, title: pictures ? title.replace(/^Question bank/, 'Picture questions') : title, ...(bank ? { bank: true } : {}), ...(upgrade ? { upgrade: true } : {}), ...(pictures ? { pictures: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
+  const entry = { id, kind, title: pictures ? title.replace(/^Question bank/, 'Picture questions') : title, ...(bank ? { bank: true } : {}), ...(upgrade ? { upgrade: true } : {}), ...(pictures ? { pictures: true } : {}), ...(fromHint ? { fromHint: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
   const list = index().filter((e) => e.id !== id);
   if (!fresh) {
     writeJson(file('sets', `${id}.json`), kind === 'cards' ? { cards: reuse } : { questions: reuse });
@@ -537,6 +557,14 @@ async function prepare(id, docText, step = () => {}, engine = null) {
   const lines = [`# Write ${req.count} new ${req.kind === 'exam' ? 'practice exam questions' : 'flashcards'}${req.bank ? ' for the chapter’s Question bank' : ''}: ${req.course.code} ${req.course.name}`, '', `Output file: ${req.output}`, ''];
   // Identification: lab practicals (and tests that ask to identify specimens or structures) are answered from pictures.
   const identifies = (req.tests || []).some((t) => t.type === 'lab_practical' || /\bidentif|\blabel(ed)?\b|specimen|structure/i.test(`${t.title} ${(t.study_focus || []).join(' ')}`));
+  const told = hints(req.course.id).slice(0, 5);
+  if (told.length)
+    lines.push(
+      '## What the instructor told the class to practice (follow this first)',
+      'Word for word from the instructor’s messages. Where one says the test will have problems like something (a worksheet, an example, a kind of question), write more of exactly that kind, at that difficulty, for these chapters.',
+      ...told.map((h) => `### ${h.subject || 'Message'} (${String(h.at).slice(0, 10)}${h.from ? `, from ${h.from}` : ''})\n${h.text}`),
+      ''
+    );
   if (req.pictures)
     lines.push(
       '## This is a picture set',
@@ -1024,4 +1052,4 @@ function whereIs(k) {
   return null;
 }
 
-module.exports = { applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };
+module.exports = { addHint, hints, applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };

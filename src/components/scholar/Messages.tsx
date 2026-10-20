@@ -2,7 +2,7 @@
 // written here and sent through the class site by Kea (it presses the site's own Reply and Send); drafts kept as you
 // type; and a record of what you sent, marked when the class site confirmed it.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Clock, FileText, Inbox, Loader2, Mail, PenSquare, RefreshCw, Reply, Send, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Clock, ExternalLink, FileText, Inbox, Loader2, Mail, PenSquare, RefreshCw, Reply, Send, Trash2, X } from 'lucide-react';
 import { api, MailDraft, MailList, ScholarCourse } from '../../lib/api';
 import { useSetting, useSettings } from '../../lib/settings';
 import { toast } from '../../store';
@@ -141,6 +141,7 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
     }
   }, [openId]);
   const [full, setFull] = useState<Record<string, string>>({});
+  const [quoted, setQuoted] = useState<Record<string, string>>({});
   const [reading, setReading] = useState(false);
   const [compose, setCompose] = useState<Compose | null>(null);
   const msg = mail?.messages.find((m) => m.id === open) || null;
@@ -155,7 +156,10 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
     setReading(true);
     api.scholar
       .mailRead(id, refresh)
-      .then((r) => setFull((f) => ({ ...f, [id]: r.text || m.preview })))
+      .then((r) => {
+        setFull((f) => ({ ...f, [id]: r.text || m.preview }));
+        setQuoted((q) => ({ ...q, [id]: r.quoted || '' }));
+      })
       .catch((err) => toast(err?.message || 'Kea couldn’t open that message.', 'error'))
       .finally(() => setReading(false));
   };
@@ -270,7 +274,7 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
                   <span className="muted ml-at">{m.at ? when(m.at) : ''}</span>
                 </div>
                 <div className="ml-title" title={m.title}>{m.title}</div>
-                <div className="muted ml-sub">{m.sub.slice(0, 120)}</div>
+                {box !== 'inbox' && <div className="muted ml-sub">{m.sub.slice(0, 120)}</div>}
               </button>
             ))
           )}
@@ -299,23 +303,30 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
               <div className="ml-msg-head">
                 <h2 title={msg.title}>{subject(msg.title)}</h2>
                 <div className="muted">
-                  {[who(msg.from), msg.course || 'Class site'].filter(Boolean).join(' · ')} · {isNaN(new Date(msg.at).getTime()) ? msg.at : new Date(msg.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  {[...new Set([who(msg.from), msg.course || 'Class site'].filter(Boolean))].join(' · ')} · {isNaN(new Date(msg.at).getTime()) ? msg.at : new Date(msg.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
                 </div>
               </div>
               <div className="ml-actions">
                 <button className="btn primary sm" disabled={!msg.canOpen && !msg.url} title={msg.canOpen || msg.url ? '' : 'This message has no link on the class site to reply through'} onClick={() => replyTo(msg)}>
                   <Reply size={14} /> Reply
                 </button>
-                <button className="btn sm" onClick={() => readFull(msg.id, true)} disabled={reading || (!msg.canOpen && !msg.url)}>
-                  <RefreshCw size={13} /> Reload
+                <span className="ml-top-gap" />
+                <button className="icon-btn sm" title="Read it again from the class site" onClick={() => readFull(msg.id, true)} disabled={reading || (!msg.canOpen && !msg.url)}>
+                  <RefreshCw size={14} />
                 </button>
                 {msg.url && (
-                  <button className="btn sm" onClick={() => api.scholar.openLink(msg.url)}>
-                    Open on class site
+                  <button className="icon-btn sm" title="Open on the class site" onClick={() => api.scholar.openLink(msg.url)}>
+                    <ExternalLink size={14} />
                   </button>
                 )}
               </div>
-              {reading && !full[msg.id] ? <div className="spinner" /> : <div className="ml-text">{full[msg.id] || msg.preview}</div>}
+              {reading && !full[msg.id] ? <div className="spinner" /> : <div className="ml-text">{full[msg.id] || msg.full || msg.preview}</div>}
+              {(quoted[msg.id] || msg.quoted) && (
+                <details className="ml-earlier">
+                  <summary className="muted">Earlier message</summary>
+                  <div className="ml-text muted">{quoted[msg.id] || msg.quoted}</div>
+                </details>
+              )}
             </article>
           )}
           {!compose && sent && box === 'sent' && (

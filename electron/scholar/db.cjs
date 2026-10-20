@@ -243,6 +243,8 @@ const norm = (s) =>
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\b(the|a|an)\b/g, ' ')
+    .replace(/([a-z])(\d)/g, '$1 $2')
+    .replace(/\b(practical|exam|lab|part|unit|quiz|module|chapter|test|project|essay) (i|ii|iii|iv|v|vi|vii|viii|ix|x)\b/g, (_, w, r) => `${w} ${['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x'].indexOf(r) + 1}`)
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -252,33 +254,93 @@ const norm = (s) =>
  */
 function evidence(db, file) {
   const out = new Map();
-  const add = (courseId, title, state) => {
+  const add = (courseId, title, state, opens = null) => {
     const t = norm(title);
-    if (!t) return;
+    // A bare group name ("Module 1", "Chapter 5", "Week 3", "Unit 2") is a gradebook category's total (or reads like
+    // one): it says nothing about any one assignment in it.
+    if (!t || (state === 'graded' && /^(module|chapter|ch|unit|week|part|section|lab|labs|homework|quizzes|exams|discussions?|assignments?)( \d+)?$/.test(t))) return;
     if (!out.has(courseId)) out.set(courseId, []);
-    out.get(courseId).push({ t, state });
+    out.get(courseId).push({ t, state, ...(opens ? { opens } : {}) });
   };
-  for (const r of rows(db, "SELECT course_id, payload_json FROM digest_entries WHERE kind = 'grade'")) add(r.course_id, json(r.payload_json, {}).title, 'graded');
+  for (const r of rows(db, "SELECT course_id, payload_json FROM digest_entries WHERE kind = 'grade'")) {
+    const p = json(r.payload_json, {});
+    if (!p.category) add(r.course_id, p.title, 'graded');
+  }
   // Grades read from outside platforms (ALEKS and the like) during weekly checks.
   for (const r of rows(db, 'SELECT course_id, title, is_missing FROM grade_snapshots')) add(r.course_id, r.title, r.is_missing ? 'not_submitted' : 'graded');
   try {
     const sub = JSON.parse(fs.readFileSync(path.join(path.dirname(file), '..', '..', 'submissions.json'), 'utf8'));
     const ids = new Map(rows(db, 'SELECT id, course_code FROM courses').map((c) => [c.course_code, c.id]));
     for (const [code, list] of Object.entries(sub.byCourse || {})) for (const x of list) if (ids.has(code)) add(ids.get(code), x.title, x.state);
+    // Work not open yet on the class site, with the date it opens.
+    for (const [code, list] of Object.entries(sub.opens || {})) for (const x of list) if (ids.has(code)) add(ids.get(code), x.title, 'opens', x.opens);
   } catch {}
   return out;
 }
 
-/** An item's hand-in state from the evidence: 'graded', 'submitted', 'not_submitted' or null (unknown). */
+/**
+ * Whether two titles name the same piece of work, not just similar ones: the shorter title's words all appear in the
+ * longer one, in order ("inner fish ch 4" in "your inner fish assignment ch 4", "quiz 4" in "online quiz 4 chapters
+ * 29 31"), and each number keeps the word before it ("discussion 1" never matches "discussion 2", nor "module 1"
+ * "module 10"). A one-word title ("midterm") only matches a title of at most two words ("cumulative midterm").
+ */
+function sameWork(a, b) {
+  if (a === b) return true;
+  const wa = a.split(' ');
+  const wb = b.split(' ');
+  const [short, long] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+  if (short.length === 1 && (long.length > 2 || short[0].length < 5)) return false;
+  // Long titles worded a little differently ("ionic rxns" / "ionic reactions"): the same numbers, and nearly every
+  // word of the shorter in the longer.
+  const nums = (w) => w.filter((x) => /^\d+$/.test(x)).join(' ');
+  if (short.length >= 5 && nums(short) === nums(long) && nums(short) && short.filter((w) => long.includes(w)).length >= 0.8 * short.length) return true;
+  let at = -1;
+  for (let k = 0; k < short.length; k++) {
+    const w = short[k];
+    let i = long.indexOf(w, at + 1);
+    // A number must follow the same word in both ("ch 4" ↔ "ch 4").
+    if (/^\d/.test(w) && k > 0) while (i >= 0 && long[i - 1] !== short[k - 1]) i = long.indexOf(w, i + 1);
+    if (i < 0) return false;
+    at = i;
+  }
+  return true;
+}
+
+/** Kinds of item that are never handed in or graded (a lab is: its report is graded under its name). */
+const NEVER_GRADED = new Set(['reading', 'weekly_reading', 'lecture', 'recitation', 'seminar', 'office_hours', 'break', 'no_class', 'administrative_deadline']);
+
+/**
+ * An item's hand-in state from the evidence: 'graded', 'submitted', 'not_submitted' or null (unknown). Work due more
+ * than two days ahead is only ever graded by its exact title: a loose match there would cross off work not done yet.
+ */
 function handIn(r, ev) {
+  if (NEVER_GRADED.has(r.item_type)) return null;
   const list = ev.get(r.course_id);
   if (!list) return null;
   const t = norm(r.title);
   if (t.length < 3) return null;
   const exact = list.filter((x) => x.t === t);
-  const close = exact.length ? exact : list.filter((x) => Math.min(x.t.length, t.length) >= 6 && (x.t.includes(t) || t.includes(x.t)));
+  const ahead = r.date && Date.parse(`${r.date}T23:59`) > Date.now() + 2 * 864e5;
+  let close = exact.length || ahead ? exact : list.filter((x) => sameWork(x.t, t));
+  // What the gradebook calls it may lack the item's own qualifiers: a discussion's grade covers both its initial and
+  // response posts, and a lab handout is graded as the lab ("Lab 4 Handout" → "Lab 4 Prokaryotes").
+  if (!close.length && !ahead) {
+    const bare = t.replace(/ (initial|response|responses|reply|replies|peer review)( posts?)?$/, '').replace(/ handout$/, '').trim();
+    if (bare !== t && bare.split(' ').length >= 2) close = list.filter((x) => x.state === 'graded' && sameWork(x.t, bare));
+  }
   if (!close.length) return null;
-  return close.find((x) => x.state === 'graded')?.state || close.find((x) => x.state === 'submitted')?.state || 'not_submitted';
+  const done = close.filter((x) => x.state !== 'opens');
+  if (!done.length) return null;
+  return done.find((x) => x.state === 'graded')?.state || done.find((x) => x.state === 'submitted')?.state || 'not_submitted';
+}
+
+/** When the item opens on the class site, if that's still ahead (an ISO time), else null. */
+function opensAt(r, ev) {
+  const list = ev?.get(r.course_id);
+  if (!list || NEVER_GRADED.has(r.item_type)) return null;
+  const t = norm(r.title);
+  const hit = list.filter((x) => x.state === 'opens').find((x) => x.t === t || sameWork(x.t, t));
+  return hit && Date.parse(hit.opens) > Date.now() ? hit.opens : null;
 }
 
 /** Class meetings, where a room is worth showing. */
@@ -347,6 +409,7 @@ function itemOut(r, course, banner, readings, done, rooms, ev) {
     tentative: !!r.is_tentative || !!r.is_inferred_date,
     done: done[r.id] || null,
     handIn: ev ? handIn(r, ev) : null,
+    opensAt: ev ? opensAt(r, ev) : null,
     // Only the class's own chapters ("Inner Fish CH 6" is a side book, not the course's Chapter 6).
     readings: chapters
       .filter((ch) => !readings.titles.size || readings.titles.has(ch) || readings.pdfs.has(ch))
@@ -521,4 +584,4 @@ async function identifyingChapters(file) {
   return out;
 }
 
-module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters };
+module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork };

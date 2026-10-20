@@ -42,6 +42,25 @@ const TASKS = {
   // guidelines recorded. Reads the class site, the book's own contents and the school's published course outlines.
   // Worked step-by-step solutions for one chapter's saved questions that have none ("CODE Chapter 5").
   steps: { prompt: (arg) => `/kea-steps ${arg || ''}`.trim(), tools: [...BASE, 'mcp__kea__kea_progress'], label: 'Writing step-by-step solutions' },
+  // Scanned (image-only) class documents, written out as text once from their page images ("CODE <file>|<file>").
+  transcribe: {
+    prompt: (arg) => {
+      const [code, ...rest] = String(arg || '').split(' ');
+      const files = rest.join(' ').split('|').filter(Boolean);
+      return [
+        `These ${code} class documents are scanned images with no text, so Kea's own checks can't read them:`,
+        ...files.map((f) => `- ${f}`),
+        '',
+        'For each one:',
+        '1. Run `uv run academic-sync doc-text "<file>"`. It renders every page without text to `<file>.page-N.png` and lists them.',
+        '2. Read each page image (the Read tool shows it) and write everything on it, word for word, into `<file>.transcribed.txt` beside the file: headings, tables (one row per line, cells separated by " | "), every date, point value and due time. Mark each page with `--- page N ---`. Don’t summarize or leave anything out; write [unreadable] for anything you truly can’t make out.',
+        '3. Call mcp__kea__kea_progress after each file.',
+        `Then run \`uv run academic-sync coverage --course ${code}\` and report what it lists (don't change the calendar here: the weekly update handles anything it finds). End with one short paragraph for the student saying which files are now readable.`
+      ].join('\n');
+    },
+    tools: [...BASE, 'mcp__kea__kea_progress'],
+    label: 'Reading scanned documents'
+  },
   curriculum: { prompt: (arg) => `/kea-curriculum ${arg || ''}`.trim(), tools: [...BASE, ...KEA_TOOLS, ...REFERENCE, 'WebSearch'], label: 'Matching chapters to the syllabus' }
 };
 // Publishers' contents pages, colleges' sites (published course outlines and master syllabi) and the course-catalog
@@ -419,9 +438,18 @@ async function coverageCheck(arg) {
       ...(rec.suspects || []).map((x) => ({ key: x.key, title: `${x.title} (folded into "${x.replaced_by}"; may be graded work)`, date: x.date }))
     ];
     const unreadable = out.unreadable || [];
+    // Scanned files get transcribed by Claude once (from their page images); the alert only names what's left.
+    const scanned = unreadable.filter((u) => /no text: scanned/.test(u)).map((u) => String(u).split(' (')[0]);
     // Told once per change (the same open gap isn't repeated after every update).
     const seenFile = path.join(profiles.paths().dir, 'coverage-told.json');
     const told = readJson(seenFile, {});
+    // (Tried at most every three days per class, so a file Claude can't read doesn't use the plan over and over.)
+    const tKey = `transcribe:${code}`;
+    if (scanned.length && Date.now() - new Date(told[tKey] || 0).getTime() > 3 * 864e5) {
+      told[tKey] = new Date().toISOString();
+      fs.writeFileSync(seenFile, JSON.stringify(told));
+      run('transcribe', `${code} ${scanned.slice(0, 4).join('|')}`, 'schedule');
+    }
     const sig = JSON.stringify([items.map((i) => i.key), unreadable]);
     if (told[code] === sig) continue;
     told[code] = sig;
@@ -429,7 +457,7 @@ async function coverageCheck(arg) {
     if (!items.length && !unreadable.length) continue;
     const lines = [
       ...items.slice(0, 8).map((i) => `• ${i.title} (${i.date || 'no date found'})`),
-      ...unreadable.slice(0, 4).map((u) => `• Couldn't read ${path.basename(String(u).split(' (')[0])}`)
+      ...unreadable.slice(0, 4).map((u) => `• ${/no text: scanned/.test(u) ? 'Scanned, being transcribed now' : "Couldn't read"}: ${path.basename(String(u).split(' (')[0])}`)
     ];
     addNews({
       course: code,
@@ -461,9 +489,11 @@ async function curriculumCheck(why = 'schedule') {
       continue;
     }
     const week = Date.now() - new Date(t.ranAt || 0).getTime() > 7 * 864e5;
-    if (t.ranSig !== sig || week) {
+    // A new version of Kea may read what the last run couldn't (PowerPoint slides, a new site): try again at once.
+    const ver = require('electron').app.getVersion();
+    if (t.ranSig !== sig || week || (t.ranVer && t.ranVer !== ver)) {
       due.push(c.code);
-      told[c.code] = { ...t, sig, ranSig: sig, ranAt: new Date().toISOString() };
+      told[c.code] = { ...t, sig, ranSig: sig, ranAt: new Date().toISOString(), ranVer: ver };
     } else if (t.toldSig !== sig) {
       // A run already tried these: tell the student what's still open, once.
       told[c.code] = { ...t, sig, toldSig: sig };
