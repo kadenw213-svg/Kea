@@ -102,7 +102,7 @@ export function TitleBar() {
             onDragStart={(e) => {
               dragFrom.current = i;
               e.dataTransfer.effectAllowed = 'move';
-              e.dataTransfer.setData('application/x-slate-tab', String(i));
+              e.dataTransfer.setData('application/x-kea-tab', String(i));
             }}
             onDragOver={(e) => {
               if (dragFrom.current !== null) e.preventDefault();

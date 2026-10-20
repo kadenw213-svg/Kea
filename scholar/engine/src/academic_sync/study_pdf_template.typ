@@ -7,7 +7,7 @@
 //   #show: textbook.with(course: "BIO1112", course-name: "...", title: "...", week: "Oct 19 - 25, 2026")
 //
 // Text is selectable and never hyphenated or ligatured, so highlighting a
-// word in a PDF reader (Slate Office's Encyclopedia) picks up the whole word.
+// word in a PDF reader (Kea's Encyclopedia) picks up the whole word.
 
 #let accent = rgb("#1f3a5f")
 #let accent-soft = rgb("#eaf0f7")

@@ -85,8 +85,8 @@ export function htmlToRuns(html: string, el: El): any[] {
 
 export async function writePptx(deck: Deck): Promise<Uint8Array> {
   const pptx = new PptxGenJS();
-  pptx.defineLayout({ name: 'SLATE', width: deck.w / 72, height: deck.h / 72 });
-  pptx.layout = 'SLATE';
+  pptx.defineLayout({ name: 'KEA', width: deck.w / 72, height: deck.h / 72 });
+  pptx.layout = 'KEA';
   pptx.author = 'Kea';
   const inch = (v: number) => v / 72;
 

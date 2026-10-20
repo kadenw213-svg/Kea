@@ -3,14 +3,15 @@ import { Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { bytesToDataUrl } from '../../lib/util';
 import { mimeFor } from '../../lib/pdfTools';
+import { storageGet } from '../../lib/legacy';
 
-const SAVED_KEY = 'slate.signatures';
+const SAVED_KEY = 'kea.signatures';
 const INKS = ['#000000', '#1a3d8f', '#0b57d0'];
 const SCRIPT_FONTS = ['"Segoe Script"', '"Lucida Handwriting"', '"Brush Script MT"', '"Ink Free"'];
 
 function loadSaved(): string[] {
   try {
-    return JSON.parse(localStorage.getItem(SAVED_KEY) || '[]');
+    return JSON.parse(storageGet('signatures') || '[]');
   } catch {
     return [];
   }

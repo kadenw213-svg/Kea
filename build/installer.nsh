@@ -2,10 +2,14 @@
 ; electron-builder creates the Kea.<ext> ProgIDs; this adds the capability records Windows needs.
 
 !macro customInstall
-  ; Before 0.19 the app was called Slate Office: remove its old "Open with" records so it isn't listed twice.
-  DeleteRegKey HKCU "Software\Classes\Applications\Slate Office.exe"
-  DeleteRegKey HKCU "Software\SlateOffice"
-  DeleteRegValue HKCU "Software\RegisteredApplications" "Slate Office"
+  ; Kea's earlier install ID put it in Programs\Slate Office (until 0.46). Once this copy is in place, that one goes
+  ; with its uninstall entry: only when that folder really is Kea, and never the user's data (%APPDATA%\Kea).
+  IfFileExists "$LOCALAPPDATA\Programs\Slate Office\Kea.exe" 0 old_done
+    StrCmp "$INSTDIR" "$LOCALAPPDATA\Programs\Slate Office" old_done
+    RMDir /r "$LOCALAPPDATA\Programs\Slate Office"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\bc898bdc-6a6b-520e-b4f4-79b3dd076ef4"
+    DeleteRegKey HKCU "Software\bc898bdc-6a6b-520e-b4f4-79b3dd076ef4"
+  old_done:
   WriteRegStr HKCU "Software\Classes\Applications\Kea.exe" "FriendlyAppName" "Kea"
   WriteRegStr HKCU "Software\Classes\Applications\Kea.exe\shell\open\command" "" '"$INSTDIR\Kea.exe" "%1"'
   WriteRegStr HKCU "Software\Kea\Capabilities" "ApplicationName" "Kea"

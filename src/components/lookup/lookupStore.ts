@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { DictEntry } from '../../lib/api';
 import type { ExplainResult } from '../../lib/lookup';
 import type { AnswerResult } from '../../lib/question';
+import { storageGet } from '../../lib/legacy';
 
 /** One lookup in the panel: a Wikipedia explanation or a dictionary entry. */
 export interface LookupCard {
@@ -26,10 +27,10 @@ interface LookupStore {
   set(p: Partial<LookupStore>): void;
 }
 
-const OPEN_KEY = 'slate.ai.open';
+const OPEN_KEY = 'kea.ai.open';
 const initialOpen = (() => {
   try {
-    return localStorage.getItem(OPEN_KEY) === '1';
+    return storageGet('ai.open') === '1';
   } catch {
     return false;
   }

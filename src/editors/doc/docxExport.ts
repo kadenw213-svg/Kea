@@ -93,7 +93,7 @@ function runsFrom(nodes: JSONNode[] | undefined, ctx?: Ctx): ParagraphChild[] {
             type: 'png',
             data: png.data,
             transformation: { width: png.w, height: png.h },
-            altText: { title: 'Equation', name: 'Equation', description: `slate-math:${k}` }
+            altText: { title: 'Equation', name: 'Equation', description: `kea-math:${k}` }
           })
         );
       } else out.push(new TextRun({ text: String(n.attrs?.latex || ''), italics: true }));
@@ -102,7 +102,7 @@ function runsFrom(nodes: JSONNode[] | undefined, ctx?: Ctx): ParagraphChild[] {
     if (n.type === 'citation') {
       const text = String(n.attrs?.text || '');
       ctx?.citeOrder.push({ ids: n.attrs?.ids || [], page: n.attrs?.page || '', text });
-      out.push(new TextRun({ text, style: 'SlateCitation' }));
+      out.push(new TextRun({ text, style: 'KeaCitation' }));
       continue;
     }
     if (n.type === 'footnote' && ctx) {
@@ -343,17 +343,17 @@ async function blocksFrom(nodes: JSONNode[] | undefined, ctx: Ctx, opts: { inden
         break;
       case 'bibliography': {
         const title = String(a.title || 'Works Cited');
-        out.push(new Paragraph({ style: 'SlateBibliographyTitle', alignment: AlignmentType.CENTER, children: [new TextRun({ text: title, bold: ctx.meta.citationStyle === 'apa' })] }));
-        for (const e of (a.entries || []) as string[]) out.push(new Paragraph({ style: 'SlateBibliography', children: htmlRuns(e) }));
+        out.push(new Paragraph({ style: 'KeaBibliographyTitle', alignment: AlignmentType.CENTER, children: [new TextRun({ text: title, bold: ctx.meta.citationStyle === 'apa' })] }));
+        for (const e of (a.entries || []) as string[]) out.push(new Paragraph({ style: 'KeaBibliography', children: htmlRuns(e) }));
         break;
       }
       case 'toc': {
         const contentTwips = ((ctx.meta.page.landscape ? ctx.meta.page.height : ctx.meta.page.width) - ctx.meta.page.margins.left - ctx.meta.page.margins.right) * IN;
-        out.push(new Paragraph({ style: 'SlateTOCTitle', children: [new TextRun({ text: String(a.title || 'Contents'), bold: true })] }));
+        out.push(new Paragraph({ style: 'KeaTOCTitle', children: [new TextRun({ text: String(a.title || 'Contents'), bold: true })] }));
         for (const e of (a.entries || []) as { level: number; text: string; page: number }[]) {
           out.push(
             new Paragraph({
-              style: 'SlateTOC',
+              style: 'KeaTOC',
               indent: { left: Math.round((e.level - 1) * 0.3 * IN), firstLine: 0 },
               tabStops: [{ type: TabStopType.RIGHT, position: Math.round(contentTwips), leader: LeaderType.DOT }],
               children: [new TextRun(e.text), new TextRun({ children: [new Tab(), String(e.page)] })]
@@ -438,20 +438,20 @@ function hfParagraph(hf: HeaderFooter, contentTwips: number, title: string): Par
 const hasText = (hf?: HeaderFooter | null) => !!hf && !!(hf.left || hf.center || hf.right);
 
 /** Store Kea-only settings (citations, comments, goal…) in a custom XML part, which Word preserves. */
-async function addSlatePart(bytes: Uint8Array, meta: DocMeta, extra: Record<string, any> = {}): Promise<Uint8Array> {
+async function addKeaPart(bytes: Uint8Array, meta: DocMeta, extra: Record<string, any> = {}): Promise<Uint8Array> {
   const zip = await JSZip.loadAsync(bytes);
   const json = JSON.stringify({ ...metaExtras(meta), ...extra });
   const b64 = btoa(unescape(encodeURIComponent(json)));
-  zip.file('customXml/slateData.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><slate xmlns="urn:slate-office:data">${b64}</slate>`);
+  zip.file('customXml/keaData.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><kea xmlns="urn:kea:data">${b64}</kea>`);
   const relPath = 'word/_rels/document.xml.rels';
   const rels = (await zip.file(relPath)?.async('string')) || '';
-  if (rels && !rels.includes('slateData.xml')) {
-    zip.file(relPath, rels.replace('</Relationships>', '<Relationship Id="rIdSlateData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/slateData.xml"/></Relationships>'));
+  if (rels && !rels.includes('keaData.xml')) {
+    zip.file(relPath, rels.replace('</Relationships>', '<Relationship Id="rIdKeaData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/keaData.xml"/></Relationships>'));
   }
   const ctPath = '[Content_Types].xml';
   const ct = (await zip.file(ctPath)?.async('string')) || '';
-  if (ct && !ct.includes('/customXml/slateData.xml')) {
-    zip.file(ctPath, ct.replace('</Types>', '<Override PartName="/customXml/slateData.xml" ContentType="application/xml"/></Types>'));
+  if (ct && !ct.includes('/customXml/keaData.xml')) {
+    zip.file(ctPath, ct.replace('</Types>', '<Override PartName="/customXml/keaData.xml" ContentType="application/xml"/></Types>'));
   }
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
 }
@@ -529,10 +529,10 @@ export async function jsonToDocx(json: JSONNode, metaIn?: DocMeta | null, title 
       },
       // Named styles let Kea recognise its citations, bibliography and contents when the file is reopened.
       paragraphStyles: [
-        { id: 'SlateBibliographyTitle', name: 'Bibliography Title', basedOn: 'Normal', next: 'SlateBibliography', paragraph: { alignment: AlignmentType.CENTER, indent: { firstLine: 0 } } },
-        { id: 'SlateBibliography', name: 'Bibliography Entry', basedOn: 'Normal', paragraph: { indent: { left: 720, hanging: 720 } } },
-        { id: 'SlateTOCTitle', name: 'Contents Title', basedOn: 'Normal', paragraph: { indent: { firstLine: 0 }, spacing: { after: 120 } } },
-        { id: 'SlateTOC', name: 'Contents Entry', basedOn: 'Normal', paragraph: { indent: { firstLine: 0 } } }
+        { id: 'KeaBibliographyTitle', name: 'Bibliography Title', basedOn: 'Normal', next: 'KeaBibliography', paragraph: { alignment: AlignmentType.CENTER, indent: { firstLine: 0 } } },
+        { id: 'KeaBibliography', name: 'Bibliography Entry', basedOn: 'Normal', paragraph: { indent: { left: 720, hanging: 720 } } },
+        { id: 'KeaTOCTitle', name: 'Contents Title', basedOn: 'Normal', paragraph: { indent: { firstLine: 0 }, spacing: { after: 120 } } },
+        { id: 'KeaTOC', name: 'Contents Entry', basedOn: 'Normal', paragraph: { indent: { firstLine: 0 } } }
       ],
       characterStyles: [{ id: 'SlateCitation', name: 'Citation', basedOn: 'DefaultParagraphFont', run: {} }]
     },
@@ -566,5 +566,5 @@ export async function jsonToDocx(json: JSONNode, metaIn?: DocMeta | null, title 
     ]
   });
   const blob = await Packer.toBlob(doc);
-  return addSlatePart(new Uint8Array(await blob.arrayBuffer()), meta, { citations: ctx.citeOrder, commentIds: Object.fromEntries([...ctx.commentNum].map(([id, n]) => [n, id])) });
+  return addKeaPart(new Uint8Array(await blob.arrayBuffer()), meta, { citations: ctx.citeOrder, commentIds: Object.fromEntries([...ctx.commentNum].map(([id, n]) => [n, id])) });
 }

@@ -6,11 +6,12 @@ import { commentAnchors, listChanges, resolveChanges, Change } from './review';
 import { MenuButton } from '../../components/Popover';
 import { uid, timeAgo } from '../../lib/util';
 import { Logo } from '../../components/Logo';
+import { LEGACY } from '../../lib/legacy';
 
 /** Comments and suggestions made by Kea's AI get the app's logo and a quiet grey look. */
 export const AI_AUTHOR = 'Kea AI';
 /** Also the name used before the app was renamed, so older documents keep their look. */
-export const isAiAuthor = (a?: string) => a === AI_AUTHOR || a === 'Slate AI';
+export const isAiAuthor = (a?: string) => a === AI_AUTHOR || a === LEGACY.aiAuthor;
 const initial = (name: string) => (name.trim()[0] || '?').toUpperCase();
 const hue = (name: string) => [...name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
 function Avatar({ name }: { name: string }) {

@@ -120,6 +120,7 @@ import './doc.css';
 import { docAiHooks } from './aiHooks';
 import { LookupButton } from '../../components/lookup/LookupButton';
 import { publishSelection } from '../../components/lookup/lookupStore';
+import { LEGACY } from '../../lib/legacy';
 
 const FONTS = ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Segoe UI', 'Times New Roman', 'Trebuchet MS', 'Verdana', 'Courier New', 'Consolas', 'Comic Sans MS'];
 const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72];
@@ -146,7 +147,7 @@ export function newDocMeta(): DocMeta {
 
 /** Kea settings embedded in .html files saved by Kea. */
 function metaFromHtml(text: string): DocMeta | null {
-  const m = /<meta name="slate-doc" content="([^"]+)"/.exec(text);
+  const m = new RegExp(`<meta name="(?:kea-doc|${LEGACY.docMeta})" content="([^"]+)"`).exec(text);
   if (!m) return null;
   try {
     return { ...newDocMeta(), ...JSON.parse(decodeURIComponent(escape(atob(m[1])))) };
@@ -1400,7 +1401,7 @@ function printableHtml(editor: Editor, title: string, forPrint: boolean, meta: D
   const pageH = (meta.page.landscape ? meta.page.width : meta.page.height).toFixed(3);
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${esc(name)}</title>
-${forPrint ? '' : `<meta name="slate-doc" content="${embedded}">`}
+${forPrint ? '' : `<meta name="kea-doc" content="${embedded}">`}
 <style>
 ${paged ? `@page { size: ${pageW}in ${pageH}in; margin: 0; }` : forPrint ? `@page { size: ${pageW}in ${pageH}in; margin: ${meta.page.margins.top}in ${meta.page.margins.right}in ${meta.page.margins.bottom}in ${meta.page.margins.left}in; }` : ''}
 :root { --doc-font: '${D.font}', Arial, sans-serif; --doc-size: ${D.sizePt}pt; --doc-lh: ${cssLineHeight(D.lineHeight)}; --doc-after: ${D.spaceAfterPt}pt; --doc-first: ${D.firstLineIn}in; }

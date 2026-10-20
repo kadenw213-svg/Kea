@@ -152,7 +152,7 @@ export function Thumbnails({ pages, docs, sizeOf, selected, currentIndex, onSele
             onDragStart={(e) => {
               dragIds.current = selected.has(p.id) ? pages.filter((x) => selected.has(x.id)).map((x) => x.id) : [p.id];
               e.dataTransfer.effectAllowed = 'move';
-              e.dataTransfer.setData('application/x-slate-page', '1');
+              e.dataTransfer.setData('application/x-kea-page', '1');
             }}
             onDragOver={(e) => {
               if (!dragIds.current) return;

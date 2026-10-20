@@ -7,7 +7,7 @@
 <p align="center">
   Your classes, textbooks and calendar, with a free, private office suite for Windows.<br>
   Documents, spreadsheets, presentations and PDFs in one clean window, an Encyclopedia panel for studying,
-  and voice typing that runs on your own computer. Formerly Slate Office.
+  and voice typing that runs on your own computer.
 </p>
 
 <p align="center">

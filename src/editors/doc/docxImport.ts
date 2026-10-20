@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { escapeHtml } from '../../lib/util';
 import { DocMeta, defaultMeta, HeaderFooter, emptyHF } from './docMeta';
+import { LEGACY } from '../../lib/legacy';
 
 /**
  * Converts a .docx file to HTML that the editor understands. Covers paragraphs,
@@ -134,12 +135,12 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
   let extra: any = null;
   for (const name of Object.keys(zip.files).filter((n) => /^customXml\/[^/]+\.xml$/i.test(n))) {
     const xml = await read(name);
-    if (!xml || !xml.includes('urn:slate-office:data')) continue;
+    if (!xml || !(xml.includes('urn:kea:data') || xml.includes(LEGACY.docxDataNs))) continue;
     try {
       const b64 = (parse(xml).documentElement.textContent || '').trim();
       extra = JSON.parse(decodeURIComponent(escape(atob(b64))));
     } catch (err) {
-      console.warn('slate data', err);
+      console.warn('Kea data', err);
     }
   }
   const citeRecords: { ids: string[]; page: string; text: string }[] = extra?.citations || [];
@@ -284,7 +285,7 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
     const rPr = kid(r, 'rPr');
     const rStyleId = attr(kid(rPr, 'rStyle'), 'val');
     // A Kea citation: rebuild it from the saved record when the text still matches.
-    if (rStyleId === 'SlateCitation') {
+    if (rStyleId === 'KeaCitation' || rStyleId === LEGACY.docxStyle('KeaCitation')) {
       const text = Array.from(r.getElementsByTagNameNS(W, 't')).map((t) => t.textContent || '').join('');
       const rec = citeRecords[citeIdx];
       if (rec && rec.text === text) {
@@ -331,8 +332,9 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
         case 'drawing':
         case 'pict': {
           const descr = c.getElementsByTagNameNS('http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing', 'docPr')[0]?.getAttribute('descr') || '';
-          if (descr.startsWith('slate-math:')) {
-            const k = descr.slice('slate-math:'.length);
+          const mathPrefix = ['kea-math:', LEGACY.mathPrefix].find((p) => descr.startsWith(p));
+          if (mathPrefix) {
+            const k = descr.slice(mathPrefix.length);
             const display = k.startsWith('D:');
             inner += `<span data-math="${escapeHtml(k.slice(2))}"${display ? ' data-display' : ''}></span>`;
             break;
@@ -439,12 +441,13 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
     const pPr = kid(p, 'pPr');
     const styleId = attr(kid(pPr, 'pStyle'), 'val') || defaultParaStyle;
     // Kea's bibliography and contents are rebuilt from live data, so their entries are skipped.
-    if (styleId === 'SlateBibliography' || styleId === 'SlateTOC') return [];
-    if (styleId === 'SlateBibliographyTitle') {
+    const kea = (s: string) => styleId === s || styleId === LEGACY.docxStyle(s);
+    if (kea('KeaBibliography') || kea('KeaTOC')) return [];
+    if (kea('KeaBibliographyTitle')) {
       const title = Array.from(p.getElementsByTagNameNS(W, 't')).map((t) => t.textContent || '').join('');
       return [{ kind: 'raw', html: `<div data-bibliography data-title="${escapeHtml(title || 'Works Cited')}"></div>` }];
     }
-    if (styleId === 'SlateTOCTitle') return [{ kind: 'raw', html: '<div data-toc></div>' }];
+    if (kea('KeaTOCTitle')) return [{ kind: 'raw', html: '<div data-toc></div>' }];
     const st = resolveStyle(styleId);
     const name = st?.name || '';
     let tag = 'p';
@@ -752,7 +755,7 @@ export async function docxToDoc(bytes: Uint8Array): Promise<{ html: string; meta
       if ('firstHeader' in extra) meta.firstHeader = extra.firstHeader;
       if ('firstFooter' in extra) meta.firstFooter = extra.firstFooter;
     } catch (err) {
-      console.warn('slate data', err);
+      console.warn('Kea data', err);
     }
   }
   return { html, meta };

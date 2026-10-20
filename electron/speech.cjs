@@ -1,6 +1,6 @@
 // Voice typing: downloads OpenAI Whisper speech-recognition models (ONNX, MIT licence) once, from a pinned
 // revision on Hugging Face, checks every file's SHA-256, and stores them in <userData>/speech. The renderer
-// loads them from app://slate/__speech/… so recognition runs entirely on this PC.
+// loads them from app://kea/__speech/… so recognition runs entirely on this PC.
 const { app, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -200,7 +200,7 @@ async function download(id) {
   }
 }
 
-/** Path on disk for app://slate/__speech/<repo>/<file>, or null if it isn't one of our model files. */
+/** Path on disk for app://kea/__speech/<repo>/<file>, or null if it isn't one of our model files. */
 function resolveServed(rel) {
   const base = root();
   const p = path.normalize(path.join(base, rel));

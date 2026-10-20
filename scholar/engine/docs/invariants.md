@@ -1219,7 +1219,7 @@ to add either; that decision was deliberate, not an oversight.
     clearly labeled as such.** User-directed 2026-10-16: "when a new
     weekly banner starts ... build a like 10-15 page pdf covering all the
     topics no fluff ... this is the only way i will study." The user reads
-    it in Slate Office, where highlighting a word shows its definition, so
+    it in Kea, where highlighting a word shows its definition, so
     the PDF spends its words on mechanisms, connections, problem-solving
     and what the tests ask, not on re-defining words.
     - **What triggers it.** `scripts/weekly_study_pdf.ps1` runs daily at

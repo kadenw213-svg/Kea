@@ -5,13 +5,14 @@ import { FormulaError, colIndex, parseAddr, addr } from './formula';
 import { chartData, chartSvg, chartPng } from './chart';
 
 /** Kea-only sheet features (live charts, rule details) live in a very hidden sheet with this name. */
-const DATA_SHEET = '_slate_data';
+const DATA_SHEET = '_kea_data';
 const rangeRef = (g: Range) => `${addr(g.r1, g.c1)}:${addr(g.r2, g.c2)}`;
 const BORDER_STYLES = ['thin', 'medium', 'thick', 'dashed', 'dotted', 'double'];
 const readBorder = (b: any): Border | undefined => (b?.style ? { style: (BORDER_STYLES.includes(b.style) ? b.style : 'thin') as Border['style'], color: argbToHex(b.color?.argb) } : undefined);
 const writeBorder = (b?: Border) => (b ? { style: b.style as any, color: b.color ? { argb: hexToArgb(b.color) } : undefined } : undefined);
 import { extOf } from '../../lib/fileTypes';
 import { bytesToText, textToBytes } from '../../lib/util';
+import { LEGACY } from '../../lib/legacy';
 
 // ---------- Format mapping ----------
 function fmtFromCode(code: string | undefined): Partial<CellStyle> {
@@ -76,7 +77,7 @@ async function readXlsx(bytes: Uint8Array): Promise<Workbook> {
   const sheets: Sheet[] = [];
   // Kea's own data for each sheet, if the file was saved by Kea.
   let extra: Record<string, any> = {};
-  const dataWs = wb.getWorksheet(DATA_SHEET);
+  const dataWs = wb.getWorksheet(DATA_SHEET) || wb.getWorksheet(LEGACY.sheetData);
   if (dataWs) {
     let json = '';
     dataWs.eachRow((row) => (json += String(row.getCell(1).value ?? '')));
@@ -85,7 +86,7 @@ async function readXlsx(bytes: Uint8Array): Promise<Workbook> {
     } catch {}
   }
   wb.eachSheet((ws) => {
-    if (ws.name === DATA_SHEET) return;
+    if (ws.name === DATA_SHEET || ws.name === LEGACY.sheetData) return;
     const sheet = newSheet(ws.name);
     const validations: NonNullable<Sheet['validations']> = [];
     ws.eachRow({ includeEmpty: true }, (row, rn) => {

@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 /**
  * Voice typing engine: OpenAI Whisper running in this worker with transformers.js + ONNX Runtime (WebAssembly).
- * The model files come from the user's data folder (app://slate/__speech/…) and the runtime from the app itself,
+ * The model files come from the user's data folder (app://kea/__speech/…) and the runtime from the app itself,
  * so nothing is fetched from the internet.
  */
 import { pipeline, env } from '@huggingface/transformers';

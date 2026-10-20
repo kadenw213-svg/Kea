@@ -33,7 +33,7 @@ function register({ log, getWindow }) {
       const here = main ? screen.getDisplayMatching(main.getBounds()) : screen.getPrimaryDisplay();
       const other = screen.getAllDisplays().find((d) => d.id !== here.id);
       if (!other) return false;
-      const file = path.join(app.getPath('temp'), `slate-audience-${Date.now()}.html`);
+      const file = path.join(app.getPath('temp'), `kea-audience-${Date.now()}.html`);
       fs.writeFileSync(file, html);
       audience = new BrowserWindow({
         x: other.bounds.x,

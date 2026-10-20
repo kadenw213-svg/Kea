@@ -33,32 +33,10 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 // Developer aid: KEA_USERDATA runs a separate profile (and lock), so tests don't touch a running copy.
-const devUserData = process.env.KEA_USERDATA || process.env.SLATE_USERDATA;
+const devUserData = process.env.KEA_USERDATA;
 if (devUserData) app.setPath('userData', devUserData);
-else migrateFromSlate();
-
-/**
- * The app was called Slate Office before 0.19. On the first start as Kea, its data folder (settings, history,
- * downloaded models, recovery copies) moves to Kea's, so nothing is lost and nothing is stored twice.
- */
-function migrateFromSlate() {
-  const now = app.getPath('userData');
-  const old = path.join(app.getPath('appData'), 'Slate Office');
-  try {
-    if (!fs.existsSync(old) || path.resolve(old) === path.resolve(now)) return;
-    // Already moved (Kea has its own settings): leave whatever is left of the old folder alone.
-    if (fs.existsSync(path.join(now, 'settings.json'))) return;
-    if (!fs.existsSync(now)) return fs.renameSync(old, now);
-    // Kea's folder exists but holds nothing of the user's yet (an earlier move failed because Slate was open):
-    // move each item across, keeping anything Kea already made.
-    for (const name of fs.readdirSync(old)) {
-      const to = path.join(now, name);
-      if (!fs.existsSync(to)) fs.renameSync(path.join(old, name), to);
-    }
-  } catch (err) {
-    console.error('Could not move Slate Office data to Kea (will try again next start)', err);
-  }
-}
+// Windows knows Kea by this id (its shortcuts carry the same one), for notifications and the taskbar.
+if (process.platform === 'win32') app.setAppUserModelId('com.kea.app');
 const settings = require('./settings.cjs');
 
 // Smooth, GPU-accelerated scrolling everywhere (both can be turned off in Settings → General → Advanced).
@@ -106,6 +84,25 @@ function collectFileArgs(argv) {
     });
 }
 
+/**
+ * The window's address was app://slate until 0.45, and what a page keeps in its browser storage (saved signatures, the
+ * open Encyclopedia panel) belongs to its address: once, it's copied to app://kea before the app opens there.
+ */
+async function moveStorage(win) {
+  if (settings.get('app.storageMoved', false)) return;
+  try {
+    // (Kea's address under its earlier name.)
+    const before = 'app://slate/__blank';
+    await win.loadURL(before);
+    const dump = await win.webContents.executeJavaScript('JSON.stringify(Object.fromEntries(Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)])))');
+    await win.loadURL('app://kea/__blank');
+    await win.webContents.executeJavaScript(`(() => { const d = ${dump}; for (const k of Object.keys(d)) if (localStorage.getItem(k) === null) localStorage.setItem(k, d[k]); })()`);
+    settings.set({ 'app.storageMoved': true });
+  } catch (err) {
+    console.error('Moving browser storage', err);
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -146,7 +143,7 @@ function createWindow() {
   });
 
   if (DEV_URL) mainWindow.loadURL(DEV_URL);
-  else mainWindow.loadURL('app://slate/index.html');
+  else moveStorage(mainWindow).then(() => mainWindow.loadURL('app://kea/index.html'));
 
   // Links open in the system browser, never inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -197,7 +194,14 @@ function createWindow() {
 
   // Developer aid: KEA_CAPTURE=path.png captures a screenshot after load, then exits.
   if (process.env.KEA_CAPTURE) {
-    mainWindow.webContents.once('did-finish-load', () => {
+    // (After the app's own page: not the empty one moveStorage passes through first.)
+    const loaded = () => {
+      if (mainWindow.webContents.getURL().includes('/__blank')) return;
+      mainWindow.webContents.off('did-finish-load', loaded);
+      captureNow();
+    };
+    mainWindow.webContents.on('did-finish-load', loaded);
+    const captureNow = () => {
       // Background windows don't run CSS animations, so turn them off for captures.
       mainWindow.webContents.insertCSS('*,*::before,*::after{transition:none!important;animation:none!important}');
       setTimeout(async () => {
@@ -214,7 +218,7 @@ function createWindow() {
         allowClose = true;
         app.quit();
       }, Number(process.env.KEA_CAPTURE_DELAY || 4000));
-    });
+    };
     // (Newer Electron passes one details object; older ones passed the parts as arguments.)
     mainWindow.webContents.on('console-message', (e, level, message, line, source) => {
       const d = e && typeof e.message === 'string' ? { level: { warning: 2, error: 3 }[e.level] ?? 0, message: e.message, line: e.lineNumber, source: e.sourceId } : { level, message, line, source };
@@ -290,6 +294,8 @@ app.whenReady().then(() => {
     const url = new URL(request.url);
     let rel = decodeURIComponent(url.pathname);
     if (rel === '/' || rel === '') rel = '/index.html';
+    // An empty page (for moving browser storage between addresses: moveStorage).
+    if (rel === '/__blank') return new Response('<!doctype html><title></title>', { headers: { 'Content-Type': 'text/html' } });
     // Downloaded voice-typing models live in the user's data folder, not inside the app.
     // Cross-origin isolation lets WebAssembly use several CPU cores (voice typing, OCR). "credentialless"
     // doesn't block anything Kea loads; every file comes from the app itself.

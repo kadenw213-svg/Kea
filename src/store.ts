@@ -172,7 +172,7 @@ export const useTabs = create<TabState>((set, get) => ({
 }));
 
 export const editorRegistry = new Map<string, EditorHandle>();
-(window as any).__slate = { useTabs: () => useTabs, editorRegistry };
+(window as any).__kea = { useTabs: () => useTabs, editorRegistry };
 
 /** Counts edits per tab, so a save only marks a tab clean if nothing changed while it was saving. */
 export const editSeq = new Map<string, number>();

@@ -525,7 +525,7 @@ export function VoiceSettingsExtras() {
 }
 
 /** Test hook: turn audio (16 kHz mono) into text and type it, without a microphone. */
-(window as any).__slateVoice = {
+(window as any).__keaVoice = {
   async transcribe(audio: Float32Array): Promise<string> {
     const models = await refreshVoiceModels();
     const m = models.find((x) => x.id === modelId());

@@ -404,9 +404,9 @@ export const SECTIONS: Section[] = [
         key: 'google.openWith',
         label: 'Open Google Docs, Sheets and Slides',
         type: 'select',
-        default: 'slate',
+        default: 'kea',
         options: [
-          { value: 'slate', label: 'In Kea' },
+          { value: 'kea', label: 'In Kea' },
           { value: 'browser', label: 'In the web browser' }
         ]
       },

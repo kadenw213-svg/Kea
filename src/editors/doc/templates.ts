@@ -206,5 +206,5 @@ export const TEMPLATES: Template[] = [
 export function templateBytes(t: Template): { name: string; data: Uint8Array } {
   const { html, meta, fileName } = t.build();
   const embedded = btoa(unescape(encodeURIComponent(JSON.stringify(meta))));
-  return { name: `${fileName}.docx`, data: new TextEncoder().encode(`<!doctype html><html><head><meta name="slate-doc" content="${embedded}"></head><body>${html}</body></html>`) };
+  return { name: `${fileName}.docx`, data: new TextEncoder().encode(`<!doctype html><html><head><meta name="kea-doc" content="${embedded}"></head><body>${html}</body></html>`) };
 }

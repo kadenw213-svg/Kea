@@ -226,7 +226,7 @@ async function openFile(localPath) {
 async function saveFile(id, kindExt, data) {
   const type = Object.values(TYPES).find((t) => t.ext === kindExt);
   if (!type) throw new Error('Unsupported format for Google Drive.');
-  const boundary = 'slate' + crypto.randomBytes(8).toString('hex');
+  const boundary = 'kea' + crypto.randomBytes(8).toString('hex');
   const head = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ mimeType: type.google })}\r\n--${boundary}\r\nContent-Type: ${type.mime}\r\n\r\n`);
   const tail = Buffer.from(`\r\n--${boundary}--`);
   const body = Buffer.concat([head, Buffer.from(data), tail]);

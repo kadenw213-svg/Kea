@@ -62,7 +62,7 @@ export interface Theme {
 }
 
 export const THEMES: Theme[] = [
-  { name: 'Slate', bg: '#1b1c1d', title: '#e3e3e3', text: '#c4c7c5', accent: '#a8c7fa', font: 'Segoe UI' },
+  { name: 'Graphite', bg: '#1b1c1d', title: '#e3e3e3', text: '#c4c7c5', accent: '#a8c7fa', font: 'Segoe UI' },
   { name: 'Paper', bg: '#ffffff', title: '#202124', text: '#3c4043', accent: '#1a73e8', font: 'Arial' },
   { name: 'Midnight', bg: '#0b1d3a', title: '#ffffff', text: '#c9d7f2', accent: '#7cacf8', font: 'Segoe UI' },
   { name: 'Ember', bg: '#2b1b17', title: '#ffe7d6', text: '#f1cdb8', accent: '#f6b26b', font: 'Georgia' },
