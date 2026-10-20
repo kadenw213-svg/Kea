@@ -757,7 +757,7 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
             <p className="pre">{instructions}</p>
           </>
         )}
-        <LinkGroups links={[...it.links, ...it.weeklyLinks]} onOpen={(url) => Kea.open({ url })} />
+        <LinkGroups links={[...it.links, ...(it.platformLinks || []), ...it.weeklyLinks]} onOpen={(url) => Kea.open({ url })} />
         {(it.instructor || it.contact) && <p className="muted small">{[it.instructor, it.contact].filter(Boolean).join(' · ')}</p>}
       </div>
     </div>

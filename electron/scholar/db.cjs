@@ -343,6 +343,43 @@ function opensAt(r, ev) {
   return hit && Date.parse(hit.opens) > Date.now() ? hit.opens : null;
 }
 
+// ---------- Outside platforms (Science Interactive, ALEKS…) ----------
+let platCache = { file: '', mtime: 0, data: {} };
+/** The saved platform links of every class ({ CODE: [{ name, host, url, match, flags }] }), read when they change. */
+function platformsSaved(file) {
+  const f = path.join(path.dirname(file), '..', '..', 'platform-links.json');
+  try {
+    const st = fs.statSync(f);
+    if (platCache.file !== f || platCache.mtime !== st.mtimeMs) platCache = { file: f, mtime: st.mtimeMs, data: JSON.parse(fs.readFileSync(f, 'utf8')).byCourse || {} };
+  } catch {
+    platCache = { file: f, mtime: 0, data: {} };
+  }
+  return platCache.data;
+}
+let platFile = '';
+/**
+ * The outside platforms an item is done on, as links ({ label: "Open Science Interactive", url, kind: 'platform' }): any
+ * of its class's platforms its title, description, wording, links or place names.
+ */
+function platformLinksFor(r, course) {
+  if (!platFile || !course?.course_code || r.item_type === 'weekly_reading') return [];
+  const list = platformsSaved(platFile)[course.course_code] || [];
+  if (!list.length) return [];
+  const own = [r.submission_url, r.reference_url, r.resource_url].filter(Boolean);
+  const text = [r.title, r.description, r.source_wording, r.platform_location, r.submission_url_label, r.reference_url_label, r.resource_url_label].filter(Boolean).join(' ');
+  const out = [];
+  for (const pl of list) {
+    let re;
+    try {
+      re = new RegExp(pl.match, pl.flags || '');
+    } catch {
+      continue;
+    }
+    if (re.test(text) && !own.includes(pl.url)) out.push({ label: `Open ${pl.name}`, url: pl.url, kind: 'platform' });
+  }
+  return out;
+}
+
 /** Class meetings, where a room is worth showing. */
 const MEETING = new Set(['lecture', 'lab', 'recitation', 'seminar', 'exam', 'final_exam', 'lab_practical']);
 
@@ -403,6 +440,7 @@ function itemOut(r, course, banner, readings, done, rooms, ev) {
       r.video_url && { label: r.video_url_label || 'Video', url: r.video_url, kind: 'video' }
     ].filter(Boolean),
     weeklyLinks: json(r.weekly_links_json, []),
+    platformLinks: platformLinksFor(r, course),
     covered,
     studyFocus: json(r.study_focus_json, []),
     points: r.points,
@@ -435,6 +473,7 @@ async function items(file, textbooks, done, { from, to, courseId }) {
   const banners = list.filter((r) => r.item_type === 'weekly_reading');
   const rooms = usualRooms(db);
   const ev = evidence(db, file);
+  platFile = file;
   return list.map((r) => {
     const c = byId.get(r.course_id);
     const banner = banners.find((b) => b.course_id === r.course_id && b.date <= r.date && (b.date_range_end || b.date) >= r.date);
@@ -446,6 +485,7 @@ async function items(file, textbooks, done, { from, to, courseId }) {
 async function course(file, textbooks, done, id) {
   const db = await open(file);
   if (!db) return null;
+  platFile = file;
   const c = rows(db, 'SELECT * FROM courses WHERE id = ?', [id])[0];
   if (!c) return null;
   const readings = readingsFor(db, c.id, c.course_code, textbooks);
@@ -462,6 +502,9 @@ async function course(file, textbooks, done, id) {
       pdf: readings.pdfs.get(t.chapter_label) || null
     }))
     .sort((a, b) => chapterNumber(a.label) - chapterNumber(b.label));
+  // (A chapter saved under its bare number, "33", next to "Chapter 33" is a copy of it: shown once.)
+  const named = new Set(chapters.map((ch) => (/^(chapter|unit|module)\s+(\d+)$/i.exec(ch.label) || [])[2]).filter(Boolean));
+  for (let i = chapters.length - 1; i >= 0; i--) if (/^\d+$/.test(chapters[i].label) && named.has(chapters[i].label)) chapters.splice(i, 1);
   const weeks = rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type = 'weekly_reading' AND ${ACTIVE} ORDER BY date`, [id]).map((r) => itemOut(r, c, null, readings, done));
   const portal = rows(db, 'SELECT kind, label, url FROM course_portal_links WHERE course_id = ? ORDER BY kind, label', [id]);
   return { id: c.id, code: c.course_code, name: c.name, term: c.term, instructor: c.instructor, contact: c.instructor_contact, campus: c.campus, delivery: c.delivery_format, url: c.d2l_url, start: c.start_date, end: c.end_date, chapters, weeks, portal };

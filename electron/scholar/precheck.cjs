@@ -266,6 +266,53 @@ function classLaunch(code, url) {
   return null;
 }
 
+/**
+ * How an assignment says it's done on a platform ("SI PDF & Notebook", "Take the exam in ALEKS"), by the platform's
+ * host. ("SI" only in capitals: it's Science Interactive's own short name in class schedules.)
+ */
+const ITEM_MATCH = {
+  'holscience.com': { re: '\bSI\b|[Ss]cience ?[Ii]nteractive|[Hh][Oo][Ll] ?[Ss]cience|myhol', flags: '' },
+  'aleks.com': { re: '\baleks\b', flags: 'i' }
+};
+const platformLinksFile = () => path.join(profiles.paths().dir, 'platform-links.json');
+
+/**
+ * Every class's outside platforms with the class's own way in (its D2L launch tool or enrollment link, made absolute),
+ * saved for the calendar: each assignment done on one of them gets a link to it (db.cjs). By Kea itself, no Claude.
+ */
+function savePlatformLinks(dir, list) {
+  try {
+    const home = browser.schoolInfo().home;
+    const byCourse = {};
+    for (const c of list) {
+      let toc = null;
+      try {
+        toc = JSON.parse(fs.readFileSync(path.join(dir, `${c.code}-content.json`), 'utf8'));
+      } catch {}
+      if (!toc) continue;
+      byCourse[c.code] = classPlatforms(toc)
+        .filter((pl) => pl.launch)
+        .map((pl) => {
+          const kind = PLATFORM_KINDS.find((k) => k.host === pl.host);
+          const m = ITEM_MATCH[pl.host] || { re: kind ? kind.re.source : pl.name, flags: 'i' };
+          let url = pl.launch;
+          try {
+            url = new URL(pl.launch, home || undefined).href;
+          } catch {}
+          return { name: pl.name, host: pl.host, url, title: pl.title, match: m.re, flags: m.flags };
+        });
+    }
+    let prev = {};
+    try {
+      prev = JSON.parse(fs.readFileSync(platformLinksFile(), 'utf8')).byCourse || {};
+    } catch {}
+    // (A class whose content couldn't be read this time keeps what was found before.)
+    fs.writeFileSync(platformLinksFile(), JSON.stringify({ checked: new Date().toISOString(), byCourse: { ...prev, ...byCourse } }, null, 1));
+  } catch (err) {
+    console.error('Platform links', err);
+  }
+}
+
 const lastRead = (host) =>
   Object.entries(browser.platformsRead())
     .filter(([h]) => (PLATFORM_KINDS.find((k) => k.host === host)?.hosts || [host]).some((x) => h === x || h.endsWith(`.${x}`)))
@@ -411,6 +458,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
   if (full) next.lastFull = new Date().toISOString();
   save('summary.json', { checked: new Date().toISOString(), full, changed, quiet, newShells });
   await refreshSubmissions(dir, v, await db.watchList(p.db)).catch((err) => console.error('Submissions', err));
+  savePlatformLinks(dir, await db.watchList(p.db));
   const ous = Object.fromEntries((await db.watchList(p.db)).map((c) => [c.code, c.ou]));
   updateGrades(dir, ous);
   updateInbox(dir, ous);
@@ -438,6 +486,27 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     }
   } catch (err) {
     console.error('Unconfirmed', err);
+  }
+  // Graded work with no link at all (no document, no hand-in page, no platform), due within about a month either way:
+  // each asked of Claude once, to find where it's done, its document and where it's handed in.
+  try {
+    const iso = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
+    const SKIP = new Set(['weekly_reading', 'reading', 'lecture', 'lab', 'recitation', 'seminar', 'office_hours', 'break', 'no_class', 'administrative_deadline']);
+    const bare = (await db.items(p.db, p.textbooks, {}, { from: iso(-14), to: iso(28) })).filter((i) => !SKIP.has(i.type) && !i.links.length && !(i.platformLinks || []).length);
+    for (const code of [...new Set(bare.map((i) => i.courseCode))]) {
+      const course = (next.courses[code] = next.courses[code] || {});
+      const asked = new Set(course.askedNoLinks || []);
+      const ask = bare.filter((i) => i.courseCode === code && !asked.has(i.id)).slice(0, 12);
+      if (!ask.length) continue;
+      course.askedNoLinks = [...asked, ...ask.map((i) => i.id)].slice(-300);
+      (changed[code] = (changed[code] || []).filter((r) => !/^regular full check/.test(r))).push(
+        `Graded work with no link at all on the calendar: ${ask.map((i) => `"${i.title}" (${i.date}, item ${i.id})`).join('; ')}. For each, find on the class site where it's done (an outside platform's page through the class's own launch link, like Science Interactive or ALEKS), its document or handout (the lab report or assignment sheet to download), and its hand-in folder, and save every one you find with render <id> --reference-url/--resource-url/--submission-url (and their labels) --save. If the hand-in folder is hidden or not open yet, say so in the item's description`
+      );
+      const qi = quiet.indexOf(code);
+      if (qi >= 0) quiet.splice(qi, 1);
+    }
+  } catch (err) {
+    console.error('Unlinked', err);
   }
   return {
     signedIn: true,
@@ -978,4 +1047,4 @@ async function syncCheck(code, ou) {
   };
 }
 
-module.exports = { classLaunch, run, pollAnnouncements, readInbox, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck };
+module.exports = { classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck };

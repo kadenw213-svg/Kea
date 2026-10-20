@@ -13,6 +13,7 @@ import {
   Circle,
   X,
   FileText,
+  Globe,
   MoreHorizontal,
   Upload,
   Lock,
@@ -48,7 +49,8 @@ import { MenuButton } from '../Popover';
 import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, assignmentDoc, setClassColor, setTypeColor, useColors } from './kinds';
-import { ResourcesView, StudyPlayer } from './Study';
+import { StudyPlayer } from './Study';
+import { ResourcesView } from './Resources';
 import { MessagesView } from './Messages';
 import { ChangesBox, ClassRules, SyllabusMap, ItemHistory } from './History';
 import { openStudyHub } from './StudyHub';
@@ -1396,7 +1398,9 @@ function RewriteButton({ code, chapter }: { code: string; chapter: string }) {
 
 // ---------- The item panel ----------
 function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; onClose(): void }) {
-  const links = useMemo(() => [...it.links, ...it.weeklyLinks], [it]);
+  const links = useMemo(() => [...it.links, ...(it.platformLinks || []), ...it.weeklyLinks], [it]);
+  // Each outside platform it's done on (Science Interactive, ALEKS), besides its hand-in page.
+  const platforms = (it.platformLinks || []).filter((l) => l.url !== primaryLink(it)?.url);
   // (Some items' only description is their own title: nothing more to say.)
   // (Nor one that only repeats the title and the date: "Saturday, October 24, 2026 11:59 PM: <title> due".)
   const restOf = (t: string) =>
@@ -1477,19 +1481,30 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
             <span>{it.module}</span>
           </div>
         )}
+        {(it.platformLinks || []).length > 0 && (
+          <div>
+            <Globe size={14} />
+            <span>Done on: {(it.platformLinks || []).map((l) => l.label.replace(/^Open /, '')).join(', ')}</span>
+          </div>
+        )}
         {handsIn && (
           <div>
             <Upload size={14} />
             <span>
-              {it.opensAt
-                ? <b>Opens {opensText(it.opensAt)}</b>
-                : quick
-                ? quick.label === 'Hand in'
-                  ? 'Hand in: the assignment folder on your class site'
-                  : `Done on: ${quick.label}`
-                : it.location && /class|lab|room|hall|in person/i.test(it.location)
-                  ? 'Hand in: in class'
-                  : <span className="muted">No hand-in page on your class site yet (it may still be hidden or locked)</span>}
+              {it.opensAt ? (
+                <b>Opens {opensText(it.opensAt)}</b>
+              ) : quick && quick.label === 'Hand in' ? (
+                'Hand in: the assignment folder on your class site'
+              ) : (it.platformLinks || []).length && !/\b(pdf|notebook|report|upload|scan\w*)\b/i.test(it.title) ? (
+                // (Work done on the platform is handed in there: ALEKS homework, an online quiz.)
+                `Hand in: on ${(it.platformLinks || [])[0].label.replace(/^Open /, '')}`
+              ) : quick && !(it.platformLinks || []).length ? (
+                `Done on: ${quick.label}`
+              ) : it.location && /class|lab|room|hall|in person/i.test(it.location) ? (
+                'Hand in: in class'
+              ) : (
+                <span className="muted">No hand-in page on your class site yet (it may still be hidden or locked)</span>
+              )}
             </span>
           </div>
         )}
@@ -1505,6 +1520,12 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
             <quick.icon size={15} /> {quick.label === 'Hand in' ? 'Open hand-in page' : `Open ${quick.label}`}
           </button>
         )}
+        {!it.opensAt &&
+          platforms.map((l) => (
+            <button key={l.url} className="btn" onClick={() => openLink(l.url)} title="Through your class's own link, so the platform knows which class it is">
+              <Globe size={15} /> {l.label}
+            </button>
+          ))}
         {doc && (
           <button className="btn" onClick={() => openLink(doc.url)} title={doc.label}>
             <FileText size={15} /> Open assignment

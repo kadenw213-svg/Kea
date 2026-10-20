@@ -1740,6 +1740,19 @@ def weekly_reading_add_cmd(
         console.print(f"[green]Saved[/green] weekly reading block {row.id} for {course}.")
 
 
+def _chapter_label_like_course(session, course_id: str, label: str) -> str:
+    """A bare chapter number ("33", "Ch 33", "Ch. 33") in the form the class's other chapters use ("Chapter 33"), so
+    it lands on that chapter instead of starting a second one. (2026-10-20: BIO1112's Chapter 33 sections were saved
+    as "33", a new empty chapter.)"""
+    m = re.match(r"^\s*(?:ch(?:ap(?:ter)?)?\.?\s*)?(\d+)\s*$", label or "", re.IGNORECASE)
+    if not m:
+        return label
+    words = [re.match(r"^(chapter|unit|module)\s+\d+", t.chapter_label or "", re.IGNORECASE) for t in repository.list_chapter_topics_for_course(session, course_id)]
+    kinds = [w.group(1).capitalize() for w in words if w]
+    kind = max(set(kinds), key=kinds.count) if kinds else "Chapter"
+    return f"{kind} {m.group(1)}"
+
+
 @app.command("chapter-topic-add")
 def chapter_topic_add_cmd(
     course: Annotated[str, typer.Option("--course")],
@@ -1832,6 +1845,7 @@ def chapter_topic_add_cmd(
     for the same chapter updates the same row instead of duplicating."""
     with session_scope() as session:
         resolved_course_id = _resolve_course_or_exit(session, course).id
+        chapter = _chapter_label_like_course(session, resolved_course_id, chapter)
         if append:
             old = repository.find_chapter_topic(session, resolved_course_id, chapter)
             if old is not None:

@@ -1,8 +1,8 @@
 // Study materials: practice exams and flashcard decks. Claude writes a whole set at once, only when the student asks;
 // Kea keeps it and shuffles, samples and grades it here, as often as the student likes, with no Claude involved.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ClipboardList, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Plus, Pencil, ClipboardPaste, Star, Brain, Shapes, FileCheck, Repeat } from 'lucide-react';
-import { api, ScholarCourse, ScholarCourseDetail, StudyCard, StudyHistory, StudyKind, StudyQuestion, StudySet, StudySetFull } from '../../lib/api';
+import { ArrowLeft, ArrowRight, Check, ClipboardList, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Pencil, Star, Brain, Shapes, FileCheck, Repeat } from 'lucide-react';
+import { api, StudyCard, StudyHistory, StudyKind, StudyQuestion, StudySet, StudySetFull } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
 import { useScholar } from './scholarStore';
@@ -250,139 +250,6 @@ export function PracticeBox({ courseId, itemId, chapters, title = 'Practice' }: 
     </section>
   );
 }
-
-// ---------- My resources ----------
-export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[]; courseId?: string }) {
-  const sets = useStudySets();
-  const [filter, setFilter] = useState<string>(courseId || '');
-  // A copy opened from saved questions and never taken is just a view of the bank: not worth a row. Banks get their
-  // own folded list under each class.
-  const shown = (sets || []).filter((s) => (!filter || s.courseId === filter) && !(s.source === 'saved' && s.status === 'ready' && !s.attempts));
-  const byCourse = new Map<string, StudySet[]>();
-  for (const s of shown) byCourse.set(s.courseId, [...(byCourse.get(s.courseId) || []), s]);
-  return (
-    <div className={courseId ? '' : 'sch-page'}>
-      {!courseId && (
-        <>
-          <h1 className="sch-title">My resources</h1>
-          <p className="sch-sub">Your practice exams and flashcards. Each one is saved here: take it again any time and Kea shuffles it into a new exam.</p>
-        </>
-      )}
-      <div className="st-own">
-        <button className="btn sm" onClick={() => openStudySet('edit:new')}>
-          <Plus size={14} /> Make your own set
-        </button>
-        <button className="btn sm" onClick={() => openStudySet('edit:import')}>
-          <ClipboardPaste size={14} /> Import from Quizlet
-        </button>
-      </div>
-      <Maker courses={courses} courseId={courseId || filter} />
-      {!courseId && courses.length > 1 && (
-        <div className="st-seg st-filter">
-          <button className={!filter ? 'on' : ''} onClick={() => setFilter('')}>
-            All
-          </button>
-          {courses.map((c) => (
-            <button key={c.id} className={filter === c.id ? 'on' : ''} onClick={() => setFilter(c.id)}>
-              {c.code}
-            </button>
-          ))}
-        </div>
-      )}
-      {sets === null ? (
-        <div className="spinner" />
-      ) : !shown.length ? (
-        <div className="sch-empty">Nothing made yet. Make a practice exam or flashcards above, or from any test or textbook chapter.</div>
-      ) : (
-        [...byCourse.entries()].map(([cid, list]) => (
-          <section key={cid}>
-            {!courseId && <h2 className="sch-h2">{cid ? courses.find((c) => c.id === cid)?.code || list[0].courseCode : 'Your own sets'}</h2>}
-            <div className="st-list">
-              {list.filter((s) => !s.bank).map((s) => (
-                <SetRow key={s.id} s={s} />
-              ))}
-            </div>
-            {list.some((s) => s.bank) && (
-              <details className="st-banks">
-                <summary className="muted">
-                  Question banks ({list.filter((s) => s.bank).length}): the saved questions behind every practice exam
-                </summary>
-                <div className="st-list">
-                  {list.filter((s) => s.bank).map((s) => (
-                    <SetRow key={s.id} s={s} />
-                  ))}
-                </div>
-              </details>
-            )}
-          </section>
-        ))
-      )}
-    </div>
-  );
-}
-
-/** Make a set for any chapters of a class. */
-function Maker({ courses, courseId }: { courses: ScholarCourse[]; courseId: string }) {
-  const canMake = useCanMake();
-  const [cid, setCid] = useState(courseId || courses[0]?.id || '');
-  const [detail, setDetail] = useState<ScholarCourseDetail | null>(null);
-  const [picked, setPicked] = useState<string[]>([]);
-  // (Folded to one button: each class's chapters, tests and weeks have their own Study; this is for several at once.)
-  const [shown, setShown] = useState(false);
-  useEffect(() => setCid(courseId || courses[0]?.id || ''), [courseId, courses]);
-  useEffect(() => {
-    setPicked([]);
-    if (cid) api.scholar.course(cid).then(setDetail);
-  }, [cid]);
-  if (!courses.length) return null;
-  const toggle = (l: string) => setPicked((p) => (p.includes(l) ? p.filter((x) => x !== l) : [...p, l]));
-  if (!shown)
-    return (
-      <div className="st-own">
-        <button className="btn sm" onClick={() => setShown(true)}>
-          <ClipboardList size={14} /> Study several chapters
-        </button>
-      </div>
-    );
-  return (
-    <section className="st-maker">
-      <div className="st-maker-head">
-        <ClipboardList size={15} /> <b>Study chapters</b>
-        {!courseId && (
-          <select value={cid} onChange={(e) => setCid(e.target.value)}>
-            {courses.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.code}
-              </option>
-            ))}
-          </select>
-        )}
-        <span className="muted">Pick chapters:</span>
-      </div>
-      <div className="st-chips">
-        {(detail?.chapters || []).map((ch) => (
-          <button key={ch.label} className={`st-chip ${picked.includes(ch.label) ? 'on' : ''}`} onClick={() => toggle(ch.label)} title={ch.title || ''}>
-            {picked.includes(ch.label) && <Check size={12} />} {ch.label.replace('Chapter ', 'Ch ')}
-          </button>
-        ))}
-      </div>
-      <div className="st-make">
-        <button
-          className="btn primary sm"
-          disabled={!picked.length}
-          onClick={() => {
-            const chapters = sortLabels(picked, detail);
-            openStudyHub({ courseId: cid, code: detail?.code || '', title: chapters.length === 1 ? chapters[0] : `${chapters.length} chapters`, chapters });
-          }}
-        >
-          <ClipboardList size={14} /> Study {picked.length ? sortLabels(picked, detail).map((x) => x.replace(/^Chapter /, 'Ch ')).join(', ') : 'these'}
-        </button>
-        {canMake === false && <span className="muted st-hint">Writing new questions needs your Claude account (set it up in Scans). Studying saved ones works without it.</span>}
-      </div>
-    </section>
-  );
-}
-const sortLabels = (picked: string[], d: ScholarCourseDetail | null) => (d ? d.chapters.map((c) => c.label).filter((l) => picked.includes(l)) : picked);
 
 // ---------- Taking a set ----------
 type DeckMode = 'cards' | 'learn' | 'test' | 'match';

@@ -239,6 +239,9 @@ export function assignmentDoc(it: ScholarItem): ScholarLink | null {
 
 export function primaryLink(it: ScholarItem): { url: string; label: string; icon: typeof Upload } | null {
   const submit = it.links.find((l) => l.kind === 'submit') || it.links.find((l) => /dropbox|submit|discussion|quiz/i.test(`${l.label} ${l.url}`));
+  // Done on an outside platform (Science Interactive, ALEKS) with no hand-in page of its own: the platform is where to go.
+  const platform = (it.platformLinks || [])[0];
+  if (!submit && platform && TODO.has(it.type)) return { url: platform.url, label: platform.label.replace(/^Open /, ''), icon: Globe };
   if (!submit || !TODO.has(it.type)) return null;
   const s = `${submit.label} ${submit.url}`;
   if (/discussion/i.test(s)) return { url: submit.url, label: 'Discussion', icon: MessageSquare };

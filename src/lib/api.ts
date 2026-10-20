@@ -763,6 +763,8 @@ export interface ScholarItem {
   done: string | null;
   /** What the class site says: graded or handed in, confirmed not handed in, or null when Kea can't tell. */
   handIn: 'graded' | 'submitted' | 'not_submitted' | null;
+  /** The outside platforms it's done on (Science Interactive, ALEKS…), through the class's own link. */
+  platformLinks?: ScholarLink[];
   /** When it opens on the class site, while that's still ahead (its link leads to a locked page until then). */
   opensAt?: string | null;
   readings: ScholarReading[];

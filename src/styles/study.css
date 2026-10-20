@@ -1133,3 +1133,157 @@ button.hub-mode:hover:not(:disabled) {
   font-size: 13px;
   padding: 6px 2px;
 }
+
+/* ---------- My resources: read or be quizzed, chapter by chapter ---------- */
+.res-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 4px 0 14px;
+}
+.res-mode button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  font-size: 14px;
+}
+.res-hint {
+  font-size: 13px;
+}
+.res-classes {
+  margin-left: auto;
+}
+.res-review {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.res-review > span {
+  display: grid;
+  gap: 2px;
+}
+.res-review .muted {
+  font-size: 12.5px;
+}
+.res-chapters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 8px;
+}
+.res-ch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.res-ch.on {
+  border-color: var(--accent);
+}
+.res-ch.off {
+  opacity: 0.55;
+}
+.res-ch-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 10px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.res-ch-main:disabled {
+  cursor: default;
+}
+.res-ch:not(.off):hover {
+  background: var(--surface-2);
+}
+.res-ch-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.res-ch-sub {
+  font-size: 12.5px;
+}
+.res-go {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.res-tick {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 6px;
+  background: none;
+  color: var(--on-accent);
+  cursor: pointer;
+}
+.res-tick.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.res-picked {
+  position: sticky;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+}
+.res-picked > span {
+  flex: 1;
+}
+.res-practice {
+  margin-top: 18px;
+}
+.res-practice-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.res-practice-head .sch-h2 {
+  margin-right: auto;
+}
+.res-practice-head .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.res-empty,
+.res-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.res-foot {
+  margin-top: 18px;
+}

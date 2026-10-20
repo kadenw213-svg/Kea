@@ -89,6 +89,10 @@ field.** If a command answers with an error, its message says what's wrong.
   `item-history <id> [--json]`, `changes [--course X] [--since YYYY-MM-DD] [--run ID] [--json]`. Items and sources
   are never deleted (the database refuses), and nothing may edit `data/*.db` directly: use these commands, never
   ad-hoc SQL or Python. Every supersede or cancel needs a reason a student would understand.
+- Every assignment carries every place it needs: its document or handout (to download), where it's done when that's
+  an outside platform (Science Interactive, ALEKS, Connect, Pearson…, always through the class's own D2L launch or
+  enrollment link, never the platform's plain login page), and its hand-in folder (even when it's hidden or not open
+  yet: say so). A lab report done on Science Interactive and handed in on D2L has both.
 - Graded work keeps a graded kind (assignment, quiz, exam, discussion, lab_handout, lab_practical, paper, project). A
   lab, recitation or seminar is a class meeting with a time and a room: anything handed in or graded for it (a report,
   a safety quiz, Science Interactive PDFs) is its own item of a graded kind. The database refuses to replace graded
