@@ -118,6 +118,28 @@ def test_database_refuses_folding_graded_work_into_a_reading_week(session, make_
     session.execute(text("UPDATE academic_items SET superseded_by_id = :b WHERE id = :i"), {"b": week.id, "i": review.id})
 
 
+def test_database_refuses_replacing_graded_work_by_a_class_meeting(session, make_course):
+    import pytest
+    from sqlalchemy import text
+
+    from academic_sync.db.migrations import _0021_add_item_history, _0024_guard_graded_into_meetings
+
+    _0021_add_item_history(session)
+    _0024_guard_graded_into_meetings(session)
+    course = make_course(code="CHE1011")
+    folder = _item(session, course, "Lab Safety (SI)", "assignment", "2026-09-06")
+    lab = _item(session, course, "Lab Safety (SI) and Getting Started", "lab", "2026-10-24")
+    old_lab = _item(session, course, "Lab 2 meeting", "lab", "2026-09-10")
+    session.flush()
+    with pytest.raises(Exception, match="graded work"):
+        session.execute(text("UPDATE academic_items SET superseded_by_id = :b, status = 'superseded' WHERE id = :i"), {"b": lab.id, "i": folder.id})
+    session.rollback()
+    # A meeting replaced by a meeting is fine; graded work goes once its replacement has its graded kind.
+    session.execute(text("UPDATE academic_items SET superseded_by_id = :b WHERE id = :i"), {"b": lab.id, "i": old_lab.id})
+    session.execute(text("UPDATE academic_items SET item_type = 'assignment' WHERE id = :i"), {"i": lab.id})
+    session.execute(text("UPDATE academic_items SET superseded_by_id = :b WHERE id = :i"), {"b": lab.id, "i": folder.id})
+
+
 def test_explanations_must_teach():
     from academic_sync.cli import _explain_problems
 

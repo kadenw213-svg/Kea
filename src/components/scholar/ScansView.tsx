@@ -5,6 +5,13 @@ import { useSetting, openSettings } from '../../lib/settings';
 import { toast } from '../../store';
 import { reloadScholar } from './scholarStore';
 
+/** Whether version a is newer than b ("0.46.0" vs "0.31.0"). */
+const newer = (a: string, b: string) => {
+  const x = a.split('.').map(Number);
+  const y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+};
 const APK = 'https://github.com/kadenw213-svg/kea/releases/latest/download/Kea-Android.apk';
 
 // ---------- Time and progress ----------
@@ -206,6 +213,8 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
   const driveName = (d: { label: string; account: string }) => (d.account ? `${d.label} · ${d.account}` : d.label);
   const auto = dev.drives.find((d) => d.id === 'onedrive') || dev.drives.find((d) => d.id === 'google') || dev.drives[0];
   const others = dev.devices.filter((d) => !d.me);
+  // (This device's version, to tell another computer it's behind.)
+  const mine = dev.devices.find((d) => d.me)?.version || '';
   return (
     <section className="kcard devices">
       <div className="kcard-head">
@@ -277,6 +286,7 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
                   {d.me ? 'On now' : d.online ? 'On now' : `Last on ${ago(d.at)}`}
                   {d.drive ? ` · ${driveName(d.drive)}` : ''}
                   {d.version ? ` · Kea ${d.version}` : ''}
+                  {!d.me && d.version && mine && newer(mine, d.version) && <span className="tag warn">Out of date: open Kea there and check for updates</span>}
                 </div>
               </div>
               {!d.primary && (
@@ -299,7 +309,10 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
                   `Last synced ${ago(dev.phone.at)}`
                 ) : (
                   <>
-                    Not set up. On your phone, open <span className="pn-select">{APK}</span> and install it.
+                    Not set up. Open the download link on your phone and install it, then choose Kea's files in its setup.{' '}
+                    <button className="link-btn" onClick={() => navigator.clipboard.writeText(APK).then(() => toast('Download link copied: send it to your phone.', 'success'))}>
+                      Copy the download link
+                    </button>
                   </>
                 )}
               </div>

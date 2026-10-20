@@ -488,6 +488,18 @@ def _0023_guard_folding_graded_work(session: Session) -> None:
          BEGIN SELECT RAISE(ABORT, 'This looks like graded work: it can''t be folded into a reading week or lecture. If it truly is not graded, say "not graded" in the reason.'); END"""))
 
 
+def _0024_guard_graded_into_meetings(session: Session) -> None:
+    # 2026-10-20 (Kea): CHE1011's graded "Lab Safety (SI)" folder (20 points) was replaced by an item typed as a lab
+    # meeting, which has no checkbox and is never "missing", while it sat at 0/20. Graded work can't be replaced by a
+    # class meeting (lab, recitation, seminar, office hours) either, unless the reason says it isn't graded.
+    session.execute(text("""CREATE TRIGGER IF NOT EXISTS academic_items_no_graded_into_meeting BEFORE UPDATE OF superseded_by_id ON academic_items
+         WHEN NEW.superseded_by_id IS NOT NULL AND OLD.superseded_by_id IS NULL
+          AND (SELECT item_type FROM academic_items WHERE id = NEW.superseded_by_id) IN ('lab', 'recitation', 'seminar', 'office_hours')
+          AND (NEW.points IS NOT NULL OR NEW.item_type IN ('assignment', 'quiz', 'exam', 'final_exam', 'midterm', 'discussion', 'lab_handout', 'lab_practical', 'paper', 'project', 'peer_review', 'other_deadline'))
+          AND COALESCE((SELECT lower(reason) FROM event_context WHERE id = 1), '') NOT GLOB '*not graded*'
+         BEGIN SELECT RAISE(ABORT, 'This is graded work: it can''t be replaced by a class meeting. Give the replacement its graded kind (item-retype), or say "not graded" in the reason if it truly is not.'); END"""))
+
+
 MIGRATIONS: list[MigrationFn] = [
     _0001_initial_schema,
     _0002_add_item_reference_urls,
@@ -512,6 +524,7 @@ MIGRATIONS: list[MigrationFn] = [
     _0021_add_item_history,
     _0022_add_curriculum,
     _0023_guard_folding_graded_work,
+    _0024_guard_graded_into_meetings,
 ]
 
 

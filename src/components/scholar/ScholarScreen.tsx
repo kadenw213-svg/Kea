@@ -13,6 +13,7 @@ import {
   Circle,
   X,
   FileText,
+  MoreHorizontal,
   Upload,
   Lock,
   FolderInput,
@@ -670,32 +671,50 @@ function InboxView({ ctx }: { ctx: Ctx }) {
             </button>
           ))}
         </div>
-        <button className="btn sm" onClick={checkNow} disabled={checking}>
-          {checking ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Check now
+        <span className="ml-top-gap" />
+        <button className="icon-btn" onClick={checkNow} disabled={checking} title="Check your class site for new messages now">
+          {checking ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
         </button>
-        {items.some((i) => !i.read) && (
-          <button className="btn sm" onClick={() => (api.scholar.markInboxRead(), setItems(items.map((x) => ({ ...x, read: true }))))}>
-            Mark all read
-          </button>
-        )}
-        {readShown.length > 0 &&
-          (confirmRead ? (
-            <span className="ib-confirm">
-              Delete {readShown.length} read message{readShown.length === 1 ? '' : 's'}?
-              <button className="btn sm danger" onClick={() => (remove(readShown.map((i) => i.id)), setConfirmRead(false))}>
-                Delete
-              </button>
-              <button className="btn sm" onClick={() => setConfirmRead(false)}>
-                Cancel
-              </button>
-            </span>
-          ) : (
-            <button className="btn sm" onClick={() => setConfirmRead(true)}>
-              <Trash2 size={14} /> Delete read
+        {confirmRead ? (
+          <span className="ib-confirm">
+            Delete {readShown.length} read message{readShown.length === 1 ? '' : 's'}?
+            <button className="btn sm danger" onClick={() => (remove(readShown.map((i) => i.id)), setConfirmRead(false))}>
+              Delete
             </button>
-          ))}
+            <button className="btn sm" onClick={() => setConfirmRead(false)}>
+              Cancel
+            </button>
+          </span>
+        ) : (
+          (items.some((i) => !i.read) || readShown.length > 0) && (
+            <MenuButton
+              align="right"
+              title="More"
+              button={() => (
+                <button className="icon-btn">
+                  <MoreHorizontal size={16} />
+                </button>
+              )}
+            >
+              {(close) => (
+                <>
+                  {items.some((i) => !i.read) && (
+                    <button className="menu-item" onClick={() => (api.scholar.markInboxRead(), setItems(items.map((x) => ({ ...x, read: true }))), close())}>
+                      <CheckCircle2 size={14} /> Mark all read
+                    </button>
+                  )}
+                  {readShown.length > 0 && (
+                    <button className="menu-item" onClick={() => (setConfirmRead(true), close())}>
+                      <Trash2 size={14} /> Delete read messages
+                    </button>
+                  )}
+                </>
+              )}
+            </MenuButton>
+          )
+        )}
       </div>
-      <p className="sch-sub">One message per thing, as it happens: announcements, grades, feedback and class-site messages come straight from your class site (every half hour unless you change it in Settings → Scholar). Anything that needs you comes from the class check.</p>
+      <p className="sch-sub">Announcements, grades, feedback and class-site messages, as they happen, and anything that needs you.</p>
       {!shown.length ? (
         <div className="sch-empty">
           <Inbox size={26} />

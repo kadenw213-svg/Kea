@@ -378,7 +378,8 @@ function itemOut(r, course, banner, readings, done, rooms, ev) {
     id: r.id,
     courseId: r.course_id,
     courseCode: course?.course_code || '',
-    type: r.item_type,
+    // (A "lab" with points and no meeting time is graded work read as a lab meeting: it needs its checkbox.)
+    type: r.item_type === 'lab' && Number(r.points) > 0 && !r.start_time ? 'assignment' : r.item_type,
     title: r.title,
     date: r.date,
     dateEnd: r.date_range_end,

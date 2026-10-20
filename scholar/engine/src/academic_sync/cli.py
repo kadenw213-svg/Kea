@@ -1224,7 +1224,7 @@ def changes_cmd(
         console.print(f"{e['ts'][:16]}  {e['course'] or '':<8} {e['op']:<9} {escape(e['title'] or e['id'] or '')[:70]}  [dim]{escape(e['reason'] or '')[:120]}[/dim]")
 
 
-def _item_status_change(item_id: str, reason: str, *, by: str | None = None, cancel: bool = False, restore: bool = False, as_type: str | None = None) -> None:
+def _item_status_change(item_id: str, reason: str, *, by: str | None = None, cancel: bool = False, restore: bool = False, as_type: str | None = None, retype: bool = False) -> None:
     from sqlalchemy import text as sql
 
     if len(reason.strip()) < 8:
@@ -1237,7 +1237,9 @@ def _item_status_change(item_id: str, reason: str, *, by: str | None = None, can
             console.print("[red]No single item matches that id.[/red]")
             raise typer.Exit(1)
         iid = row[0][0]
-        if restore:
+        if retype:
+            session.execute(sql("UPDATE academic_items SET item_type = :t WHERE id = :i"), {"t": ItemType(as_type).value, "i": iid})
+        elif restore:
             session.execute(sql("UPDATE academic_items SET superseded_by_id = NULL, status = CASE WHEN status IN ('superseded', 'cancelled') THEN 'clear' ELSE status END WHERE id = :i"), {"i": iid})
             if as_type:
                 session.execute(sql("UPDATE academic_items SET item_type = :t WHERE id = :i"), {"t": ItemType(as_type).value, "i": iid})
@@ -1250,6 +1252,17 @@ def _item_status_change(item_id: str, reason: str, *, by: str | None = None, can
                 raise typer.Exit(1)
             session.execute(sql("UPDATE academic_items SET superseded_by_id = :b, status = 'superseded' WHERE id = :i"), {"b": other[0][0], "i": iid})
     console.print("Done; the reason is in the item's history.")
+
+
+@app.command("item-retype")
+def item_retype_cmd(
+    item_id: Annotated[str, typer.Argument()],
+    as_type: Annotated[str, typer.Option("--as-type", help="Its real kind: assignment, quiz, exam, discussion, lab_handout, lab...")],
+    reason: Annotated[str, typer.Option("--reason")],
+) -> None:
+    """Correct an item's kind (graded work read as a class meeting, or the other way round), with the reason."""
+    ItemType(as_type)
+    _item_status_change(item_id, reason, as_type=as_type, retype=True)
 
 
 @app.command("item-supersede")

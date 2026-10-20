@@ -2482,3 +2482,18 @@
   margin-right: 8px;
   font-size: 12.5px;
 }
+
+/* This week's calendar changes, one class at a time */
+.hs-group-head {
+  margin: 10px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.tag.warn {
+  margin-left: 6px;
+  color: #fdd663;
+  background: color-mix(in srgb, #fdd663 14%, transparent);
+}

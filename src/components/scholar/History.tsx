@@ -45,7 +45,7 @@ export function runLabel(run: string | null) {
   return run.startsWith('manual') ? 'a manual fix' : run;
 }
 
-function describe(e: HistoryEvent): string {
+function describe(e: HistoryEvent, only?: Set<string>): string {
   if (e.op === 'baseline') return e.reason || 'History starts here.';
   if (e.op === 'create') return 'Added to your calendar';
   if (e.op === 'source') return `Read a source: ${(e.changes as any)?.title || ''}`;
@@ -53,7 +53,7 @@ function describe(e: HistoryEvent): string {
   if (e.op === 'dismiss') return 'Marked not separate work';
   const ch = (e.changes || {}) as Record<string, [unknown, unknown]>;
   const parts = Object.entries(ch)
-    .filter(([k]) => k !== 'source_ids_json' && k !== 'superseded_by_id')
+    .filter(([k]) => k !== 'source_ids_json' && k !== 'superseded_by_id' && (!only || only.has(k)))
     .map(([k, [a, b]]) => `${FIELD[k] || k}: ${show(a)} → ${show(b)}`);
   const head = e.op === 'supersede' ? 'Replaced by another item' : e.op === 'cancel' ? 'Cancelled' : e.op === 'restore' ? 'Restored' : 'Changed';
   return parts.length ? `${head}: ${parts.join('; ')}` : head;
@@ -106,12 +106,17 @@ export function ItemHistory({ id }: { id: string }) {
 // instructions is bookkeeping and stays in each item's History.
 const MEANINGFUL = new Set(['title', 'item_type', 'date', 'start_time', 'end_time', 'due_time', 'date_range_end', 'status', 'points', 'is_optional']);
 const meaningful = (e: HistoryEvent) => {
-  if (e.op === 'source' || e.op === 'baseline') return false;
+  if (e.op === 'source' || e.op === 'baseline' || e.op === 'dismiss') return false;
   if (e.op !== 'update') return true;
-  return Object.keys(e.changes || {}).some((k) => MEANINGFUL.has(k));
+  const ch = (e.changes || {}) as Record<string, [unknown, unknown]>;
+  // (A status moving between Kea's own bookkeeping states, like "clear" to "synced", isn't a change to the calendar.)
+  return Object.keys(ch).some((k) => MEANINGFUL.has(k) && !(k === 'status' && !['cancelled', 'superseded'].includes(String(ch[k]?.[1]))));
 };
 
-/** "What changed": everything added, moved, renamed, replaced or cancelled on the calendar this week, and why. */
+/**
+ * "What changed": what was added, moved, renamed, replaced or cancelled on the calendar this week, and why. Each item
+ * once (its latest change, with how many there were), grouped by class; Kea building its own reading weeks isn't news.
+ */
 export function ChangesBox() {
   const version = useScholar((s) => s.version);
   const [open, setOpen] = useState(false);
@@ -119,32 +124,61 @@ export function ChangesBox() {
   useEffect(() => {
     api.scholar
       .changes({})
-      .then((r) => setEvents(r.events.filter((e) => (e.table === 'academic_items' || e.op === 'dismiss') && meaningful(e))))
+      .then((r) =>
+        setEvents(
+          r.events.filter((e) => {
+            if (!((e.table === 'academic_items' || e.op === 'dismiss') && meaningful(e))) return false;
+            const kind = (e.changes as any)?.item_type;
+            return !(e.op === 'create' && (kind === 'weekly_reading' || (Array.isArray(kind) && kind[1] === 'weekly_reading')));
+          })
+        )
+      )
       .catch(() => setEvents([]));
   }, [version]);
   if (!events || !events.length) return null;
+  // The latest change to each item, and how many it had. An item added and taken off again this week (a duplicate
+  // a check made and cleaned up) never reached the calendar as anything: it's left out.
+  const byItem = new Map<string, { last: (typeof events)[number]; n: number; created: boolean }>();
+  for (const e of events) {
+    const k = e.id || `${e.course}|${e.title}`;
+    const cur = byItem.get(k);
+    byItem.set(k, { last: !cur || e.ts > cur.last.ts ? e : cur.last, n: (cur?.n || 0) + 1, created: !!cur?.created || e.op === 'create' });
+  }
+  for (const [k, x] of byItem) if (x.created && (x.last.op === 'supersede' || x.last.op === 'cancel')) byItem.delete(k);
+  const groups = new Map<string, { last: (typeof events)[number]; n: number; created: boolean }[]>();
+  for (const x of [...byItem.values()].sort((p, q) => q.last.ts.localeCompare(p.last.ts))) {
+    const c = x.last.course || 'Other';
+    groups.set(c, [...(groups.get(c) || []), x]);
+  }
+  const total = byItem.size;
+  if (!total) return null;
   return (
     <section className="hs-changes">
       <button className="hs-head" onClick={() => setOpen(!open)}>
-        <HistoryIcon size={15} /> <b>{events.length} calendar change{events.length === 1 ? '' : 's'} this week</b>
-        <span className="muted">added, moved, renamed or removed, and why</span>
+        <HistoryIcon size={15} /> <b>{total} calendar change{total === 1 ? '' : 's'} this week</b>
+        <span className="muted">{[...groups].map(([c, list]) => `${c} ${list.length}`).join(' · ')}</span>
         <ChevronDown size={15} className={open ? 'flip' : ''} />
       </button>
-      {open && (
-        <ol className="hs-list">
-          {[...events].reverse().map((e, i) => (
-            <li key={i}>
-              <div className="hs-when muted">
-                {new Date(e.ts).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} · {e.course || ''} · {runLabel(e.run)}
-              </div>
-              <div>
-                <b>{e.title || ''}</b> {describe(e)}
-              </div>
-              {e.reason && <div className="hs-why">Why: {e.reason}</div>}
-            </li>
-          ))}
-        </ol>
-      )}
+      {open &&
+        [...groups].map(([c, list]) => (
+          <div key={c} className="hs-group">
+            <div className="hs-group-head">{c}</div>
+            <ol className="hs-list">
+              {list.map(({ last: e, n }, i) => (
+                <li key={i}>
+                  <div className="hs-when muted">
+                    {new Date(e.ts).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} · {runLabel(e.run)}
+                    {n > 1 ? ` · ${n} changes this week` : ''}
+                  </div>
+                  <div>
+                    <b>{e.title || ''}</b> {describe(e, MEANINGFUL)}
+                  </div>
+                  {e.reason && <div className="hs-why">Why: {e.reason}</div>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))}
     </section>
   );
 }
