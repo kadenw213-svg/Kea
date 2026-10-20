@@ -1498,6 +1498,10 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
               ) : (it.platformLinks || []).length && !/\b(pdf|notebook|report|upload|scan\w*)\b/i.test(it.title) ? (
                 // (Work done on the platform is handed in there: ALEKS homework, an online quiz.)
                 `Hand in: on ${(it.platformLinks || [])[0].label.replace(/^Open /, '')}`
+              ) : quick && quick.label === 'Discussion' ? (
+                'Hand in: post in the discussion (the button below opens its topic)'
+              ) : quick && quick.label === 'Quiz' ? (
+                'Taken on your class site: the button below opens the quiz'
               ) : quick && !(it.platformLinks || []).length ? (
                 `Done on: ${quick.label}`
               ) : it.location && /class|lab|room|hall|in person/i.test(it.location) ? (

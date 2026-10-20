@@ -308,9 +308,41 @@ function savePlatformLinks(dir, list) {
     } catch {}
     // (A class whose content couldn't be read this time keeps what was found before.)
     fs.writeFileSync(platformLinksFile(), JSON.stringify({ checked: new Date().toISOString(), byCourse: { ...prev, ...byCourse } }, null, 1));
+    saveD2lPlaces(dir, list, home);
   } catch (err) {
     console.error('Platform links', err);
   }
+}
+
+/**
+ * Every class's own D2L places for work, each with its direct page: assignment folders (to hand in), quizzes (to take)
+ * and discussion topics (to post in), hidden ones left out. The calendar links each assignment to its place (db.cjs),
+ * so it never has to be found in D2L's lists. By Kea itself, no Claude.
+ */
+function saveD2lPlaces(dir, list, home) {
+  const file = path.join(profiles.paths().dir, 'd2l-places.json');
+  let prev = {};
+  try {
+    prev = JSON.parse(fs.readFileSync(file, 'utf8')).byCourse || {};
+  } catch {}
+  const byCourse = {};
+  for (const c of list) {
+    if (!c.ou || !home) continue;
+    const read = (area) => {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(dir, `${c.code}-${area}.json`), 'utf8'));
+      } catch {
+        return null;
+      }
+    };
+    const abs = (rel) => new URL(rel, home).href;
+    const places = [];
+    for (const f of AREAS.dropbox.list(read('dropbox'))) places.push({ area: 'dropbox', id: f.Id, name: f.Name, url: abs(`/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${f.Id}&grpid=0&isprv=0&bp=0&ou=${c.ou}`) });
+    for (const q of AREAS.quizzes.list(read('quizzes'))) places.push({ area: 'quiz', id: q.QuizId, name: q.Name, url: abs(`/d2l/lms/quizzing/user/quiz_summary.d2l?qi=${q.QuizId}&ou=${c.ou}`) });
+    for (const t of AREAS.discussions.list(read('discussions'))) places.push({ area: 'discussion', id: t.TopicId, name: `${t.ForumName}: ${t.Name}`, url: abs(`/d2l/le/${c.ou}/discussions/topics/${t.TopicId}/View`) });
+    if (places.length) byCourse[c.code] = places;
+  }
+  fs.writeFileSync(file, JSON.stringify({ checked: new Date().toISOString(), byCourse: { ...prev, ...byCourse } }, null, 1));
 }
 
 const lastRead = (host) =>
@@ -492,7 +524,16 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
   try {
     const iso = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
     const SKIP = new Set(['weekly_reading', 'reading', 'lecture', 'lab', 'recitation', 'seminar', 'office_hours', 'break', 'no_class', 'administrative_deadline']);
-    const bare = (await db.items(p.db, p.textbooks, {}, { from: iso(-14), to: iso(28) })).filter((i) => !SKIP.has(i.type) && !i.links.length && !(i.platformLinks || []).length);
+    // (No link at all, or handed in somewhere but with no document or instructions to do it from: a lab handout with
+    // only its folder.)
+    const LIST = /folders_list|\/dropbox\/dropbox\.d2l|discussions\/List|quizzing\.d2l\?ou|quizzes_list/i;
+    const noDoc = (i) =>
+      ['assignment', 'lab_handout', 'paper', 'project'].includes(i.type) &&
+      !i.links.some((l) => l.kind !== 'submit' && !LIST.test(l.url)) &&
+      !(i.platformLinks || []).length &&
+      // (A lab handout is a sheet to fill in: instructions alone aren't it.)
+      (i.type === 'lab_handout' || ![i.description, i.sourceWording].some((t) => t && t.replace(i.title, '').trim().length > 60));
+    const bare = (await db.items(p.db, p.textbooks, {}, { from: iso(-14), to: iso(28) })).filter((i) => !SKIP.has(i.type) && ((!i.links.length && !(i.platformLinks || []).length) || noDoc(i)));
     for (const code of [...new Set(bare.map((i) => i.courseCode))]) {
       const course = (next.courses[code] = next.courses[code] || {});
       const asked = new Set(course.askedNoLinks || []);
@@ -500,7 +541,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
       if (!ask.length) continue;
       course.askedNoLinks = [...asked, ...ask.map((i) => i.id)].slice(-300);
       (changed[code] = (changed[code] || []).filter((r) => !/^regular full check/.test(r))).push(
-        `Graded work with no link at all on the calendar: ${ask.map((i) => `"${i.title}" (${i.date}, item ${i.id})`).join('; ')}. For each, find on the class site where it's done (an outside platform's page through the class's own launch link, like Science Interactive or ALEKS), its document or handout (the lab report or assignment sheet to download), and its hand-in folder, and save every one you find with render <id> --reference-url/--resource-url/--submission-url (and their labels) --save. If the hand-in folder is hidden or not open yet, say so in the item's description`
+        `Graded work missing what it takes to do it (no link at all, or no document or instructions): ${ask.map((i) => `"${i.title}" (${i.date}, item ${i.id})`).join('; ')}. For each, find on the class site where it's done (an outside platform's page through the class's own launch link, like Science Interactive or ALEKS), its document or handout (the lab report or assignment sheet to download), and its hand-in folder, and save every one you find with render <id> --reference-url/--resource-url/--submission-url (and their labels) --save. If the hand-in folder is hidden or not open yet, say so in the item's description`
       );
       const qi = quiet.indexOf(code);
       if (qi >= 0) quiet.splice(qi, 1);

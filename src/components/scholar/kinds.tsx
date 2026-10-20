@@ -238,7 +238,9 @@ export function assignmentDoc(it: ScholarItem): ScholarLink | null {
 }
 
 export function primaryLink(it: ScholarItem): { url: string; label: string; icon: typeof Upload } | null {
-  const submit = it.links.find((l) => l.kind === 'submit') || it.links.find((l) => /dropbox|submit|discussion|quiz/i.test(`${l.label} ${l.url}`));
+  // (Never one of D2L's list pages, every folder or every discussion: only this work's own page.)
+  const own = it.links.filter((l) => !/folders_list|\/dropbox\/dropbox\.d2l|discussions\/List|quizzing\.d2l\?ou|quizzes_list/i.test(l.url));
+  const submit = own.find((l) => l.kind === 'submit') || own.find((l) => /dropbox|submit|discussion|quiz/i.test(`${l.label} ${l.url}`));
   // Done on an outside platform (Science Interactive, ALEKS) with no hand-in page of its own: the platform is where to go.
   const platform = (it.platformLinks || [])[0];
   if (!submit && platform && TODO.has(it.type)) return { url: platform.url, label: platform.label.replace(/^Open /, ''), icon: Globe };

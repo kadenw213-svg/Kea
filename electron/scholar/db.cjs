@@ -380,6 +380,66 @@ function platformLinksFor(r, course) {
   return out;
 }
 
+// ---------- Each assignment's own D2L page (its folder, quiz or discussion topic) ----------
+let placeCache = { file: '', mtime: 0, data: {} };
+function placesSaved() {
+  const f = path.join(path.dirname(platFile), '..', '..', 'd2l-places.json');
+  try {
+    const st = fs.statSync(f);
+    if (placeCache.file !== f || placeCache.mtime !== st.mtimeMs) placeCache = { file: f, mtime: st.mtimeMs, data: JSON.parse(fs.readFileSync(f, 'utf8')).byCourse || {} };
+  } catch {
+    placeCache = { file: f, mtime: 0, data: {} };
+  }
+  return placeCache.data;
+}
+/** A D2L list page (every folder, every quiz, every discussion), not one piece of work's own page. */
+const LIST_PAGE = /folders_list|\/dropbox\/dropbox\.d2l|discussions\/List|quizzing\.d2l\?ou|quizzing\/user\/quizzes_list/i;
+/** The numbered names in a title ("online quiz 5: chapters 32 33" → ["quiz 5", "chapters 32"]), its identity in D2L. */
+function numbered(title) {
+  return [...norm(title).matchAll(/([a-z]+) (\d+)\b/g)].map((m) => `${m[1]} ${m[2]}`);
+}
+/**
+ * The item's own D2L page when it doesn't link one: the place (folder, quiz or discussion topic) whose name is the
+ * same work. Names differ between a class schedule and D2L ("Lab 8 Handout" / "Lab 8 Fungi", "Online Quiz 5: Chapters
+ * 32-33" / "Online Quiz 5"), so the match is by title first, then by the numbered name they share ("lab 8", "quiz 5",
+ * "module 2 discussion 1"), only when exactly one place has it, in the area the item's kind belongs to.
+ */
+function placeLinksFor(r, course) {
+  if (!platFile || !course?.course_code || NEVER_GRADED.has(r.item_type) || r.item_type === 'lab') return [];
+  const places = placesSaved()[course.course_code] || [];
+  if (!places.length) return [];
+  const own = [r.submission_url, r.reference_url, r.resource_url].filter((u) => u && !LIST_PAGE.test(u));
+  const area = r.item_type === 'discussion' || /\bdiscussion\b/i.test(r.title) ? 'discussion' : ['quiz', 'exam', 'final_exam', 'midterm'].includes(r.item_type) ? 'quiz' : 'dropbox';
+  const t = norm(r.title.replace(/\((initial|response|replies|reply)[^)]*\)/i, ''));
+  const mine = numbered(r.title);
+  const pick = (list) => {
+    // (A discussion topic's name starts with its forum's, "Module 3 Discussions: …"; a folder's colon is part of its name.)
+    const own = (p) => (p.area === 'discussion' ? p.name.replace(/^[^:]*:\s*/, '') : p.name);
+    const exact = list.filter((p) => sameWork(norm(own(p)), t) || sameWork(norm(p.name), t));
+    if (exact.length === 1) return exact[0];
+    // The same name once notes are set aside: "Final Exam(1-9) - Requires Respondus…" is "Final Exam (Chapters 1-9)".
+    const bare = (x) => norm(x.replace(/\([^)]*\)/g, ' ').replace(/\s+-\s+requires.*$/i, ''));
+    const same = list.filter((p) => bare(p.name) && bare(p.name) === bare(r.title));
+    if (same.length === 1) return same[0];
+    if (!mine.length) return null;
+    // The place's numbered names all in the item's, starting the same ("lab 8" in "lab 8 handout"), and no kind of work
+    // in the place's name that the item's doesn't have ("Chapter 1 Exam Show Work" isn't "Review: Chapter 1").
+    const words = new Set(t.split(' '));
+    const KINDS = ['exam', 'quiz', 'show', 'work', 'review', 'practice', 'discussion', 'assignment', 'essay', 'report', 'final', 'midterm', 'peer', 'reflection'];
+    const by = list.filter((p) => {
+      const name = own(p);
+      const theirs = numbered(name);
+      return theirs.length && theirs[0] === mine[0] && theirs.every((x) => mine.includes(x)) && !norm(name).split(' ').some((w) => KINDS.includes(w) && !words.has(w));
+    });
+    return by.length === 1 ? by[0] : null;
+  };
+  // (Only in the item's own area: an ALEKS exam is never its "Exam Show Work" folder, a discussion never the essay's.)
+  const hit = pick(places.filter((p) => p.area === area));
+  if (!hit || own.some((u) => u.includes(String(hit.id)))) return [];
+  const label = hit.area === 'quiz' ? 'Take the quiz' : hit.area === 'discussion' ? 'Post in the discussion' : 'Hand-in folder';
+  return [{ label, url: hit.url, kind: 'submit' }];
+}
+
 /** Class meetings, where a room is worth showing. */
 const MEETING = new Set(['lecture', 'lab', 'recitation', 'seminar', 'exam', 'final_exam', 'lab_practical']);
 
@@ -396,7 +456,20 @@ function usualRooms(db) {
   return out;
 }
 
+/**
+ * An item as the calendar shows it, with the places to do it in front: its own D2L page (folder, quiz, discussion
+ * topic) before anything else, and D2L's list pages dropped once there's something better (its own page, or the outside
+ * platform it's done on).
+ */
 function itemOut(r, course, banner, readings, done, rooms, ev) {
+  const o = itemOutRaw(r, course, banner, readings, done, rooms, ev);
+  const better = o.placeLinks.length || o.platformLinks.length || o.links.some((l) => l.kind === 'submit' && !LIST_PAGE.test(l.url));
+  o.links = [...o.placeLinks, ...o.links.filter((l) => !(better && LIST_PAGE.test(l.url)))];
+  delete o.placeLinks;
+  return o;
+}
+
+function itemOutRaw(r, course, banner, readings, done, rooms, ev) {
   const covered = json(r.covered_chapters_json, []);
   // (Ranges and lists too: "Exam 1 (Chapters 1-2)", "Online Quiz 3: Chapters 25, 19, 27 & 28".)
   let chapters = [...new Set([...covered, ...coveredOf({ title: r.title }), ...chaptersIn(`${r.title} ${r.module_label || ''}`)])];
@@ -441,6 +514,7 @@ function itemOut(r, course, banner, readings, done, rooms, ev) {
     ].filter(Boolean),
     weeklyLinks: json(r.weekly_links_json, []),
     platformLinks: platformLinksFor(r, course),
+    placeLinks: placeLinksFor(r, course),
     covered,
     studyFocus: json(r.study_focus_json, []),
     points: r.points,
@@ -474,11 +548,37 @@ async function items(file, textbooks, done, { from, to, courseId }) {
   const rooms = usualRooms(db);
   const ev = evidence(db, file);
   platFile = file;
-  return list.map((r) => {
+  const out = list.map((r) => {
     const c = byId.get(r.course_id);
     const banner = banners.find((b) => b.course_id === r.course_id && b.date <= r.date && (b.date_range_end || b.date) >= r.date);
     return itemOut(r, c, banner, reads(c), done, rooms, ev);
   });
+  inheritPlatforms(out);
+  return out;
+}
+
+/**
+ * An item that doesn't name its platform ("HW: Final Review Ch1-Ch3") but whose siblings all do ("HW: 4.5", "HW: 4.6",
+ * every one done in ALEKS) is done there too: same class, same name before the colon, at least three siblings, all on
+ * the same platform.
+ */
+function inheritPlatforms(items) {
+  // (Numbers left out: "Lab report #10" is a sibling of "Lab report #7".)
+  const prefix = (i) => ((/^([^:]{2,24}):/.exec(i.title) || [])[1] || '').replace(/[#\d]+/g, '').trim().toLowerCase();
+  const groups = new Map();
+  for (const i of items) {
+    const p = prefix(i);
+    if (!p || i.type === 'weekly_reading') continue;
+    const k = `${i.courseId}|${p}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(i);
+  }
+  for (const list of groups.values()) {
+    const linked = list.filter((i) => i.platformLinks.length);
+    const urls = new Set(linked.map((i) => i.platformLinks[0].url));
+    if (linked.length < 3 || urls.size !== 1 || linked.length < list.length * 0.6) continue;
+    for (const i of list) if (!i.platformLinks.length) i.platformLinks = [linked[0].platformLinks[0]];
+  }
 }
 
 /** One class: its chapters (titles, sections, objectives, study PDF) and its weeks. */
