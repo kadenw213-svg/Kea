@@ -71,9 +71,11 @@ public class KeaPlugin extends Plugin {
             String name = displayName(uri);
             if (name == null) name = uri.getLastPathSegment() == null ? "File" : uri.getLastPathSegment();
             String type = getContext().getContentResolver().getType(uri);
-            File dir = new File(getContext().getCacheDir(), "opened");
+            // A PDF joins the phone's files (listed under Files); anything else is only shown.
+            boolean pdf = (type != null && type.contains("pdf")) || name.toLowerCase().endsWith(".pdf");
+            File dir = pdf ? docsDir() : new File(getContext().getCacheDir(), "opened");
             dir.mkdirs();
-            File out = new File(dir, name.replaceAll("[^A-Za-z0-9 ._()-]", "_"));
+            File out = pdf ? freeName(dir, name) : new File(dir, name.replaceAll("[^A-Za-z0-9 ._()-]", "_"));
             try (InputStream in = getContext().getContentResolver().openInputStream(uri); OutputStream os = new FileOutputStream(out)) {
                 byte[] buf = new byte[65536];
                 int n;
@@ -187,14 +189,20 @@ public class KeaPlugin extends Plugin {
     public void handIn(PluginCall call) {
         String url = call.getString("url");
         String file = call.getString("file");
-        getActivity().startActivity(new Intent(getContext(), SiteActivity.class).putExtra("mode", "handin").putExtra("url", url).putExtra("file", file));
+        getActivity().startActivity(new Intent(getContext(), SiteActivity.class).putExtra("mode", "handin").putExtra("url", url).putExtra("file", file == null ? null : uriOf(file).toString()));
         call.resolve();
     }
 
     /** Share a scan (or any Kea file) through Android's share sheet: email, Messages, Drive, anything. */
+    /** A file Kea holds: a content address as it is, or a path on the phone through Kea's file provider. */
+    private Uri uriOf(String file) {
+        if (file != null && file.startsWith("/")) return FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", new File(file));
+        return Uri.parse(file == null ? "" : file);
+    }
+
     @PluginMethod
     public void share(PluginCall call) {
-        Uri uri = Uri.parse(call.getString("file", ""));
+        Uri uri = uriOf(call.getString("file", ""));
         Intent send = new Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         String title = call.getString("name", "");
         if (!title.isEmpty()) send.putExtra(Intent.EXTRA_SUBJECT, title);
@@ -205,7 +213,7 @@ public class KeaPlugin extends Plugin {
     /** Save a copy of a scan in the phone's Downloads, under a name the student chose. */
     @PluginMethod
     public void saveCopy(PluginCall call) {
-        Uri from = Uri.parse(call.getString("file", ""));
+        Uri from = uriOf(call.getString("file", ""));
         String name = call.getString("name", "Scan").replaceAll("[^A-Za-z0-9 ._()#-]", "").trim();
         if (!name.toLowerCase().endsWith(".pdf")) name += ".pdf";
         final String fileName = name;
@@ -298,10 +306,43 @@ public class KeaPlugin extends Plugin {
             // A folder that can only be read: the phone still shows everything, its checkmarks just stay on the phone.
             getContext().getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
         }
-        Store.plain(getContext()).edit().putString("tree", tree.toString()).apply();
+        // Kea's files may be in the folder itself or a folder or two below it (Kea → School): found once, remembered.
+        DocumentFile root = DocumentFile.fromTreeUri(getContext(), tree);
+        String base = locate(root, 0);
+        if (base == null) {
+            call.reject("That folder doesn't have Kea's files in it. Choose the Kea folder your PC syncs (in it: School → kea-data.json).");
+            return;
+        }
+        Store.plain(getContext()).edit().putString("tree", tree.toString()).putString("treeBase", base).apply();
         JSObject r = new JSObject();
         r.put("folder", tree.toString());
+        r.put("base", base);
         call.resolve(r);
+    }
+
+    /** Where kea-data.json is under a chosen folder ("" for the folder itself, "School", "Kea/School"), or null. */
+    private String locate(DocumentFile dir, int depth) {
+        if (dir == null || !dir.isDirectory()) return null;
+        DocumentFile[] list = dir.listFiles();
+        for (DocumentFile f : list) if (f.isFile() && "kea-data.json".equals(f.getName())) return "";
+        if (depth >= 2) return null;
+        // (The School profile first, then any other folder.)
+        java.util.Arrays.sort(list, (a, b) -> Boolean.compare(!"School".equals(a.getName()), !"School".equals(b.getName())));
+        for (DocumentFile f : list) {
+            if (!f.isDirectory() || f.getName() == null || f.getName().startsWith(".")) continue;
+            String below = locate(f, depth + 1);
+            if (below != null) return below.isEmpty() ? f.getName() : f.getName() + "/" + below;
+        }
+        return null;
+    }
+
+    /** Forget the pairing with the PC (the folder or files chosen): the phone's own files and scans stay. */
+    @PluginMethod
+    public void unpair(PluginCall call) {
+        android.content.SharedPreferences.Editor e = Store.plain(getContext()).edit().remove("tree").remove("treeBase").remove("dataFile").remove("libSig").remove("watch");
+        for (String f : KEA_FILES) e.remove("file:" + f);
+        e.apply();
+        call.resolve();
     }
 
     /**
@@ -397,6 +438,8 @@ public class KeaPlugin extends Plugin {
         String tree = Store.plain(getContext()).getString("tree", "");
         if (tree.isEmpty()) return null;
         DocumentFile f = DocumentFile.fromTreeUri(getContext(), Uri.parse(tree));
+        String base = Store.plain(getContext()).getString("treeBase", "");
+        if (!base.isEmpty()) rel = base + "/" + rel;
         for (String part : rel.split("/")) {
             if (f == null || part.isEmpty()) continue;
             f = f.findFile(part);
@@ -451,7 +494,8 @@ public class KeaPlugin extends Plugin {
                 Uri uri = fileUri(name);
                 String tree = Store.plain(getContext()).getString("tree", "");
                 if (uri == null && !tree.isEmpty()) {
-                    DocumentFile dir = DocumentFile.fromTreeUri(getContext(), Uri.parse(tree));
+                    String base = Store.plain(getContext()).getString("treeBase", "");
+                    DocumentFile dir = base.isEmpty() ? DocumentFile.fromTreeUri(getContext(), Uri.parse(tree)) : find("");
                     DocumentFile f = dir == null ? null : dir.createFile("application/json", name);
                     if (f != null) uri = f.getUri();
                 }
@@ -611,6 +655,224 @@ public class KeaPlugin extends Plugin {
             });
     }
 
+    // ---------- The phone's own files: scans and PDFs (kept in the app's storage, listed under Files) ----------
+    private File scansDir() {
+        return new File(getContext().getFilesDir(), "scans");
+    }
+
+    private File docsDir() {
+        return new File(getContext().getFilesDir(), "docs");
+    }
+
+    /** A file name in `dir` that isn't taken yet ("Lab 3.pdf", then "Lab 3 (2).pdf"). */
+    private static File freeName(File dir, String name) {
+        String clean = name.replaceAll("[\\\\/:*?\"<>|]+", " ").replaceAll("\\s+", " ").trim();
+        if (clean.isEmpty() || clean.equals(".pdf")) clean = "Document.pdf";
+        int dot = clean.lastIndexOf('.');
+        String stem = dot > 0 ? clean.substring(0, dot) : clean, ext = dot > 0 ? clean.substring(dot) : "";
+        File f = new File(dir, clean);
+        for (int n = 2; f.exists(); n++) f = new File(dir, stem + " (" + n + ")" + ext);
+        return f;
+    }
+
+    /** Only a file in Kea's own scans or PDFs (never anything else on the phone). */
+    private File ownFile(String path) {
+        if (path == null) return null;
+        try {
+            File f = new File(path).getCanonicalFile();
+            for (File d : new File[] { scansDir(), docsDir() }) if (f.getPath().startsWith(d.getCanonicalPath() + File.separator)) return f;
+        } catch (java.io.IOException ignored) {
+        }
+        return null;
+    }
+
+    /** Every scan and PDF on the phone: [{ path, name, size, modified, kind }], newest first. */
+    @PluginMethod
+    public void listFiles(PluginCall call) {
+        JSArray out = new JSArray();
+        java.util.List<File> all = new java.util.ArrayList<>();
+        for (File d : new File[] { scansDir(), docsDir() }) {
+            File[] list = d.listFiles();
+            if (list != null) for (File f : list) if (f.isFile() && !f.getName().endsWith(".part")) all.add(f);
+        }
+        all.sort((a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        for (File f : all) {
+            JSObject o = new JSObject();
+            o.put("path", f.getAbsolutePath());
+            o.put("name", f.getName());
+            o.put("size", f.length());
+            o.put("modified", f.lastModified());
+            o.put("kind", f.getParentFile().getName().equals("scans") ? "scan" : "pdf");
+            out.put(o);
+        }
+        JSObject r = new JSObject();
+        r.put("files", out);
+        call.resolve(r);
+    }
+
+    /** Choose a PDF anywhere (the phone, Drive, Downloads…): copied into Kea's files and opened. */
+    @PluginMethod
+    public void pickPdf(PluginCall call) {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/pdf");
+        startActivityForResult(call, i, "onPdf");
+    }
+
+    @ActivityCallback
+    private void onPdf(PluginCall call, ActivityResult result) {
+        if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
+            call.reject("No file chosen");
+            return;
+        }
+        Uri uri = result.getData().getData();
+        new Thread(() -> {
+            try {
+                String name = displayName(uri);
+                if (name == null) name = "Document.pdf";
+                if (!name.toLowerCase().endsWith(".pdf")) name += ".pdf";
+                File dir = docsDir();
+                dir.mkdirs();
+                File out = freeName(dir, name);
+                try (InputStream in = getContext().getContentResolver().openInputStream(uri); OutputStream os = new FileOutputStream(out)) {
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                }
+                JSObject r = new JSObject();
+                r.put("path", out.getAbsolutePath());
+                r.put("name", out.getName());
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject(e.getMessage());
+            }
+        }).start();
+    }
+
+    /** Rename one of Kea's files (the name only; it stays where it is). */
+    @PluginMethod
+    public void renameFile(PluginCall call) {
+        File f = ownFile(call.getString("path"));
+        String name = call.getString("name", "").trim();
+        if (f == null || name.isEmpty()) {
+            call.reject("That file can't be renamed.");
+            return;
+        }
+        if (!name.toLowerCase().endsWith(".pdf")) name += ".pdf";
+        File to = freeName(f.getParentFile(), name);
+        if (!f.renameTo(to)) {
+            call.reject("Kea couldn't rename it.");
+            return;
+        }
+        JSObject r = new JSObject();
+        r.put("path", to.getAbsolutePath());
+        r.put("name", to.getName());
+        call.resolve(r);
+    }
+
+    /** Delete one of Kea's files (only Kea's own scans and PDFs). */
+    @PluginMethod
+    public void deleteFile(PluginCall call) {
+        File f = ownFile(call.getString("path"));
+        if (f == null || !f.delete()) {
+            call.reject("Kea couldn't delete it.");
+            return;
+        }
+        call.resolve();
+    }
+
+    // ---------- Updates: a newer Kea from Kea's own GitHub releases ----------
+    @PluginMethod
+    public void appInfo(PluginCall call) {
+        JSObject r = new JSObject();
+        try {
+            android.content.pm.PackageInfo p = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+            r.put("version", p.versionName);
+            r.put("build", Build.VERSION.SDK_INT >= 28 ? p.getLongVersionCode() : p.versionCode);
+        } catch (Exception e) {
+            r.put("version", "0");
+        }
+        call.resolve(r);
+    }
+
+    /**
+     * Download a newer Kea (only from Kea's own GitHub releases), with "update" events for the progress. The file is
+     * checked to really be Kea, newer than this one, before it's offered: { path, version }.
+     */
+    @PluginMethod
+    public void downloadUpdate(PluginCall call) {
+        String url = call.getString("url", "");
+        if (!url.matches("(?i)^https://github\\.com/kadenw213-svg/kea/releases/download/[^\\s]+\\.apk$")) {
+            call.reject("Updates only come from Kea's own releases.");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                File dir = new File(getContext().getCacheDir(), "updates");
+                dir.mkdirs();
+                File[] old = dir.listFiles();
+                if (old != null) for (File f : old) f.delete();
+                File out = new File(dir, "Kea-update.apk");
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                c.setInstanceFollowRedirects(true);
+                c.setConnectTimeout(20000);
+                c.setReadTimeout(60000);
+                if (c.getResponseCode() != 200) throw new Exception("The download answered " + c.getResponseCode());
+                long total = c.getContentLengthLong(), got = 0, last = 0;
+                try (InputStream in = c.getInputStream(); OutputStream os = new FileOutputStream(out)) {
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        os.write(buf, 0, n);
+                        got += n;
+                        if (got - last > 262144) {
+                            last = got;
+                            JSObject p = new JSObject();
+                            p.put("received", got);
+                            p.put("total", total);
+                            notifyListeners("update", p);
+                        }
+                    }
+                }
+                android.content.pm.PackageInfo info = getContext().getPackageManager().getPackageArchiveInfo(out.getAbsolutePath(), 0);
+                if (info == null || !getContext().getPackageName().equals(info.packageName)) {
+                    out.delete();
+                    throw new Exception("The download isn't Kea.");
+                }
+                JSObject r = new JSObject();
+                r.put("path", out.getAbsolutePath());
+                r.put("version", info.versionName);
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject(e.getMessage());
+            }
+        }).start();
+    }
+
+    /** Hand the downloaded update to Android's installer (the student confirms there). { started, needsPermission }. */
+    @PluginMethod
+    public void installUpdate(PluginCall call) {
+        File f = new File(getContext().getCacheDir(), "updates/Kea-update.apk");
+        if (!f.exists()) {
+            call.reject("The update isn't downloaded yet.");
+            return;
+        }
+        JSObject r = new JSObject();
+        if (Build.VERSION.SDK_INT >= 26 && !getContext().getPackageManager().canRequestPackageInstalls()) {
+            // Android asks once whether Kea may install its own updates.
+            getActivity().startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getContext().getPackageName())));
+            r.put("started", false);
+            r.put("needsPermission", true);
+            call.resolve(r);
+            return;
+        }
+        Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", f);
+        Intent i = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        getActivity().startActivity(i);
+        r.put("started", true);
+        call.resolve(r);
+    }
+
     private void onScanned(ActivityResult result) {
         PluginCall call = scanCall;
         scanCall = null;
@@ -623,9 +885,9 @@ public class KeaPlugin extends Plugin {
         try {
             // Keep a copy Kea owns (the scanner's own file can go away), shared through Kea's file provider.
             String name = call.getString("name", "Scan");
-            File dir = new File(getContext().getCacheDir(), "scans");
+            File dir = scansDir();
             dir.mkdirs();
-            File out = new File(dir, name.replaceAll("[^A-Za-z0-9 ._-]", "") + " " + System.currentTimeMillis() + ".pdf");
+            File out = freeName(dir, name.replaceAll("[^A-Za-z0-9 ._()#-]", "").trim() + ".pdf");
             try (InputStream in = getContext().getContentResolver().openInputStream(r.getPdf().getUri()); OutputStream os = new FileOutputStream(out)) {
                 byte[] buf = new byte[65536];
                 int n;
@@ -634,6 +896,7 @@ public class KeaPlugin extends Plugin {
             Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", out);
             JSObject ret = new JSObject();
             ret.put("file", uri.toString());
+            ret.put("path", out.getAbsolutePath());
             ret.put("pages", r.getPdf().getPageCount());
             ret.put("name", out.getName());
             call.resolve(ret);

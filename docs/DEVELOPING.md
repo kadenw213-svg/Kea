@@ -14,6 +14,7 @@
 | Scholar engine tests | `cd scholar/engine` then `.venv/Scripts/python -m pytest -q` |
 | Phone study code on real data | `node mobile/test/run.cjs <kea-data.json> <study folder>` |
 | Canvas reader, end to end (no Canvas school needed) | `node test/canvas/run.cjs` |
+| Phone screens at phone size, for checking layouts | `cd mobile && npx vite build`, then `npx electron mobile/test/shots.cjs <out> <kea-data.json> <unpacked library>` |
 
 ## Shipping an update
 

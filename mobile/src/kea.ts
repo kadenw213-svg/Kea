@@ -21,22 +21,55 @@ interface KeaNative {
   get(o: { url: string }): Promise<{ status: number; body: string }>;
   open(o: { url: string }): Promise<void>;
   handIn(o: { url: string; file: string }): Promise<void>;
-  watch(o: { le: string; lp: string; courses: { code: string; ou: string }[] }): Promise<void>;
+  watch(o: { le?: string; lp?: string; platform?: string; courses: { code: string; ou: string }[] }): Promise<void>;
   allowNotifications(): Promise<void>;
   checkNow(): Promise<{ count: number }>;
   phoneInbox(): Promise<{ items: ScholarInboxItem[] }>;
-  pickFolder(): Promise<{ folder: string }>;
+  /** A folder holding Kea's files (or one above them: Kea, Kea → School). Not every drive app allows folders. */
+  pickFolder(): Promise<{ folder: string; base: string }>;
+  /** Forget the pairing with the PC (the phone's own files stay). */
+  unpair(): Promise<void>;
   writeFile(o: { path: string; text: string }): Promise<void>;
   readFile(o: { path?: string }): Promise<{ text: string; modified: number }>;
   openFile(o: { path: string }): Promise<void>;
-  scan(o?: { name?: string }): Promise<{ file: string; pages: number; name: string }>;
+  scan(o?: { name?: string }): Promise<{ file: string; path: string; pages: number; name: string }>;
+  /** `file`: a content address, or a path to one of Kea's own files. */
   share(o: { file: string; name?: string }): Promise<void>;
   saveCopy(o: { file: string; name: string }): Promise<{ name: string }>;
+  /** The phone's own scans and PDFs, newest first. */
+  listFiles(): Promise<{ files: PhoneFile[] }>;
+  /** Choose a PDF anywhere; it's copied into Kea's files. */
+  pickPdf(): Promise<{ path: string; name: string }>;
+  renameFile(o: { path: string; name: string }): Promise<{ path: string; name: string }>;
+  deleteFile(o: { path: string }): Promise<void>;
+  appInfo(): Promise<{ version: string; build: number }>;
+  downloadUpdate(o: { url: string }): Promise<{ path: string; version: string }>;
+  installUpdate(): Promise<{ started: boolean; needsPermission?: boolean }>;
+  addListener(event: 'update', cb: (p: { received: number; total: number }) => void): Promise<{ remove(): void }>;
 }
 
 // (A test can stand in for the native side: window.__keaMock, set before the app loads. The app never sets it.)
 /** A file another app opened with Kea, copied where the reader can load it. */
 export type OpenedFile = { path: string; name: string; type: string };
+/** One of the phone's own files: a scan, or a PDF opened or chosen in Kea. */
+export type PhoneFile = { path: string; name: string; size: number; modified: number; kind: 'scan' | 'pdf' };
+
+/** How many pages each scan has (the scanner says; kept by path). */
+const PAGES = 'kea.pages';
+export const pagesOf = (path: string): number | null => {
+  try {
+    return JSON.parse(localStorage.getItem(PAGES) || '{}')[path] ?? null;
+  } catch {
+    return null;
+  }
+};
+export const setPages = (path: string, n: number) => {
+  try {
+    const all = JSON.parse(localStorage.getItem(PAGES) || '{}');
+    all[path] = n;
+    localStorage.setItem(PAGES, JSON.stringify(all));
+  } catch {}
+};
 
 export const Kea: KeaNative = (globalThis as any).__keaMock || registerPlugin<KeaNative>('Kea');
 
@@ -187,7 +220,7 @@ let timer: any = null;
 export function syncOut() {
   clearTimeout(timer);
   timer = setTimeout(() => {
-    let study = null;
+    let study: unknown = null;
     try {
       study = studyOut();
     } catch {}

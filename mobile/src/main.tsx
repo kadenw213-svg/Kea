@@ -5,5 +5,7 @@ import { App } from './App';
 import './kit.css';
 import './styles.css';
 import '../../src/styles/scholar.css';
+// (Last: the phone's own sizing wins over the laptop's.)
+import './screens.css';
 
 createRoot(document.getElementById('root')!).render(<App />);

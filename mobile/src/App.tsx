@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, BookOpen, Brain, CalendarDays, Camera, CheckCircle2, ChevronLeft, Circle, ClipboardCheck, Download, ExternalLink, Share2, FolderOpen, GraduationCap, Inbox, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, Upload, X } from 'lucide-react';
-import type { ScholarInboxItem, ScholarItem } from '../../src/lib/api';
+import { AlertTriangle, Award, BookOpen, Brain, CalendarDays, Camera, CheckCircle2, ChevronLeft, ChevronRight, Circle, ClipboardCheck, Download, ExternalLink, FileText, FolderOpen, GraduationCap, Inbox, Layers, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, X } from 'lucide-react';
+import type { ScholarChapter, ScholarInboxItem, ScholarItem, StudySet } from '../../src/lib/api';
+import { api } from '../../src/lib/api';
 import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
 import { CATEGORIES, LinkGroups, TODO, categoryOf, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
-import { Kea, KeaData, cachedData, doneOf, folders, handInUrl, inboxKey, loadData, phoneDeleted, phoneDone, phoneRead, setPhoneDeleted, setPhoneDone, setPhoneRead, syncOut, watchClasses } from './kea';
+import { Kea, KeaData, cachedData, doneOf, inboxKey, loadData, phoneDeleted, phoneDone, phoneRead, setPhoneDeleted, setPhoneDone, setPhoneRead, syncOut, watchClasses } from './kea';
 import { loadStudy, onStudyChange } from './study';
 import { setDesktopData, studyChanged } from './desktopApi';
-import { OpenedView, Reader, ReaderTarget, StudyHost, StudyTab } from './StudyTab';
+import { OpenedView, Reader, ReaderTarget, StudyHost } from './StudyTab';
 import type { OpenedFile } from './kea';
 import { openStudyHub } from '../../src/components/scholar/StudyHub';
-import { reloadScholar } from '../../src/components/scholar/scholarStore';
+import { openStudySet } from '../../src/components/scholar/Study';
+import { reloadScholar, useScholar } from '../../src/components/scholar/scholarStore';
+import { FilesTab } from './Files';
+import { PairFlow, SettingsPage, Welcome } from './Welcome';
+import { checkForUpdate, installUpdate, useUpdate } from './update';
+import { toast } from './ui';
 
 // ---------- Dates ----------
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -37,8 +43,6 @@ const ago = (at: string) => {
 const typeColor = (t: string) => categoryOf(t).color;
 const LABEL: Record<string, string> = { lecture: 'Lecture', lab: 'Lab', exam: 'Exam', final_exam: 'Final exam', lab_practical: 'Lab practical', quiz: 'Quiz', assignment: 'Assignment', discussion: 'Discussion', paper: 'Paper', peer_review: 'Peer review', lab_handout: 'Lab handout', other_deadline: 'To do', administrative_deadline: 'Deadline', break: 'Break', reading: 'Reading', weekly_reading: 'This week', project: 'Project' };
 
-type Tab = 'today' | 'inbox' | 'calendar' | 'classes' | 'study' | 'scan';
-
 /** The PC's copy into the shared study code and screens (and once, what changes here goes back to the PC). */
 let studyHooked = false;
 function useStudyData(data: KeaData | null) {
@@ -62,17 +66,25 @@ function useStudyData(data: KeaData | null) {
   }, [data]);
 }
 
+// Classes connected: today, calendar, classes (with studying), inbox and files. Not connected: files (scan and PDFs)
+// and what connecting classes would add.
+type Tab = 'today' | 'calendar' | 'classes' | 'inbox' | 'files';
+const WELCOMED = 'kea.welcomed';
+
 export function App() {
   const [data, setData] = useState<KeaData | null>(cachedData());
   const [state, setState] = useState<Awaited<ReturnType<typeof Kea.state>> | null>(null);
-  const [tab, setTab] = useState<Tab>('today');
+  const [welcomed, setWelcomed] = useState(() => !!localStorage.getItem(WELCOMED));
+  // (No tab picked yet: Today with classes, Scan & PDFs without.)
+  const [tab, setTab] = useState<Tab | null>(null);
   const [item, setItem] = useState<ScholarItem | null>(null);
   const [course, setCourse] = useState<string | null>(null);
-  const [setup, setSetup] = useState(false);
+  const [pairing, setPairing] = useState(false);
+  const [settings, setSettings] = useState(false);
   const [phoneInbox, setPhoneInbox] = useState<ScholarInboxItem[]>([]);
   const [done, setDone] = useState(phoneDone());
   const [refreshing, setRefreshing] = useState(false);
-  // Starting up: which step it's on, and what went wrong (shown instead of an endless spinner).
+  // Starting up with classes: which step it's on, and what went wrong (shown instead of an endless spinner).
   const [step, setStep] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   // The library (textbooks, question pictures): unpacked when the PC wrote a new one, with how far along it is.
@@ -80,6 +92,7 @@ export function App() {
   const [reader, setReader] = useState<ReaderTarget | null>(null);
   // A file another app opened with Kea.
   const [opened, setOpened] = useState<OpenedFile | null>(null);
+  const update = useUpdate();
   useEffect(() => {
     Kea.takeOpenedFile()
       .then((r) => r.file && setOpened(r.file))
@@ -116,6 +129,11 @@ export function App() {
       const st = await Kea.state();
       setState(st);
       if (st.dataFolder) {
+        // (Someone already connected skips the tour.)
+        if (!localStorage.getItem(WELCOMED)) {
+          localStorage.setItem(WELCOMED, '1');
+          setWelcomed(true);
+        }
         setStep(2);
         const r = await loadData();
         setStep(3);
@@ -128,7 +146,7 @@ export function App() {
         syncLibrary();
       }
       setRefreshing(false);
-      if (st.home && st.hasLogin) await Kea.checkNow().catch(() => null);
+      if (st.dataFolder && st.home && st.hasLogin) await Kea.checkNow().catch(() => null);
       setPhoneInbox((await Kea.phoneInbox()).items || []);
     } finally {
       setRefreshing(false);
@@ -136,7 +154,12 @@ export function App() {
   };
   useEffect(() => {
     refresh();
-    const onVisible = () => document.visibilityState === 'visible' && refresh();
+    checkForUpdate().catch(() => {});
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      refresh();
+      checkForUpdate().catch(() => {});
+    };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
@@ -178,9 +201,31 @@ export function App() {
   };
   const missing = items.filter((i) => isMissing(i));
 
-  const needsSetup = state && (!state.home || !state.hasLogin || !state.dataFolder);
-  if (setup || needsSetup) return <Setup state={state} onDone={() => (setSetup(false), refresh())} />;
-  if (!data)
+  const paired = !!state?.dataFolder;
+  const classes = paired && data ? data : null;
+  const finishWelcome = (connect: boolean) => {
+    localStorage.setItem(WELCOMED, '1');
+    setWelcomed(true);
+    setTab('files');
+    if (connect) setPairing(true);
+  };
+  const read = (path: string, name: string) => setReader({ file: path, chapter: name, title: name.replace(/\.pdf$/i, '') });
+
+  if (!welcomed && state && !paired) return <Welcome onTools={() => finishWelcome(false)} onConnect={() => finishWelcome(true)} />;
+  if (pairing)
+    return (
+      <PairFlow
+        state={state}
+        onCancel={() => setPairing(false)}
+        onDone={() => {
+          setPairing(false);
+          setTab('today');
+          refresh();
+        }}
+      />
+    );
+  // Classes connected but not read yet: a real progress bar, or what went wrong.
+  if (paired && !data)
     return (
       <div className="page loading">
         <h1>Kea</h1>
@@ -190,7 +235,7 @@ export function App() {
               <span style={{ width: `${[8, 30, 70, 100][step] || 8}%` }} />
             </div>
             <p className="muted">{['Starting…', 'Checking your setup…', 'Reading your classes from your drive…', 'Opening…'][step]}</p>
-            <p className="muted small">This takes a few seconds. Kea only reads the copy your PC already made; it never scans anything here.</p>
+            <p className="muted small">This takes a few seconds. Kea only reads the copy your computer already made.</p>
           </>
         ) : (
           <>
@@ -198,70 +243,130 @@ export function App() {
             <button className="btn primary" onClick={refresh}>
               <RefreshCw size={16} /> Try again
             </button>
-            <button className="btn" onClick={() => Kea.pickDataFile().then(refresh).catch(() => {})}>
-              <FolderOpen size={16} /> Choose the kea-data.json file
+            <button className="btn" onClick={() => setPairing(true)}>
+              <FolderOpen size={16} /> Choose Kea’s files again
             </button>
-            <p className="muted small">On your drive: Kea → School → kea-data.json (Google Drive: My Drive → Kea → School). Your PC shows which drive it uses under Scans → Devices.</p>
-            <button className="btn" onClick={() => setSetup(true)}>
-              <Settings size={16} /> Setup
+            <button className="btn ghost" onClick={() => (setState({ ...state!, dataFolder: '' }), setTab('files'))}>
+              Use the scanner and PDFs for now
             </button>
           </>
         )}
       </div>
     );
 
-  const ctx = { data, items, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')), read: (t: ReaderTarget) => setReader(t) };
+  const tabs = (
+    classes
+      ? [
+          ['today', Sun, 'Today', missing.length],
+          ['calendar', CalendarDays, 'Calendar', 0],
+          ['classes', GraduationCap, 'Classes', 0],
+          ['inbox', Inbox, 'Inbox', unread],
+          ['files', Camera, 'Scan', 0]
+        ]
+      : [
+          ['files', Camera, 'Scan & PDFs', 0],
+          ['classes', GraduationCap, 'Classes', 0]
+        ]
+  ) as [Tab, typeof Sun, string, number][];
+  const current = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0];
+  const ctx = classes && { data: classes, items, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')), read: (t: ReaderTarget) => setReader(t) };
   return (
     <div className="app">
       <header className="top">
         <div className="brand">Kea</div>
-        <button className="icon" onClick={refresh} aria-label="Refresh">
-          {refreshing ? <Loader2 size={20} className="spin" /> : <RefreshCw size={20} />}
-        </button>
-        <button className="icon" onClick={() => setSetup(true)} aria-label="Settings">
+        {classes && (
+          <button className="icon" onClick={refresh} aria-label="Refresh">
+            {refreshing ? <Loader2 size={20} className="spin" /> : <RefreshCw size={20} />}
+          </button>
+        )}
+        <button className="icon" onClick={() => setSettings(true)} aria-label="Settings">
           <Settings size={20} />
         </button>
       </header>
       <main className="body">
-        {loadError && (
-          <button className="stale" onClick={() => setSetup(true)}>
+        {update.status === 'ready' && (
+          <button className="stale upd" onClick={installUpdate}>
+            <Download size={14} /> {update.needsPermission ? 'Allow Kea to install updates, then tap here again.' : `Kea ${update.next} is ready. Tap to install.`}
+          </button>
+        )}
+        {classes && loadError && (
+          <button className="stale" onClick={() => setPairing(true)}>
             <AlertTriangle size={14} /> Showing your last copy: {loadError} Tap to fix.
           </button>
         )}
-        {tab === 'today' && <Today ctx={ctx} missing={missing} />}
-        {tab === 'inbox' && <InboxView items={inbox} readIds={readIds} markRead={markRead} remove={remove} />}
-        {tab === 'calendar' && <Agenda ctx={ctx} />}
-        {library?.busy && (
+        {classes && library?.busy && (
           <div className="stale lib">
-            <Loader2 size={14} className="spin" /> Getting your textbooks from your PC{library.files ? ` · ${library.files} files` : ''}…
+            <Loader2 size={14} className="spin" /> Getting your textbooks{library.files ? ` · ${library.files} files` : ''}…
           </div>
         )}
-        {tab === 'classes' && <Classes ctx={ctx} code={course} setCode={setCourse} />}
-        {tab === 'study' && <StudyTab data={data} read={(t) => setReader(t)} />}
-        {tab === 'scan' && <Scan data={data} />}
+        {ctx && current === 'today' && <Today ctx={ctx} missing={missing} />}
+        {ctx && current === 'inbox' && <InboxView items={inbox} readIds={readIds} markRead={markRead} remove={remove} />}
+        {ctx && current === 'calendar' && <Agenda ctx={ctx} />}
+        {current === 'classes' && (ctx ? <Classes ctx={ctx} code={course} setCode={setCourse} /> : <ClassesPitch onConnect={() => setPairing(true)} />)}
+        {current === 'files' && <FilesTab data={classes} read={read} />}
       </main>
       <nav className="tabs">
-        {(
-          [
-            ['today', Sun, 'Today', missing.length],
-            ['inbox', Inbox, 'Inbox', unread],
-            ['calendar', CalendarDays, 'Calendar', 0],
-            ['classes', GraduationCap, 'Classes', 0],
-            ['study', Brain, 'Study', 0],
-            ['scan', Camera, 'Scan', 0]
-          ] as const
-        ).map(([id, Icon, label, badge]) => (
-          <button key={id} className={tab === id ? 'on' : ''} onClick={() => (setTab(id), id !== 'classes' && setCourse(null))}>
+        {tabs.map(([id, Icon, label, badge]) => (
+          <button key={id} className={current === id ? 'on' : ''} onClick={() => (setTab(id), id !== 'classes' && setCourse(null))}>
             <Icon size={22} />
             <span>{label}</span>
             {badge > 0 && <b className={id === 'today' ? 'alert' : ''}>{badge}</b>}
           </button>
         ))}
       </nav>
-      {item && <Sheet ctx={ctx} it={item} onClose={() => setItem(null)} />}
+      {item && ctx && <Sheet ctx={ctx} it={item} onClose={() => setItem(null)} />}
       <StudyHost />
       {reader && <Reader target={reader} onClose={() => setReader(null)} />}
       {opened && <OpenedView file={opened} onClose={() => setOpened(null)} />}
+      {settings && (
+        <SettingsPage
+          state={state}
+          paired={paired}
+          onClose={() => setSettings(false)}
+          onPair={() => (setSettings(false), setPairing(true))}
+          onWelcome={() => (setSettings(false), localStorage.removeItem(WELCOMED), setWelcomed(false))}
+          onUnpaired={() => {
+            setSettings(false);
+            setData(null);
+            setTab('files');
+            refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Not connected yet: what classes add, and the way in. */
+function ClassesPitch({ onConnect }: { onConnect(): void }) {
+  return (
+    <div className="page">
+      <div className="pitch">
+        <GraduationCap size={34} />
+        <h1>Your classes, on your phone</h1>
+        <p className="muted">Connect to Kea on your computer and everything it keeps for your classes comes here too.</p>
+        <ul className="perks">
+          <li>
+            <CalendarDays size={18} /> Due dates, classes and tests, with what’s done and missing
+          </li>
+          <li>
+            <BookOpen size={18} /> Textbook chapters to read anywhere, even offline
+          </li>
+          <li>
+            <Brain size={18} /> Practice exams, flashcards and review that sync both ways
+          </li>
+          <li>
+            <Inbox size={18} /> Announcements, grades and messages, with notifications
+          </li>
+          <li>
+            <Camera size={18} /> Scan your work and hand it in to the right assignment
+          </li>
+        </ul>
+        <button className="btn primary big" onClick={onConnect}>
+          <GraduationCap size={18} /> Connect my classes
+        </button>
+        <p className="muted small">Needs Kea on a Windows computer with your classes set up. It takes about two minutes.</p>
+      </div>
     </div>
   );
 }
@@ -395,12 +500,14 @@ function InboxView({ items, readIds, markRead, remove }: { items: ScholarInboxIt
   const readShown = shown.filter((i) => i.read || readIds.includes(i.id));
   return (
     <div className="page">
-      <div className="chips">
+      <div className="chips wrap">
         {['all', ...codes].map((c) => (
           <button key={c} className={filter === c ? 'on' : ''} onClick={() => setFilter(c)}>
             {c === 'all' ? 'All' : c}
           </button>
         ))}
+      </div>
+      <div className="inbox-acts">
         <button onClick={() => markRead(items.map((i) => i.id))}>Mark all read</button>
         {readShown.length > 0 &&
           (confirm ? (
@@ -510,161 +617,145 @@ function Agenda({ ctx }: { ctx: Ctx }) {
   );
 }
 
+/** Every class (with review across all of them), and one class: its grade, what's coming, its chapters to read and
+ * study, its practice sets and its grades. */
 function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCode(c: string | null): void }) {
+  const version = useScholar((s) => s.version);
+  const [sets, setSets] = useState<StudySet[]>([]);
+  const [due, setDue] = useState<number | null>(null);
+  const [allGrades, setAllGrades] = useState(false);
+  useEffect(() => {
+    api.scholar.studyList().then(setSets).catch(() => setSets([]));
+    api.scholar
+      .studyReview({ limit: 200 })
+      .then((q) => setDue(q.due.length + q.fresh.length))
+      .catch(() => setDue(null));
+  }, [ctx.data, version]);
   const c = ctx.data.details.find((x) => x.code === code);
   if (!c)
     return (
       <div className="page">
+        <button className="card review-all" onClick={() => openStudySet('review:all')}>
+          <Brain size={22} />
+          <span>
+            <b>Review</b>
+            <span className="muted small block">{due == null ? 'Cards and questions coming due, before each test' : due ? `${due} due now, across your classes` : 'Nothing due right now'}</span>
+          </span>
+          <ChevronRight size={18} className="muted" />
+        </button>
+        <h2>Your classes</h2>
         {ctx.data.details.map((d) => {
           const g = ctx.data.grades[d.code]?.final;
+          const banks = sets.filter((s) => s.courseId === d.id && s.bank && s.status === 'ready').length;
           return (
-            <div key={d.id} className="card class" onClick={() => setCode(d.code)}>
-              <div>
+            <button key={d.id} className="card class" onClick={() => setCode(d.code)}>
+              <span className="class-main">
                 <b>{d.code}</b>
-                <div className="muted small">{d.name}</div>
-              </div>
+                <span className="muted small block">{d.name}</span>
+                <span className="muted small block">
+                  {d.chapters.filter((ch) => ch.pdf).length} chapters to read{banks ? ` · ${banks} question banks` : ''}
+                </span>
+              </span>
               {g && <span className={`grade ${g.percent != null && g.percent < 60 ? 'low' : ''}`}>{g.percent != null ? `${g.percent}%` : g.shown}</span>}
-            </div>
+            </button>
           );
         })}
+        <p className="muted small">Everything here works offline. Answers, flashcards and stars go back to your computer; new questions are written there.</p>
       </div>
     );
   const grades = ctx.data.grades[c.code];
-  const upcoming = ctx.items.filter((i) => i.courseId === c.id && i.date >= today() && i.type !== 'weekly_reading').slice(0, 15);
+  const upcoming = ctx.items.filter((i) => i.courseId === c.id && i.date >= today() && i.type !== 'weekly_reading').slice(0, 6);
+  const mine = sets.filter((s) => s.courseId === c.id && !s.bank && s.status !== 'failed');
+  const gradeItems = grades?.items || [];
   return (
     <div className="page">
       <button className="back" onClick={() => setCode(null)}>
         <ChevronLeft size={18} /> Classes
       </button>
-      <h1>
-        {c.code} <span className="muted">{c.name}</span>
-      </h1>
-      <p className="muted small">{[c.instructor, c.contact].filter(Boolean).join(' · ')}</p>
-      {grades?.final && <div className="bigrade">{grades.final.percent != null ? `${grades.final.percent}%` : grades.final.shown}</div>}
-      <h2>Coming up</h2>
-      {upcoming.map((i) => (
-        <Row key={i.id} ctx={ctx} it={i} date />
-      ))}
-      {c.chapters.some((ch) => ch.pdf) && (
+      <div className="class-head">
+        <span className="class-main">
+          <h1>{c.code}</h1>
+          <span className="muted">{c.name}</span>
+          {(c.instructor || c.contact) && <span className="muted small block">{[c.instructor, c.contact].filter(Boolean).join(' · ')}</span>}
+        </span>
+        {grades?.final && <span className={`bigrade ${grades.final.percent != null && grades.final.percent < 60 ? 'low' : ''}`}>{grades.final.percent != null ? `${grades.final.percent}%` : grades.final.shown}</span>}
+      </div>
+      <div className="grid2">
+        <button className="btn" onClick={() => openStudySet(`review:${c.id}`)}>
+          <Brain size={16} /> Review
+        </button>
+        {c.url ? (
+          <button className="btn" onClick={() => Kea.open({ url: c.url! })}>
+            <ExternalLink size={16} /> Class site
+          </button>
+        ) : (
+          <span />
+        )}
+      </div>
+      {upcoming.length > 0 && (
         <>
-          <h2>Textbook</h2>
-          {c.chapters
-            .filter((ch) => ch.pdf)
-            .map((ch) => (
-              <div key={ch.label} className="card st-m-ch">
-                <button className="link-row" onClick={() => ctx.read({ file: ch.pdf!.file, chapter: ch.label, title: ch.title || ch.label })}>
-                  <BookOpen size={16} /> {ch.label}
-                  {ch.title ? `: ${ch.title}` : ''}
-                </button>
+          <h2>Coming up</h2>
+          {upcoming.map((i) => (
+            <Row key={i.id} ctx={ctx} it={i} date />
+          ))}
+        </>
+      )}
+      {c.chapters.length > 0 && (
+        <>
+          <h2>Chapters</h2>
+          {c.chapters.map((ch: ScholarChapter) => (
+            <div key={ch.label} className="card st-m-ch">
+              <div className="ch-text">
+                <b>{ch.label}</b>
+                {ch.title ? `: ${ch.title}` : ''}
+                {ch.summary && <div className="muted small clamp2">{ch.summary}</div>}
+              </div>
+              <div className="grid2">
                 <button className="btn" onClick={() => openStudyHub({ courseId: c.id, code: c.code, title: ch.title ? `${ch.label}: ${ch.title}` : ch.label, chapters: [ch.label] })}>
                   <ClipboardCheck size={16} /> Study
                 </button>
+                {ch.pdf ? (
+                  <button className="btn" onClick={() => ctx.read({ file: ch.pdf!.file, chapter: ch.label, title: ch.title || ch.label })}>
+                    <BookOpen size={16} /> Read
+                  </button>
+                ) : (
+                  <span className="muted small ch-wait">Being written</span>
+                )}
               </div>
-            ))}
+            </div>
+          ))}
         </>
       )}
-      {grades?.items?.length ? (
+      {mine.length > 0 && (
+        <>
+          <h2>Your practice sets</h2>
+          {mine.map((s) => (
+            <button key={s.id} className="card link" disabled={s.status !== 'ready'} onClick={() => openStudySet(s.id)}>
+              {s.kind === 'exam' ? <ClipboardCheck size={16} /> : <Layers size={16} />}
+              <span className="class-main">
+                {s.itemTitle || s.title.replace(/^(Practice exam|Flashcards): /, '')}
+                <span className="muted small block">{s.status === 'making' ? 'Being written on your computer…' : `${s.count} ${s.kind === 'exam' ? 'questions' : 'cards'}${s.best != null ? ` · best ${Math.round(s.best * 100)}%` : ''}`}</span>
+              </span>
+            </button>
+          ))}
+        </>
+      )}
+      {gradeItems.length > 0 && (
         <>
           <h2>Grades</h2>
-          {grades.items.map((g) => (
+          {(allGrades ? gradeItems : gradeItems.slice(0, 5)).map((g) => (
             <div key={g.id} className="card grade-row">
-              <div>
+              <div className="class-main">
                 <div>{g.title}</div>
                 {g.comment && <div className="muted small">{g.comment}</div>}
               </div>
               <b className={g.percent != null && g.percent < 60 ? 'low' : ''}>{g.percent != null ? `${g.percent}%` : g.shown}</b>
             </div>
           ))}
-        </>
-      ) : null}
-      {c.url && (
-        <button className="btn" onClick={() => Kea.open({ url: c.url! })}>
-          <ExternalLink size={14} /> Class site
-        </button>
-      )}
-    </div>
-  );
-}
-
-const alertLine = (e: any) => {
-  const el = document.createElement('div');
-  el.className = 'toast';
-  el.textContent = String(e?.message || e);
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3500);
-};
-
-function Scan({ data }: { data: KeaData }) {
-  const [scan, setScan] = useState<{ file: string; pages: number; name: string } | null>(null);
-  const [targets, setTargets] = useState<Awaited<ReturnType<typeof folders>> | null>(null);
-  const [code, setCode] = useState<string | null>(null);
-  const [name, setName] = useState(`Scan ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`);
-  const start = async () => {
-    try {
-      const s = await Kea.scan({ name: 'Scan' });
-      setScan(s);
-      const t = await folders(data);
-      setTargets(t);
-      setCode(t.find((c) => c.folders.some((f) => !f.closed))?.code || t[0]?.code || null);
-    } catch (e: any) {
-      if (!/No scan/.test(String(e?.message))) alertLine(e);
-    }
-  };
-  const c = targets?.find((t) => t.code === code);
-  return (
-    <div className="page">
-      {!scan ? (
-        <div className="scan-start">
-          <Camera size={42} />
-          <p>Scan your work, then pick the assignment. Kea opens its hand-in page with the scan attached, and you press Submit.</p>
-          <button className="btn primary big" onClick={start}>
-            <Camera size={18} /> Scan
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="card">
-            <b>{scan.pages} page{scan.pages === 1 ? '' : 's'} scanned</b>
-            <button className="icon" onClick={() => (setScan(null), setTargets(null))}>
-              <X size={18} />
+          {gradeItems.length > 5 && (
+            <button className="btn ghost" onClick={() => setAllGrades(!allGrades)}>
+              {allGrades ? 'Show fewer' : `Show all ${gradeItems.length} grades`}
             </button>
-          </div>
-          <input className="scan-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
-          <div className="actions">
-            <button className="btn" onClick={() => Kea.share({ file: scan.file, name })}>
-              <Share2 size={16} /> Share
-            </button>
-            <button className="btn" onClick={() => Kea.saveCopy({ file: scan.file, name }).then((r) => alertLine(`Saved to Downloads as ${r.name}`)).catch(alertLine)}>
-              <Download size={16} /> Save to Downloads
-            </button>
-            <button className="btn" onClick={start}>
-              <Camera size={16} /> Scan again
-            </button>
-          </div>
-          <h2>Hand it in</h2>
-          {!targets ? (
-            <div className="center">
-              <Loader2 className="spin" /> Finding your assignment folders…
-            </div>
-          ) : (
-            <>
-              <div className="chips">
-                {targets.map((t) => (
-                  <button key={t.code} className={t.code === code ? 'on' : ''} onClick={() => setCode(t.code)}>
-                    {t.code}
-                  </button>
-                ))}
-              </div>
-              {c?.folders.map((f) => (
-                <button key={f.id} className={`card link ${f.closed ? 'closed' : ''}`} disabled={f.closed} onClick={() => (setName(f.name), Kea.handIn({ url: handInUrl(data, c.ou, f.id), file: scan.file }))}>
-                  <Upload size={16} />
-                  <span>
-                    {f.name}
-                    <span className="muted small"> {f.closed ? 'Closed' : f.due ? `Due ${new Date(f.due).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}</span>
-                  </span>
-                </button>
-              ))}
-            </>
           )}
         </>
       )}
@@ -719,7 +810,7 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
                   const s = await Kea.scan({ name: it.title });
                   await Kea.handIn({ url: quick.url, file: s.file });
                 } catch (e: any) {
-                  if (!/No scan/.test(String(e?.message))) alertLine(e);
+                  if (!/No scan/.test(String(e?.message))) toast(e);
                 }
               }}
             >
@@ -760,84 +851,6 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
         <LinkGroups links={[...it.links, ...(it.platformLinks || []), ...it.weeklyLinks]} onOpen={(url) => Kea.open({ url })} />
         {(it.instructor || it.contact) && <p className="muted small">{[it.instructor, it.contact].filter(Boolean).join(' · ')}</p>}
       </div>
-    </div>
-  );
-}
-
-function Setup({ state, onDone }: { state: Awaited<ReturnType<typeof Kea.state>> | null; onDone(): void }) {
-  const [home, setHome] = useState(state?.home || '');
-  const [user, setUser] = useState('');
-  const [pass, setPass] = useState('');
-  const [busy, setBusy] = useState('');
-  const [msg, setMsg] = useState('');
-  const signIn = async () => {
-    setBusy('signin');
-    setMsg('');
-    try {
-      await Kea.setup({ home: home.trim(), user: user.trim() || undefined, pass: pass || undefined });
-      const r = await Kea.signIn({ show: true });
-      setMsg(r.signedIn ? 'Signed in. Kea signs in by itself from now on.' : 'Not signed in yet.');
-      await Kea.allowNotifications();
-    } catch (e: any) {
-      setMsg(String(e?.message || e));
-    }
-    setBusy('');
-  };
-  const folder = async () => {
-    setBusy('folder');
-    try {
-      await Kea.pickFolder();
-      await Kea.readFile({ path: 'kea-data.json' });
-      setMsg('Found your classes.');
-    } catch (e: any) {
-      setMsg(/not found/.test(String(e?.message)) ? 'That folder has no kea-data.json. Choose OneDrive → Kea → your profile (for example School).' : String(e?.message || e));
-    }
-    setBusy('');
-  };
-  const dataFile = async () => {
-    setBusy('folder');
-    try {
-      const picked = await Kea.pickFiles();
-      const r = await Kea.readFile({ path: 'kea-data.json' });
-      const d = JSON.parse(r.text);
-      const left = ['kea-data.json', 'kea-library.zip', 'phone.json'].filter((f) => !picked.files.includes(f));
-      setMsg(`Found your classes: ${(d.courses || []).map((c: any) => c.code).join(', ')}.${left.length ? ` Still to choose: ${left.join(', ')}.` : ' All set.'}`);
-    } catch (e: any) {
-      setMsg(/No file/.test(String(e?.message)) ? '' : `That isn't Kea's data file: choose kea-data.json in Kea → School. (${String(e?.message || e).slice(0, 80)})`);
-    }
-    setBusy('');
-  };
-  return (
-    <div className="page setup">
-      <h1>Kea</h1>
-      <p className="muted">Your classes, inbox and grades, with notifications. Three steps, once.</p>
-      <h2>1. Your class site</h2>
-      <input value={home} onChange={(e) => setHome(e.target.value)} placeholder="Your class site's home page (D2L or Canvas)" />
-      <input value={user} onChange={(e) => setUser(e.target.value)} placeholder={state?.hasLogin ? 'Username (saved)' : 'Username'} autoCapitalize="none" />
-      <input value={pass} onChange={(e) => setPass(e.target.value)} placeholder={state?.hasLogin ? 'Password (saved)' : 'Password'} type="password" />
-      <button className="btn primary" disabled={!!busy} onClick={signIn}>
-        {busy === 'signin' ? <Loader2 size={16} className="spin" /> : null} Sign in {state?.signedIn ? '(signed in)' : ''}
-      </button>
-      <p className="muted small">Saved in Android's encrypted storage. Kea signs in by itself after this, the way it does on your PC.</p>
-      <h2>2. Your classes from your PC</h2>
-      <p className="muted small">
-        Kea on your PC keeps your classes in the drive it syncs through (on the PC: Scans → Devices), in Kea → School. Google Drive and OneDrive can't share a whole folder with other apps on Android, so for those choose the file kea-data.json in that folder.
-      </p>
-      <button className="btn primary" disabled={!!busy} onClick={dataFile}>
-        <FolderOpen size={16} /> {state?.files?.length ? `Choose Kea's files again (${state.files.length} of 3 chosen)` : "Choose Kea's files"}
-      </button>
-      <p className="muted small">In the drive's Kea → School folder, select all three: kea-data.json (your classes and study sets), kea-library.zip (your textbooks) and phone.json (what you do here, sent back to your PC).</p>
-      <button className="btn" disabled={!!busy} onClick={folder}>
-        <FolderOpen size={16} /> Or choose the whole folder (a synced folder on the phone)
-      </button>
-      <h2>3. Notifications</h2>
-      <button className="btn" onClick={() => Kea.allowNotifications()}>
-        Allow notifications {state?.notifications ? '(on)' : ''}
-      </button>
-      {msg && <p className="note">{msg}</p>}
-      <button className="btn primary big" onClick={onDone}>
-        Done
-      </button>
     </div>
   );
 }

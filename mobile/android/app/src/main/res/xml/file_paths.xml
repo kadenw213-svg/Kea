@@ -3,4 +3,6 @@
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
     <files-path name="kea_library" path="library/" />
+    <files-path name="kea_scans" path="scans/" />
+    <files-path name="kea_docs" path="docs/" />
 </paths>
