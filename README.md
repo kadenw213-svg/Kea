@@ -5,8 +5,7 @@
 <h1 align="center">Kea</h1>
 
 <p align="center">
-  A study app and office suite in one.<br>
-  Keep track of your classes, study for your tests, and open your documents, spreadsheets, slides and PDFs.
+  A study app and office suite in one, for Windows and Android.
 </p>
 
 <p align="center">
@@ -15,49 +14,63 @@
 
 ---
 
-## What you can do
+Kea brings a student's coursework and files into one desktop app. It reads your school's class site and keeps a
+local database of every class: assignments, due and open dates, readings, and what's been turned in or graded.
+On top of that sits a full office suite for the documents those classes produce, and a phone app that carries
+the study tools with you.
 
-**Stay on top of your classes**
-- See every assignment, quiz, exam and reading on one calendar, with what's done and what's due next.
-- Open any assignment to get its instructions, the site it's done on, and where to turn it in.
-- Read your class messages and announcements in a clean inbox.
+## Classes
 
-**Study**
-- Read textbook chapters written to match your class and its tests.
-- Practice with exam-style questions, flashcards, picture questions and spaced review.
-- When you miss a question, the part of the reading that explains it opens next to it.
+Kea signs in to your class site in its own browser window and reads it through the site's API, not by scraping
+pages. Each class's work is placed on one calendar, linked to the files, outside platforms (ALEKS, Science
+Interactive and others) and turn-in pages it belongs to, so nothing has to be found by clicking through the
+class site. A daily check catches new work, changed dates, messages and announcements, and handles most of this
+without AI.
 
-**Work with your files**
-- Edit Word, Excel, PowerPoint and PDF files, each in its own tab.
-- Look up anything you highlight in Wikipedia and a built-in dictionary.
-- Type with your voice, have text read aloud, and get autosave and version history.
+Where writing is needed, Kea runs [Claude Code](https://claude.com/claude-code) on your own plan. It writes
+textbook chapters matched to the syllabus and to what each test covers, plus exam-style question banks,
+flashcards and picture-identification sets. Each set is written once and then reshuffled inside Kea, so
+practising costs nothing. When an instructor says what a test will focus on, Kea notes it and steers the next
+practice set toward it.
 
-**Take it with you**
-- On Android, study, check your calendar, and scan and turn in homework.
-- Your phone and computer stay in sync through your own OneDrive or Google Drive.
+Automatic class syncing currently supports D2L Brightspace.
+
+## Files
+
+Kea opens and saves Word, Excel, PowerPoint, OpenDocument and PDF files directly on your computer, each in its
+own tab, and works fully offline. The document editor handles tracked changes, comments, citations and equations.
+The spreadsheet has a formula engine with 140+ functions, plus charts. The PDF editor can change existing text,
+fill in and sign forms, redact, and make scanned pages searchable with OCR. Highlighting a word looks it up in
+Wikipedia and a built-in dictionary, and voice typing runs Whisper on your own machine.
+
+## Phone
+
+The Android app runs the same study code as the desktop app, so textbooks, practice exams and flashcards behave
+the same on both. It also shows your calendar and can scan paper homework into a PDF and turn it in. The phone
+and computer sync through a few files in your own OneDrive or Google Drive, and study progress from both sides
+is merged rather than overwritten. There is no Kea server or account.
 
 ## Install
 
-**Windows 10 or 11:** download `Kea-Setup-….exe` from the
-[latest release](https://github.com/kadenw213-svg/kea/releases/latest) and run it. If Windows says it protected
-your PC, click **More info → Run anyway**. Kea keeps itself up to date.
+**Windows 10 or 11 (64-bit):** download `Kea-Setup-….exe` from the
+[latest release](https://github.com/kadenw213-svg/kea/releases/latest) and run it. The installer isn't
+code-signed yet, so Windows may show a warning; choose **More info → Run anyway**. Kea updates itself after that.
 
-**Android 6 or later:** download `Kea-Android.apk` from the same page and open it on your phone.
+**Android 6 or later:** download `Kea-Android.apk` from the same release and open it on your phone.
 
-## Good to know
+## Built with
 
-- **Private.** There's no Kea account or server. Your files stay on your devices.
-- **The office tools are free** and work offline.
-- **Class features use your own [Claude Code](https://claude.com/claude-code) plan** to write chapters and
-  questions. Automatic class syncing currently works with schools that use D2L Brightspace.
+Electron, React and TypeScript, with pdf.js and pdf-lib for PDFs, TipTap for documents, and CodeMirror for
+plain text. A Python engine keeps the class database in SQLite. The phone app is built with Capacitor. Voice
+typing uses Whisper through Transformers.js, and OCR uses Tesseract. Small local models (llama.cpp) only choose
+between Wikipedia articles and never write text. To build Kea from source, see
+[docs/DEVELOPING.md](docs/DEVELOPING.md).
 
 ## Feedback
 
-Found a bug or have an idea? Use **Settings → Feedback** in Kea, or
-[open an issue](https://github.com/kadenw213-svg/kea/issues).
+Report bugs and ideas through **Settings → Feedback** in Kea, or [open an issue](https://github.com/kadenw213-svg/kea/issues).
 
 ---
 
-Open source under the [MIT licence](LICENSE). Kea uses Wikipedia (CC BY-SA), WordNet (Princeton University),
-images from Wikimedia Commons, OpenAI Whisper (MIT), Llama 3.2 (Llama 3.2 Community License) and Qwen2.5
-(Apache 2.0). To build Kea yourself, see [docs/DEVELOPING.md](docs/DEVELOPING.md).
+MIT licensed. Includes content from Wikipedia (CC BY-SA), WordNet (Princeton University) and Wikimedia Commons,
+and models under the OpenAI Whisper (MIT), Llama 3.2 Community and Qwen2.5 (Apache 2.0) licences.
