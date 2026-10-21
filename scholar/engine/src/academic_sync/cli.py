@@ -806,7 +806,8 @@ def _d2l_objects(folder: Path, code: str) -> list[dict]:
             continue
         due = f.get("DueDate") or (f.get("Availability") or {}).get("EndDate")
         out.append({"kind": "dropbox", "id": str(f.get("Id")), "title": f.get("Name", ""), "day": _local_day(due),
-                    "grade_id": str(f.get("GradeItemId") or "") or None, "instructions": _folder_instructions(f)})
+                    "grade_id": str(f.get("GradeItemId") or "") or None, "instructions": _folder_instructions(f),
+                    "url": f.get("KeaUrl") or None, "uploads": "online_upload" in (f.get("KeaSubmissionTypes") or ["online_upload"])})
     quizzes = load("quizzes") or {}
     for q in (quizzes.get("Objects") if isinstance(quizzes, dict) else quizzes) or []:
         if q.get("IsActive") is False:
@@ -814,7 +815,7 @@ def _d2l_objects(folder: Path, code: str) -> list[dict]:
         due = q.get("DueDate") or q.get("EndDate")
         out.append({"kind": "quiz", "id": str(q.get("QuizId")), "title": q.get("Name", ""), "day": _local_day(due),
                     "grade_id": str(q.get("GradeItemId") or "") or None,
-                    "instructions": _rich(q.get("Instructions")) or _rich(q.get("Description"))})
+                    "instructions": _rich(q.get("Instructions")) or _rich(q.get("Description")), "url": q.get("KeaUrl") or None})
     for t in load("discussions") or []:
         due = t.get("DueDate") or t.get("EndDate") or t.get("UnlockEndDate")
         graded = (t.get("ScoreOutOf") or 0) > 0 or t.get("GradeItemId")
@@ -822,7 +823,7 @@ def _d2l_objects(folder: Path, code: str) -> list[dict]:
             continue
         out.append({"kind": "discussion", "id": str(t.get("TopicId")), "title": f"{t.get('Name', '')}",
                     "day": _local_day(due), "grade_id": str(t.get("GradeItemId") or "") or None,
-                    "instructions": _rich(t.get("Description"))})
+                    "instructions": _rich(t.get("Description")), "url": t.get("KeaUrl") or None})
     toc = load("content") or {}
 
     def walk(mods):
@@ -1027,23 +1028,28 @@ def d2l_reconcile_cmd(
         if fill_instructions:
             from academic_sync.db.orm import AcademicItemRow
 
-            _set_event_context("Instructions copied from D2L")
+            from academic_sync.sync.calendar_payload import site_name
+
+            site = site_name()
+            _set_event_context(f"Instructions copied from {site}")
+            # (Details Kea copied in from the class site, under either name.)
+            copied = ("From D2L", "From Canvas")
             for o, item in r["_matched"]:
                 text = (o.get("instructions") or "").strip()
                 if len(text) < 20 or text.startswith("{'Text'"):
                     row = session.get(AcademicItemRow, item.id)
                     # (Undo the unreadable text an earlier version copied in from an empty quiz description.)
-                    if row is not None and (row.description or "").startswith("From D2L") and "{'Text'" in (row.description or ""):
+                    if row is not None and (row.description or "").startswith(copied) and "{'Text'" in (row.description or ""):
                         row.description = None
                         filled += 1
                     continue
                 row = session.get(AcademicItemRow, item.id)
-                header = f"From D2L ({o['kind']} \"{o['title']}\"):\n"
+                header = f"From {site} ({o['kind']} \"{o['title']}\"):\n"
                 current = row.description or "" if row is not None else ""
                 if row is not None and current.strip() != (header + text).strip():
                     # The same D2L object always refreshes it (an instructor's edit, even a shorter one); another
                     # object matching the same item (a folder and its quiz) replaces it only with longer text.
-                    if not current or current.startswith(header) or not current.startswith("From D2L") or len(header + text) > len(current):
+                    if not current or current.startswith(header) or not current.startswith(copied) or len(header + text) > len(current):
                         row.description = header + text
                         filled += 1
         # Where to hand each one in, from what D2L itself says it is: an item with only its document (a reading's
@@ -1064,18 +1070,24 @@ def d2l_reconcile_cmd(
                 "quiz": ("Take the quiz", "/d2l/lms/quizzing/user/quiz_summary.d2l?qi={id}&ou={ou}"),
                 "discussion": ("Open the discussion", "/d2l/le/{ou}/discussions/topics/{id}/View"),
             }
-            if base and ou:
+            # (A Canvas school's work carries its own page address; D2L's is built from the folder, quiz or topic id.)
+            if (base and ou) or any(o.get("url") for o, _ in r["_matched"]):
                 # (A folder first: when a quiz and a folder both match, the folder is where work is handed in.)
                 for o, item in sorted(r["_matched"], key=lambda x: ["dropbox", "quiz", "discussion"].index(x[0]["kind"]) if x[0]["kind"] in where else 9):
-                    if o["kind"] not in where:
+                    if o["kind"] not in where or not (o.get("url") or (base and ou)):
                         continue
                     row = session.get(AcademicItemRow, item.id)
                     if row is None or row.submission_url:
                         continue
                     label, path = where[o["kind"]]
-                    _set_event_context(f"Hand-in link from D2L ({o['kind']} \"{o['title']}\")")
-                    session.execute(sql_text("UPDATE event_context SET reason = :r WHERE id = 1"), {"r": f"Hand-in link from D2L ({o['kind']} \"{o['title']}\")"})
-                    row.submission_url = base + path.format(id=o["id"], ou=ou)
+                    if o.get("url") and o["kind"] == "dropbox" and not o.get("uploads", True):
+                        label = "Open the assignment"
+                    from academic_sync.sync.calendar_payload import site_name
+
+                    why = f"Hand-in link from {site_name()} ({o['kind']} \"{o['title']}\")"
+                    _set_event_context(why)
+                    session.execute(sql_text("UPDATE event_context SET reason = :r WHERE id = 1"), {"r": why})
+                    row.submission_url = o.get("url") or base + path.format(id=o["id"], ou=ou)
                     row.submission_url_label = label
                     # (D2L says it's an assignment folder: an item read as a bare deadline is an assignment.)
                     if o["kind"] == "dropbox" and row.item_type == "other_deadline":
@@ -1099,13 +1111,14 @@ def d2l_reconcile_cmd(
             from sqlalchemy import text as sql
 
             from academic_sync.db.session import EVENT_CONTEXT
+            from academic_sync.sync.calendar_payload import site_name
 
             kinds = {"quiz": "quiz", "discussion": "discussion", "dropbox": "assignment", "grade": "assignment", "content": "assignment"}
             for h in r["hidden"]:
                 if h["status"] != "superseded":
                     continue
                 # (Each change credited with its own reason in the item's history.)
-                EVENT_CONTEXT["reason"] = (f"D2L lists it as graded work ({h['kind']} \"{h['title']}\"), so it goes back on the calendar; it had been "
+                EVENT_CONTEXT["reason"] = (f"{site_name()} lists it as graded work ({h['kind']} \"{h['title']}\"), so it goes back on the calendar; it had been "
                                            f"{h['how']}" + (f", folded into \"{h['replaced_by']}\"" if h['replaced_by'] else ""))
                 session.execute(sql("UPDATE event_context SET reason = :r WHERE id = 1"), {"r": EVENT_CONTEXT["reason"]})
                 not_work = ("weekly_reading", "reading", "lecture", "break", "no_class", "recitation", "seminar")

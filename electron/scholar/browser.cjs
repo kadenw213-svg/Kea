@@ -1,4 +1,4 @@
-// Kea's own browser for class sites (D2L/Brightspace): a hidden window with its own saved session per profile.
+// Kea's own browser for class sites (D2L Brightspace or Canvas): a hidden window with its own saved session per profile.
 // Class scans read pages through it, so nothing opens in the user's browser.
 //
 // Signing in is Kea's job, never Claude's: the first time, the user signs in themselves in a visible Kea window
@@ -27,14 +27,24 @@ function writeSchool(s) {
   const json = JSON.stringify(s);
   fs.writeFileSync(schoolFile(), safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(json) : Buffer.from(json));
 }
+/**
+ * Which learning platform the class site is: 'd2l' (Brightspace) or 'canvas'. Chosen at setup; a site saved before
+ * Kea asked is known by its address (every D2L home is under /d2l/, Canvas sites are mostly *.instructure.com).
+ */
+function platformOf(s = readSchool()) {
+  if (s.platform === 'canvas' || s.platform === 'd2l') return s.platform;
+  return guessPlatform(s.home);
+}
+const guessPlatform = (home) => (/\/d2l\//i.test(home || '') ? 'd2l' : /instructure\.com$|(^|\.)canvas\./i.test(hostOf(home || '')) ? 'canvas' : 'd2l');
 /** What the interface may know: the address, and whether a login is saved (never the login itself). */
 function schoolInfo() {
   const s = readSchool();
-  return { home: s.home || '', host: s.home ? hostOf(s.home) : '', remembers: !!s.login, loginHost: s.login?.host || '' };
+  return { home: s.home || '', host: s.home ? hostOf(s.home) : '', platform: platformOf(s), remembers: !!s.login, loginHost: s.login?.host || '' };
 }
-function setHome(home) {
+function setHome(home, platform) {
   const s = readSchool();
   s.home = String(home || '').trim();
+  s.platform = platform === 'canvas' || platform === 'd2l' ? platform : guessPlatform(s.home);
   writeSchool(s);
   return schoolInfo();
 }
@@ -384,7 +394,10 @@ async function request(url) {
   // Refused while signed in: a page students can't see, not a sign-in problem.
   if (res.status === 403 && (await status()).signedIn) return res;
   // Sent to sign in (or refused): sign in through the window, then try once more.
-  if (res.status === 401 || res.status === 403 || (res.url && !onSite(res.url) && hostOf(url) === hostOf(s.home))) {
+  // (A file can come from another host: Canvas sends its files from a separate file server. Only a page there is a
+  // sign-in.)
+  const offSite = res.url && !onSite(res.url) && hostOf(url) === hostOf(s.home) && (hostOf(res.url) === hostOf(s.home) || /html/i.test(res.headers.get('content-type') || ''));
+  if (res.status === 401 || res.status === 403 || offSite) {
     const w = await load(s.home);
     if (!(await ensureSignedIn(w))) throw new Error('Not signed in to the class site (the user did not finish signing in).');
     res = await ses.fetch(url, { redirect: 'follow' });
@@ -396,7 +409,7 @@ async function fetchText(url, offset = 0, raw = false) {
   const res = await request(url);
   const type = res.headers.get('content-type') || '';
   if (!/json|text|xml|html|javascript/i.test(type)) return { status: res.status, contentType: type, text: '', note: 'Not text: use d2l_download to save it.' };
-  let body = await res.text();
+  let body = unguard(await res.text());
   // For Claude, JSON is trimmed (rich text as plain text with its links, no empty fields, false flags or bookkeeping):
   // about a third of the size. Kea's own code asks for it raw.
   if (!raw && /json/i.test(type)) body = require('./compact.cjs').compactText(body, readSchool().home);
@@ -485,7 +498,7 @@ const withMail = (fn) => {
 };
 
 /** A message's page as text (what the class site shows: sender, subject, date, body). */
-const readMessage = (url) => withMail(() => readMessageNow(url));
+const readMessage = (url) => (platformOf() === 'canvas' ? require('./canvas.cjs').readMessage(url) : withMail(() => readMessageNow(url)));
 async function readMessageNow(target) {
   const url = typeof target === 'string' ? target : target?.url || '';
   const loc = typeof target === 'object' ? target?.loc : null;
@@ -574,7 +587,7 @@ const ALL = `const all = []; const walk = (r) => { for (const el of r.querySelec
  * text, then its Send is pressed. Returns { sent: true } once the class site shows it went, otherwise opens the page
  * with everything filled in for the student to check and send ({ sent: false, shown: true, why }).
  */
-const sendMessage = (msg) => withMail(() => sendMessageNow(msg));
+const sendMessage = (msg) => (platformOf() === 'canvas' ? require('./canvas.cjs').sendMessage(msg) : withMail(() => sendMessageNow(msg)));
 async function sendMessageNow({ url = '', loc = null, ou = '', subject = '', body = '', to = '' }) {
   const s = readSchool();
   if (!s.home) throw new Error('No class site is set up yet.');
@@ -652,7 +665,7 @@ async function sendMessageNow({ url = '', loc = null, ou = '', subject = '', bod
  * seen } where a row is { url, subject, from, date, unread, text } and `seen` says what the page looked like (kept by
  * the caller, so a school whose message tool looks different can be fixed rather than silently read as empty).
  */
-const readMailbox = () => withMail(() => readMailboxNow());
+const readMailbox = () => (platformOf() === 'canvas' ? require('./canvas.cjs').readMailbox() : withMail(() => readMailboxNow()));
 async function readMailboxNow() {
   const s = readSchool();
   if (!s.home) throw new Error('No class site is set up yet.');
@@ -741,6 +754,8 @@ async function readMailboxNow() {
  */
 async function reply(url, ou) {
   const s = readSchool();
+  // (Canvas: its Inbox page with the conversation, where its own Reply is.)
+  if (platformOf(s) === 'canvas') return show(url && onSite(url) ? url : new URL('/conversations', s.home).href).then(() => ({ replied: false }));
   const target = url && onSite(url) ? url : s.home && ou ? new URL(`/d2l/lms/email/frame.d2l?ou=${encodeURIComponent(ou)}`, s.home).href : s.home;
   if (!target) throw new Error('No class site is set up yet.');
   const w = await load(target);
@@ -781,20 +796,25 @@ async function handIn(ou, folderId, file) {
   const s = readSchool();
   if (!s.home) throw new Error('No class site is set up yet.');
   if (!fs.existsSync(file)) throw new Error('Save the file first, then hand it in.');
-  const url = new URL(`/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${encodeURIComponent(folderId)}&grpid=0&isprv=0&bp=0&ou=${encodeURIComponent(ou)}`, s.home).href;
+  const canvas = platformOf(s) === 'canvas';
+  const url = canvas
+    ? new URL(`/courses/${encodeURIComponent(ou)}/assignments/${encodeURIComponent(folderId)}`, s.home).href
+    : new URL(`/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${encodeURIComponent(folderId)}&grpid=0&isprv=0&bp=0&ou=${encodeURIComponent(ou)}`, s.home).href;
   let w = await load(url);
   w.setTitle('Kea: hand in your work');
   w.show();
   w.focus();
   if (!(await ensureSignedIn(w))) return { attached: false };
-  if (!onSite(w.webContents.getURL()) || !/folder_submit_files/i.test(w.webContents.getURL())) w = await load(url);
+  if (!onSite(w.webContents.getURL()) || !(canvas ? /\/assignments\/\d+/ : /folder_submit_files/i).test(w.webContents.getURL())) w = await load(url);
   const dbg = w.webContents.debugger;
   try {
     if (!dbg.isAttached()) dbg.attach('1.3');
   } catch {
     return { attached: false };
   }
-  // The upload box is a file input, sometimes only added after pressing "Add a File" or "Upload".
+  // The upload box is a file input, sometimes only added after pressing "Add a File" or "Upload" (D2L) or "Start
+  // Assignment" (Canvas). On Canvas only the button that opens the hand-in form is ever pressed, once: the form's own
+  // button is also called "Submit Assignment", and that one is the student's to press.
   const findInput = async () => {
     const doc = await dbg.sendCommand('DOM.getDocument', { depth: -1, pierce: true });
     const search = await dbg.sendCommand('DOM.performSearch', { query: 'input[type=file]', includeUserAgentShadowDOM: false });
@@ -805,7 +825,13 @@ async function handIn(ou, folderId, file) {
   const pressAdd = () =>
     w.webContents
       .executeJavaScript(
-        `(() => { const all = []; const walk = (r) => { for (const el of r.querySelectorAll('*')) { all.push(el); if (el.shadowRoot) walk(el.shadowRoot); } }; walk(document);
+        canvas
+          ? `(() => { const shown = (el) => el.offsetParent !== null;
+              const own = 'a.submit_assignment_link, [data-testid="start-assignment-button"], [data-testid="new-attempt-button"]';
+              const b = [...document.querySelectorAll(own + ', button, a')]
+                .find((el) => shown(el) && !el.closest('form') && el.type !== 'submit' && (el.matches(own) || /^(start assignment|new attempt|try again)$/i.test((el.innerText || '').trim())));
+              if (b) { b.click(); return true; } return false; })()`
+          : `(() => { const all = []; const walk = (r) => { for (const el of r.querySelectorAll('*')) { all.push(el); if (el.shadowRoot) walk(el.shadowRoot); } }; walk(document);
           const b = all.find((el) => /^(BUTTON|D2L-BUTTON|D2L-BUTTON-SUBTLE|A)$/.test(el.tagName) && /add a file|upload|choose file|browse/i.test((el.innerText || el.getAttribute('text') || el.getAttribute('aria-label') || '').trim()));
           if (b) { b.click(); return true; } return false; })()`
       )
@@ -813,7 +839,7 @@ async function handIn(ou, folderId, file) {
   try {
     let node = await findInput();
     for (let i = 0; !node && i < 8; i++) {
-      if (i === 0 || i === 4) await pressAdd();
+      if (i === 0 || (i === 4 && !canvas)) await pressAdd();
       await sleep(1000);
       node = await findInput();
     }
@@ -835,17 +861,46 @@ const isClassSite = (url) => {
   return !!s.home && hostOf(url) === hostOf(s.home);
 };
 
-/** GET one of D2L's data addresses (relative to the class site) as JSON: { status, data }. For Kea's own pre-check. */
+// Canvas starts its JSON with "while(1);" for a signed-in browser session (a guard against other sites reading it).
+const unguard = (text) => String(text).replace(/^while\(1\);/, '');
+
+/**
+ * GET one of the class site's data addresses (relative to it) as JSON: { status, data, next }. `next` is the address
+ * of the next page when the site pages its lists with a Link header (Canvas). For Kea's own checks.
+ */
 async function getJson(rel) {
   const s = readSchool();
   if (!s.home) throw new Error('No class site is set up yet.');
   const res = await request(new URL(rel, s.home).href);
   if (!res.ok) return { status: res.status, data: null };
+  const next = (/<([^>]+)>;\s*rel="next"/.exec(res.headers.get('link') || '') || [])[1] || null;
   try {
-    return { status: res.status, data: await res.json() };
+    return { status: res.status, data: JSON.parse(unguard(await res.text())), next };
   } catch {
     return { status: res.status, data: null };
   }
+}
+
+/**
+ * Send a change to the class site's data API (Canvas: sending a message) as the signed-in student, with the site's own
+ * protection token, the same as its own pages do. `form` is sent as a form. Returns { status, data }.
+ */
+async function postForm(rel, form) {
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const ses = session.fromPartition(partition());
+  prepareSession(ses);
+  const url = new URL(rel, s.home).href;
+  const token = (await ses.cookies.get({ url, name: '_csrf_token' }))[0]?.value;
+  if (!token) throw new Error('Kea isn’t signed in to your class site.');
+  const body = new URLSearchParams();
+  for (const [k, v] of Object.entries(form)) for (const x of Array.isArray(v) ? v : [v]) body.append(k, String(x));
+  const res = await ses.fetch(url, { method: 'POST', headers: { 'X-CSRF-Token': decodeURIComponent(token), 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: body.toString() });
+  let data = null;
+  try {
+    data = JSON.parse(unguard(await res.text()));
+  } catch {}
+  return { status: res.status, data };
 }
 
 /** Save a file from the class site into the profile's workspace (only under data/downloads). */
@@ -867,10 +922,11 @@ async function status() {
   try {
     const ses = session.fromPartition(partition());
     prepareSession(ses);
-    const res = await ses.fetch(new URL('/d2l/api/lp/1.0/users/whoami', s.home).href, { redirect: 'manual' });
-    return { setUp: true, signedIn: res.status === 200, home: s.home };
+    const who = platformOf(s) === 'canvas' ? '/api/v1/users/self' : '/d2l/api/lp/1.0/users/whoami';
+    const res = await ses.fetch(new URL(who, s.home).href, { redirect: 'manual' });
+    return { setUp: true, signedIn: res.status === 200, home: s.home, platform: platformOf(s) };
   } catch {
-    return { setUp: true, signedIn: false, home: s.home };
+    return { setUp: true, signedIn: false, home: s.home, platform: platformOf(s) };
   }
 }
 
@@ -913,4 +969,4 @@ function onLoginSubmitted(e, form) {
 
 const remembering = (e) => (e.returnValue = !!(wantsRemember() && win && !win.isDestroyed() && e.sender === win.webContents));
 
-module.exports = { open, platformsRead, show, reply, readMessage, readMailbox, sendMessage, handIn, isClassSite, fetchText, getJson, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
+module.exports = { open, platformsRead, show, reply, readMessage, readMailbox, sendMessage, handIn, isClassSite, fetchText, getJson, postForm, platformOf, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };

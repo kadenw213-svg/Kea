@@ -33,7 +33,7 @@ flashcards and picture-identification sets. Each set is written once and then re
 practising costs nothing. When an instructor says what a test will focus on, Kea notes it and steers the next
 practice set toward it.
 
-Automatic class syncing currently supports D2L Brightspace.
+Class syncing works with schools that use Canvas or D2L Brightspace.
 
 ## Files
 

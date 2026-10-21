@@ -65,7 +65,7 @@ contextBridge.exposeInMainWorld('api', {
     setDone: (id, done) => ipcRenderer.invoke('scholar:setDone', id, done),
     importExisting: (folder) => ipcRenderer.invoke('scholar:importExisting', folder),
     school: () => ipcRenderer.invoke('scholar:school'),
-    setSchoolHome: (home) => ipcRenderer.invoke('scholar:setSchoolHome', home),
+    setSchoolHome: (home, platform) => ipcRenderer.invoke('scholar:setSchoolHome', home, platform),
     signIn: (remember) => ipcRenderer.invoke('scholar:signIn', remember),
     forgetLogin: () => ipcRenderer.invoke('scholar:forgetLogin'),
     siteStatus: () => ipcRenderer.invoke('scholar:siteStatus'),

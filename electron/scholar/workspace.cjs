@@ -145,6 +145,8 @@ function engineEnv(uv) {
     ...process.env,
     PATH: [uv ? path.dirname(uv) : '', process.env.PATH || ''].filter(Boolean).join(path.delimiter),
     KEA_TEXTBOOK_DIR: p.textbooks,
+    // The class site's name in what the engine writes ("From Canvas (…)", the "Canvas" link label).
+    KEA_SITE_NAME: require('./browser.cjs').platformOf() === 'canvas' ? 'Canvas' : 'D2L',
     PYTHONIOENCODING: 'utf-8',
     PYTHONUTF8: '1'
   };

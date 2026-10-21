@@ -23,7 +23,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- * The class site (D2L/Brightspace), the way Kea on the PC does it: requests carry the phone's own signed-in session
+ * The class site (D2L Brightspace or Canvas), the way Kea on the PC does it: requests carry the phone's own signed-in session
  * (Android's WebView cookie store), and when that session has run out Kea signs in again by itself, in a hidden
  * WebView, with the login saved in encrypted storage. Only if that fails (a new prompt, a code) is the student asked.
  */
@@ -43,6 +43,20 @@ final class ClassSite {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    /**
+     * A Canvas school: what the PC said (in the classes to watch), or, before that, the address (D2L homes are under
+     * /d2l/, Canvas sites are mostly *.instructure.com).
+     */
+    static boolean canvas(Context ctx) {
+        try {
+            String p = new JSONObject(Store.plain(ctx).getString("watch", "{}")).optString("platform", "");
+            if (!p.isEmpty()) return p.equals("canvas");
+        } catch (Exception ignored) {
+        }
+        String home = Store.home(ctx);
+        return !home.toLowerCase().contains("/d2l/") && host(home).endsWith("instructure.com");
     }
 
     /** On the class site itself, not a sign-in page. */
@@ -100,7 +114,8 @@ final class ClassSite {
             byte[] buf = new byte[16384];
             int n;
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-            a.body = out.toString("UTF-8");
+            // (Canvas starts its JSON with "while(1);" for a signed-in session.)
+            a.body = out.toString("UTF-8").replaceFirst("^while\\(1\\);", "");
             in.close();
         }
         c.disconnect();
@@ -124,7 +139,7 @@ final class ClassSite {
         String home = Store.home(ctx);
         if (home.isEmpty()) return false;
         try {
-            Answer a = request(Uri.parse(home).buildUpon().encodedPath("/d2l/api/lp/1.0/users/whoami").clearQuery().build().toString());
+            Answer a = request(Uri.parse(home).buildUpon().encodedPath(canvas(ctx) ? "/api/v1/users/self" : "/d2l/api/lp/1.0/users/whoami").clearQuery().build().toString());
             return a.status == 200;
         } catch (Exception e) {
             return false;

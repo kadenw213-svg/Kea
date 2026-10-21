@@ -13,6 +13,7 @@
 | Build **and publish** an update (PC and phone) | `npm run release` |
 | Scholar engine tests | `cd scholar/engine` then `.venv/Scripts/python -m pytest -q` |
 | Phone study code on real data | `node mobile/test/run.cjs <kea-data.json> <study folder>` |
+| Canvas reader, end to end (no Canvas school needed) | `node test/canvas/run.cjs` |
 
 ## Shipping an update
 
@@ -25,7 +26,7 @@
 
 ```
 electron/            main process: window, files, printing, local AI (llama.cpp), speech models, updates
-electron/scholar/    Scholar: class-site browser, daily checks, Claude Code runs, calendar and study data, sync
+electron/scholar/    Scholar: class-site browser (D2L, and Canvas through canvas.cjs), daily checks, Claude Code runs, calendar and study data, sync
                      to the phone and other computers (cloud.cjs, devices.cjs), study sets (study.cjs)
 scholar/engine/      the academic_sync engine (Python): class database, calendar extraction, textbooks
 scholar/skills/      the Claude Code skills Scholar runs (class scans, weekly updates, study material)

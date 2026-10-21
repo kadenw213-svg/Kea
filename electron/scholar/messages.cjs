@@ -305,4 +305,4 @@ function register({ browser, precheck, db }) {
   });
 }
 
-module.exports = { noteHint, register, syncMailbox };
+module.exports = { noteHint, register, syncMailbox, _test: { cleanMessage } };

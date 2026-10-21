@@ -151,7 +151,7 @@ async function snapshot() {
   // What was deleted on the PC, so the phone also hides its own copies.
   const inboxDeleted = (precheck.readInbox().deletedKeys || []).slice(-1500);
   return {
-    ...fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, courses, items, details, grades, inbox, inboxDeleted, doneLog }),
+    ...fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, platform: browser.schoolInfo().platform, courses, items, details, grades, inbox, inboxDeleted, doneLog }),
     // The study folder as it is here (sets, saved questions, progress), for the phone to study from; its pictures are in
     // the library zip. A set still being written stays out until it's ready.
     study: studyFiles()
@@ -459,7 +459,7 @@ function register() {
 
   // The class site and Kea's own sign-in.
   ipcMain.handle('scholar:school', () => browser.schoolInfo());
-  ipcMain.handle('scholar:setSchoolHome', (_e, home) => browser.setHome(home));
+  ipcMain.handle('scholar:setSchoolHome', (_e, home, platform) => browser.setHome(home, platform));
   ipcMain.handle('scholar:signIn', (_e, remember) => browser.signIn(remember));
   ipcMain.handle('scholar:forgetLogin', () => browser.forgetLogin());
   ipcMain.handle('scholar:siteStatus', () => browser.status());
@@ -515,7 +515,7 @@ function register() {
   ipcMain.handle('scholar:markNewsRead', (_e, ids) => runner.markNewsRead(ids));
   ipcMain.handle('scholar:pending', () => runner.pending());
 
-  // The Inbox: announcements (from D2L directly) and what scans found (messages, grades, deadlines).
+  // The Inbox: announcements (from the class site directly) and what scans found (messages, grades, deadlines).
   ipcMain.handle('scholar:inbox', () => {
     const own = precheck.readInbox().items;
     const scans = runner.news().map(scanItem);
@@ -540,7 +540,7 @@ function register() {
     devices.relay({ task: 'inbox' });
     return true;
   });
-  // Handing in a file: the folders it can go to, then D2L's own hand-in page with the file in its upload box.
+  // Handing in a file: the folders it can go to, then the class site's own hand-in page with the file in its upload box.
   ipcMain.handle('scholar:handInTargets', async () => {
     let t = await precheck.handInTargets();
     // Nothing known yet: take a quick look at the class site first (no Claude).

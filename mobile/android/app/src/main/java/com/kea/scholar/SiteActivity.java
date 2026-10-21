@@ -96,9 +96,11 @@ public class SiteActivity extends Activity {
                         finish();
                         return;
                     }
-                    if ("handin".equals(mode) && !fileGiven) {
-                        // Open the page's upload box so the scanned file can go straight in.
-                        view.postDelayed(() -> view.evaluateJavascript(PRESS_UPLOAD, null), 1200);
+                    if ("handin".equals(mode) && !fileGiven && !uploadPressed) {
+                        // Open the page's upload box so the scanned file can go straight in (once: on Canvas the
+                        // button that opens the hand-in form is pressed a single time).
+                        uploadPressed = true;
+                        view.postDelayed(() -> view.evaluateJavascript(ClassSite.canvas(SiteActivity.this) ? PRESS_UPLOAD_CANVAS : PRESS_UPLOAD, null), 1200);
                     }
                 } else if (tries++ < 3 && ClassSite.mayFill(SiteActivity.this, u)) {
                     // The sign-in page the login was saved on: try it first.
@@ -167,6 +169,16 @@ public class SiteActivity extends Activity {
     private int dp(int v) {
         return Math.round(v * getResources().getDisplayMetrics().density);
     }
+
+    private boolean uploadPressed = false;
+
+    /**
+     * On a Canvas assignment: presses the button that opens its hand-in form ("Start Assignment" or "New Attempt", never
+     * a button inside a form: the form's own "Submit Assignment" is the student's to press), then its file box.
+     */
+    static final String PRESS_UPLOAD_CANVAS = "(function(){var own='a.submit_assignment_link,[data-testid=\"start-assignment-button\"],[data-testid=\"new-attempt-button\"]';"
+        + "var b=[].filter.call(document.querySelectorAll(own+',button,a'),function(el){return el.offsetParent!==null&&!el.closest('form')&&el.type!=='submit'&&(el.matches(own)||/^(start assignment|new attempt|try again)$/i.test((el.innerText||'').trim()));})[0];"
+        + "if(b)b.click();setTimeout(function(){var f=document.querySelector('input[type=file]');if(f)f.click();},1800);})()";
 
     /** Presses "Add a File" / "Upload" on a D2L hand-in page (looking inside Brightspace's components too). */
     static final String PRESS_UPLOAD = "(function(){var all=[];function walk(r){[].forEach.call(r.querySelectorAll('*'),function(el){all.push(el);if(el.shadowRoot)walk(el.shadowRoot);});}walk(document);"

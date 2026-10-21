@@ -392,8 +392,8 @@ function placesSaved() {
   }
   return placeCache.data;
 }
-/** A D2L list page (every folder, every quiz, every discussion), not one piece of work's own page. */
-const LIST_PAGE = /folders_list|\/dropbox\/dropbox\.d2l|discussions\/List|quizzing\.d2l\?ou|quizzing\/user\/quizzes_list/i;
+/** A class site's list page (every folder, every quiz, every discussion), not one piece of work's own page. */
+const LIST_PAGE = /folders_list|\/dropbox\/dropbox\.d2l|discussions\/List|quizzing\.d2l\?ou|quizzing\/user\/quizzes_list|\/courses\/\d+\/(assignments|quizzes|discussion_topics|announcements|modules|grades)\/?([?#]|$)/i;
 /** The numbered names in a title ("online quiz 5: chapters 32 33" → ["quiz 5", "chapters 32"]), its identity in D2L. */
 function numbered(title) {
   return [...norm(title).matchAll(/([a-z]+) (\d+)\b/g)].map((m) => `${m[1]} ${m[2]}`);

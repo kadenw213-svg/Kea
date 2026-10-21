@@ -45,6 +45,14 @@ _D2L_SOURCE_TYPES = {
 }
 
 
+def site_name() -> str:
+    """The class site's name as the student knows it: "D2L", or "Canvas" for a Canvas school (Kea sets
+    KEA_SITE_NAME). The D2L_* source types name the same areas on either."""
+    import os
+
+    return os.environ.get("KEA_SITE_NAME") or "D2L"
+
+
 def platform_label_for_source(source: Source | None) -> str | None:
     """What to call the place this item actually lives, for the MODULE line
     (see CLAUDE.md invariant on external courseware). Deliberately generic:
@@ -58,7 +66,7 @@ def platform_label_for_source(source: Source | None) -> str | None:
     if source is None:
         return None
     if source.source_type in _D2L_SOURCE_TYPES:
-        return "D2L"
+        return site_name()
     if source.source_type == SourceType.EXTERNAL_COURSEWARE:
         return source.title
     return None
@@ -504,7 +512,7 @@ def _reference_lines(item: AcademicItem) -> list[str]:
     item opens."""
     lines = []
     if item.reference_url:
-        label = item.reference_url_label or "D2L"
+        label = item.reference_url_label or site_name()
         lines.append(f'<a href="{item.reference_url}">{label}</a>')
     if item.submission_url:
         label = item.submission_url_label or "Submit Work"

@@ -656,7 +656,7 @@ function Scan({ data }: { data: KeaData }) {
                 ))}
               </div>
               {c?.folders.map((f) => (
-                <button key={f.id} className={`card link ${f.closed ? 'closed' : ''}`} disabled={f.closed} onClick={() => (setName(f.name), Kea.handIn({ url: handInUrl(data.home, c.ou, f.id), file: scan.file }))}>
+                <button key={f.id} className={`card link ${f.closed ? 'closed' : ''}`} disabled={f.closed} onClick={() => (setName(f.name), Kea.handIn({ url: handInUrl(data, c.ou, f.id), file: scan.file }))}>
                   <Upload size={16} />
                   <span>
                     {f.name}
@@ -765,7 +765,7 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
 }
 
 function Setup({ state, onDone }: { state: Awaited<ReturnType<typeof Kea.state>> | null; onDone(): void }) {
-  const [home, setHome] = useState(state?.home || 'https://mycourses.cccs.edu/d2l/home');
+  const [home, setHome] = useState(state?.home || '');
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
   const [busy, setBusy] = useState('');
@@ -812,7 +812,7 @@ function Setup({ state, onDone }: { state: Awaited<ReturnType<typeof Kea.state>>
       <h1>Kea</h1>
       <p className="muted">Your classes, inbox and grades, with notifications. Three steps, once.</p>
       <h2>1. Your class site</h2>
-      <input value={home} onChange={(e) => setHome(e.target.value)} placeholder="https://yourschool.edu/d2l/home" />
+      <input value={home} onChange={(e) => setHome(e.target.value)} placeholder="Your class site's home page (D2L or Canvas)" />
       <input value={user} onChange={(e) => setUser(e.target.value)} placeholder={state?.hasLogin ? 'Username (saved)' : 'Username'} autoCapitalize="none" />
       <input value={pass} onChange={(e) => setPass(e.target.value)} placeholder={state?.hasLogin ? 'Password (saved)' : 'Password'} type="password" />
       <button className="btn primary" disabled={!!busy} onClick={signIn}>

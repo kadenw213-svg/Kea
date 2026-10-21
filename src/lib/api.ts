@@ -111,7 +111,7 @@ export interface KeaApi {
     setDone(id: string, done: boolean): Promise<boolean>;
     importExisting(folder: string): Promise<{ pdfs: number }>;
     school(): Promise<SchoolInfo>;
-    setSchoolHome(home: string): Promise<SchoolInfo>;
+    setSchoolHome(home: string, platform?: SchoolPlatform): Promise<SchoolInfo>;
     signIn(remember: boolean): Promise<SchoolInfo & { signedIn: boolean }>;
     forgetLogin(): Promise<SchoolInfo>;
     siteStatus(): Promise<{ setUp: boolean; signedIn: boolean; home?: string }>;
@@ -195,7 +195,7 @@ export interface KeaApi {
     syncNow(): Promise<{ dir: string; hash: string } | null>;
     /** Every class's assignment folders a file can be handed in to. */
     handInTargets(): Promise<{ code: string; ou: string; folders: { id: number; name: string; due: string | null; closed: boolean; submitted: boolean }[] }[]>;
-    /** Open the folder's D2L hand-in page with the file in its upload box. The student presses Submit there. */
+    /** Open the assignment's hand-in page on the class site with the file in its upload box. The student presses Submit there. */
     handIn(ou: string, folderId: number, file: string): Promise<{ attached: boolean }>;
     /** A class's overall grade and graded items, or null before anything is known. */
     grades(courseId: string, code: string): Promise<ScholarGrades | null>;
@@ -407,9 +407,12 @@ declare global {
 
 /** A Wikipedia search result: title, short description, first two sentences. */
 // ---------- Kea Scholar ----------
+/** The learning platform a school's class site runs on. */
+export type SchoolPlatform = 'd2l' | 'canvas';
 export interface SchoolInfo {
   home: string;
   host: string;
+  platform: SchoolPlatform;
   /** Kea saved a login to sign in with (the login itself never leaves Kea's main process). */
   remembers: boolean;
   loginHost: string;

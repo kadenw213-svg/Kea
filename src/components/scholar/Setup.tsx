@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, KeyRound } from 'lucide-react';
-import { api, ScholarSetup, SchoolInfo } from '../../lib/api';
+import { api, ScholarSetup, SchoolInfo, SchoolPlatform } from '../../lib/api';
 import { toast } from '../../store';
 
 function Step({ done, busy, icon, title, children }: { done: boolean; busy?: boolean; icon: React.ReactNode; title: string; children: React.ReactNode }) {
@@ -28,6 +28,7 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState('');
   const [home, setHome] = useState('');
+  const [platform, setPlatform] = useState<SchoolPlatform | null>(null);
   const [remember, setRemember] = useState(true);
   const [probe, setProbe] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
@@ -38,6 +39,7 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
     setSchool(s);
     setSignedIn(st.signedIn);
     if (s.home && !home) setHome(s.home);
+    if (s.home && !platform) setPlatform(s.platform);
   };
   useEffect(() => {
     refresh();
@@ -66,6 +68,10 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
   const engineOk = !!c.uv && c.engineReady;
   const siteOk = !!school.home && signedIn;
   const all = claudeOk && engineOk && siteOk;
+  // The platform, guessed from the address until the student picks one (D2L homes are under /d2l/; Canvas sites are
+  // mostly *.instructure.com).
+  const guessed: SchoolPlatform = /\/d2l\//i.test(home) ? 'd2l' : /instructure\.com|\/\/canvas\./i.test(home) ? 'canvas' : 'd2l';
+  const site = platform || guessed;
 
   return (
     <div className="setup">
@@ -113,15 +119,27 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
       </Step>
 
       <Step done={siteOk} busy={busy === 'site'} icon={<School size={16} />} title="Your class site">
-        <p>The address of your school's D2L (Brightspace) home page, the page you see after you sign in.</p>
+        <p>Which system your school uses for classes, and the address of its home page (the page you see after you sign in).</p>
+        <div className="seg-row" role="radiogroup" aria-label="Your school's class site">
+          {(
+            [
+              ['d2l', 'D2L Brightspace'],
+              ['canvas', 'Canvas']
+            ] as const
+          ).map(([id, label]) => (
+            <label key={id} className="setup-check">
+              <input type="radio" name="platform" checked={site === id} onChange={() => setPlatform(id)} /> {label}
+            </label>
+          ))}
+        </div>
         <div className="setup-row">
-          <input className="input" value={home} placeholder="https://yourschool.edu/d2l/home" onChange={(e) => setHome(e.target.value)} />
+          <input className="input" value={home} placeholder={site === 'canvas' ? 'https://yourschool.instructure.com' : 'https://yourschool.edu/d2l/home'} onChange={(e) => setHome(e.target.value)} />
           <button
             className="btn tonal sm"
             disabled={!!busy || !/^https:\/\/\S+$/.test(home.trim())}
             onClick={() =>
               act('site', async () => {
-                await api.scholar.setSchoolHome(home.trim());
+                await api.scholar.setSchoolHome(home.trim(), site);
                 const r = await api.scholar.signIn(remember);
                 if (!r.signedIn) throw new Error('Not signed in yet. Try again when you are ready.');
               }, 'Signed in to your class site.')
@@ -146,6 +164,9 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
           </div>
         )}
         {signedIn && <div className="setup-ok">Signed in.</div>}
+        {site === 'canvas' && (
+          <p className="muted">Canvas support is new. If something from your classes looks wrong or missing, tell us under Settings → Feedback.</p>
+        )}
       </Step>
 
       <Step done={!!probe && all} busy={busy === 'probe'} icon={<Play size={16} />} title="Check and scan">

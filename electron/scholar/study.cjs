@@ -381,8 +381,14 @@ const mtime = (f) => {
   }
 };
 
-/** A D2L content link as its file: the viewer page `/viewContent/<topic>/View` → the topic's direct download. */
-const directUrl = (url) => url.replace(/\/le\/content\/(\d+)\/viewContent\/(\d+)\/View.*$/, '/le/content/$1/topics/files/download/$2/DirectFileTopicDownload');
+/**
+ * A content link as its file: D2L's viewer page `/viewContent/<topic>/View` → the topic's direct download; a Canvas
+ * file page `/courses/<id>/files/<file>` → its `/download`.
+ */
+const directUrl = (url) =>
+  url
+    .replace(/\/le\/content\/(\d+)\/viewContent\/(\d+)\/View.*$/, '/le/content/$1/topics/files/download/$2/DirectFileTopicDownload')
+    .replace(/(\/courses\/\d+\/files\/\d+)(?:\/(?:preview|download))?(?:\?.*)?$/, '$1/download');
 
 /**
  * Download the tests' review sheets and keys that aren't here yet (Kea's own signed-in browser, no Claude), saved as
@@ -396,8 +402,8 @@ async function fetchSheets(req, nums, docText, step) {
   for (const t of [...(req.tests || []), ...(req.chapters || [])])
     for (const l of t.review_links || []) {
       if (!SHEET.test(l.label) || NOT_SHEET.test(l.label) || !/^https?:/.test(l.url)) continue;
-      // Only files (a D2L content file, a PDF or Word document), never a launch link into a platform like ALEKS.
-      if (!/\/viewContent\/\d+|\/topics\/files\/download\/|\.(pdf|docx?)(\?|$)/i.test(l.url)) continue;
+      // Only files (a D2L content file, a Canvas file, a PDF or Word document), never a launch link into a platform like ALEKS.
+      if (!/\/viewContent\/\d+|\/topics\/files\/download\/|\/courses\/\d+\/files\/\d+|\.(pdf|docx?)(\?|$)/i.test(l.url)) continue;
       const n = chapterNum(l.label);
       if (n && !nums.has(n)) continue;
       seen.set(safeName(l.label), l.url);
@@ -412,7 +418,7 @@ async function fetchSheets(req, nums, docText, step) {
     let signedIn = await browser.status().then((s) => s.signedIn).catch(() => false);
     if (!signedIn) {
       step('Signing in to your class site for the review sheets…', 2);
-      await browser.getJson('/d2l/api/lp/1.0/users/whoami').catch(() => null);
+      await browser.getJson(browser.platformOf() === 'canvas' ? '/api/v1/users/self' : '/d2l/api/lp/1.0/users/whoami').catch(() => null);
       signedIn = await browser.status().then((s) => s.signedIn).catch(() => false);
     }
     if (!signedIn) failed.push(...missing.map(([name]) => `${name} (not signed in to the class site)`));

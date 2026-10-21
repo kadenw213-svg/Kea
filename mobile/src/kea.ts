@@ -45,6 +45,8 @@ export interface KeaData {
   synced: string;
   profile: string;
   home: string;
+  /** The class site's platform (from the PC; older data files don't say, so it's read from the address). */
+  platform?: 'd2l' | 'canvas';
   courses: ScholarCourse[];
   items: ScholarItem[];
   details: ScholarCourseDetail[];
@@ -92,14 +94,19 @@ export async function loadData(ms = 45000): Promise<{ data: KeaData | null; erro
   }
 }
 
-/** A class's org unit id, from its class-site address ("…/d2l/home/661880"). */
-export const ouOf = (url: string | null | undefined) => (String(url || '').match(/\/d2l\/home\/(\d+)/) || [])[1] || '';
+/** A class's id on the class site, from its address ("…/d2l/home/661880", or Canvas's "…/courses/1234"). */
+export const ouOf = (url: string | null | undefined) => (String(url || '').match(/\/d2l\/home\/(\d+)|\/courses\/(\d+)/) || []).slice(1).find(Boolean) || '';
+
+/** Which platform the class site is: what the PC says, or (older data) what its address shows. */
+export const platformOf = (d: Pick<KeaData, 'home' | 'platform'>): 'd2l' | 'canvas' =>
+  d.platform || (/\/d2l\//i.test(d.home || '') ? 'd2l' : /instructure\.com/i.test(d.home || '') ? 'canvas' : 'd2l');
 
 let versions: { le: string; lp: string } | null = null;
 export async function api(home: string, rel: string) {
   const r = await Kea.get({ url: new URL(rel, home).href });
   if (r.status !== 200) throw new Error(`The class site answered ${r.status}.`);
-  return JSON.parse(r.body);
+  // (Canvas starts its JSON with "while(1);" for a signed-in session.)
+  return JSON.parse(String(r.body).replace(/^while\(1\);/, ''));
 }
 export async function d2lVersions(home: string) {
   if (versions) return versions;
@@ -113,21 +120,28 @@ export async function d2lVersions(home: string) {
 
 /** Tell the background check which classes to watch. */
 export async function watchClasses(d: KeaData) {
-  const v = await d2lVersions(d.home);
+  const platform = platformOf(d);
+  const v = platform === 'canvas' ? {} : await d2lVersions(d.home);
   const courses = d.details.map((c) => ({ code: c.code, ou: ouOf(c.url) })).filter((c) => c.ou);
-  await Kea.watch({ ...v, courses });
+  await Kea.watch({ ...v, platform, courses });
 }
 
 /** Every class's assignment folders, straight from the class site, soonest due first. */
 export async function folders(d: KeaData) {
-  const v = await d2lVersions(d.home);
+  const canvas = platformOf(d) === 'canvas';
+  const v = canvas ? null : await d2lVersions(d.home);
   const out: { code: string; ou: string; folders: { id: number; name: string; due: string | null; closed: boolean }[] }[] = [];
   for (const c of d.details) {
     const ou = ouOf(c.url);
     if (!ou) continue;
     try {
-      const list = await api(d.home, `/d2l/api/le/${v.le}/${ou}/dropbox/folders/`);
       const now = Date.now();
+      // Canvas: assignments that take a file (its own list pages up to 100 at a time; the first page is the soonest).
+      const list = canvas
+        ? ((await api(d.home, `/api/v1/courses/${ou}/assignments?per_page=100&order_by=due_at`)) || [])
+            .filter((a: any) => (a.submission_types || []).includes('online_upload') && a.published !== false)
+            .map((a: any) => ({ Id: a.id, Name: a.name, DueDate: a.due_at, Availability: { EndDate: a.lock_at } }))
+        : await api(d.home, `/d2l/api/le/${v!.le}/${ou}/dropbox/folders/`);
       out.push({
         code: c.code,
         ou,
@@ -141,7 +155,8 @@ export async function folders(d: KeaData) {
   return out;
 }
 
-export const handInUrl = (home: string, ou: string, folder: number) => new URL(`/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${folder}&grpid=0&isprv=0&bp=0&ou=${ou}`, home).href;
+export const handInUrl = (d: Pick<KeaData, 'home' | 'platform'>, ou: string, folder: number) =>
+  new URL(platformOf(d) === 'canvas' ? `/courses/${ou}/assignments/${folder}` : `/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${folder}&grpid=0&isprv=0&bp=0&ou=${ou}`, d.home).href;
 
 // ---------- Checkmarks and read messages, synced with the PC through the drive folder ----------
 // Every change is logged with its time; the PC does the same. Whichever side changed an item last wins.

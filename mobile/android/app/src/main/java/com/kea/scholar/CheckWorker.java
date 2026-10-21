@@ -74,6 +74,10 @@ public class CheckWorker extends Worker {
         boolean seeded = sp.getBoolean("seeded", false);
         Uri base = Uri.parse(home);
 
+        if (ClassSite.canvas(ctx)) {
+            checkCanvas(ctx, base, courses, seen, fresh);
+            return finish(ctx, sp, seen, fresh, seeded, notify);
+        }
         for (int i = 0; i < courses.length(); i++) {
             JSONObject c = courses.getJSONObject(i);
             String code = c.optString("code"), ou = c.optString("ou");
@@ -155,7 +159,76 @@ public class CheckWorker extends Worker {
             }
         }
 
-        // Remember what was seen (newest last, capped), and keep the new items for the app's Inbox.
+        return finish(ctx, sp, seen, fresh, seeded, notify);
+    }
+
+    /**
+     * A Canvas school: each class's announcements and graded work (with the instructor's comments), and unread messages
+     * from Canvas's Inbox, from Canvas's data API.
+     */
+    static void checkCanvas(Context ctx, Uri base, JSONArray courses, Set<String> seen, List<JSONObject> fresh) throws Exception {
+        for (int i = 0; i < courses.length(); i++) {
+            JSONObject c = courses.getJSONObject(i);
+            String code = c.optString("code"), ou = c.optString("ou");
+            if (ou.isEmpty()) continue;
+            ClassSite.Answer a = ClassSite.get(ctx, base.buildUpon().encodedPath("/api/v1/courses/" + ou + "/discussion_topics").encodedQuery("only_announcements=true&per_page=30").build().toString());
+            if (a.status == 200 && a.body.trim().startsWith("[")) {
+                JSONArray news = new JSONArray(a.body);
+                for (int k = 0; k < news.length(); k++) {
+                    JSONObject n = news.getJSONObject(k);
+                    String key = "news:" + code + ":" + n.optString("id") + ":" + n.optString("posted_at");
+                    if (seen.add(key)) {
+                        String text = android.text.Html.fromHtml(n.optString("message", ""), android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim();
+                        fresh.add(item("announcement", code, n.optString("title"), text, n.optString("posted_at", ""), n.optString("html_url", "")));
+                    }
+                }
+            }
+            ClassSite.Answer g = ClassSite.get(ctx, base.buildUpon().encodedPath("/api/v1/courses/" + ou + "/students/submissions").encodedQuery("per_page=100&include[]=assignment&include[]=submission_comments").build().toString());
+            if (g.status == 200 && g.body.trim().startsWith("[")) {
+                JSONArray subs = new JSONArray(g.body);
+                for (int k = 0; k < subs.length(); k++) {
+                    JSONObject s = subs.getJSONObject(k);
+                    // Only a real score or grade (Canvas gives one only once the grade is posted to the student).
+                    if (s.isNull("score") && s.optString("grade", "").trim().isEmpty() && !s.optBoolean("excused")) continue;
+                    JSONObject asg = s.optJSONObject("assignment");
+                    String name = asg == null ? "an assignment" : asg.optString("name");
+                    String comment = "";
+                    JSONArray cs = s.optJSONArray("submission_comments");
+                    if (cs != null && cs.length() > 0) comment = cs.getJSONObject(cs.length() - 1).optString("comment", "");
+                    String score = s.optBoolean("excused") ? "Excused"
+                        : !s.isNull("score") && asg != null && !asg.isNull("points_possible") ? trim(s.optDouble("score")) + " / " + trim(asg.optDouble("points_possible"))
+                        : s.optString("grade");
+                    String key = "grade:" + code + ":" + s.optString("assignment_id") + ":" + score + ":" + comment.hashCode();
+                    if (seen.add(key)) {
+                        fresh.add(item("grade", code, "New grade: " + name, score + (comment.isEmpty() ? "" : "\n\n" + comment), "",
+                            base.buildUpon().encodedPath("/courses/" + ou + "/grades").clearQuery().build().toString()));
+                    }
+                }
+            }
+        }
+        // Unread messages in Canvas's Inbox.
+        ClassSite.Answer m = ClassSite.get(ctx, base.buildUpon().encodedPath("/api/v1/conversations").encodedQuery("scope=unread&per_page=20").build().toString());
+        if (m.status == 200 && m.body.trim().startsWith("[")) {
+            JSONArray list = new JSONArray(m.body);
+            for (int k = 0; k < list.length(); k++) {
+                JSONObject cv = list.getJSONObject(k);
+                String key = "msg:" + cv.optString("id") + ":" + cv.optString("last_message_at");
+                if (!seen.add(key)) continue;
+                String context = cv.optString("context_name", "");
+                String course = "";
+                for (int i = 0; i < courses.length(); i++) {
+                    String code = courses.getJSONObject(i).optString("code");
+                    String spaced = code.replaceAll("([A-Za-z]+)(\\d+)", "$1 $2");
+                    if (!code.isEmpty() && (context.contains(code) || context.contains(spaced))) course = code;
+                }
+                fresh.add(item("news", course, cv.optString("subject", "Message"), cv.optString("last_message", ""), cv.optString("last_message_at", ""),
+                    base.buildUpon().encodedPath("/conversations/" + cv.optString("id")).clearQuery().build().toString()));
+            }
+        }
+    }
+
+    /** Remember what was seen (newest last, capped), keep the new items for the app's Inbox, and notify them. */
+    static List<JSONObject> finish(Context ctx, SharedPreferences sp, Set<String> seen, List<JSONObject> fresh, boolean seeded, boolean notify) throws Exception {
         JSONArray keep = new JSONArray();
         List<String> all = new ArrayList<>(seen);
         for (int i = Math.max(0, all.size() - 3000); i < all.size(); i++) keep.put(all.get(i));

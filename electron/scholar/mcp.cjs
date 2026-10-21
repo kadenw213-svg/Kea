@@ -14,13 +14,13 @@ const TOOLS = [
   {
     name: 'd2l_open',
     description:
-      "Open a page of the class site (D2L/Brightspace) in Kea's browser and read it: title, final address, visible text (including Brightspace's components and content frames) and its links. Kea handles signing in. Long pages come in parts: call again with the offset it gives.",
+      "Open a page of the class site (D2L Brightspace or Canvas: d2l_status says which) in Kea's browser and read it: title, final address, visible text (including Brightspace's components and content frames) and its links. Kea handles signing in. Long pages come in parts: call again with the offset it gives.",
     inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'Full https address on the class site. Omit for the class site home.' }, offset: { type: 'integer', minimum: 0 } } }
   },
   {
     name: 'd2l_fetch',
     description:
-      "GET an address with the class site's signed-in session and return the response text (for D2L's REST API under /d2l/api/..., JSON, HTML or text files). JSON comes trimmed: rich text as plain text with links as [text](address), relative links made absolute, and empty or false fields left out. Long answers come in parts: call again with the offset it gives.",
+      "GET an address with the class site's signed-in session and return the response text (D2L's REST API under /d2l/api/..., or Canvas's under /api/v1/...; JSON, HTML or text files). JSON comes trimmed: rich text as plain text with links as [text](address), relative links made absolute, and empty or false fields left out. Long answers come in parts: call again with the offset it gives.",
     inputSchema: { type: 'object', properties: { url: { type: 'string' }, offset: { type: 'integer', minimum: 0 } }, required: ['url'] }
   },
   {
@@ -30,7 +30,7 @@ const TOOLS = [
   },
   {
     name: 'd2l_status',
-    description: 'Whether a class site is set up in Kea and whether Kea is signed in to it right now.',
+    description: "Whether a class site is set up in Kea, which platform it is ('d2l' or 'canvas'), and whether Kea is signed in to it right now.",
     inputSchema: { type: 'object', properties: {} }
   },
   {
@@ -41,12 +41,12 @@ const TOOLS = [
   {
     name: 'kea_notify',
     description:
-      "Send the student ONE message about ONE thing, shown in Kea's Inbox (colored by kind) and as a notification. Never a daily summary or a list of unrelated things: send one message per thing. Announcements, D2L grades, D2L feedback and D2L messages reach the Inbox from Kea itself, so never send those. 'course' is the course code. Keep 'body' short plain text with no addresses in it: put each link in 'links' (shown as buttons).",
+      "Send the student ONE message about ONE thing, shown in Kea's Inbox (colored by kind) and as a notification. Never a daily summary or a list of unrelated things: send one message per thing. Announcements, the class site's grades, feedback and messages reach the Inbox from Kea itself, so never send those. 'course' is the course code. Keep 'body' short plain text with no addresses in it: put each link in 'links' (shown as buttons).",
     inputSchema: {
       type: 'object',
       properties: {
         course: { type: 'string' },
-        kind: { type: 'string', enum: ['needs_you', 'attention', 'missed', 'grade', 'feedback', 'message', 'update'], description: "needs_you: something only the student can do or decide. attention: a warning (a zero, a major test under 60%, a steep drop), once. missed: work past due and not handed in (say whether it's still open). grade/feedback: only from outside platforms (e.g. ALEKS) that D2L doesn't show. message/update: anything else worth knowing." },
+        kind: { type: 'string', enum: ['needs_you', 'attention', 'missed', 'grade', 'feedback', 'message', 'update'], description: "needs_you: something only the student can do or decide. attention: a warning (a zero, a major test under 60%, a steep drop), once. missed: work past due and not handed in (say whether it's still open). grade/feedback: only from outside platforms (e.g. ALEKS) that the class site doesn't show. message/update: anything else worth knowing." },
         title: { type: 'string', maxLength: 120, description: 'What happened, e.g. "Exam 2 graded: 56%" or "Discussion 3 reply missed (still open)".' },
         body: { type: 'string', maxLength: 1500 },
         links: { type: 'array', maxItems: 4, items: { type: 'object', properties: { label: { type: 'string', maxLength: 40, description: 'Button text, e.g. "Open feedback", "Submit", "Open discussion".' }, url: { type: 'string' } }, required: ['label', 'url'] } }

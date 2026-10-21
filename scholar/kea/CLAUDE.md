@@ -144,6 +144,31 @@ The skills in `.claude/skills/` were written for Claude Code driving Chrome and 
 
 - Screenshots aren't available. A page whose content is only an image: record it with `unresolved-add`. Don't guess it.
 
+**Canvas schools.** `mcp__kea__d2l_status` says which platform the class site is (`platform: "d2l"` or `"canvas"`). The
+tools keep their `d2l_` names but work on either. On a Canvas school, everything these instructions and the skills say
+about D2L means Canvas's equivalent:
+
+| D2L | Canvas (`mcp__kea__d2l_fetch`, GET only, add `per_page=100`; the answer pages with a `Link` header) |
+|---|---|
+| `/d2l/api/lp/.../enrollments/myenrollments/` | `/api/v1/courses?enrollment_state=active&include[]=term` |
+| content table of contents (modules, topics) | `/api/v1/courses/<id>/modules?include[]=items&include[]=content_details`; a page item's text: `/api/v1/courses/<id>/pages/<page_url>`; the syllabus: `/api/v1/courses/<id>?include[]=syllabus_body` |
+| assignment folders (dropbox), with instructions and rubric | `/api/v1/courses/<id>/assignments?include[]=submission` (`description` is the instructions, `rubric` the rubric) |
+| quizzes | quiz assignments in the same list (`online_quiz`, or `external_tool` for New Quizzes), and `/api/v1/courses/<id>/quizzes` |
+| discussion topics | `/api/v1/courses/<id>/discussion_topics` |
+| announcements (news) | `/api/v1/courses/<id>/discussion_topics?only_announcements=true` |
+| calendar | `/api/v1/calendar_events?context_codes[]=course_<id>&type=event` |
+| grades | `/api/v1/courses/<id>/students/submissions?include[]=assignment` |
+| a content file | `/api/v1/courses/<id>/files/<file>` (its `url` downloads it with `mcp__kea__d2l_download`) |
+
+- The org unit id is the Canvas course id: `course add --d2l-id <course id> --d2l-url <site>/courses/<course id>`.
+- Work's own pages: `/courses/<id>/assignments/<a>`, `/courses/<id>/quizzes/<q>`, `/courses/<id>/discussion_topics/<t>`.
+  Use them as `submission_url` (an assignment page is where it's handed in). A module item's page
+  (`/courses/<id>/modules/items/<n>`) is the class's own way into an outside tool (ALEKS, Connect…).
+- The pre-check files have the same names and fields as on D2L (Kea translates Canvas's answers), plus `KeaUrl` (the
+  work's own page) and `KeaSubmission` (Canvas's own submission state: `submitted_at`, `workflow_state`, `score`).
+  Canvas says whether work was submitted or graded: trust it, never infer it from a name.
+- The `d2l_*` source types (`d2l_content`, `d2l_dropbox`…) name the same areas on Canvas.
+
 **Be light: go straight to what you need, never crawl.** The student's Claude plan pays for every page you read, and
 the class site should see a student's normal traffic, not a robot's.
 - Prefer D2L's data API (`mcp__kea__d2l_fetch` on `/d2l/api/...`) over opening pages: one call returns a whole area as

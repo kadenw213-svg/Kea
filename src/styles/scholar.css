@@ -713,6 +713,15 @@
   margin-top: 8px;
   font-size: 13.5px;
 }
+.seg-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-bottom: 8px;
+}
+.seg-row .setup-check {
+  margin-top: 0;
+}
 .setup-log {
   max-height: 180px;
   overflow: auto;

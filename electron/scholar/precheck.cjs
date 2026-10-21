@@ -1,7 +1,9 @@
-// Kea's own morning pre-check, done in plain code before any Claude run: it asks D2L's data feeds what each class has
-// right now (announcements, grades, assignment folders, quizzes, the content list), compares that with what it saw
-// last time, and finds new class shells. Claude is started only for classes where something changed, and reads the
-// answers Kea saved here instead of fetching them again. A quiet day uses no Claude at all.
+// Kea's own morning pre-check, done in plain code before any Claude run: it asks the class site's data feeds what each
+// class has right now (announcements, grades, assignment folders, quizzes, the content list), compares that with what
+// it saw last time, and finds new class shells. Claude is started only for classes where something changed, and reads
+// the answers Kea saved here instead of fetching them again. A quiet day uses no Claude at all.
+// D2L's API is read here directly; a Canvas school's answers come from canvas.cjs in the same shape, so everything
+// below works the same for both.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -22,8 +24,14 @@ const readState = () => {
 const hash = (v) => crypto.createHash('sha1').update(JSON.stringify(v)).digest('hex');
 const day = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+const isCanvas = () => browser.platformOf() === 'canvas';
+const canvas = () => require('./canvas.cjs');
+/** The class site's name in what Claude is told ("D2L lists graded work…"). */
+const SITE = () => (isCanvas() ? 'Canvas' : 'D2L');
+
 /** The newest version D2L offers of each API product ("le" for learning tools, "lp" for the platform). */
 async function versions() {
+  if (isCanvas()) return null;
   const r = await browser.getJson('/d2l/api/versions/');
   const out = { le: '1.74', lp: '1.47' };
   for (const p of r.data || []) if (p.ProductCode in out && p.LatestVersion) out[p.ProductCode] = p.LatestVersion;
@@ -67,6 +75,18 @@ async function getAll(rel) {
   }
   return { ...r, data: { ...r.data, Objects: objects, Next: null } };
 }
+
+/** One area of a class, as D2L's API answers it (a Canvas school's answer is translated into the same shape). */
+async function fetchArea(area, v, ou) {
+  if (isCanvas()) return canvas().area(area, ou);
+  const a = AREAS[area];
+  let r = await getAll(a.rel(v, ou));
+  if (a.expand && r?.data) r = { ...r, data: await a.expand(v, ou, r.data) };
+  return r;
+}
+
+/** The signed-in student's own address (a request that makes Kea sign in when the session has expired). */
+const whoamiRel = (v) => (isCanvas() ? '/api/v1/users/self' : `/d2l/api/lp/${v.lp}/users/whoami`);
 
 /**
  * What each area looks like, reduced to the parts that matter (so a changed view counter doesn't count as news).
@@ -218,8 +238,8 @@ function classPlatforms(toc) {
       for (const t of m.Topics || []) {
         if (t.IsHidden) continue;
         const lti = t.ActivityType === 7 || /type=lti|\/lti\//i.test(t.Url || '');
-        // A launch tool is known by its name; a plain link only by where it goes.
-        const text = lti ? `${t.Title || ''} ${t.Url || ''}` : String(t.Url || '').replace(/^https?:\/\//i, '').split('/')[0];
+        // A launch tool is known by its name (and, on Canvas, the tool's own address); a plain link only by where it goes.
+        const text = lti ? `${t.Title || ''} ${t.Url || ''} ${t.KeaToolUrl || ''}` : String(t.Url || '').replace(/^https?:\/\//i, '').split('/')[0];
         // (A publisher's video or media file is something to watch, not a place work is assigned.)
         if (!lti && /:\/\/(media|video|player|cdn)[.-]|\.(mp4|mp3|pdf)(\?|$)/i.test(t.Url || '')) continue;
         const kind = PLATFORM_KINDS.find((k) => k.re.test(text));
@@ -337,9 +357,10 @@ function saveD2lPlaces(dir, list, home) {
     };
     const abs = (rel) => new URL(rel, home).href;
     const places = [];
-    for (const f of AREAS.dropbox.list(read('dropbox'))) places.push({ area: 'dropbox', id: f.Id, name: f.Name, url: abs(`/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${f.Id}&grpid=0&isprv=0&bp=0&ou=${c.ou}`) });
-    for (const q of AREAS.quizzes.list(read('quizzes'))) places.push({ area: 'quiz', id: q.QuizId, name: q.Name, url: abs(`/d2l/lms/quizzing/user/quiz_summary.d2l?qi=${q.QuizId}&ou=${c.ou}`) });
-    for (const t of AREAS.discussions.list(read('discussions'))) places.push({ area: 'discussion', id: t.TopicId, name: `${t.ForumName}: ${t.Name}`, url: abs(`/d2l/le/${c.ou}/discussions/topics/${t.TopicId}/View`) });
+    // (Canvas gives each piece of work its own page address.)
+    for (const f of AREAS.dropbox.list(read('dropbox'))) places.push({ area: 'dropbox', id: f.Id, name: f.Name, url: f.KeaUrl || abs(`/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${f.Id}&grpid=0&isprv=0&bp=0&ou=${c.ou}`) });
+    for (const q of AREAS.quizzes.list(read('quizzes'))) places.push({ area: 'quiz', id: q.QuizId, name: q.Name, url: q.KeaUrl || abs(`/d2l/lms/quizzing/user/quiz_summary.d2l?qi=${q.QuizId}&ou=${c.ou}`) });
+    for (const t of AREAS.discussions.list(read('discussions'))) places.push({ area: 'discussion', id: t.TopicId, name: `${t.ForumName}: ${t.Name}`, url: t.KeaUrl || abs(`/d2l/le/${c.ou}/discussions/topics/${t.TopicId}/View`) });
     if (places.length) byCourse[c.code] = places;
   }
   fs.writeFileSync(file, JSON.stringify({ checked: new Date().toISOString(), byCourse: { ...prev, ...byCourse } }, null, 1));
@@ -384,12 +405,12 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
   const v = await versions();
   // A request that needs a signed-in student: when the session has expired, Kea signs in here (with the saved login,
   // or by showing its window), exactly as it would for a scan.
-  if (!st.signedIn) await browser.getJson(`/d2l/api/lp/${v.lp}/users/whoami`).catch(() => null);
+  if (!st.signedIn) await browser.getJson(whoamiRel(v)).catch(() => null);
   if (!(await browser.status()).signedIn) return { signedIn: false, setUp: true };
 
   // New class shells: the engine decides which enrollments are real, not-yet-imported classes.
   let newShells = [];
-  const enrollments = await allPages(`/d2l/api/lp/${v.lp}/enrollments/myenrollments/?orgUnitTypeId=3`);
+  const enrollments = isCanvas() ? await canvas().enrollments() : await allPages(`/d2l/api/lp/${v.lp}/enrollments/myenrollments/?orgUnitTypeId=3`);
   if (enrollments) {
     const file = path.join(p.workspace, 'data', 'digests', `enrollments-${day()}.json`);
     fs.writeFileSync(file, JSON.stringify({ Items: enrollments }));
@@ -413,8 +434,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     for (const [area, a] of Object.entries(AREAS)) {
       let r;
       try {
-        r = await getAll(a.rel(v, c.ou));
-        if (a.expand && r?.data) r = { ...r, data: await a.expand(v, c.ou, r.data) };
+        r = await fetchArea(area, v, c.ou);
       } catch (err) {
         // (Only a real disconnection, not a single failed request: the check already reached the class site.)
         if (/ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_ADDRESS_UNREACHABLE|ERR_NETWORK_IO_SUSPENDED|ENOTFOUND/i.test(String(err.message || err))) offline = offline || String(err.message || err).slice(0, 60);
@@ -424,7 +444,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
       // Areas a class doesn't use, or students can't list, answer 403/404: nothing to watch there.
       if (r.status === 403 || r.status === 404) continue;
       if (!r.data) {
-        reasons.push(`couldn't check ${area} (D2L answered ${r.status})`);
+        reasons.push(`couldn't check ${area} (${SITE()} answered ${r.status})`);
         continue;
       }
       save(`${c.code}-${area}.json`, r.data);
@@ -449,19 +469,19 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
       const restored = new Set((rec.restored || []).map((h) => h.item_id));
       const found = [
         ...(rec.unmatched || []).map((u) => `${u.kind} "${u.title}" (${u.d2l_date || 'no date'}) isn't on the calendar [${u.key}]`),
-        ...(rec.drift || []).map((d) => `"${d.title}" is on the calendar for ${d.item_date} but D2L says ${d.d2l_date} [${d.key}]`),
+        ...(rec.drift || []).map((d) => `"${d.title}" is on the calendar for ${d.item_date} but ${SITE()} says ${d.d2l_date} [${d.key}]`),
         // Graded work that had been cancelled (only put back by a run that checks why) and graded-looking items folded
         // into a reading week that D2L doesn't list yet: each judged once.
-        ...(rec.hidden || []).filter((h) => !restored.has(h.item_id)).map((h) => `D2L lists ${h.kind} "${h.title}" as graded work but its calendar item was ${h.how}: restore it (item-restore ${h.item_id.slice(0, 8)} --reason ...) unless the cancellation still holds [${h.key}]`),
+        ...(rec.hidden || []).filter((h) => !restored.has(h.item_id)).map((h) => `${SITE()} lists ${h.kind} "${h.title}" as graded work but its calendar item was ${h.how}: restore it (item-restore ${h.item_id.slice(0, 8)} --reason ...) unless the cancellation still holds [${h.key}]`),
         ...(rec.suspects || []).map((x) => `"${x.title}" (${x.date || 'no date'}) looks like graded work but was folded into "${x.replaced_by}" (${x.how}): item-restore ${x.item_id.slice(0, 8)} --as-type <kind> --reason ... if it's graded, else coverage-dismiss --key ${x.key} --note "not graded: ..." [${x.key}]`)
       ];
       // Put back by the check itself (D2L's gradebook says they're graded): the student hears about it, with why.
       for (const h of rec.restored || [])
-        inboxNote({ id: `restored:${h.item_id}`, course: c.code, kind: 'needs_you', title: `Back on your calendar: ${h.item_title}`, body: `D2L lists it as graded work (${h.kind} "${h.title}"), but it had been ${h.how}${h.replaced_by ? `, folded into "${h.replaced_by}"` : ''}. It's back on your calendar; check its due date on the class site.` });
+        inboxNote({ id: `restored:${h.item_id}`, course: c.code, kind: 'needs_you', title: `Back on your calendar: ${h.item_title}`, body: `${SITE()} lists it as graded work (${h.kind} "${h.title}"), but it had been ${h.how}${h.replaced_by ? `, folded into "${h.replaced_by}"` : ''}. It's back on your calendar; check its due date on the class site.` });
       seen.reconcile = found;
       const was = new Set(before.reconcile || []);
       const fresh = found.filter((f) => !was.has(f));
-      if (fresh.length) reasons.push(`D2L lists graded work the calendar doesn't match: ${fresh.slice(0, 8).join('; ')}. Add each one (extract it from a file with the D2L wording and date), correct its date, or dismiss it with coverage-dismiss --key <key> and the reason`);
+      if (fresh.length) reasons.push(`${SITE()} lists graded work the calendar doesn't match: ${fresh.slice(0, 8).join('; ')}. Add each one (extract it from a file with the ${SITE()} wording and date), correct its date, or dismiss it with coverage-dismiss --key <key> and the reason`);
     } catch (err) {
       console.error('Reconcile', err);
     }
@@ -511,7 +531,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
       if (!ask.length) continue;
       course.askedUnconfirmed = [...asked, ...ask.map((i) => i.id)].slice(-300);
       (changed[code] = (changed[code] || []).filter((r) => !/^regular full check/.test(r))).push(
-        `Past work Kea can't confirm was done (due over two days ago; D2L shows no grade, hand-in, quiz attempt or post for it): ${ask.map((i) => `"${i.title}" (${i.date}, item ${i.id})`).join('; ')}. Look each one up where it's done (its outside platform's assignment list or gradebook, such as Science Interactive or ALEKS, or its D2L page) and record what you see with grade-snapshot-add --course ${code} --title "<the calendar's title, exactly>" --week-start <the Monday of its due week> --item-id <id>, adding --missing if it wasn't done and --score-percent if there's a score. Record nothing you can't see; if a platform needs the student to sign in, say so once`
+        `Past work Kea can't confirm was done (due over two days ago; ${SITE()} shows no grade, hand-in, quiz attempt or post for it): ${ask.map((i) => `"${i.title}" (${i.date}, item ${i.id})`).join('; ')}. Look each one up where it's done (its outside platform's assignment list or gradebook, such as Science Interactive or ALEKS, or its ${SITE()} page) and record what you see with grade-snapshot-add --course ${code} --title "<the calendar's title, exactly>" --week-start <the Monday of its due week> --item-id <id>, adding --missing if it wasn't done and --score-percent if there's a score. Record nothing you can't see; if a platform needs the student to sign in, say so once`
       );
       const qi = quiet.indexOf(code);
       if (qi >= 0) quiet.splice(qi, 1);
@@ -526,7 +546,7 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     const SKIP = new Set(['weekly_reading', 'reading', 'lecture', 'lab', 'recitation', 'seminar', 'office_hours', 'break', 'no_class', 'administrative_deadline']);
     // (No link at all, or handed in somewhere but with no document or instructions to do it from: a lab handout with
     // only its folder.)
-    const LIST = /folders_list|\/dropbox\/dropbox\.d2l|discussions\/List|quizzing\.d2l\?ou|quizzes_list/i;
+    const LIST = /folders_list|\/dropbox\/dropbox\.d2l|discussions\/List|quizzing\.d2l\?ou|quizzes_list|\/courses\/\d+\/(assignments|quizzes|discussion_topics|announcements|modules|grades)\/?([?#]|$)/i;
     const noDoc = (i) =>
       ['assignment', 'lab_handout', 'paper', 'project'].includes(i.type) &&
       !i.links.some((l) => l.kind !== 'submit' && !LIST.test(l.url)) &&
@@ -565,9 +585,10 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
 /** A gradebook category row (its total), not a graded item: D2L's GradeObjectType 9. */
 const isCategory = (g) => g?.GradeObjectType === 9 || /^category$/i.test(String(g?.GradeObjectTypeName || ''));
 
-/** The signed-in student's D2L user id (for telling their own posts apart), read once. */
+/** The signed-in student's user id on the class site (for telling their own posts apart), read once. */
 let myId = null;
 async function whoami(v) {
+  if (isCanvas()) return canvas().me();
   if (myId) return myId;
   const r = await browser.getJson(`/d2l/api/lp/${v.lp}/users/whoami`).catch(() => null);
   myId = r?.data?.Identifier || null;
@@ -609,6 +630,14 @@ async function refreshSubmissions(dir, v, list) {
       // (A folder with only a closing date, like an exam's work upload, is checked by that date.)
       const dueAt = f.DueDate || f.Availability?.EndDate;
       const due = dueAt ? new Date(dueAt).getTime() : null;
+      // Canvas: the assignment carries the student's submission. Handed in only with a submission time; missing only
+      // when it's past due (or Canvas itself says missing) and wasn't excused.
+      if ('KeaSubmission' in f) {
+        const s = f.KeaSubmission;
+        if (s?.submitted_at) out.push({ title: f.Name, folder: f.Id, state: 'submitted', at: s.submitted_at });
+        else if (s && !s.excused && due && due < now && due > now - 28 * 864e5 && (s.missing || s.workflow_state === 'unsubmitted')) out.push({ title: f.Name, folder: f.Id, state: 'not_submitted' });
+        continue;
+      }
       if (!due || due < now - 28 * 864e5 || due > now + 14 * 864e5) {
         if (known.has(f.Id)) out.push(known.get(f.Id));
         continue;
@@ -634,6 +663,13 @@ async function refreshSubmissions(dir, v, list) {
         out.push(knownBy.get(ref));
         continue;
       }
+      if ('KeaSubmission' in q) {
+        // Canvas: the quiz's own submission (an ungraded practice quiz has none to show).
+        const s = q.KeaSubmission;
+        if (s?.submitted_at || (s?.attempt ?? 0) > 0) out.push({ title: q.Name, ref, state: 'submitted' });
+        else if (s && !s.excused && recent(q.DueDate || q.EndDate)) out.push({ title: q.Name, ref, state: 'not_submitted' });
+        continue;
+      }
       if (!recent(q.DueDate || q.EndDate)) continue;
       const r = await browser.getJson(`/d2l/api/le/${v.le}/${c.ou}/quizzes/${q.QuizId}/attempts/`).catch(() => null);
       if (!r?.data) continue;
@@ -650,9 +686,9 @@ async function refreshSubmissions(dir, v, list) {
           continue;
         }
         if (!recent(t.DueDate || t.EndDate || t.UnlockEndDate) || !t.ForumId) continue;
-        const r = await browser.getJson(`/d2l/api/le/${v.le}/${c.ou}/discussions/forums/${t.ForumId}/topics/${t.TopicId}/posts/`).catch(() => null);
-        if (!r?.data) continue;
-        const mine = (Array.isArray(r.data) ? r.data : r.data.Objects || []).filter((x) => String(x.PostingUserId) === String(me));
+        const posts = isCanvas() ? await canvas().topicPosts(c.ou, t.TopicId).catch(() => null) : await browser.getJson(`/d2l/api/le/${v.le}/${c.ou}/discussions/forums/${t.ForumId}/topics/${t.TopicId}/posts/`).then((r) => (r?.data ? (Array.isArray(r.data) ? r.data : r.data.Objects || []) : null)).catch(() => null);
+        if (!posts) continue;
+        const mine = posts.filter((x) => String(x.PostingUserId) === String(me));
         const started = mine.some((x) => !x.ParentPostId);
         const replied = mine.some((x) => x.ParentPostId);
         out.push({ title: `${t.Name} initial post`, ref, state: started ? 'submitted' : 'not_submitted' });
@@ -728,7 +764,7 @@ function updateInbox(dir, ous = {}) {
       const body = n.Body?.Html ? htmlToText(n.Body.Html, home) : key;
       const prev = known.get(id);
       const changed = prev && ((prev.bodyKey ?? prev.body) !== key || prev.title !== n.Title);
-      const url = home && n.Id && ou ? new URL(`/d2l/le/news/${ou}/${n.Id}/view?ou=${ou}`, home).href : '';
+      const url = n.KeaUrl || (home && n.Id && ou ? new URL(`/d2l/le/news/${ou}/${n.Id}/view?ou=${ou}`, home).href : '');
       const quiet = !box.seeded || !seenCourses.has(code) || isOld(at);
       const item = { id, kind: 'announcement', course: code, title: n.Title || 'Announcement', body, bodyKey: key, at, url, read: prev ? prev.read && !changed : quiet, updated: !!changed };
       if ((!prev && !quiet) || changed) fresh.push(item);
@@ -762,7 +798,7 @@ async function pollAnnouncements() {
   const list = await db.watchList(p.db);
   for (const c of list) {
     for (const area of ['news', 'grades', 'final', 'dropbox']) {
-      const r = await browser.getJson(AREAS[area].rel(v, c.ou)).catch(() => null);
+      const r = await fetchArea(area, v, c.ou).catch(() => null);
       if (r?.data) fs.writeFileSync(path.join(dir, `${c.code}-${area}.json`), JSON.stringify(r.data));
     }
   }
@@ -804,6 +840,8 @@ function parseAlerts(html, home) {
 
 const notes = [];
 async function updateAlerts(list) {
+  // (D2L's alert menus. A Canvas school's messages come from its Inbox, read by the mailbox check.)
+  if (isCanvas()) return;
   const home = browser.schoolInfo().home;
   const homeOu = (home.match(/\/d2l\/home\/(\d+)/) || [])[1];
   if (!home || !homeOu) return;
@@ -913,7 +951,8 @@ function updateGrades(dir, ous) {
     // it grows.
     const wasHidden = new Map((old.byCourse[code]?.hidden || []).map((h) => [h.category, h.hidden]));
     for (const h of hidden) if (!firstLook && wasHidden.get(h.category) !== h.hidden) fresh.push({ code, h, kind: 'hidden' });
-    byCourse[code] = { final: final ? { shown: String(final.DisplayedGrade || '').trim(), percent: pct } : old.byCourse[code]?.final || null, items: list, hidden, url: home && ous[code] ? new URL(`/d2l/lms/grades/my_grades/main.d2l?ou=${ous[code]}`, home).href : '', checked: new Date().toISOString() };
+    const gradesPage = isCanvas() ? `/courses/${ous[code]}/grades` : `/d2l/lms/grades/my_grades/main.d2l?ou=${ous[code]}`;
+    byCourse[code] = { final: final ? { shown: String(final.DisplayedGrade || '').trim(), percent: pct } : old.byCourse[code]?.final || null, items: list, hidden, url: home && ous[code] ? new URL(gradesPage, home).href : '', checked: new Date().toISOString() };
   }
   fs.writeFileSync(gradesFile(), JSON.stringify({ byCourse, seeded: true }));
   if (!old.seeded || !fresh.length) return;
@@ -1003,6 +1042,8 @@ async function handInTargets() {
     } catch {}
     const done = new Set((sub[c.code] || []).filter((x) => x.state === 'submitted').map((x) => x.folder));
     const list = folders
+      // (Canvas: only assignments that take a file. On-paper work, text entries and outside tools aren't handed in here.)
+      .filter((f) => !f.KeaSubmissionTypes || f.KeaSubmissionTypes.includes('online_upload'))
       .map((f) => {
         const end = f.Availability?.EndDate ? new Date(f.Availability.EndDate).getTime() : null;
         return { id: f.Id, name: f.Name, due: f.DueDate || null, closed: !!(end && end < now), submitted: done.has(f.Id) };
@@ -1056,15 +1097,14 @@ async function syncCheck(code, ou) {
   for (const [area, a] of Object.entries(SYNC_AREAS)) {
     let got;
     try {
-      got = await getAll(a.rel(v, ou));
-      if (a.expand && got?.data) got = { ...got, data: await a.expand(v, ou, got.data) };
+      got = await fetchArea(area, v, ou);
     } catch (err) {
       reasons.push(`couldn't check ${area} (${String(err.message || err).slice(0, 80)})`);
       continue;
     }
     if (got.status === 403 || got.status === 404) continue;
     if (!got.data) {
-      reasons.push(`couldn't check ${area} (D2L answered ${got.status})`);
+      reasons.push(`couldn't check ${area} (${SITE()} answered ${got.status})`);
       continue;
     }
     fs.writeFileSync(path.join(dir, `${code}-${area}.min.json`), JSON.stringify(compact(got.data, browser.schoolInfo().home)));
@@ -1088,4 +1128,4 @@ async function syncCheck(code, ou) {
   };
 }
 
-module.exports = { classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck };
+module.exports = { classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck, _test: { AREAS, refreshSubmissions, saveD2lPlaces, classPlatforms, updateGrades, updateInbox, hiddenWork } };

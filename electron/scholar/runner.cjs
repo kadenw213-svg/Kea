@@ -429,10 +429,11 @@ async function coverageCheck(arg) {
       const rr = await workspace.runHidden(uv, ['run', 'academic-sync', 'd2l-reconcile', '--course', code, '--json'], { cwd, env: workspace.engineEnv(uv) });
       rec = JSON.parse(rr.out.slice(rr.out.indexOf('{')));
     } catch {}
+    const site = require('./browser.cjs').platformOf() === 'canvas' ? 'Canvas' : 'D2L';
     const items = [
       ...(out.uncovered || []),
-      ...(rec.unmatched || []).map((u) => ({ key: u.key, title: `${u.title} (in D2L's ${u.kind === 'dropbox' ? 'assignments' : u.kind === 'grade' ? 'grades' : `${u.kind}s`})`, date: u.d2l_date })),
-      ...(rec.drift || []).map((d) => ({ key: d.key, title: `${d.title}: D2L says ${d.d2l_date}, your calendar ${d.item_date}`, date: d.d2l_date })),
+      ...(rec.unmatched || []).map((u) => ({ key: u.key, title: `${u.title} (in ${site}'s ${u.kind === 'dropbox' ? 'assignments' : u.kind === 'grade' ? 'grades' : `${u.kind}s`})`, date: u.d2l_date })),
+      ...(rec.drift || []).map((d) => ({ key: d.key, title: `${d.title}: ${site} says ${d.d2l_date}, your calendar ${d.item_date}`, date: d.d2l_date })),
       // Taken off the calendar earlier although D2L grades it, or graded-looking and folded into a reading week.
       ...(rec.hidden || []).map((h) => ({ key: h.key, title: `${h.item_title} (taken off your calendar: ${h.how})`, date: h.d2l_date })),
       ...(rec.suspects || []).map((x) => ({ key: x.key, title: `${x.title} (folded into "${x.replaced_by}"; may be graded work)`, date: x.date }))
