@@ -11,6 +11,8 @@ import { OpenedView, Reader, ReaderTarget, StudyHost } from './StudyTab';
 import type { OpenedFile } from './kea';
 import { openStudyHub } from '../../src/components/scholar/StudyHub';
 import { openStudySet } from '../../src/components/scholar/Study';
+import { StudyPicker } from '../../src/components/scholar/StudyModes';
+import { lastPlace, places } from './Book';
 import { reloadScholar, useScholar } from '../../src/components/scholar/scholarStore';
 import { FilesTab } from './Files';
 import { PairFlow, SettingsPage, Welcome } from './Welcome';
@@ -316,7 +318,7 @@ export function App() {
       </nav>
       {item && ctx && <Sheet ctx={ctx} it={item} onClose={() => setItem(null)} />}
       <StudyHost />
-      {reader && <Reader target={reader} onClose={() => setReader(null)} />}
+      {reader && <Reader target={reader} onClose={() => setReader(null)} onOpen={setReader} />}
       {opened && <OpenedView file={opened} onClose={() => setOpened(null)} />}
       {settings && (
         <SettingsPage
@@ -427,6 +429,7 @@ function Today({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
     .filter((b): b is ScholarItem => !!b);
   return (
     <div className="page">
+      <ContinueReading ctx={ctx} />
       {next && (
         <div className="next" style={{ borderColor: typeColor(next.type) }} onClick={() => ctx.open(next)}>
           <div className="next-k">Next</div>
@@ -631,18 +634,34 @@ function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCod
       .then((q) => setDue(q.due.length + q.fresh.length))
       .catch(() => setDue(null));
   }, [ctx.data, version]);
+  const [readings, setReadings] = useState(false);
   const c = ctx.data.details.find((x) => x.code === code);
+  const classList = ctx.data.details.map((d) => ({ id: d.id, code: d.code }));
+  if (!c && readings) return <Readings ctx={ctx} onBack={() => setReadings(false)} />;
   if (!c)
     return (
       <div className="page">
-        <button className="card review-all" onClick={() => openStudySet('review:all')}>
-          <Brain size={22} />
-          <span>
-            <b>Review</b>
-            <span className="muted small block">{due == null ? 'Cards and questions coming due, before each test' : due ? `${due} due now, across your classes` : 'Nothing due right now'}</span>
-          </span>
-          <ChevronRight size={18} className="muted" />
-        </button>
+        <ContinueReading ctx={ctx} />
+        <div className="hub2">
+          <button className="card review-all" onClick={() => openStudySet('review:all')}>
+            <Brain size={22} />
+            <span>
+              <b>Review</b>
+              <span className="muted small block">{due == null ? 'A mix of every class' : due ? `${due} due, a mix of every class` : 'Nothing due right now'}</span>
+            </span>
+          </button>
+          <button className="card review-all" onClick={() => setReadings(true)}>
+            <BookOpen size={22} />
+            <span>
+              <b>Readings</b>
+              <span className="muted small block">Every chapter, to read or listen to</span>
+            </span>
+          </button>
+        </div>
+        <details className="why choose">
+          <summary>Review only some chapters</summary>
+          <StudyPicker classes={classList} />
+        </details>
         <h2>Your classes</h2>
         {ctx.data.details.map((d) => {
           const g = ctx.data.grades[d.code]?.final;
@@ -682,7 +701,7 @@ function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCod
       </div>
       <div className="grid2">
         <button className="btn" onClick={() => openStudySet(`review:${c.id}`)}>
-          <Brain size={16} /> Review
+          <Brain size={16} /> Review all
         </button>
         {c.url ? (
           <button className="btn" onClick={() => Kea.open({ url: c.url! })}>
@@ -692,6 +711,10 @@ function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCod
           <span />
         )}
       </div>
+      <details className="why choose">
+        <summary>Review only some chapters</summary>
+        <StudyPicker classes={[{ id: c.id, code: c.code }]} />
+      </details>
       {upcoming.length > 0 && (
         <>
           <h2>Coming up</h2>
@@ -851,6 +874,66 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
         <LinkGroups links={[...it.links, ...(it.platformLinks || []), ...it.weeklyLinks]} onOpen={(url) => Kea.open({ url })} />
         {(it.instructor || it.contact) && <p className="muted small">{[it.instructor, it.contact].filter(Boolean).join(' · ')}</p>}
       </div>
+    </div>
+  );
+}
+
+/** The book read last, to carry on where it was left (by reading or listening). */
+function ContinueReading({ ctx }: { ctx: Ctx }) {
+  const p = lastPlace();
+  // (Only lately: a book from weeks ago isn't "carrying on".)
+  if (!p || Date.now() - Date.parse(p.at) > 14 * 864e5) return null;
+  return (
+    <button className="card continue" onClick={() => ctx.read({ file: p.file, chapter: p.chapter, title: p.title })}>
+      <BookOpen size={20} />
+      <span className="class-main">
+        <span className="muted small block">Continue reading</span>
+        <b>{p.title}</b>
+        <span className="muted small block">{[p.code, p.pages ? `Page ${p.page + 1} of ${p.pages}` : ''].filter(Boolean).join(' · ')}</span>
+      </span>
+      {p.pages > 0 && (
+        <span className="ring" style={{ ['--p' as any]: `${Math.round(((p.page + 1) / p.pages) * 100)}%` }}>
+          {Math.round(((p.page + 1) / p.pages) * 100)}%
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** Every class's chapters to read (or listen to), with how far each was read. */
+function Readings({ ctx, onBack }: { ctx: Ctx; onBack(): void }) {
+  const done = places();
+  return (
+    <div className="page">
+      <button className="back" onClick={onBack}>
+        <ChevronLeft size={18} /> Classes
+      </button>
+      <h1>Readings</h1>
+      <p className="muted small">Tap a chapter to read it. In the book, the headphones read it aloud, even with the screen off or no signal.</p>
+      {ctx.data.details.map((d) => {
+        const chs = d.chapters.filter((ch) => ch.pdf);
+        if (!chs.length) return null;
+        return (
+          <section key={d.id}>
+            <h2>
+              {d.code} <span className="muted small">· {d.name}</span>
+            </h2>
+            {chs.map((ch) => {
+              const p = done[ch.pdf!.file];
+              const pct = p?.pages ? Math.round(((p.page + 1) / p.pages) * 100) : 0;
+              return (
+                <button key={ch.label} className="card reading-row" onClick={() => ctx.read({ file: ch.pdf!.file, chapter: ch.label, title: ch.title || ch.label })}>
+                  <span className="class-main">
+                    <b>{ch.label}</b>
+                    {ch.title && <span className="muted small block">{ch.title}</span>}
+                  </span>
+                  {pct > 0 && <span className={`read-pct ${pct >= 95 ? 'done' : ''}`}>{pct >= 95 ? <CheckCircle2 size={16} /> : `${pct}%`}</span>}
+                </button>
+              );
+            })}
+          </section>
+        );
+      })}
     </div>
   );
 }

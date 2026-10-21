@@ -1,13 +1,18 @@
-// Scan and PDFs: the part of Kea that works on its own, with no PC or class site. Scan paper into a clean PDF (edges
-// found, straightened and cleaned up by Android's document scanner), open any PDF, and keep them here to read, rename,
-// share or save. With classes connected, a scan can go straight to an assignment's hand-in page.
+// Scan and files: the part of Kea that works on its own, with no PC or class site. Scan paper into a clean PDF (edges
+// found, straightened and cleaned up by Android's document scanner), open any file (PDFs, Word, slides, spreadsheets,
+// books, pictures…), and keep them here to read, rename, share or save. With classes connected, a file can go straight
+// to an assignment's hand-in page.
 import { useEffect, useState } from 'react';
-import { Camera, ChevronRight, Download, FileText, Loader2, MoreVertical, Pencil, ScanLine, Share2, Trash2, Upload, X } from 'lucide-react';
+import { BookOpen, Camera, ChevronRight, Download, File as FileIcon, FileSpreadsheet, FileText, FolderOpen, Image, Loader2, MoreVertical, Music, Pencil, Presentation, ScanLine, Share2, Trash2, Upload, Video, X } from 'lucide-react';
+import { kindOf } from './Viewer';
 import { Kea, KeaData, PhoneFile, folders, handInUrl, pagesOf, setPages } from './kea';
 import { size, toast, when } from './ui';
 
 const stamp = () => `Scan ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
-const bare = (name: string) => name.replace(/\.pdf$/i, '');
+// (Shown without its extension; the kind says what it is.)
+const bare = (name: string) => name.replace(/\.[a-z0-9]{1,5}$/i, '');
+const KIND_ICON = { pdf: FileText, doc: FileText, markdown: FileText, text: FileText, epub: BookOpen, sheet: FileSpreadsheet, slides: Presentation, image: Image, audio: Music, video: Video, other: FileIcon };
+const KIND_NAME = { pdf: 'PDF', doc: 'Document', markdown: 'Document', text: 'Text', epub: 'Book', sheet: 'Spreadsheet', slides: 'Slides', image: 'Picture', audio: 'Sound', video: 'Video', other: 'File' };
 
 export function FilesTab({ data, read }: { data: KeaData | null; read(path: string, name: string): void }) {
   const [files, setFiles] = useState<PhoneFile[] | null>(null);
@@ -38,7 +43,7 @@ export function FilesTab({ data, read }: { data: KeaData | null; read(path: stri
   };
   const pick = async () => {
     try {
-      const f = await Kea.pickPdf();
+      const f = await Kea.pickFile();
       list();
       read(f.path, f.name);
     } catch (e: any) {
@@ -55,9 +60,9 @@ export function FilesTab({ data, read }: { data: KeaData | null; read(path: stri
           <span>Paper to a clean PDF</span>
         </button>
         <button className="tile" onClick={pick}>
-          <FileText size={30} />
-          <b>Open a PDF</b>
-          <span>From your phone or drive</span>
+          <FolderOpen size={30} />
+          <b>Open a file</b>
+          <span>PDFs, Word, slides, spreadsheets, books</span>
         </button>
       </div>
       <h2>Your files</h2>
@@ -67,16 +72,21 @@ export function FilesTab({ data, read }: { data: KeaData | null; read(path: stri
         </div>
       ) : !files.length ? (
         <div className="empty">
-          Scans and PDFs you open in Kea are kept here, ready to read, share or {data ? 'hand in' : 'save'}.
+          Scans and files you open in Kea (from here, from other apps or from your class site) are kept here, ready to read, share or {data ? 'hand in' : 'save'}.
         </div>
       ) : (
-        files.map((f) => (
+        files.map((f) => {
+          const k = kindOf(f.name);
+          const Icon = f.kind === 'scan' ? Camera : KIND_ICON[k];
+          return (
           <div key={f.path} className="file" onClick={() => read(f.path, f.name)}>
-            <span className={`file-ic ${f.kind}`}>{f.kind === 'scan' ? <Camera size={18} /> : <FileText size={18} />}</span>
+            <span className={`file-ic ${f.kind} k-${k}`}>
+              <Icon size={18} />
+            </span>
             <span className="file-main">
               <b>{bare(f.name)}</b>
               <span className="muted small">
-                {[when(f.modified), pagesOf(f.path) ? `${pagesOf(f.path)} page${pagesOf(f.path) === 1 ? '' : 's'}` : null, size(f.size)].filter(Boolean).join(' · ')}
+                {[f.kind === 'scan' ? 'Scan' : KIND_NAME[k], when(f.modified), pagesOf(f.path) ? `${pagesOf(f.path)} page${pagesOf(f.path) === 1 ? '' : 's'}` : null, size(f.size)].filter(Boolean).join(' · ')}
               </span>
             </span>
             <button
@@ -91,7 +101,8 @@ export function FilesTab({ data, read }: { data: KeaData | null; read(path: stri
               <MoreVertical size={18} />
             </button>
           </div>
-        ))
+          );
+        })
       )}
       {open && <FileSheet file={open} data={data} fresh={fresh === open.path} onClose={() => (setOpen(null), setFresh(null))} onChanged={list} read={read} />}
     </div>
@@ -136,7 +147,7 @@ function FileSheet({ file, data, fresh, onClose, onChanged, read }: { file: Phon
           </span>
         </label>
         <div className="grid2">
-          <button className="btn" onClick={async () => read(await commit(), `${name}.pdf`)}>
+          <button className="btn" onClick={async () => { const p = await commit(); read(p, p.split('/').pop() || name); }}>
             <FileText size={16} /> Open
           </button>
           <button className="btn" onClick={async () => Kea.share({ file: await commit(), name })}>
@@ -145,12 +156,13 @@ function FileSheet({ file, data, fresh, onClose, onChanged, read }: { file: Phon
           <button className="btn" onClick={async () => Kea.saveCopy({ file: await commit(), name }).then((r) => toast(`Saved to Downloads as ${r.name}`)).catch(toast)}>
             <Download size={16} /> Save to Downloads
           </button>
-          {data ? (
+          <button className="btn" onClick={async () => Kea.openWith({ path: await commit() }).catch(toast)}>
+            <FolderOpen size={16} /> Open in another app
+          </button>
+          {data && (
             <button className="btn" onClick={() => setHandIn(!handIn)}>
               <Upload size={16} /> Hand in
             </button>
-          ) : (
-            <span />
           )}
         </div>
         {handIn && data && <HandIn data={data} file={path} onPicked={(f) => setName(f)} />}

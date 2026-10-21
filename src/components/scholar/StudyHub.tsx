@@ -3,7 +3,7 @@
 // flashcards, Learn and Match, by topic), with past practice exams and their scores. No pacing: you choose what to study. Opened by the one Study button wherever there's
 // something to study, so there aren't different buttons doing the same thing in different places.
 import { useEffect, useState } from 'react';
-import { Brain, ClipboardList, Image, Layers, Loader2, Shapes, Sparkles } from 'lucide-react';
+import { Brain, ClipboardList, Headphones, Image, Layers, Loader2, Shapes, Sparkles } from 'lucide-react';
 import { api, PoolItem, ReviewQueue } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
@@ -228,7 +228,8 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
           [
             ['', 'Flashcards', Layers, 'Flip through, star the hard ones'],
             ['learn', 'Learn', Brain, 'Rounds until you know every card'],
-            ['match', 'Match', Shapes, 'Race to pair terms and meanings']
+            ['match', 'Match', Shapes, 'Race to pair terms and meanings'],
+            ['listen', 'Listen', Headphones, 'Read aloud hands-free, with time to answer']
           ] as const
         ).map(([mode, label, Icon, sub]) => (
           <button key={label} className="hub-mode" disabled={((!cards || narrowed) && (mode === 'match' || !exam)) || !!busy} onClick={() => open('cards', cards || exam, mode)}>

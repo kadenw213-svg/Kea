@@ -9,7 +9,7 @@ const LAST = 'kea.updateChecked';
 export const AUTO = 'kea.autoUpdate';
 
 export type UpdateState =
-  | { status: 'idle' | 'checking' | 'current'; version: string; error?: string }
+  | { status: 'idle' | 'checking' | 'current'; version: string; error?: string; latest?: string; checked?: number }
   | { status: 'downloading'; version: string; next: string; percent: number }
   | { status: 'ready'; version: string; next: string; needsPermission?: boolean };
 
@@ -38,13 +38,16 @@ export async function checkForUpdate(force = false) {
   }
   set({ status: 'checking', version });
   try {
-    const r = await fetch(LATEST, { headers: { Accept: 'application/vnd.github+json' } });
+    const r = await fetch(LATEST, { cache: 'no-store', headers: { Accept: 'application/vnd.github+json' } });
     if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
     const rel = await r.json();
     localStorage.setItem(LAST, String(Date.now()));
     const next = String(rel.tag_name || '').replace(/^v/, '');
     const apk = (rel.assets || []).find((a: any) => /\.apk$/i.test(a.name));
-    if (!next || !apk || !version || !newer(next, version)) return set({ status: 'current', version });
+    if (!next || !version) throw new Error('GitHub didn’t say which version is newest');
+    if (!newer(next, version)) return set({ status: 'current', version, latest: next, checked: Date.now() });
+    // A newer Kea without the phone app attached: say so rather than "up to date".
+    if (!apk) throw new Error(`Kea ${next} is out, but its phone app isn’t attached yet`);
     set({ status: 'downloading', version, next, percent: 0 });
     const sub = await Kea.addListener('update', (p) => p.total > 0 && set({ status: 'downloading', version, next, percent: Math.round((p.received / p.total) * 100) }));
     try {

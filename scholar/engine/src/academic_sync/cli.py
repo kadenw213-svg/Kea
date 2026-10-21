@@ -3146,6 +3146,11 @@ def _explain_problems(q: dict, explain: str) -> list[str]:
     return out
 
 
+# The words practice-check uses for an answer that stands out by its length (the depth review leaves these out of the
+# explanation problems it lists).
+GIVEAWAY = "the answer gives itself away by length"
+
+
 @app.command("practice-check")
 def practice_check_cmd(
     path: Annotated[Path, typer.Argument(help="The practice set JSON (data/study/out/<id>.json).")],
@@ -3202,7 +3207,10 @@ def practice_check_cmd(
                     problems.append(f"{where}: repeated choice")
                 for c in choices:
                     low = str(c).strip().lower().rstrip(".")
-                    if low in bad_choice or low.startswith(("both ", "all of", "none of", "neither ")):
+                    # (Only choices that point at other choices: "Both A and B", "Neither of these"; "Both
+                    # species molt" is fine.)
+                    if low in bad_choice or low.startswith(("all of", "none of", "neither of")) or re.match(
+                            r"^(both|neither)\s+(of (the|these)|[a-f]|choices?|answers?)", low):
                         problems.append(f"{where}: choice '{c}' breaks when Kea shuffles choices")
                 ans = q.get("answer")
                 answers = [ans] if kind == "mc" else ans if isinstance(ans, list) else []
@@ -3210,6 +3218,26 @@ def practice_check_cmd(
                         not isinstance(a, int) or not 0 <= a < len(choices) for a in answers):
                     problems.append(f"{where}: answer must be a choice index (0-based)"
                                     + (" list" if kind == "multi" else ""))
+                elif kind == "mc":
+                    # A student can pick the longest, most qualified choice without knowing anything.
+                    words = [len(str(c).split()) for c in choices]
+                    others = [w for i, w in enumerate(words) if i != ans]
+                    if words[ans] >= max(others) + 5 and words[ans] >= 1.5 * (sum(others) / len(others)):
+                        problems.append(f"{where}: {GIVEAWAY} (the answer has {words[ans]} words, the wrong choices "
+                                        f"{', '.join(map(str, others))}): make the wrong choices as long and specific, "
+                                        "or the answer shorter")
+                    # Every wrong choice chosen on purpose: `wrong` names the mistake each one stands for (shown to
+                    # the student who picks it), "" for the answer.
+                    wrong = q.get("wrong")
+                    if not isinstance(wrong, list) or len(wrong) != len(choices):
+                        problems.append(f"{where}: needs `wrong`, one entry per choice: the mistake each wrong choice "
+                                        "stands for (\"\" for the answer)")
+                    else:
+                        thin = [chr(65 + i) for i, w in enumerate(wrong) if i != ans and len(str(w or "").split()) < 4]
+                        if thin:
+                            problems.append(f"{where}: `wrong` doesn't say what mistake choice {', '.join(thin)} "
+                                            "stands for (a few words: the concept it's confused with, the reversed "
+                                            "relationship, the slip)")
             elif kind == "tf":
                 if not isinstance(q.get("answer"), bool):
                     problems.append(f"{where}: answer must be true or false")
@@ -3261,6 +3289,18 @@ def practice_check_cmd(
                 problems.append(f"only {share('multistep'):.0%} are multistep: at least 20% should chain steps (conversions, two concepts, a calculation feeding another)")
             if blanks > 0.15:
                 problems.append(f"{blanks:.0%} are fill-in-the-blank: at most 15% (more only when the class's tests use blanks)")
+        # Across the set: the right answer is the longest choice about as often as chance, not most of the time.
+        mcs = [q for q in items if isinstance(q, dict) and q.get("type") == "mc" and isinstance(q.get("answer"), int)
+               and isinstance(q.get("choices"), list) and 0 <= q["answer"] < len(q["choices"])]
+        if len(mcs) >= 8:
+            def longest(q: dict) -> bool:
+                lens = [len(str(c)) for c in q["choices"]]
+                return lens[q["answer"]] == max(lens) and lens.count(max(lens)) == 1
+            rate = sum(map(longest, mcs)) / len(mcs)
+            if rate > 0.4:
+                problems.append(f"in {rate:.0%} of the multiple-choice questions the answer is the longest choice "
+                                "(chance is about 25%): a student could guess by length. Make wrong choices as long "
+                                "and specific as the answers, and the answer the shortest in some")
     print(json.dumps({"ok": not problems, "count": len(items), "problems": problems[:80]}, indent=1))
     if problems:
         raise typer.Exit(code=1)

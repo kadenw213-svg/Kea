@@ -8,6 +8,7 @@ import { setPdfTarget } from '../../lib/pdfTarget';
 import { useScholar } from './scholarStore';
 import { SetRow, openStudySet, useStudySets } from './Study';
 import { openStudyHub } from './StudyHub';
+import { StudyPicker } from './StudyModes';
 
 type Mode = 'read' | 'quiz';
 const MODE_KEY = 'kea.resources.mode';
@@ -106,6 +107,12 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
             <span className="muted">Cards and questions coming back before each test{filter ? '' : ', every class'}</span>
           </span>
         </button>
+      )}
+      {mode === 'quiz' && courses.length > 0 && (
+        <details className="res-choose">
+          <summary>Choose chapters to review</summary>
+          <StudyPicker key={filter} classes={courses.map((c) => ({ id: c.id, code: c.code }))} start={filter || undefined} />
+        </details>
       )}
 
       {!details ? (

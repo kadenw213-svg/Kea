@@ -69,7 +69,7 @@ button {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #c9cdd2;
+  color: var(--text-2);
 }
 .icon {
   border: none;
@@ -138,8 +138,8 @@ h2 {
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: #e8eaed;
-  color: #101215;
+  background: var(--text);
+  color: var(--bg);
   font-size: 11px;
   display: grid;
   place-items: center;
@@ -225,8 +225,8 @@ h2 {
   align-items: center;
   padding: 8px 10px;
   border-radius: 10px;
-  background: #3a2422;
-  color: #f6aea8;
+  background: color-mix(in srgb, #f28b82 16%, transparent);
+  color: var(--text);
   font-size: 13.5px;
 }
 .next {
@@ -436,7 +436,7 @@ b.low {
   background: var(--surface-3);
 }
 .wd.today b {
-  color: #fff;
+  color: var(--text);
   text-decoration: underline;
 }
 .wd i {
@@ -486,9 +486,9 @@ b.low {
   color: var(--text);
 }
 .btn.primary {
-  background: #e3e4e6;
-  color: #131314;
-  border-color: #e3e4e6;
+  background: var(--primary, #e3e4e6);
+  color: var(--on-primary, #131314);
+  border-color: var(--primary, #e3e4e6);
   font-weight: 600;
 }
 .btn.big {
@@ -565,8 +565,8 @@ b.low {
   bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
   padding: 12px;
   border-radius: 12px;
-  background: #e3e4e6;
-  color: #131314;
+  background: var(--text);
+  color: var(--bg);
 }
 .tb-h {
   font-size: 12px;

@@ -2,13 +2,28 @@
 // Connecting is its own few steps (Kea on the PC, its files from the drive, the class site, notifications), and the
 // settings page holds all of it afterwards.
 import { useEffect, useState } from 'react';
-import { BookOpen, Bell, Brain, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, Circle, ExternalLink, FileText, FolderOpen, GraduationCap, Inbox, Laptop, Loader2, RefreshCw, ScanLine, School, Upload } from 'lucide-react';
+import { BookOpen, Bell, Brain, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, Circle, Cloud, ExternalLink, FileText, FolderOpen, GraduationCap, Inbox, Laptop, Loader2, RefreshCw, ScanLine, School, Smartphone, Upload } from 'lucide-react';
 import { Kea } from './kea';
+import type { DriveFrom } from './kea';
 import { AUTO, checkForUpdate, installUpdate, useUpdate } from './update';
 import { toast } from './ui';
+import { ACCENT_LIST, PAGES, PageId, THEME_LIST, setLook, useLook } from './theme';
+import { VoiceSheet } from './Book';
 
 type NativeState = Awaited<ReturnType<typeof Kea.state>>;
 const DOWNLOAD = 'https://github.com/kadenw213-svg/Kea/releases/latest';
+
+/** The drives Kea on the PC can sync through, with where Kea's files are in each and its name in Android's picker. */
+const DRIVES = [
+  { id: 'google', label: 'Google Drive', app: 'com.google.android.apps.docs', menu: 'Drive', where: 'My Drive → Kea → School' },
+  { id: 'onedrive', label: 'OneDrive', app: 'com.microsoft.skydrive', menu: 'OneDrive', where: 'Kea → School' },
+  { id: 'dropbox', label: 'Dropbox', app: 'com.dropbox.android', menu: 'Dropbox', where: 'Kea → School' },
+  { id: 'phone', label: 'A folder on this phone', app: '', menu: '', where: '' }
+] as const;
+type DriveId = (typeof DRIVES)[number]['id'];
+const DRIVE = 'kea.drive';
+/** Where chosen files came from, in words. */
+export const placeName = (from?: DriveFrom) => (from === 'phone' ? 'this phone' : from === 'downloads' ? 'Downloads' : from === 'other' ? 'another app' : DRIVES.find((d) => d.id === from)?.label || '');
 
 /** The first start: what Kea is, how it's used, and whether to connect classes now. */
 export function Welcome({ onTools, onConnect }: { onTools(): void; onConnect(): void }) {
@@ -115,11 +130,42 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
     if (state?.dataFolder) readFound().catch(() => {});
   }, []);
 
+  // Which drive Kea's folder is on: asked first, so the steps (and the check after) are that drive's.
+  const [drive, setDriveId] = useState<DriveId | null>(() => {
+    const saved = localStorage.getItem(DRIVE) as DriveId | null;
+    const held = state?.drive as DriveId | undefined;
+    return DRIVES.some((d) => d.id === held) ? held! : DRIVES.some((d) => d.id === saved) ? saved : null;
+  });
+  const setDrive = (d: DriveId | null) => {
+    setDriveId(d);
+    setWrong('');
+    if (d) localStorage.setItem(DRIVE, d);
+  };
+  const chooseDrive = (d: DriveId) => setDrive(d);
+  const drv = DRIVES.find((d) => d.id === drive);
+  const [apps, setApps] = useState<Partial<Record<string, boolean>>>({});
+  useEffect(() => {
+    Kea.drives()
+      .then(setApps)
+      .catch(() => {});
+  }, []);
+  // The files came from somewhere other than the drive chosen: most often a copy in Downloads, which never updates.
+  const [wrong, setWrong] = useState('');
+  const checkFrom = (from?: DriveFrom) => {
+    if (!from || !drv || from === drv.id || (drv.id === 'phone' && from !== 'downloads')) return setWrong('');
+    setWrong(
+      from === 'downloads'
+        ? `These came from Downloads, not ${drv.label}. A downloaded copy never updates, so your classes would stay as they are today. Choose them again from ${drv.label}.`
+        : `These came from ${placeName(from)}, not ${drv.label}. If that’s where your computer syncs Kea, change the drive above; otherwise choose them again from ${drv.label}.`
+    );
+  };
+
   const pickFiles = async () => {
     setBusy('files');
     setMsg('');
     try {
-      await Kea.pickFiles();
+      const r = await Kea.pickFiles({ drive: drive || undefined });
+      checkFrom(r.from);
       await readFound();
       await refresh();
     } catch (e: any) {
@@ -131,7 +177,8 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
     setBusy('folder');
     setMsg('');
     try {
-      await Kea.pickFolder();
+      const r = await Kea.pickFolder();
+      checkFrom(r.from);
       await readFound();
       await refresh();
     } catch (e: any) {
@@ -160,7 +207,7 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
   return (
     <div className="pair">
       <div className="pair-top">
-        <button className="icon" aria-label="Back" onClick={() => (step ? setStep(step - 1) : onCancel())}>
+        <button className="icon" aria-label="Back" onClick={() => (step === 1 && drive ? setDrive(null) : step ? setStep(step - 1) : onCancel())}>
           <ChevronLeft size={20} />
         </button>
         <span className="pair-steps">
@@ -188,13 +235,58 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
             </button>
           </>
         )}
-        {step === 1 && (
+        {step === 1 && !drive && (
           <>
-            <FolderOpen size={34} className="pair-ic" />
-            <h1>Choose Kea’s files</h1>
+            <Cloud size={34} className="pair-ic" />
+            <h1>Where is Kea’s folder?</h1>
             <p>
-              In the picker, open your drive, then <b>Kea → School</b>, and select all three files (press and hold the first, then tap the others):
+              The drive your computer syncs Kea through, the one chosen in Kea on the computer under <b>Scans → Devices</b>.
             </p>
+            <div className="drives">
+              {DRIVES.map((d) => (
+                <button key={d.id} className="drive-opt" onClick={() => chooseDrive(d.id)}>
+                  {d.id === 'phone' ? <Smartphone size={22} /> : <Cloud size={22} />}
+                  <span>
+                    <b>{d.label}</b>
+                    <span className="muted small block">{d.id === 'phone' ? 'Synced or copied onto this phone' : apps[d.id] === false ? `Needs the ${d.label} app` : apps[d.id] ? 'App is on this phone' : ''}</span>
+                  </span>
+                  <ChevronRight size={18} className="muted" />
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {step === 1 && drv && (
+          <>
+            <button className="drive-on" onClick={() => setDrive(null)}>
+              {drv.id === 'phone' ? <Smartphone size={18} /> : <Cloud size={18} />}
+              <span>
+                On <b>{drv.id === 'phone' ? 'this phone' : drv.label}</b>
+              </span>
+              <span className="drive-change">Change</span>
+            </button>
+            <h1>{drv.id === 'phone' ? 'Choose Kea’s folder' : `Choose Kea’s files from ${drv.label}`}</h1>
+            {drv.id !== 'phone' && apps[drv.id] === false && (
+              <div className="note warn">
+                <p>The {drv.label} app isn’t on this phone. Android only shows a drive’s files through its app: install it and sign in with the same account as your computer.</p>
+                <button className="btn" onClick={() => Kea.open({ url: `https://play.google.com/store/apps/details?id=${drv.app}` })}>
+                  <ExternalLink size={16} /> Get {drv.label}
+                </button>
+              </div>
+            )}
+            {drv.id === 'phone' ? (
+              <p>If a sync app keeps your Kea folder on this phone, choose it: the Kea folder or Kea → School both work.</p>
+            ) : (
+              <ol className="how">
+                <li>
+                  Tap the button below. If the picker opens somewhere else, tap <b>☰</b> and choose <b>{drv.menu}</b>.
+                </li>
+                <li>
+                  Open <b>{drv.where}</b>.
+                </li>
+                <li>Press and hold the first file, tap the other two, then tap Select.</li>
+              </ol>
+            )}
             <div className="filelist">
               {[
                 ['kea-data.json', 'your classes, calendar and study sets'],
@@ -210,20 +302,30 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
                 </div>
               ))}
             </div>
-            <button className="btn primary" disabled={!!busy} onClick={pickFiles}>
-              {busy === 'files' ? <Loader2 size={16} className="spin" /> : <FolderOpen size={16} />} {files.length ? 'Choose the files again' : 'Choose Kea’s files'}
-            </button>
-            <details className="why">
-              <summary>Why not just pick the folder?</summary>
-              <p>
-                Google Drive’s and OneDrive’s Android apps don’t let any app use a whole folder, only files in it. That’s why the folder picker lets you browse but not choose. Picking the three files once works the same: Kea always reads their newest copies.
-              </p>
-              <p>If your Kea folder is synced onto the phone itself (for example with a sync app), you can choose the folder:</p>
-              <button className="btn" disabled={!!busy} onClick={pickFolder}>
-                {busy === 'folder' ? <Loader2 size={16} className="spin" /> : <FolderOpen size={16} />} Choose a folder on the phone
-              </button>
-            </details>
-            {found && (
+            {drv.id === 'phone' ? (
+              <>
+                <button className="btn primary" disabled={!!busy} onClick={pickFolder}>
+                  {busy === 'folder' ? <Loader2 size={16} className="spin" /> : <FolderOpen size={16} />} {st?.dataFolder && !files.length ? 'Choose the folder again' : 'Choose the folder'}
+                </button>
+                <button className="btn" disabled={!!busy} onClick={pickFiles}>
+                  {busy === 'files' ? <Loader2 size={16} className="spin" /> : <FileText size={16} />} Choose the three files instead
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn primary" disabled={!!busy} onClick={pickFiles}>
+                  {busy === 'files' ? <Loader2 size={16} className="spin" /> : <FolderOpen size={16} />} {files.length ? 'Choose the files again' : `Open ${drv.label}`}
+                </button>
+                <details className="why">
+                  <summary>Why not just pick the folder?</summary>
+                  <p>
+                    {drv.label}’s Android app doesn’t let any app use a whole folder, only files in it, so the folder picker lets you browse but not choose. Picking the three files once works the same: Kea always reads their newest copies.
+                  </p>
+                </details>
+              </>
+            )}
+            {wrong && <p className="note warn">{wrong}</p>}
+            {found && !wrong && (
               <p className="note ok">
                 <Check size={15} /> Found your classes: {found.classes.join(', ') || 'none yet'}.
               </p>
@@ -266,7 +368,7 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
             Kea on my computer is ready <ChevronRight size={18} />
           </button>
         )}
-        {step === 1 && (
+        {step === 1 && drive && (
           <button className="btn primary big" disabled={!have('kea-data.json') && !found} onClick={() => setStep(2)}>
             Next <ChevronRight size={18} />
           </button>
@@ -308,9 +410,12 @@ export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onC
                 <CheckCircle2 size={18} className="ok-ic" />
                 <span>
                   <b>Connected to Kea on your computer</b>
-                  <span className="muted small block">{(state?.files || []).length ? `${state!.files!.length} of 3 files chosen` : 'Through a folder on the phone'}</span>
+                  <span className="muted small block">
+                    {[state?.drive && `On ${placeName(state.drive)}`, (state?.files || []).length ? `${state!.files!.length} of 3 files chosen` : 'Through a folder on the phone'].filter(Boolean).join(' · ')}
+                  </span>
                 </span>
               </div>
+              {state?.drive === 'downloads' && <p className="note warn">These files are a copy in Downloads, which never updates. Choose them again from your drive.</p>}
               <button className="btn" onClick={onPair}>
                 <FolderOpen size={16} /> Change files or class site
               </button>
@@ -350,6 +455,7 @@ export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onC
             </div>
           </section>
         )}
+        <Appearance />
         <section className="set">
           <h2>Notifications</h2>
           <button className="btn" onClick={() => Kea.allowNotifications()}>
@@ -370,7 +476,7 @@ export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onC
                     : u.status === 'ready'
                       ? `Kea ${u.next} is ready to install`
                       : u.status === 'current'
-                        ? 'Up to date'
+                        ? `Up to date: ${u.version} is the newest release${u.checked ? ` (checked ${new Date(u.checked).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})` : ''}`
                         : u.error
                           ? `Couldn’t check: ${u.error}`
                           : ''}
@@ -410,5 +516,92 @@ export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onC
         </section>
       </div>
     </div>
+  );
+}
+
+/** How Kea looks, and how it reads aloud: every colour and size the student's choice. */
+function Appearance() {
+  const look = useLook();
+  const [voices, setVoices] = useState(false);
+  return (
+    <>
+      <section className="set">
+        <h2>Appearance</h2>
+        <span className="muted small">Theme</span>
+        <div className="themes">
+          {THEME_LIST.map((t) => (
+            <button key={t.id} className={`theme-opt ${look.theme === t.id ? 'on' : ''}`} onClick={() => setLook({ theme: t.id })}>
+              <i style={{ background: t.bg, color: t.text, borderColor: t.surface }}>Aa</i>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <span className="muted small">Accent colour</span>
+        <div className="accents">
+          {ACCENT_LIST.map((a) => (
+            <button key={a.id} className={`accent-opt ${look.accent === a.id ? 'on' : ''}`} aria-label={a.label} title={a.label} onClick={() => setLook({ accent: a.id })}>
+              <i style={{ background: a.id === 'silver' ? 'linear-gradient(135deg, #e3e4e6 50%, #a8c7fa 50%)' : a.color }} />
+            </button>
+          ))}
+        </div>
+        <span className="muted small">Size</span>
+        <div className="bk-opts">
+          {[
+            [0.9, 'Smaller'],
+            [1, 'Normal'],
+            [1.1, 'Larger'],
+            [1.2, 'Largest']
+          ].map(([v, label]) => (
+            <button key={v} className={`bk-chip ${look.scale === v ? 'on' : ''}`} onClick={() => setLook({ scale: v as number })}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="muted small">Book pages</span>
+        <div className="bk-opts">
+          {(Object.keys(PAGES) as PageId[]).map((id) => (
+            <button key={id} className={`bk-chip ${look.page === id ? 'on' : ''}`} onClick={() => setLook({ page: id })}>
+              {PAGES[id].label}
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="set">
+        <h2>Reading aloud</h2>
+        <p className="muted small">Books and flashcards read in the phone’s own voices. Offline voices keep reading with no signal, and reading carries on with the screen off.</p>
+        <span className="muted small">Speed for books and documents: {look.rate}×</span>
+        <div className="bk-opts">
+          {[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((r) => (
+            <button key={r} className={`bk-chip ${look.rate === r ? 'on' : ''}`} onClick={() => setLook({ rate: r })}>
+              {r}×
+            </button>
+          ))}
+        </div>
+        <input className="range" type="range" min={0.5} max={2.5} step={0.05} value={look.rate} onChange={(e) => setLook({ rate: Number(e.target.value) })} aria-label="Speed" />
+        <button className="btn" onClick={() => setVoices(true)}>
+          Choose a voice
+        </button>
+        <span className="muted small">Mark the sentence being read</span>
+        <div className="bk-opts">
+          {(
+            [
+              ['fill', 'Highlight'],
+              ['underline', 'Underline'],
+              ['off', 'Off']
+            ] as const
+          ).map(([v, l]) => (
+            <button key={v} className={`bk-chip ${look.highlight === v ? 'on' : ''}`} onClick={() => setLook({ highlight: v })}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <label className="toggle">
+          <input type="checkbox" checked={look.follow} onChange={(e) => setLook({ follow: e.target.checked })} />
+          <span>Turn the pages while reading aloud</span>
+        </label>
+        <p className="muted small">Listening to flashcards (the Listen mode in any deck) has its own options there: speed, the pause before each answer and between cards, and more.</p>
+      </section>
+      {voices && <VoiceSheet onClose={() => setVoices(false)} />}
+    </>
   );
 }

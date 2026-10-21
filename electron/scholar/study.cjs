@@ -176,15 +176,19 @@ function catalog(kind, courseId, chapters) {
 
 /**
  * Pick `n` saved items to reuse: missed ones first, then ones never tried, then the longest since last seen; right
- * every time and seen lately last. Spread across the chapters, so a review isn't all one chapter.
+ * every time and seen lately last. Spread across the chapters, so a review isn't all one chapter. On a topic the
+ * student is doing well on, its multi-step questions (then apply) come before its recall ones; misses still come first.
  */
 function pick(items, n, h = history()) {
   const now = Date.now();
+  const strong = strongTopics(items, h);
   const score = (it) => {
     const x = h[it.k];
-    if (!x) return 3 + Math.random();
-    const days = (now - Date.parse(x.last)) / 864e5;
-    return (x.lastRight === false ? 4 : 1 - x.right / Math.max(1, x.seen)) + Math.min(2, days / 7) + Math.random() * 0.5;
+    if (x && x.lastRight === false) return 4 + Math.min(2, (now - Date.parse(x.last)) / 864e5 / 7) + Math.random() * 0.5;
+    const lift = strong.has(topicOf(it)) ? LEVEL_LIFT[it.level] || 0 : 0;
+    const base = !x ? 3 + Math.random() : 1 - x.right / Math.max(1, x.seen) + Math.min(2, (now - Date.parse(x.last)) / 864e5 / 7) + Math.random() * 0.5;
+    // (Below every miss, however much it's lifted.)
+    return Math.min(3.99, base + lift);
   };
   const by = new Map();
   for (const it of items.map((it) => ({ it, s: score(it) })).sort((a, b) => b.s - a.s)) {
@@ -196,6 +200,23 @@ function pick(items, n, h = history()) {
   const lists = [...by.values()];
   while (out.length < n && lists.some((l) => l.length)) for (const l of lists) if (l.length && out.length < n) out.push(l.shift());
   return out;
+}
+
+// Doing well on a topic: at least 4 of its questions tried and 80% of them right the last time. Its harder questions
+// are then lifted (multi-step most), its recall ones lowered.
+const LEVEL_LIFT = { multistep: 1.2, apply: 0.6, recall: -0.6 };
+const topicOf = (it) => it.section || it.chapter || '';
+function strongTopics(items, h) {
+  const tally = new Map();
+  for (const it of items) {
+    const x = h[it.k];
+    if (!x || x.lastRight == null) continue;
+    const t = tally.get(topicOf(it)) || { tried: 0, right: 0 };
+    t.tried++;
+    if (x.lastRight) t.right++;
+    tally.set(topicOf(it), t);
+  }
+  return new Set([...tally].filter(([, t]) => t.tried >= 4 && t.right / t.tried >= 0.8).map(([k]) => k));
 }
 
 /** How many saved questions (or cards) a new set on these chapters, or for this test, could reuse. */
@@ -288,12 +309,13 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
 }
 
 // ---------- Question banks: every chapter with a textbook keeps saved questions ready ----------
-// Each chapter with a textbook gets a bank of saved questions (50 by default) so practice is ready without asking, and
-// when the student is running out (fewer than BANK_LOW they haven't seen or last got wrong), Kea adds BANK_MORE new
-// ones. Banks are ordinary sets (bank: true), written one at a time by the primary. Library classes can't make more,
+// Each chapter with a textbook gets a bank of saved questions (25 by default) so practice is ready without asking, and
+// when the student is running out (BANK_LOW or fewer they haven't seen or last got wrong), Kea adds BANK_MORE new
+// ones. Small on purpose (the student's rule, 2026-10-21): every question costs Claude usage, so the bank grows only as
+// it's used. Banks are ordinary sets (bank: true), written one at a time by the primary. Library classes can't make more,
 // so their authors ship 100 per chapter instead.
-const BANK_LOW = 10;
-const BANK_MORE = 25;
+const BANK_LOW = 5;
+const BANK_MORE = 20;
 
 /**
  * The next chapter whose bank needs questions, as a request for request(), or null. `size` is the bank's target;
@@ -335,7 +357,7 @@ function bankNeed(chapters, size = 50) {
     const upgraded = all.some((e) => e.bank && e.upgrade && e.courseId === courseId && e.chapters?.[0] === label && e.status !== 'failed');
     if (soon && old && !upgraded) return { kind: 'exam', courseId, chapters: [label], count: 25, mode: 'new', bank: true, upgrade: true };
     const left = have.filter((it) => !h[it.k] || h[it.k].lastRight === false).length;
-    if (left < BANK_LOW) return { kind: 'exam', courseId, chapters: [label], count: BANK_MORE, mode: 'new', bank: true };
+    if (left <= BANK_LOW) return { kind: 'exam', courseId, chapters: [label], count: BANK_MORE, mode: 'new', bank: true };
   }
   return null;
 }
@@ -549,6 +571,40 @@ async function notesFor(courseCode, docText, step) {
 }
 
 /**
+ * What the teacher has given for each chapter that has a test still to come: each upcoming test's study focus and
+ * description, its review links, the chapter's own review sheets (from its weekly reading) and the class's review-like
+ * files numbered for it. Links and files are compared by a hash; written text (`words` set: the study focus is
+ * Claude's wording, re-saved by syncs) by how much of it is new, so a reworded line isn't new material.
+ * Returns { course, chapters: Map(label -> { test: { id, title, date }, items: [{ h, text, words? }] }) }.
+ */
+async function teacherContext(courseCode) {
+  const p = profiles.paths();
+  const src = await db.practiceSources(p.db, p.textbooks, { courseId: courseCode, allChapters: true });
+  if (!src) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const hash = (s) => crypto.createHash('sha1').update(s).digest('hex').slice(0, 12);
+  const files = classFiles(src.course.code).filter((f) => !SKIP.test(f.path) && REVIEWISH.test(f.path) && !/\/review\//.test(f.path));
+  const out = new Map();
+  for (const c of src.chapters) {
+    const tests = (src.tests || []).filter((t) => String(t.date || '').slice(0, 10) >= today && (t.chapters || []).includes(c.label));
+    if (!tests.length) continue;
+    const items = [];
+    const add = (text, key, words) => items.push({ h: hash(key), text, ...(words ? { words } : {}) });
+    const wordsOf = (x) => [...new Set(squeeze(htmlText(String(x))).toLowerCase().match(/[a-z0-9]{3,}/g) || [])].join(' ');
+    for (const t of tests) {
+      const when = `${t.title} (${String(t.date).slice(0, 10)})`;
+      for (const f of t.study_focus || []) add(`${when} study focus: ${f}`, `focus|${t.id}|${f}`, wordsOf(f));
+      if (t.description) add(`${when}: the instructor's description of the test`, `desc|${t.id}|${t.description}`, wordsOf(t.description));
+      for (const l of t.review_links || []) add(`${when} review link: ${l.label || l.url}`, `link|${l.url}`);
+    }
+    for (const l of c.review_links || []) if (SHEET.test(l.label) && !NOT_SHEET.test(l.label)) add(`Review sheet: ${l.label}`, `link|${l.url}`);
+    for (const f of files) if (chapterNum(path.basename(f.path)) === chapterNum(c.label)) add(`Class file: ${path.basename(f.path)}`, `file|${f.path}|${f.bytes}`);
+    out.set(c.label, { test: { id: tests[0].id, title: tests[0].title, date: String(tests[0].date).slice(0, 10) }, items });
+  }
+  return { course: src.course, chapters: out };
+}
+
+/**
  * Write `data/study/requests/<id>.md`, Kea's brief for one set, and return its workspace-relative path.
  * docText(file) converts one PDF or Word file to text; step(message, percent) reports progress.
  */
@@ -686,7 +742,9 @@ function cleanQuestion(q) {
     if (choices.length < 2 || choices.length !== q.choices.length) return null;
     const answer = q.type === 'mc' ? [q.answer] : Array.isArray(q.answer) ? q.answer : [];
     if (!answer.length || answer.some((a) => !Number.isInteger(a) || a < 0 || a >= choices.length)) return null;
-    return { ...base, choices, answer: q.type === 'mc' ? answer[0] : [...new Set(answer)].sort() };
+    // `wrong`: for each choice, the mistake it stands for ("" for a right one), shown when the student picks it.
+    const wrong = Array.isArray(q.wrong) && q.wrong.length === choices.length ? q.wrong.map(str) : null;
+    return { ...base, choices, answer: q.type === 'mc' ? answer[0] : [...new Set(answer)].sort(), ...(wrong && wrong.some(Boolean) ? { wrong } : {}) };
   }
   if (q.type === 'tf') return typeof q.answer === 'boolean' ? { ...base, answer: q.answer } : null;
   if (q.type === 'num') {
@@ -1062,4 +1120,4 @@ function whereIs(k) {
   return null;
 }
 
-module.exports = { addHint, hints, applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark };
+module.exports = { addHint, hints, applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark, teacherContext, _test: { pick } };

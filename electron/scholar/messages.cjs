@@ -156,7 +156,6 @@ const PRACTICE = /\b(similar|like (this|these|it|that|the ones?)|more (of|like)|
 async function noteHint(x, body) {
   try {
     if (!x.course || !body || !TESTISH.test(body) || !PRACTICE.test(body)) return;
-    if (require('../settings.cjs').get('scholar.instructorHints', true) === false) return;
     if (/no.?reply|automated/i.test(x.from || '') || x.folder === 'sent') return;
     const { db } = deps;
     const p = profiles.paths();
@@ -165,6 +164,9 @@ async function noteHint(x, body) {
     const study = require('./study.cjs');
     const from = String(x.from || '').replace(/<[^>]*>?.*$/, '').replace(/"/g, '').trim();
     if (!study.addHint(course.id, { id: x.id, at: new Date().toISOString(), from, subject: x.subject, text: body })) return;
+    // (The hint is always kept: every set written for the class follows it. The setting is only about writing a new
+    // set for it right away.)
+    if (require('../settings.cjs').get('scholar.instructorHints', true) === false) return;
     // Which test: one the message names ("the practical", "Exam 3"), else the class's next one.
     const next = await db.nextTests(p.db);
     const tests = new Map();

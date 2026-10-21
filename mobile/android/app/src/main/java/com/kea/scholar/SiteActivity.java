@@ -81,6 +81,9 @@ public class SiteActivity extends Activity {
         s.setDisplayZoomControls(false);
         // Lets Kea save the login the student types here (so next time it signs in by itself).
         web.addJavascriptInterface(new LoginBridge(), "KeaLogin");
+        // A file on the class site (slides, a Word handout, a spreadsheet, a PDF): downloaded with the session and
+        // opened in Kea's own viewer, and kept under Files. (Without this, tapping a file here did nothing.)
+        web.setDownloadListener((link, agent, disposition, mime, length) -> download(link, agent, disposition, mime));
 
         web.setWebViewClient(new WebViewClient() {
             int tries = 0;
@@ -184,6 +187,35 @@ public class SiteActivity extends Activity {
     static final String PRESS_UPLOAD = "(function(){var all=[];function walk(r){[].forEach.call(r.querySelectorAll('*'),function(el){all.push(el);if(el.shadowRoot)walk(el.shadowRoot);});}walk(document);"
         + "var b=all.filter(function(el){return /^(BUTTON|D2L-BUTTON|D2L-BUTTON-SUBTLE|A)$/.test(el.tagName)&&/add a file|upload|choose file|browse/i.test((el.innerText||el.getAttribute('text')||el.getAttribute('aria-label')||'').trim());})[0];"
         + "if(b)b.click();})()";
+
+    /** Download a class-site file with this session's cookies, then open it in Kea (MainActivity). */
+    private void download(String url, String agent, String disposition, String mime) {
+        android.widget.Toast.makeText(this, "Opening the file in Kea…", android.widget.Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            try {
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                String cookies = CookieManager.getInstance().getCookie(url);
+                if (cookies != null) c.setRequestProperty("Cookie", cookies);
+                if (agent != null) c.setRequestProperty("User-Agent", agent);
+                c.setInstanceFollowRedirects(true);
+                String cd = c.getHeaderField("Content-Disposition");
+                String type = c.getContentType() != null ? c.getContentType() : mime;
+                String name = android.webkit.URLUtil.guessFileName(url, cd != null ? cd : disposition, type);
+                java.io.File dir = KeaPlugin.docsDir(this);
+                dir.mkdirs();
+                java.io.File out = KeaPlugin.freeName(dir, name);
+                try (java.io.InputStream in = c.getInputStream(); java.io.OutputStream os = new java.io.FileOutputStream(out)) {
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                }
+                final String t = type;
+                runOnUiThread(() -> startActivity(new Intent(this, MainActivity.class).putExtra("keaFile", out.getAbsolutePath()).putExtra("keaType", t == null ? "" : t).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)));
+            } catch (Exception e) {
+                runOnUiThread(() -> android.widget.Toast.makeText(this, "Kea couldn't download that file: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+            }
+        }).start();
+    }
 
     /** The page actually showing (from the WebView, not from anything a page says about itself). */
     volatile String currentUrl = "";

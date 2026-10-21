@@ -211,7 +211,8 @@ function Page({ pdf, n, width, ratio, root }: { pdf: PDFDocumentProxy; n: number
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
-    const io = new IntersectionObserver(([e]) => e.isIntersecting && setSeen(true), { root, rootMargin: '600px 0px' });
+    // (Drawn near the screen and let go again far from it: a phone can't hold every page of a chapter drawn.)
+    const io = new IntersectionObserver(([e]) => setSeen(e.isIntersecting), { root, rootMargin: '1200px 0px' });
     io.observe(c);
     return () => io.disconnect();
   }, [root]);
@@ -222,7 +223,8 @@ function Page({ pdf, n, width, ratio, root }: { pdf: PDFDocumentProxy; n: number
     pdf.getPage(n + 1).then((page) => {
       if (!live || !ref.current) return;
       const vp1 = page.getViewport({ scale: 1 });
-      const dpr = window.devicePixelRatio || 1;
+      // (Twice the screen's pixels at most: sharper than that only costs memory and time.)
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
       const vp = page.getViewport({ scale: (width / vp1.width) * dpr });
       const c = ref.current;
       // Exactly the pixels it covers on screen, so it isn't rescaled (and blurred).
@@ -234,6 +236,8 @@ function Page({ pdf, n, width, ratio, root }: { pdf: PDFDocumentProxy; n: number
     return () => {
       live = false;
       task?.cancel?.();
+      // (Its pixels freed; the page keeps its size, so the scroll position doesn't move.)
+      if (ref.current) ref.current.width = ref.current.height = 0;
     };
   }, [seen, width, pdf, n]);
   return <canvas ref={ref} data-page={n} className="rp-page" style={{ width, height: width * ratio }} />;

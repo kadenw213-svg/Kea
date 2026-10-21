@@ -156,6 +156,7 @@
 .st-reading {
   flex: 1 1 55%;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
@@ -183,7 +184,9 @@
 .st-reading-pages {
   position: relative;
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -1286,4 +1289,109 @@ button.hub-mode:hover:not(:disabled) {
 }
 .res-foot {
   margin-top: 18px;
+}
+
+/* Review only some chapters (under "Review what's due") */
+.res-choose {
+  margin: -4px 0 12px;
+}
+.res-choose > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-2);
+  padding: 4px 2px 8px;
+}
+
+/* ---------- Listen: a deck read aloud ---------- */
+.ls-opts {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.ls-opt {
+  display: grid;
+  gap: 6px;
+}
+.ls-opt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.ls-opt-row input[type='range'] {
+  flex: 1;
+  min-width: 160px;
+  accent-color: var(--accent);
+}
+.ls-toggles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px 14px;
+}
+.ls-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.ls-toggle input {
+  accent-color: var(--accent);
+}
+.ls-card {
+  cursor: default;
+}
+.ls-choices {
+  margin: 10px 0 0;
+  padding-left: 22px;
+  text-align: left;
+  list-style: upper-alpha;
+  font-size: 0.85em;
+  color: var(--text-2);
+}
+.ls-answer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--accent);
+  font-weight: 600;
+}
+.ls-play {
+  min-width: 130px;
+}
+
+/* Long words (web addresses, formulas, chemical names) wrap inside their boxes instead of running out of them. */
+.st-stem,
+.st-choice,
+.st-explain,
+.sm-prompt-text,
+.sm-choices button,
+.sm-tile,
+.st-card {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.st-choice > span:last-child {
+  min-width: 0;
+  flex: 1;
+}
+/* A question number of three digits still fits its circle. */
+.st-num {
+  min-width: 24px;
+  width: auto;
+  padding: 0 5px;
+  border-radius: 12px;
+}
+/* The mistake behind the wrong choice the student picked. */
+.st-whynot {
+  border-left: 3px solid var(--danger);
+  padding: 4px 0 4px 10px;
+  margin-bottom: 8px;
+  line-height: 1.45;
+}
+.st-whynot + div {
+  margin-top: 4px;
 }

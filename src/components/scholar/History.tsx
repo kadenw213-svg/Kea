@@ -356,7 +356,7 @@ export function SyllabusMap({ code }: { code: string }) {
                 <div className="syl-kind">Depth</div>
                 <p className="syl-book">
                   {done.length
-                    ? `${done.length} of ${cur.chapters.length} chapters checked at exam depth (textbook, notes and every question's explanation).${gapped.length ? ` ${gapped.map((c) => c.label).join(', ')} had gaps and ${gapped.length > 1 ? 'are' : 'is'} being rewritten.` : ''}`
+                    ? `${done.length} of ${cur.chapters.length} chapters checked at exam depth against the teacher's material.${gapped.length ? ` ${gapped.map((c) => c.label).join(', ')} fell short and ${gapped.length > 1 ? 'get' : 'gets'} practice for the next test.` : ''}`
                     : 'No chapter has had its depth checked yet: Kea reviews every chapter, starting with the ones tested soonest.'}
                 </p>
                 {gapped.length > 0 && (

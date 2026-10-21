@@ -1,7 +1,7 @@
 // Study materials: practice exams and flashcard decks. Claude writes a whole set at once, only when the student asks;
 // Kea keeps it and shuffles, samples and grades it here, as often as the student likes, with no Claude involved.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ClipboardList, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Pencil, Star, Brain, Shapes, FileCheck, Repeat } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ClipboardList, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Pencil, Star, Brain, Shapes, FileCheck, Repeat, Headphones } from 'lucide-react';
 import { api, StudyCard, StudyHistory, StudyKind, StudyQuestion, StudySet, StudySetFull } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
@@ -9,6 +9,7 @@ import { useScholar } from './scholarStore';
 import { Bar, progressOf, span, useLiveRun, useNow } from './ScansView';
 import { ReadingButton, ReadingContext, ReadingPane, ReadingTarget, useMissReading } from './ReadingPane';
 import { judgeBlank } from '../../lib/blank';
+import { Listen } from './Listen';
 import { CardTest, Learn, Match, Review, ReviewBanner, SetEditor, SpeakButton, StarButton } from './StudyModes';
 import { openStudyHub, parseScope, StudyHub } from './StudyHub';
 import '../../styles/study.css';
@@ -252,12 +253,13 @@ export function PracticeBox({ courseId, itemId, chapters, title = 'Practice' }: 
 }
 
 // ---------- Taking a set ----------
-type DeckMode = 'cards' | 'learn' | 'test' | 'match';
+type DeckMode = 'cards' | 'learn' | 'test' | 'match' | 'listen';
 const DECK_MODES: [DeckMode, string, typeof Layers][] = [
   ['cards', 'Flashcards', Layers],
   ['learn', 'Learn', Brain],
   ['test', 'Test', FileCheck],
-  ['match', 'Match', Shapes]
+  ['match', 'Match', Shapes],
+  ['listen', 'Listen', Headphones]
 ];
 
 /**
@@ -320,6 +322,8 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
       <CardTest set={set} />
     ) : mode === 'match' ? (
       <Match set={set} />
+    ) : mode === 'listen' ? (
+      <Listen set={set} />
     ) : (
       <Cards set={set} />
     );
@@ -594,7 +598,7 @@ function questionCards(s: StudySetFull): StudySetFull {
     q.type === 'tf' ? (q.answer ? 'True' : 'False') : q.type === 'num' ? `${q.answer}${q.unit ? ` ${q.unit}` : ''}` : answerText(q);
   const cards = (s.questions || [])
     .filter((q) => q.type !== 'short')
-    .map((q) => ({ k: q.k, front: q.type === 'tf' ? `True or false: ${q.q}` : q.q, back: back(q), chapter: q.chapter, section: q.section, topic: q.topic, image: q.image, image_credit: q.image_credit }));
+    .map((q) => ({ k: q.k, front: q.type === 'tf' ? `True or false: ${q.q}` : q.q, back: back(q), chapter: q.chapter, section: q.section, topic: q.topic, image: q.image, image_credit: q.image_credit, ...('choices' in q ? { choices: q.choices } : {}), explain: q.explain }));
   // (The same id as the questions' own set, so Learn and known-card progress are kept between sessions.)
   return { ...s, kind: 'cards', cards, questions: undefined, count: cards.length };
 }
@@ -731,6 +735,7 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
               <b>Model answer:</b> <MathText text={q.answer} />
             </div>
           )}
+          {(q.type === 'mc' || q.type === 'multi') && q.wrong && <WhyNot q={q} s={s} answer={answer} />}
           <div><MathText text={q.explain} /></div>
           <WorkedSteps q={q} open={result === false} />
           {q.type === 'short' && (
@@ -747,6 +752,23 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
           {(q.chapter || q.topic) && <div className="muted st-src">{[q.chapter, q.topic, q.source].filter(Boolean).join(' · ')}</div>}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Each wrong choice the student picked, with the mistake it stands for (from the question's `wrong` notes). */
+function WhyNot({ q, s, answer }: { q: StudyQuestion & { choices: string[] }; s: Shown; answer: Answer }) {
+  const picked = (q.type === 'mc' ? [answer] : Array.isArray(answer) ? answer : []).filter((p): p is number => typeof p === 'number');
+  const right = (orig: number) => (q.type === 'mc' ? q.answer === orig : (q.answer as number[]).includes(orig));
+  const notes = picked.map((pos) => ({ pos, orig: s.order[pos] })).filter(({ orig }) => orig != null && !right(orig) && q.wrong?.[orig]);
+  if (!notes.length) return null;
+  return (
+    <div className="st-whynot">
+      {notes.map(({ pos, orig }) => (
+        <div key={pos}>
+          <b>Why not {String.fromCharCode(65 + pos)}:</b> <MathText text={q.wrong![orig]} />
+        </div>
+      ))}
     </div>
   );
 }

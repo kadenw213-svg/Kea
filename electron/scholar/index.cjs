@@ -356,7 +356,7 @@ async function tick() {
 }
 
 // ---------- Question banks ----------
-// Every chapter with a textbook keeps a bank of saved questions (50 by default), and gets more when the student runs
+// Every chapter with a textbook keeps a bank of saved questions (25 by default), and gets more when the student runs
 // low. Made by the primary only, one chapter at a time, each bank written once and then reused on every device.
 let banking = false;
 let offlineUntil = 0;
@@ -375,7 +375,7 @@ async function keepBanks() {
       if (bankRuns.day !== today) bankRuns = { day: today, n: 0 };
       if (bankRuns.n >= BANK_RUNS) break;
       const p = profiles.paths();
-      const need = study.bankNeed(await db.textbookChapters(p.db, p.textbooks), Number(settings.get('scholar.bankSize', 50)) || 50);
+      const need = study.bankNeed(await db.textbookChapters(p.db, p.textbooks), Number(settings.get('scholar.bankSize', 25)) || 25);
       if (!need) break;
       const had = study.catalog('exam', need.courseId, need.chapters).length;
       bankRuns.n++;
@@ -409,7 +409,7 @@ async function keepBanks() {
       BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
       if (!done || done.paused || study.list().find((e) => e.id === id)?.status !== 'ready') break;
     }
-    // (Worked steps are written by the depth review, in the same pass that rewrites weak explanations; a separate run
+    // (Worked steps for missed questions are written by the depth review, in the same pass that fixes their explanations; a separate run
     // per chapter only when the student asks for one, from a missed question.)
     for (let n = 0; n < 50 && settings.get('scholar.workedStepsRuns', false) === true; n++) {
       const today = new Date().toDateString();

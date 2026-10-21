@@ -662,7 +662,7 @@ export interface PoolItem {
  * k: the question's key (the same question in two sets has the same key); section: the textbook section that answers
  * it; steps: its worked solution; answerDisputed: the steps writer found the stored answer may be wrong.
  */
-type QuestionBase = { k?: string; explain: string; chapter: string | null; section?: string | null; topic: string | null; source: string | null; steps?: string[]; answerDisputed?: boolean; image?: string; image_credit?: string };
+type QuestionBase = { k?: string; explain: string; chapter: string | null; section?: string | null; topic: string | null; source: string | null; steps?: string[]; answerDisputed?: boolean; image?: string; image_credit?: string; /** For each choice, the mistake it stands for ("" for a right one): shown when the student picks it. */ wrong?: string[] };
 export type StudyQuestion = QuestionBase &
   (
   | { type: 'mc'; q: string; choices: string[]; answer: number; explain: string; chapter: string | null; topic: string | null; source: string | null }
@@ -690,6 +690,9 @@ export interface StudyCard {
   chapter: string | null;
   section?: string | null;
   topic?: string | null;
+  /** A card made from a question: its answer choices and explanation (read by Listen). */
+  choices?: string[];
+  explain?: string;
 }
 export type StudySetFull = Omit<StudySet, 'known' | 'attempts' | 'best' | 'last'> & {
   questions?: StudyQuestion[];

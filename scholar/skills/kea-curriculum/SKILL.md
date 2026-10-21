@@ -77,13 +77,15 @@ replacing them).
 
 ## Depth mode (`<CODE> depth`)
 
-Kea lists the chapters to review, each with three files: its **notes** (objectives, vocabulary, the review sheets and
+Kea starts a depth review only when the teacher has posted something new for a chapter with a test coming (a
+study focus, a test description, a review sheet or key) and the test is within three weeks. Each chapter lists that new material: it is what the review is
+for. Check the chapter against it first; don't redo what earlier reviews already settled. Kea lists each chapter with three files: its **notes** (objectives, vocabulary, the review sheets and
 keys, and every test's study focus), its **textbook** chapter (the Typst source of the PDF the student reads) and its
 **questions** (every saved question with its type and level). Also run `curriculum --course <CODE> --json` once for
 the chapter's syllabus outcomes and the class's testing guidelines.
 
-For each chapter, judge as an examiner would: if the student learned exactly this textbook chapter and could answer
-exactly these questions, would they get an A on the real tests? Check:
+For each chapter, judge as an examiner would, with the new material in hand: if the student learned exactly this
+textbook chapter and could answer exactly these questions, would they get an A on that test? Check:
 - every syllabus outcome for the chapter, every objective, every review-sheet problem type and every test-focus line
   is **taught** in the textbook (explained, with a worked example where it's a skill) and **asked** in the questions;
 - depth matches the tests: the calculations, multi-step problems, comparisons, data and graph reading the tests and
@@ -93,15 +95,15 @@ exactly these questions, would they get an A on the real tests? Check:
 - nothing is wrong (a misstated fact, a wrong worked answer);
 - the textbook has no practice questions or answer keys (no "Check yourself", "Practice test"): that's `gaps`.
 
-**Explanations.** Every question in the questions file shows its answer and explanation; Kea's check marks the clearly
-weak ones `WEAK`. Rewrite every `WEAK` explanation, and any other that wouldn't teach a student who got the question
-wrong, into `<the fixes file Kea named>` as JSON:
+**Explanations.** Only questions the student has got wrong are marked `MISSED`; fix explanations on those alone (the
+rest are fine as they are, and rewriting them spends the student's usage for nothing). Rewrite every `WEAK` one, and any
+other `MISSED` one that wouldn't teach a student who got it wrong, into `<the fixes file Kea named>` as JSON:
 `[{"k": "<the question's k>", "explain": "<the new explanation>", "steps": ["…", "…"]}]`
-Every question marked `NO-STEPS` also gets `steps` (its worked solution, shown when the student misses it), with or
+Every question marked `NO-STEPS` (all of them `MISSED`) also gets `steps` (its worked solution, shown when the student misses it), with or
 without a new explanation: calculations 3 to 8 steps (what's asked and given with units; the formula by name with every
 symbol defined; conversions first, with why; rearrange, substitute, compute; the answer with units and a sense check),
 concept questions 2 to 5 steps of reasoning (the deciding rule, how it applies, why the tempting wrong choice fails).
-Plain sentences, not numbered (Kea numbers them). Add `"wrong_answer": true` when the stored answer is wrong.
+Plain sentences, not numbered (Kea numbers them). Add `"wrong_answer": true` when the stored answer is wrong (on any question, missed or not).
 Each new explanation: the concept or rule behind the answer; for a calculation the formula, then what every symbol
 stands for with its unit ("where M is the molarity in mol/L, n the moles of solute, V the volume in L"), each step with
 its reason, and a check of the answer's size or units; for multiple choice, also why the most tempting wrong choice is
@@ -114,10 +116,12 @@ Read the textbook source and questions in full (Grep the textbook for each outco
 Then save one verdict per chapter:
 `uv run academic-sync depth-review --course <CODE> --chapter "Chapter 5" --verdict ok|gaps --note "…"`
 - `ok`: say briefly what you checked.
-- `gaps`: list each missing or shallow thing specifically and where (textbook / questions): "Textbook: no worked
-  Dalton's law problem; Questions: no gas stoichiometry at STP, none on reading a vapor-pressure curve; Ch 5.3 vapor
-  pressure barely taught". Kea rewrites the chapter's textbook from this note and writes a harder top-up of questions
-  aimed at it, so make the note precise. A wrong fact in the textbook or a wrong answer is always `gaps`.
+- `gaps`: list each missing or shallow thing specifically and where (textbook / questions): "Questions: no gas
+  stoichiometry at STP, none on reading a vapor-pressure curve (both on the Exam 2 review sheet)". Kea writes a
+  practice set for the chapter's next test aimed at this note, so make it precise. Write a `Textbook:` part only when
+  the textbook itself doesn't teach something the new material says is tested, or states something wrong ("Textbook:
+  no worked Dalton's law problem"): that part makes Kea rewrite the whole textbook chapter, so leave it out when the
+  questions alone are short. A wrong fact in the textbook or a wrong answer is always `gaps`.
 - When the notes themselves miss an outcome or objective, fix them too (`chapter-topic-add`), as in section 3.
 
 Report one line per chapter: the verdict and, for gaps, the main ones.

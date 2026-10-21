@@ -17,6 +17,9 @@ import { StudyImage } from './StudyImage';
 // ---------- Small shared pieces ----------
 /** Read a side aloud with the computer's own voice (nothing leaves the computer). */
 export function speak(text: string) {
+  // (The phone's web view has no voices: Kea for Android reads it with the phone's own.)
+  const own = (window as any).keaSpeak as ((t: string) => void) | undefined;
+  if (own) return own(text);
   try {
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
@@ -55,11 +58,32 @@ export function StarButton({ k, starred, onChange }: { k?: string; starred: bool
   );
 }
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
-/** Three wrong answers for a card: other cards' sides, from its own chapter first. */
+/**
+ * Three wrong answers for a card: near misses, never random ones. A card made from a question uses that question's own
+ * written wrong answers; otherwise the other cards most like this one (same topic, then section, then chapter, sharing
+ * words, about as long), with a little shuffling among the closest so rounds differ.
+ */
 function distractors(card: StudyCard, all: StudyCard[], side: 'front' | 'back', n = 3) {
   const right = card[side].trim().toLowerCase();
+  if (side === 'back' && card.choices && card.choices.length > n) {
+    const own = card.choices.map((c) => c.trim()).filter((c) => c && c.toLowerCase() !== right);
+    if (own.length >= n) return shuffle(own).slice(0, n);
+  }
   const seen = new Set([right]);
-  const pool = shuffle(all.filter((c) => c !== card)).sort((a, b) => Number(b.chapter === card.chapter) - Number(a.chapter === card.chapter));
+  const bag = (s: string) => new Set(s.toLowerCase().match(/[a-z0-9]{3,}/g) || []);
+  const mine = bag(card[side]);
+  const len = card[side].trim().length;
+  const score = (c: StudyCard) => {
+    const theirs = bag(c[side]);
+    const shared = [...theirs].filter((w) => mine.has(w)).length / Math.max(1, Math.min(theirs.size, mine.size));
+    const l = c[side].trim().length;
+    return (c.topic && c.topic === card.topic ? 4 : 0) + (c.section && c.section === card.section ? 2 : 0) + (c.chapter === card.chapter ? 1 : 0) + 3 * shared + Math.min(l, len) / Math.max(l, len, 1) + Math.random() * 0.6;
+  };
+  const pool = all
+    .filter((c) => c !== card)
+    .map((c) => ({ c, s: score(c) }))
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.c);
   const out: string[] = [];
   for (const c of pool) {
     const t = c[side].trim();
@@ -640,9 +664,12 @@ export function Review({ courseId, chapters = [], sections = [] }: { courseId: s
 }
 
 /** The review summary on My resources: what's due per class, and a button to start. */
-/** Pick a class and its chapters, then study exactly those (topics and which questions are chosen on the Study page). */
-function StudyPicker({ classes }: { classes: { id: string; code: string }[] }) {
-  const [cid, setCid] = useState(classes[0]?.id || '');
+/**
+ * Pick a class and its chapters, then review exactly those (spaced review, no daily limit) or study them (topics and
+ * which questions are chosen on the Study page).
+ */
+export function StudyPicker({ classes, start }: { classes: { id: string; code: string }[]; start?: string }) {
+  const [cid, setCid] = useState(start || classes[0]?.id || '');
   const [chapters, setChapters] = useState<{ label: string; title: string | null }[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
   useEffect(() => {
@@ -654,16 +681,22 @@ function StudyPicker({ classes }: { classes: { id: string; code: string }[] }) {
     const chs = chapters.map((c) => c.label).filter((l) => picked.includes(l));
     openStudyHub({ courseId: cid, code, title: chs.length === 1 ? `${chs[0]}${chapters.find((c) => c.label === chs[0])?.title ? `: ${chapters.find((c) => c.label === chs[0])?.title}` : ''}` : `${code}: ${chs.map((c) => c.replace(/^Chapter /, 'Ch ')).join(', ')}`, chapters: chs });
   };
+  const review = () => {
+    const chs = chapters.map((c) => c.label).filter((l) => picked.includes(l));
+    useScholar.getState().set({ study: `review:${cid}:${encodeURIComponent(chs.join('|'))}` });
+  };
   return (
     <div className="sm-picker">
-      <div className="hub-pick-row">
-        <span className="hub-pick-label">Class</span>
-        {classes.map((c) => (
-          <button key={c.id} className={`st-chip ${cid === c.id ? 'on' : ''}`} onClick={() => setCid(c.id)}>
-            {c.code}
-          </button>
-        ))}
-      </div>
+      {classes.length > 1 && (
+        <div className="hub-pick-row">
+          <span className="hub-pick-label">Class</span>
+          {classes.map((c) => (
+            <button key={c.id} className={`st-chip ${cid === c.id ? 'on' : ''}`} onClick={() => setCid(c.id)}>
+              {c.code}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="hub-pick-row">
         <span className="hub-pick-label">Chapters</span>
         <button className={`st-chip ${picked.length === chapters.length && chapters.length ? 'on' : ''}`} onClick={() => setPicked(picked.length === chapters.length ? [] : chapters.map((c) => c.label))}>
@@ -679,10 +712,12 @@ function StudyPicker({ classes }: { classes: { id: string; code: string }[] }) {
         })}
       </div>
       <div className="sm-picker-go">
-        <button className="btn primary sm" disabled={!picked.length} onClick={go}>
-          Study {picked.length ? `${picked.length} chapter${picked.length > 1 ? 's' : ''}` : ''}
+        <button className="btn primary sm" disabled={!picked.length} onClick={review}>
+          Review {picked.length ? `${picked.length} chapter${picked.length > 1 ? 's' : ''}` : ''}
         </button>
-        <span className="muted">Then pick topics and which questions (new, missed, starred).</span>
+        <button className="btn sm" disabled={!picked.length} onClick={go}>
+          Practice exam or flashcards
+        </button>
       </div>
     </div>
   );

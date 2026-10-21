@@ -63,6 +63,16 @@ public class KeaPlugin extends Plugin {
     /** A file another app handed to Kea: copied where the reader can load it. True when there was one. */
     private boolean takeOpened(Intent intent) {
         if (intent == null) return false;
+        String saved = intent.getStringExtra("keaFile");
+        if (saved != null) {
+            File f = new File(saved);
+            opened = new JSObject();
+            opened.put("path", f.getAbsolutePath());
+            opened.put("name", f.getName());
+            opened.put("type", intent.getStringExtra("keaType") == null ? "" : intent.getStringExtra("keaType"));
+            intent.removeExtra("keaFile");
+            return true;
+        }
         Uri uri = null;
         if (Intent.ACTION_VIEW.equals(intent.getAction())) uri = intent.getData();
         else if (Intent.ACTION_SEND.equals(intent.getAction())) uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
@@ -71,11 +81,10 @@ public class KeaPlugin extends Plugin {
             String name = displayName(uri);
             if (name == null) name = uri.getLastPathSegment() == null ? "File" : uri.getLastPathSegment();
             String type = getContext().getContentResolver().getType(uri);
-            // A PDF joins the phone's files (listed under Files); anything else is only shown.
-            boolean pdf = (type != null && type.contains("pdf")) || name.toLowerCase().endsWith(".pdf");
-            File dir = pdf ? docsDir() : new File(getContext().getCacheDir(), "opened");
+            // Every document joins the phone's files (listed under Files), whatever its kind.
+            File dir = docsDir();
             dir.mkdirs();
-            File out = pdf ? freeName(dir, name) : new File(dir, name.replaceAll("[^A-Za-z0-9 ._()-]", "_"));
+            File out = freeName(dir, name);
             try (InputStream in = getContext().getContentResolver().openInputStream(uri); OutputStream os = new FileOutputStream(out)) {
                 byte[] buf = new byte[65536];
                 int n;
@@ -126,6 +135,8 @@ public class KeaPlugin extends Plugin {
             JSArray chosen = new JSArray();
             for (String f : KEA_FILES) if (!tree.isEmpty() || !Store.plain(getContext()).getString("file:" + f, "").isEmpty()) chosen.put(f);
             r.put("files", chosen);
+            String held = tree.isEmpty() ? Store.plain(getContext()).getString("file:kea-data.json", Store.plain(getContext()).getString("dataFile", "")) : tree;
+            r.put("drive", held.isEmpty() ? "" : driveOf(Uri.parse(held)));
             r.put("notifications", Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
             call.resolve(r);
         }).start();
@@ -317,6 +328,7 @@ public class KeaPlugin extends Plugin {
         JSObject r = new JSObject();
         r.put("folder", tree.toString());
         r.put("base", base);
+        r.put("from", driveOf(tree));
         call.resolve(r);
     }
 
@@ -356,6 +368,10 @@ public class KeaPlugin extends Plugin {
         i.addCategory(Intent.CATEGORY_OPENABLE);
         i.setType("*/*");
         i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        // Choosing again from the same drive: the picker starts where the files were last time.
+        String drive = call.getString("drive", "");
+        String before = Store.plain(getContext()).getString("file:kea-data.json", "");
+        if (Build.VERSION.SDK_INT >= 26 && !before.isEmpty() && driveOf(Uri.parse(before)).equals(drive)) i.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, Uri.parse(before));
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(call, i, "onFiles");
     }
@@ -367,6 +383,41 @@ public class KeaPlugin extends Plugin {
     }
 
     private static final String[] KEA_FILES = { "kea-data.json", "kea-library.zip", "phone.json" };
+
+    /** The drives the PC can sync Kea through, by their Android apps. */
+    private static final String[][] DRIVE_APPS = { { "google", "com.google.android.apps.docs" }, { "onedrive", "com.microsoft.skydrive" }, { "dropbox", "com.dropbox.android" } };
+
+    /**
+     * Where a chosen file or folder lives, by the app that handed it over: "google", "onedrive", "dropbox", "phone"
+     * (the phone's own storage), "downloads" (a copy downloaded once, which never updates) or "other".
+     */
+    static String driveOf(Uri u) {
+        String a = u == null || u.getAuthority() == null ? "" : u.getAuthority();
+        if (a.startsWith("com.google.android.apps.docs")) return "google";
+        if (a.startsWith("com.microsoft.skydrive")) return "onedrive";
+        if (a.startsWith("com.dropbox")) return "dropbox";
+        if (a.startsWith("com.android.providers.downloads")) return "downloads";
+        if (a.equals("com.android.externalstorage.documents") || a.startsWith("com.android.providers.media")) return "phone";
+        return a.isEmpty() ? "" : "other";
+    }
+
+    /** Which drive apps are on the phone (a drive's files can only be chosen through its app). */
+    @PluginMethod
+    public void drives(PluginCall call) {
+        JSObject r = new JSObject();
+        PackageManager pm = getContext().getPackageManager();
+        for (String[] d : DRIVE_APPS) {
+            boolean has;
+            try {
+                pm.getPackageInfo(d[1], 0);
+                has = true;
+            } catch (PackageManager.NameNotFoundException e) {
+                has = false;
+            }
+            r.put(d[0], has);
+        }
+        call.resolve(r);
+    }
 
     /** Which of Kea's files a chosen file is, by its name (a drive may add " (1)" to a copy): null when none. */
     private static String keaFile(String name) {
@@ -411,6 +462,7 @@ public class KeaPlugin extends Plugin {
         }
         JSObject r = new JSObject();
         r.put("files", found);
+        r.put("from", driveOf(Uri.parse(Store.plain(getContext()).getString("file:" + found.optString(0, "kea-data.json"), ""))));
         call.resolve(r);
     }
 
@@ -619,6 +671,26 @@ public class KeaPlugin extends Plugin {
     }
 
     /** Open a file (a textbook PDF) in another app: from the chosen folder, or from the phone's library. */
+    /** One of Kea's files in another app on the phone (Android asks which), for anything Kea can't show itself. */
+    @PluginMethod
+    public void openWith(PluginCall call) {
+        String path = call.getString("path", "");
+        File f = new File(path);
+        if (!f.exists()) {
+            call.reject("That file isn't on the phone.");
+            return;
+        }
+        String ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(Uri.fromFile(f).toString()).toLowerCase();
+        String type = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+        Intent i = new Intent(Intent.ACTION_VIEW).setDataAndType(uriOf(path), type == null ? "*/*" : type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            getActivity().startActivity(Intent.createChooser(i, "Open with"));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("No app on this phone opens this kind of file.");
+        }
+    }
+
     @PluginMethod
     public void openFile(PluginCall call) {
         String rel = call.getString("path", "");
@@ -661,11 +733,16 @@ public class KeaPlugin extends Plugin {
     }
 
     private File docsDir() {
-        return new File(getContext().getFilesDir(), "docs");
+        return docsDir(getContext());
+    }
+
+    /** Where documents opened in Kea are kept (any kind: PDFs, Word, slides, spreadsheets, books…). */
+    static File docsDir(android.content.Context ctx) {
+        return new File(ctx.getFilesDir(), "docs");
     }
 
     /** A file name in `dir` that isn't taken yet ("Lab 3.pdf", then "Lab 3 (2).pdf"). */
-    private static File freeName(File dir, String name) {
+    static File freeName(File dir, String name) {
         String clean = name.replaceAll("[\\\\/:*?\"<>|]+", " ").replaceAll("\\s+", " ").trim();
         if (clean.isEmpty() || clean.equals(".pdf")) clean = "Document.pdf";
         int dot = clean.lastIndexOf('.');
@@ -702,7 +779,7 @@ public class KeaPlugin extends Plugin {
             o.put("name", f.getName());
             o.put("size", f.length());
             o.put("modified", f.lastModified());
-            o.put("kind", f.getParentFile().getName().equals("scans") ? "scan" : "pdf");
+            o.put("kind", f.getParentFile().getName().equals("scans") ? "scan" : "file");
             out.put(o);
         }
         JSObject r = new JSObject();
@@ -719,6 +796,15 @@ public class KeaPlugin extends Plugin {
         startActivityForResult(call, i, "onPdf");
     }
 
+    /** Choose any file (a document, slides, a spreadsheet, a book, a picture…): copied into Kea's files and opened. */
+    @PluginMethod
+    public void pickFile(PluginCall call) {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        startActivityForResult(call, i, "onPdf");
+    }
+
     @ActivityCallback
     private void onPdf(PluginCall call, ActivityResult result) {
         if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null || result.getData().getData() == null) {
@@ -729,8 +815,9 @@ public class KeaPlugin extends Plugin {
         new Thread(() -> {
             try {
                 String name = displayName(uri);
-                if (name == null) name = "Document.pdf";
-                if (!name.toLowerCase().endsWith(".pdf")) name += ".pdf";
+                String type = getContext().getContentResolver().getType(uri);
+                if (name == null) name = type != null && type.contains("pdf") ? "Document.pdf" : "Document";
+                if (type != null && type.contains("pdf") && !name.toLowerCase().endsWith(".pdf")) name += ".pdf";
                 File dir = docsDir();
                 dir.mkdirs();
                 File out = freeName(dir, name);
@@ -742,6 +829,7 @@ public class KeaPlugin extends Plugin {
                 JSObject r = new JSObject();
                 r.put("path", out.getAbsolutePath());
                 r.put("name", out.getName());
+                r.put("type", type == null ? "" : type);
                 call.resolve(r);
             } catch (Exception e) {
                 call.reject(e.getMessage());
@@ -758,7 +846,9 @@ public class KeaPlugin extends Plugin {
             call.reject("That file can't be renamed.");
             return;
         }
-        if (!name.toLowerCase().endsWith(".pdf")) name += ".pdf";
+        // (It keeps its kind: the old extension goes back on when the new name has none of its own.)
+        String old = f.getName(), ext = old.lastIndexOf('.') > 0 ? old.substring(old.lastIndexOf('.')) : "";
+        if (!ext.isEmpty() && !name.toLowerCase().endsWith(ext.toLowerCase())) name += ext;
         File to = freeName(f.getParentFile(), name);
         if (!f.renameTo(to)) {
             call.reject("Kea couldn't rename it.");
@@ -779,6 +869,118 @@ public class KeaPlugin extends Plugin {
             return;
         }
         call.resolve();
+    }
+
+    // ---------- Reading aloud (ReadAloud does the reading; this lists voices and passes the reader's controls) ----------
+    private android.speech.tts.TextToSpeech voiceList;
+    private boolean voiceListReady;
+
+    /** A text-to-speech for listing voices and reading a flashcard side, made once. */
+    private void withVoices(Runnable then) {
+        if (voiceList != null && voiceListReady) {
+            then.run();
+            return;
+        }
+        if (voiceList != null) voiceList.shutdown();
+        voiceList = new android.speech.tts.TextToSpeech(getContext(), (status) -> {
+            voiceListReady = status == android.speech.tts.TextToSpeech.SUCCESS;
+            then.run();
+        });
+    }
+
+    private static List<ReadAloud.Item> itemsOf(PluginCall call) {
+        List<ReadAloud.Item> out = new java.util.ArrayList<>();
+        JSArray a = call.getArray("items");
+        if (a == null) return out;
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject o = a.optJSONObject(i);
+            if (o != null && !o.optString("text").trim().isEmpty()) out.add(new ReadAloud.Item(o.optString("id"), o.optString("text"), o.optLong("pause", 0)));
+        }
+        return out;
+    }
+
+    @PluginMethod
+    public void voices(PluginCall call) {
+        withVoices(() -> {
+            if (!voiceListReady) {
+                call.reject("This phone has no text-to-speech. Install Speech Services by Google from the Play Store.");
+                return;
+            }
+            JSArray out = new JSArray();
+            android.speech.tts.Voice def = voiceList.getDefaultVoice();
+            for (android.speech.tts.Voice v : ReadAloud.voices(voiceList)) {
+                JSObject o = new JSObject();
+                o.put("name", v.getName());
+                o.put("locale", v.getLocale().toLanguageTag());
+                o.put("country", v.getLocale().getDisplayCountry());
+                o.put("quality", v.getQuality());
+                o.put("online", v.isNetworkConnectionRequired());
+                o.put("isDefault", def != null && def.getName().equals(v.getName()));
+                out.put(o);
+            }
+            JSObject r = new JSObject();
+            r.put("voices", out);
+            call.resolve(r);
+        });
+    }
+
+    /** Read a short text once (a flashcard side), in the voice chosen for books. */
+    @PluginMethod
+    public void say(PluginCall call) {
+        String text = call.getString("text", "");
+        String voice = call.getString("voice", "");
+        float rate = call.getFloat("rate", 1f);
+        withVoices(() -> {
+            if (!voiceListReady) {
+                call.reject("No text-to-speech on this phone.");
+                return;
+            }
+            voiceList.setSpeechRate(rate);
+            if (!voice.isEmpty()) for (android.speech.tts.Voice v : ReadAloud.voices(voiceList)) if (v.getName().equals(voice)) voiceList.setVoice(v);
+            voiceList.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "say");
+            call.resolve();
+        });
+    }
+
+    /** Read a book's sentences aloud from the first: [{ id, text }], with its title for the notification. */
+    @PluginMethod
+    public void readAloud(PluginCall call) {
+        ReadAloud.listener = (id, index, total, state) -> {
+            JSObject o = new JSObject();
+            o.put("id", id);
+            o.put("index", index);
+            o.put("total", total);
+            o.put("state", state);
+            notifyListeners("speech", o);
+        };
+        ReadAloud.start(getContext(), itemsOf(call), call.getString("title", ""), call.getString("voice"), call.getFloat("rate", 0f), call.getBoolean("loop", false));
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void readMore(PluginCall call) {
+        ReadAloud.append(itemsOf(call));
+        call.resolve();
+    }
+
+    /** pause, resume, stop, skip (by: sentences), settings (voice, rate), sleep (minutes). */
+    @PluginMethod
+    public void readControl(PluginCall call) {
+        String a = call.getString("action", "");
+        switch (a) {
+            case "pause": ReadAloud.pause(); break;
+            case "resume": ReadAloud.resume(); break;
+            case "stop": ReadAloud.stopAll(); break;
+            case "skip": ReadAloud.skip(call.getInt("by", 1)); break;
+            case "settings": ReadAloud.settings(call.getString("voice"), call.getFloat("rate", 0f)); break;
+            case "sleep": ReadAloud.sleepIn(call.getInt("minutes", 0)); break;
+            default: break;
+        }
+        JSObject r = new JSObject();
+        r.put("playing", ReadAloud.isPlaying());
+        r.put("id", ReadAloud.currentId());
+        r.put("sleepLeft", ReadAloud.sleepLeft());
+        call.resolve(r);
     }
 
     // ---------- Updates: a newer Kea from Kea's own GitHub releases ----------

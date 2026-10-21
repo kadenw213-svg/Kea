@@ -191,19 +191,70 @@ TASKS.study.pre = async (job, step) => {
 // the list of what to fix. The school's own site may be read for its published course outlines.
 // How many chapters one depth review reads (each is its textbook chapter, notes and question bank).
 const DEPTH_PER_RUN = 6;
+// How close a test must be for new material on it to start a depth review.
+const DEPTH_DAYS = 21;
+
+// A depth review is only justified by something new from the teacher (the student's rule, 2026-10-21: "rewriting hundreds
+// of questions at a time feels like a waste, it needs to be justified"): a test's study focus or description, a review
+// sheet, an answer key, on a chapter with a test still to come. Never on a timer, and never because Kea rewrote the
+// chapter's textbook itself (that made each review start the next). What each chapter's last review saw is kept here.
+const contextFile = () => path.join(profiles.paths().dir, 'depth-context.json');
 
 /**
- * `CODE depth`: Claude reviews the chapters due (soonest test first) at exam depth: each chapter's syllabus outcomes,
- * test focus and review sheets against its notes, its textbook chapter and its saved questions. Kea writes each
- * chapter's notes and a readable copy of its questions first; afterwards, every chapter judged to have gaps gets its
- * textbook rewritten and a harder question top-up aimed at the gaps.
+ * The engine's depth rows, with Kea's own `due`: a chapter with a textbook chapter and a test still to come whose
+ * teacher material the last review hasn't seen (`fresh`), within DEPTH_DAYS of that test. `next_test` carries its id.
+ */
+async function depthRows(code) {
+  const rows = (await engineJson(['depth-due', '--course', code, '--json']).catch(() => null)) || [];
+  const ctx = await require('./study.cjs').teacherContext(code).catch(() => null);
+  const seen = readJson(contextFile(), {});
+  if (!seen[code]) {
+    // (The first check under this rule: whatever reviewed chapters already had counts as seen.)
+    seen[code] = {};
+    for (const r of rows) if (r.reviewed_at) seen[code][r.label] = seenOf(ctx?.chapters.get(r.label)?.items || []);
+    fs.writeFileSync(contextFile(), JSON.stringify(seen));
+  }
+  return rows.map((r) => {
+    const c = ctx?.chapters.get(r.label);
+    const old = seen[code][r.label] || { h: [], w: [] };
+    const fresh = (c?.items || []).filter((i) => !(old.h || []).includes(i.h) && !(i.words && (old.w || []).some((w) => alike(w, i.words))));
+    // (Material for a test further off waits until it's within three weeks, when the student studies for it.)
+    const soon = c && (Date.parse(c.test.date) - Date.now()) / 864e5 <= DEPTH_DAYS;
+    const due = Boolean(r.textbook_source && fresh.length && soon);
+    return { ...r, next_test: c?.test || null, fresh, items: c?.items || [], due, why: due ? `new from the teacher for ${c.test.title}` : null };
+  });
+}
+
+// What a review saw: each piece's hash, and the words of written text.
+const seenOf = (items, old = { h: [], w: [] }) => ({ h: [...new Set([...(old.h || []), ...items.map((i) => i.h)])], w: [...new Set([...(old.w || []), ...items.filter((i) => i.words).map((i) => i.words)])] });
+// Written text counts as the same when most of its words were there before (a reworded study focus isn't new material).
+const alike = (a, b) => {
+  const x = new Set(a.split(' '));
+  const y = b.split(' ').filter(Boolean);
+  return y.length > 0 && y.filter((w) => x.has(w)).length / y.length >= 0.7;
+};
+
+/** After a review: these chapters' teacher material counts as seen (so the same material never starts another). */
+function depthSeen(code, rows) {
+  const seen = readJson(contextFile(), {});
+  seen[code] = seen[code] || {};
+  for (const r of rows) seen[code][r.label] = seenOf(r.items, seen[code][r.label]);
+  fs.writeFileSync(contextFile(), JSON.stringify(seen));
+}
+
+/**
+ * `CODE depth`: Claude reviews the chapters with new teacher material (soonest test first) against what that material
+ * says will be tested: the chapter's notes, its textbook chapter and its saved questions. Kea writes each chapter's notes
+ * and a readable copy of its questions first. Explanations are fixed only on questions the student has missed. A chapter
+ * judged to have gaps gets a practice set aimed at its next test, and its textbook rewritten only when the textbook
+ * itself is short of what the test asks.
  */
 async function depthPre(job, step, code) {
-  const due = ((await engineJson(['depth-due', '--course', code, '--json']).catch(() => null)) || [])
+  const due = (await depthRows(code))
     .filter((c) => c.due)
     .sort((a, b) => String(a.next_test?.date || '9999').localeCompare(String(b.next_test?.date || '9999')))
     .slice(0, DEPTH_PER_RUN);
-  if (!due.length) return { skip: `${code}: every chapter's depth review is current. Checked by Kea itself, so no Claude usage.`, ok: true };
+  if (!due.length) return { skip: `${code}: nothing new from the teacher since the last depth review. Checked by Kea itself, so no Claude usage.`, ok: true };
   const uv = await workspace.findUv();
   const cwd = profiles.paths().workspace;
   const study = require('./study.cjs');
@@ -214,6 +265,7 @@ async function depthPre(job, step, code) {
   fs.mkdirSync(dir, { recursive: true });
   const rel = (f) => path.relative(cwd, f).replace(/\\/g, '/');
   const lines = [];
+  const tried = study.history();
   for (const c of due) {
     const qs = course ? study.catalog('exam', course.id, [c.label]) : [];
     const file = path.join(dir, `${c.label}.md`);
@@ -226,19 +278,21 @@ async function depthPre(job, step, code) {
       const r = await workspace.runHidden(uv, ['run', 'academic-sync', 'practice-check', tmp], { cwd, env: workspace.engineEnv(uv) });
       for (const p of JSON.parse(r.out.slice(r.out.indexOf('{'))).problems || []) {
         const m = /^question (\d+) \([^)]*\): (.*)$/.exec(p);
-        if (m) weak.set(Number(m[1]) - 1, [...(weak.get(Number(m[1]) - 1) || []), m[2]]);
+        // (Explanation problems only: the fixes can't change the choices or their notes.)
+        if (m && !/gives itself away by length|`wrong`|shuffles choices/.test(m[2])) weak.set(Number(m[1]) - 1, [...(weak.get(Number(m[1]) - 1) || []), m[2]]);
       }
     } catch {}
     fs.rmSync(tmp, { force: true });
+    const missed = (q) => tried[q.k] && tried[q.k].lastRight === false;
     const answerOf = (q) => (q.type === 'mc' ? q.choices?.[q.answer] : q.type === 'multi' ? (q.answer || []).map((i) => q.choices?.[i]).join('; ') : String(q.answer));
     fs.writeFileSync(
       file,
       [
-        `# ${code} ${c.label}: the ${qs.length} saved questions (${levels}; ${weak.size} explanations flagged WEAK by Kea's check)`,
+        `# ${code} ${c.label}: the ${qs.length} saved questions (${levels}; ${qs.filter(missed).length} MISSED by the student, ${qs.filter((q, i) => missed(q) && weak.has(i)).length} of them with explanations flagged WEAK by Kea's check)`,
         '',
         ...qs.map((q, i) =>
           [
-            `${i + 1}. k=${q.k} [${q.type}${q.level ? `, ${q.level}` : ''}${q.section ? `, ${q.section}` : ''}]${weak.has(i) ? ` WEAK: ${weak.get(i).join('; ')}` : ''}${q.type !== 'short' && !(q.steps || []).length ? ' NO-STEPS' : ''}`,
+            `${i + 1}. k=${q.k} [${q.type}${q.level ? `, ${q.level}` : ''}${q.section ? `, ${q.section}` : ''}]${missed(q) ? ' MISSED' : ''}${missed(q) && weak.has(i) ? ` WEAK: ${weak.get(i).join('; ')}` : ''}${missed(q) && q.type !== 'short' && !(q.steps || []).length ? ' NO-STEPS' : ''}`,
             `   Q: ${String(q.q).replace(/\s+/g, ' ')}`,
             ...(q.choices ? [`   Choices: ${q.choices.join(' | ')}`] : []),
             `   Answer: ${answerOf(q)}${q.unit ? ` ${q.unit}` : ''}`,
@@ -249,19 +303,23 @@ async function depthPre(job, step, code) {
       ].join('\n')
     );
     const notes = path.join(cwd, 'data', 'study', 'notes', code, `${c.label}.md`);
-    lines.push(`- ${c.label}${c.title ? `: ${c.title}` : ''} (${c.why}${c.next_test ? `; next: ${c.next_test.title} on ${c.next_test.date}` : ''})\n  notes: ${fs.existsSync(notes) ? rel(notes) : '(none)'}\n  textbook: ${c.textbook_source ? rel(c.textbook_source) : '(none)'}\n  questions: ${rel(file)} (${qs.length}, ${weak.size} WEAK)\n  explanation fixes go in: ${rel(path.join(dir, `${c.label}.fixes.json`))}`);
+    lines.push(`- ${c.label}${c.title ? `: ${c.title}` : ''} (next test: ${c.next_test.title} on ${c.next_test.date})\n  new from the teacher since the last review (what this review is for):\n${c.fresh.map((f) => `    - ${f.text}`).join('\n')}\n  notes: ${fs.existsSync(notes) ? rel(notes) : '(none)'}\n  textbook: ${c.textbook_source ? rel(c.textbook_source) : '(none)'}\n  questions: ${rel(file)} (${qs.length}, ${weak.size} WEAK)\n  explanation fixes go in: ${rel(path.join(dir, `${c.label}.fixes.json`))}`);
   }
   const started = localStamp();
   return {
     prompt: `/kea-curriculum ${code} depth\n\nThe chapters to review:\n${lines.join('\n')}`,
-    after: (ok) => ok && depthAfter(code, course, started)
+    after: (ok) => {
+      if (!ok) return;
+      depthSeen(code, due);
+      return depthAfter(code, course, started);
+    }
   };
 }
 
 // The engine stamps reviews in local time (YYYY-MM-DDTHH:MM:SS), so runs compare against the same.
 const localStamp = (t = Date.now()) => new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 19);
 
-/** After a depth review: each chapter found to have gaps gets its textbook rewritten and a harder question top-up. */
+/** After a depth review: chapters with gaps get a practice set for their next test (and a textbook rewrite only when the note faults the textbook). */
 async function depthAfter(code, course, started) {
   if (!course) course = (await db().courses(profiles.paths().db, profiles.paths().textbooks, {}).catch(() => [])).find((c) => c.code === code);
   // The explanations the review rewrote go into the saved questions (each keeps its key, so progress carries on).
@@ -276,25 +334,32 @@ async function depthAfter(code, course, started) {
     }
   }
   if (fixed) send('scholar:changed');
-  // More chapters waiting: the next review starts right after (each chapter reviewed once, so this ends).
-  const rows = (await engineJson(['depth-due', '--course', code, '--json']).catch(() => null)) || [];
+  // More chapters with new teacher material (over DEPTH_PER_RUN): the next review starts right after. Those just
+  // reviewed are marked seen first (also after a resumed run), so this ends.
+  depthSeen(code, (await depthRows(code)).filter((r) => r.reviewed_at && r.reviewed_at.slice(0, 19) >= started));
+  const rows = await depthRows(code);
   if (rows.some((r) => r.due)) run('curriculum', `${code} depth`, 'depth');
   if (fixed)
-    addNews({ course: code, kind: 'update', title: `${code}: ${fixed} question explanation${fixed > 1 ? 's' : ''} rewritten to teach better`, body: 'Each now names what every symbol in its formula stands for and why each step is taken. Your progress on those questions is kept.' });
+    addNews({ course: code, kind: 'update', title: `${code}: ${fixed} explanation${fixed > 1 ? 's' : ''} improved on questions you missed`, body: 'Each now names what every symbol in its formula stands for and why each step is taken. Your progress on those questions is kept.' });
   const gaps = rows.filter((r) => r.verdict === 'gaps' && r.reviewed_at && r.reviewed_at.slice(0, 19) >= started);
   if (!gaps.length) return;
   const study = require('./study.cjs');
-  if (settings().get('scholar.studyPdfs', true) !== false) run('study', `rewrite ${code} ${gaps.map((g) => g.label).join(', ')}`, 'depth');
+  // The textbook is rewritten only for chapters whose note faults the textbook itself ("Textbook: …").
+  const books = gaps.filter((g) => /\btextbook\s*:/i.test(g.note || ''));
+  if (books.length && settings().get('scholar.studyPdfs', true) !== false) run('study', `rewrite ${code} ${books.map((g) => g.label).join(', ')}`, 'depth');
   if (!course) return;
-  for (const g of gaps) {
-    const r = await study.request({ kind: 'exam', courseId: course.id, chapters: [g.label], count: 25, mode: 'new', bank: true, upgrade: true }).catch(() => null);
+  // One practice set per upcoming test, on its chapters with gaps, aimed at the review's notes (they go in its brief).
+  const byTest = new Map();
+  for (const g of gaps) if (g.next_test?.id) byTest.set(g.next_test.id, [...(byTest.get(g.next_test.id) || []), g]);
+  for (const [itemId, list] of byTest) {
+    const r = await study.request({ kind: 'exam', courseId: course.id, itemId, chapters: list.map((g) => g.label), count: Math.min(40, 15 * list.length), mode: 'new' }).catch(() => null);
     if (r?.id) run('practice', r.id, 'depth');
   }
   addNews({
     course: code,
     kind: 'update',
-    title: `${code}: ${gaps.length} chapter${gaps.length > 1 ? 's' : ''} rewritten to cover what the tests ask`,
-    body: gaps.map((g) => `• ${g.label}: ${String(g.note || '').slice(0, 220)}`).join('\n')
+    title: `${code}: new practice for ${[...new Set(gaps.map((g) => g.next_test?.title).filter(Boolean))].join(', ') || 'your next test'}`,
+    body: `The teacher posted new material that these chapters didn't fully cover yet:\n${gaps.map((g) => `• ${g.label}: ${String(g.note || '').slice(0, 220)}`).join('\n')}${books.length ? `\nTextbook chapters being updated: ${books.map((g) => g.label).join(', ')}.` : ''}`
   });
 }
 
@@ -506,16 +571,13 @@ async function curriculumCheck(why = 'schedule') {
       });
     }
   }
-  // Depth: a class with chapters due for review (never reviewed, rewritten since, or a test within three weeks) gets a
-  // depth review every 3 days while any has a test within three weeks, else once a week.
+  // Depth: a class gets a depth review when a chapter with a test still to come has new material from the teacher
+  // (Kea's own check, no Claude), at most once a day.
   const deep = [];
   for (const c of settings().get('scholar.depthReviews', true) === false ? [] : list) {
-    const rows = (await engineJson(['depth-due', '--course', c.code, '--json']).catch(() => null)) || [];
-    const dueRows = rows.filter((r) => r.due);
-    if (!dueRows.length) continue;
-    const soon = dueRows.some((r) => r.next_test && (Date.parse(r.next_test.date) - Date.now()) / 864e5 <= 21);
+    if (!(await depthRows(c.code)).some((r) => r.due)) continue;
     const t = told[c.code] || {};
-    if (Date.now() - new Date(t.depthAt || 0).getTime() > (soon ? 3 : 7) * 864e5) {
+    if (Date.now() - new Date(t.depthAt || 0).getTime() > 864e5) {
       deep.push(c.code);
       told[c.code] = { ...t, depthAt: new Date().toISOString() };
     }
@@ -993,4 +1055,4 @@ function deleteNews(ids = [], keys = []) {
   return gone.map((n) => inboxKey({ course: n.course || '', title: n.title, body: n.body }));
 }
 
-module.exports = { run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS };
+module.exports = { run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS, _test: { depthRows } };

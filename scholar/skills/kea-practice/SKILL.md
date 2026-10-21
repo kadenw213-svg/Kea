@@ -59,7 +59,7 @@ the set:
   balance can be checked.
 
 **Saved questions.** Kea keeps every question the student has had, and a new set reuses some of them. The brief
-ends with "Already saved for these chapters": write the number of **new** items in the title line, all different
+ends with "Already saved for these chapters": write the number of **new** items the brief's title asks for, all different
 from those (other problems, other numbers and angles, topics and problem types the saved ones miss). Don't
 rewrite a saved question in new words; Kea drops repeats. **Calculations are the exception:** a saved
 calculation's format with new numbers (and a new answer) is a new question, and a good one, since the exam tests
@@ -75,6 +75,31 @@ notes and review sheets: "multiple choice, calculation problems and short essays
 - `mc`: one correct choice of 4 (3 to 6 allowed). Distractors are wrong answers students really give: sign or unit
   slips, a confused look-alike term, a reversed relationship. Never "all/none of the above", "both A and B" or a
   choice that refers to other choices: Kea shuffles them.
+  **Nothing but knowing the material should find the answer.** Every wrong choice is a near miss that only the
+  distinction the chapter teaches rules out (the student's rule: distractors "that make you distinguish between
+  similar concepts at a high level, not random ones"):
+  - the closely related concept it's confused with (protostome for deuterostome, pseudocoelom for coelom, polyp for
+    medusa, osmosis for diffusion), or the right concept matched to the wrong example or group;
+  - the relationship reversed (cause and effect swapped, the two halves of a comparison traded);
+  - a true statement that doesn't answer the question (a real feature that isn't the reason asked for);
+  - the right reasoning with one step wrong (a unit slip, a sign, the wrong formula for the case).
+  For example, "Which two phyla grow by molting?" offers Arthropoda and Annelida (both segmented, but annelids don't
+  molt), Annelida and Mollusca, Nematoda and Platyhelminthes, and the answer Arthropoda and Nematoda.
+  Write each one's mistake in `wrong` (one entry per choice, `""` for the answer, a short sentence each): Kea shows
+  it to the student who picks that choice ("Annelids are segmented like arthropods, but they're lophotrochozoans and
+  don't molt"). If you can't name the mistake a wrong choice stands for, it's a random choice: replace it.
+  `practice-check` refuses a question without these notes.
+  A student who half-knows the chapter should find every wrong choice tempting:
+  - All choices are the same kind of thing (four processes, four citations, four orders of events), in the same
+    grammatical form, about the same length and the same level of detail. The answer must not be the longest, most
+    qualified or most carefully worded choice: make it the shortest in some questions, and give the wrong choices the
+    same "because…" reasons and specifics. `practice-check` refuses an answer 5+ words longer than every wrong choice,
+    and a set where the answer is the longest in more than 40% of questions.
+  - No throwaway choices a student can rule out without the chapter: nothing silly, off-topic or from another
+    subject (a URL as a citation, "nothing changes" when the question is about a change, a method nobody would pick).
+  - Words like "always", "only", "never", "no effect" belong as often in right answers as in wrong ones; a wrong choice
+    is wrong because of its content, not because it sounds absolute.
+  - The answer doesn't repeat the question's key words when the wrong choices don't.
 - `multi`: "Select all that apply", 4 to 6 choices, 2 or more correct.
 - `tf`: only where the course uses true/false; prefer `mc`.
 - `num`: a calculation with a numeric answer: `answer` (number), `tolerance` (absolute; fit it to sensible
@@ -132,6 +157,9 @@ Balance and difficulty:
   single Unicode character is written `^(…)` or `_(…)`: `(1.00375)^(72)`, `e^(rt)`, `log_(b)(x)`, `10^(−4)`; Kea draws
   these as real superscripts and subscripts. Never `**`, `\frac` or `$…$`.
 - Be accurate: check every answer by working it, and keep the explanation's numbers consistent with the answer.
+- Quote only what the brief or the textbook shows. A quotation, statistic or page number credited to a real author
+  comes from them word for word; otherwise invent a clearly made-up source ("a 2021 article by A. Ruiz") rather than
+  put remembered or approximate words in a real person's mouth.
 
 ## Pictures (identification)
 
@@ -166,7 +194,7 @@ each part with how far along you are:
 
 ```json
 { "questions": [
-  { "type": "mc", "q": "…", "choices": ["…", "…", "…", "…"], "answer": 2, "level": "apply", "explain": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law", "source": "FunSheet Ch 5" },
+  { "type": "mc", "q": "…", "choices": ["…", "…", "…", "…"], "answer": 2, "wrong": ["the mistake choice A stands for", "… B …", "", "… D …"], "level": "apply", "explain": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law", "source": "FunSheet Ch 5" },
   { "type": "multi", "q": "Select all that apply: …", "choices": ["…", "…", "…", "…", "…"], "answer": [0, 3], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "tf", "q": "…", "answer": false, "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "calc": "745/760*5.60/2.24", "level": "multistep", "explain": "…", "steps": ["Find …. Given: …", "Formula: …, where …", "Convert …", "Substitute: …", "Answer: 2.45 atm, which makes sense because …"], "chapter": "…", "topic": "…", "source": "…" },
@@ -176,7 +204,9 @@ each part with how far along you are:
 ```
 
 or, for flashcards, `{ "cards": [ { "front": "…", "back": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law" } ] }`. `answer` indexes are
-0-based. Work each answer in your head as you write it; don't draft the set twice.
+0-based. Work each answer in your head as you write it; don't draft the set twice. Before the check, read your
+multiple-choice questions once more as a student who half-knows the chapter: any choice they could rule out without
+it (off-topic, silly, obviously absolute, much shorter or vaguer than the rest) gets replaced with a near miss.
 
 Then call `mcp__kea__kea_progress` with `percent` 90 and run `uv run academic-sync practice-check <output> --count
 <count>` once. If it lists problems, fix just those with Edit and check again. Kea drops any malformed item itself, so

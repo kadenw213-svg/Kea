@@ -7,10 +7,13 @@ import type { ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxIte
 
 interface KeaNative {
   setup(o: { home: string; user?: string; pass?: string }): Promise<void>;
-  state(): Promise<{ home: string; hasLogin: boolean; signedIn: boolean; dataFolder: string; dataFileOnly?: boolean; files?: string[]; notifications: boolean }>;
+  /** `drive`: where the chosen files or folder live (see DriveFrom). */
+  state(): Promise<{ home: string; hasLogin: boolean; signedIn: boolean; dataFolder: string; dataFileOnly?: boolean; files?: string[]; drive?: DriveFrom; notifications: boolean }>;
   pickDataFile(): Promise<{ files: string[] }>;
-  /** Kea's three files, chosen together (kea-data.json, kea-library.zip, phone.json). */
-  pickFiles(): Promise<{ files: string[] }>;
+  /** Kea's three files, chosen together (kea-data.json, kea-library.zip, phone.json), from the drive named. */
+  pickFiles(o?: { drive?: string }): Promise<{ files: string[]; from?: DriveFrom }>;
+  /** Which drive apps are installed. */
+  drives(): Promise<Partial<Record<'google' | 'onedrive' | 'dropbox', boolean>>>;
   /** Unpack the library when the PC wrote a new one. */
   syncLibrary(): Promise<{ root: string; changed: boolean; files?: number; missing?: boolean; error?: string }>;
   addListener(event: 'library', cb: (p: { files: number; bytes: number; name: string }) => void): Promise<{ remove(): void }>;
@@ -26,7 +29,7 @@ interface KeaNative {
   checkNow(): Promise<{ count: number }>;
   phoneInbox(): Promise<{ items: ScholarInboxItem[] }>;
   /** A folder holding Kea's files (or one above them: Kea, Kea → School). Not every drive app allows folders. */
-  pickFolder(): Promise<{ folder: string; base: string }>;
+  pickFolder(): Promise<{ folder: string; base: string; from?: DriveFrom }>;
   /** Forget the pairing with the PC (the phone's own files stay). */
   unpair(): Promise<void>;
   writeFile(o: { path: string; text: string }): Promise<void>;
@@ -40,9 +43,21 @@ interface KeaNative {
   listFiles(): Promise<{ files: PhoneFile[] }>;
   /** Choose a PDF anywhere; it's copied into Kea's files. */
   pickPdf(): Promise<{ path: string; name: string }>;
+  /** Choose any file; it's copied into Kea's files. */
+  pickFile(): Promise<{ path: string; name: string; type: string }>;
+  /** One of Kea's files in another app (Android asks which). */
+  openWith(o: { path: string }): Promise<void>;
   renameFile(o: { path: string; name: string }): Promise<{ path: string; name: string }>;
   deleteFile(o: { path: string }): Promise<void>;
   appInfo(): Promise<{ version: string; build: number }>;
+  /** The phone's text-to-speech voices for its language (offline ones first). */
+  voices(): Promise<{ voices: PhoneVoice[] }>;
+  say(o: { text: string; voice?: string; rate?: number }): Promise<void>;
+  /** Read sentences aloud like an audiobook (keeps going with the screen off); `id` says where each is. */
+  readAloud(o: { items: { id: string; text: string; pause?: number }[]; title: string; voice?: string; rate?: number; loop?: boolean }): Promise<void>;
+  readMore(o: { items: { id: string; text: string }[] }): Promise<void>;
+  readControl(o: { action: 'pause' | 'resume' | 'stop' | 'skip' | 'settings' | 'sleep' | 'state'; by?: number; voice?: string; rate?: number; minutes?: number }): Promise<{ playing: boolean; id: string; sleepLeft: number }>;
+  addListener(event: 'speech', cb: (p: { id: string; index: number; total: number; state: 'playing' | 'paused' | 'stopped' | 'done' | 'error' }) => void): Promise<{ remove(): void }>;
   downloadUpdate(o: { url: string }): Promise<{ path: string; version: string }>;
   installUpdate(): Promise<{ started: boolean; needsPermission?: boolean }>;
   addListener(event: 'update', cb: (p: { received: number; total: number }) => void): Promise<{ remove(): void }>;
@@ -51,8 +66,12 @@ interface KeaNative {
 // (A test can stand in for the native side: window.__keaMock, set before the app loads. The app never sets it.)
 /** A file another app opened with Kea, copied where the reader can load it. */
 export type OpenedFile = { path: string; name: string; type: string };
+/** A text-to-speech voice on the phone. `online`: needs a connection (offline ones keep reading with no signal). */
+export type PhoneVoice = { name: string; locale: string; country: string; quality: number; online: boolean; isDefault: boolean };
+/** Where a chosen file came from: a drive's app, the phone's storage, Downloads (a one-time copy) or another app. */
+export type DriveFrom = 'google' | 'onedrive' | 'dropbox' | 'phone' | 'downloads' | 'other' | '';
 /** One of the phone's own files: a scan, or a PDF opened or chosen in Kea. */
-export type PhoneFile = { path: string; name: string; size: number; modified: number; kind: 'scan' | 'pdf' };
+export type PhoneFile = { path: string; name: string; size: number; modified: number; kind: 'scan' | 'file' };
 
 /** How many pages each scan has (the scanner says; kept by path). */
 const PAGES = 'kea.pages';
