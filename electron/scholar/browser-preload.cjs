@@ -91,6 +91,9 @@ ipcRenderer.on('class-site:fill', (_e, login) => ipcRenderer.send('class-site:fi
 // the dark page, which is how symbols on ALEKS and math pages went missing. The site's header takes Kea's own colours.
 // Brightspace builds most of its page inside web components, so the same correction is added inside each of their
 // shadow roots too. A page that's already dark is left alone. Options come from Kea's settings and change live.
+// With "Pages in Kea's colours" (the default), the inversion is set so the page's white becomes Kea's exact panel colour
+// and its black Kea's text colour, and the site's own brand colour (the hue its buttons, links, tabs and bars share) is
+// repainted in the student's accent. Other colours, like ALEKS's green and red for right and wrong, are left as they are.
 const PLATFORMS = [
   { id: 'd2l', test: () => /brightspace|desire2learn|d2l/i.test(location.host) || /^\/d2l\//.test(location.pathname) || !!document.querySelector('d2l-navigation, d2l-navigation-main-header') },
   { id: 'canvas', test: () => /instructure\.com|canvas/i.test(location.host) || !!document.querySelector('#application.ic-app') },
@@ -169,6 +172,110 @@ function headerRules(shadow) {
   ].join('\n');
 }
 
+// ----- The site's brand colour in Kea's accent -----
+// Elements Kea marks: data-kea-acc="bg" (a button or bar filled with the brand colour: accent fill, text on accent),
+// "fg" (brand-coloured text or icons: accent) and "bd" (a brand-coloured outline: accent border).
+function accentRules() {
+  const k = dark.match && dark.theme;
+  if (!k) return '';
+  const acc = beforeFilter(k.accent);
+  const on = beforeFilter(k.onAccent);
+  return [
+    `[data-kea-acc~="bg"] { background-color: ${acc} !important; color: ${on} !important; border-color: ${acc} !important; }`,
+    `[data-kea-acc~="grad"] { background-image: none !important; }`,
+    `[data-kea-acc~="bg"] :is(svg, path) { fill: currentColor; }`,
+    `[data-kea-acc~="fg"] { color: ${acc} !important; fill: ${acc} !important; }`,
+    `[data-kea-acc~="bd"] { border-color: ${acc} !important; }`
+  ].join('\n');
+}
+// What can carry a brand colour: controls, links, tabs, bars and headings. Each is looked at once, as it appears.
+const BRANDISH = 'a, button, [role="button"], [role="tab"], [role="link"], [role="menuitem"], input[type="submit"], input[type="button"], nav, header, h1, h2, h3, [class*="btn"], [class*="button"], [class*="Button"], [class*="header"], [class*="Header"], [class*="toolbar"], [class*="nav"], [class*="tab"], [class*="banner"], [class*="primary"]';
+const looked = new WeakSet();
+const brandSeen = []; // { el, bg, fg, bd, grad }, each colour as { h, s, l, area } or null
+let brandHue = null;
+/** A computed colour as hue (degrees), saturation and lightness, or null when it's see-through or close to grey. */
+function hsl(css) {
+  const m = String(css || '').match(/[\d.]+/g);
+  if (!m || (m[3] !== undefined && Number(m[3]) < 0.6)) return null;
+  const [r, g, b] = m.slice(0, 3).map((x) => Number(x) / 255);
+  const hi = Math.max(r, g, b);
+  const lo = Math.min(r, g, b);
+  const l = (hi + lo) / 2;
+  const d = hi - lo;
+  if (d < 0.12) return null;
+  const sat = d / (1 - Math.abs(2 * l - 1));
+  if (sat < 0.35 || l < 0.18 || l > 0.85) return null;
+  const h = hi === r ? ((g - b) / d) % 6 : hi === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: (h * 60 + 360) % 360, s: sat, l };
+}
+const near = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b)) <= 22;
+/** The hue the site's controls share most (weighted by how much of the page it fills), once there's enough to tell. */
+function findBrand() {
+  const buckets = new Array(24).fill(0);
+  for (const e of brandSeen) {
+    if (e.bg) buckets[Math.floor(e.bg.h / 15)] += 1 + Math.min(e.bg.area, 60000) / 6000;
+    if (e.fg) buckets[Math.floor(e.fg.h / 15)] += 1;
+    if (e.bd) buckets[Math.floor(e.bd.h / 15)] += 0.5;
+  }
+  // Neighbouring 15° steps count together, so a brand colour on a step boundary still wins.
+  let best = -1;
+  let score = 0;
+  for (let i = 0; i < 24; i++) {
+    const v = buckets[i] + 0.6 * (buckets[(i + 23) % 24] + buckets[(i + 1) % 24]);
+    if (v > score) (score = v), (best = i);
+  }
+  if (score < 3) return null;
+  // The exact hue: the average of the colours near that step.
+  let x = 0;
+  let y = 0;
+  for (const e of brandSeen)
+    for (const c of [e.bg, e.fg, e.bd])
+      if (c && near(c.h, best * 15 + 7.5)) (x += Math.cos((c.h * Math.PI) / 180)), (y += Math.sin((c.h * Math.PI) / 180));
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+function markBrand(e) {
+  const want = [];
+  if (e.bg && near(e.bg.h, brandHue)) want.push('bg', ...(e.grad ? ['grad'] : []));
+  if (e.fg && near(e.fg.h, brandHue) && !want.includes('bg')) want.push('fg');
+  if (e.bd && near(e.bd.h, brandHue)) want.push('bd');
+  const v = want.join(' ');
+  if ((e.el.getAttribute('data-kea-acc') || '') !== v) v ? e.el.setAttribute('data-kea-acc', v) : e.el.removeAttribute('data-kea-acc');
+}
+/** Look at new controls, work out the brand colour, and mark what carries it. */
+function brandSweep(roots) {
+  if (!dark.match || !dark.theme) return;
+  let fresh = 0;
+  for (const r of roots) {
+    for (const el of r.querySelectorAll(BRANDISH)) {
+      if (looked.has(el) || fresh > 1500 || brandSeen.length > 6000) continue;
+      looked.add(el);
+      fresh++;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      const grad = /gradient/.test(cs.backgroundImage);
+      const bg = hsl(cs.backgroundColor) || (grad ? hsl((cs.backgroundImage.match(/rgba?\([^)]+\)/) || [])[0]) : null);
+      const fg = hsl(cs.color);
+      // The thickest side's colour (tabs are often underlined, links boxed).
+      const side = ['Top', 'Bottom', 'Left', 'Right'].reduce((a, b) => (parseFloat(cs[`border${b}Width`]) > parseFloat(cs[`border${a}Width`]) ? b : a));
+      const bd = parseFloat(cs[`border${side}Width`]) > 0 ? hsl(cs[`border${side}Color`]) : null;
+      if (!bg && !fg && !bd) continue;
+      if (bg) {
+        const box = el.getBoundingClientRect();
+        bg.area = box.width * box.height;
+      }
+      brandSeen.push({ el, bg, fg, bd, grad });
+    }
+  }
+  const hue = findBrand();
+  if (hue === null) return;
+  const moved = brandHue === null || Math.min(Math.abs(hue - brandHue), 360 - Math.abs(hue - brandHue)) > 6;
+  if (moved) brandHue = hue;
+  for (const e of moved ? brandSeen : brandSeen.slice(brandSeen.length - fresh)) if (e.el.isConnected) markBrand(e);
+}
+function unmarkBrand() {
+  for (const e of brandSeen) e.el.removeAttribute('data-kea-acc');
+}
+
 function sheetText() {
   const f = `invert(${dark.strength}) hue-rotate(180deg) brightness(${dark.brightness}) contrast(${dark.contrast}) sepia(${dark.sepia})`;
   const back = 'invert(1) hue-rotate(180deg)';
@@ -181,11 +288,12 @@ function sheetText() {
     dark.docs ? '' : `html.kea-dark :is(${DOCS}) { filter: ${back} !important; }`,
     // Selection stays readable.
     'html.kea-dark ::selection { background: #3d6db5; color: #fff; }',
-    isTop ? headerRules(false) : ''
+    isTop ? headerRules(false) : '',
+    accentRules()
   ].join('\n');
 }
 // The same correction inside web components (their shadow roots don't see the page's styles).
-const SHADOW = () => `:is(${KEEP}) { filter: invert(1) hue-rotate(180deg) !important; } :is(${KEEP}) :is(${KEEP}) { filter: none !important; } ${headerRules(true)}`;
+const SHADOW = () => `:is(${KEEP}) { filter: invert(1) hue-rotate(180deg) !important; } :is(${KEEP}) :is(${KEEP}) { filter: none !important; } ${headerRules(true)} ${accentRules()}`;
 
 // ----- Which pictures are photos -----
 // Each picture is looked at once, as a 16×16 copy: see-through parts mean a drawing, symbol or formula, and black and
@@ -282,6 +390,7 @@ function sweep() {
     } catch {}
   }
   for (const r of [document, ...roots]) for (const el of r.querySelectorAll('img, canvas, [style*="background-image"]')) classify(el);
+  brandSweep([document, ...roots]);
 }
 function unpatchShadows() {
   if (!shadowSheet) return;
@@ -337,6 +446,7 @@ function applyDark() {
     clearInterval(timer);
     timer = 0;
     unpatchShadows();
+    unmarkBrand();
     return;
   }
   if (!style) {
@@ -360,6 +470,17 @@ function applyDark() {
 }
 function setDark(next) {
   dark = { strength: 0.9, brightness: 1, contrast: 1, sepia: 0, docs: false, sites: {}, ...next };
+  // Kea's colours: white becomes Kea's panel colour exactly, and (Kea's text being its opposite grey) black becomes
+  // Kea's text colour. The look sliders don't apply.
+  const m = dark.match && /^#([0-9a-f]{6})$/i.exec(dark.theme?.surface || '');
+  if (m) {
+    const n = parseInt(m[1], 16);
+    const lum = (((n >> 16) & 255) + ((n >> 8) & 255) + (n & 255)) / 3 / 255;
+    Object.assign(dark, { strength: 1 - lum, brightness: 1, contrast: 1, sepia: 0 });
+  }
+  // The accent or the setting changed: everything is marked again from scratch.
+  unmarkBrand();
+  brandHue = null;
   if (shadowSheet) shadowSheet.replaceSync(SHADOW());
   if (document.documentElement) applyDark();
 }

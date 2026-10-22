@@ -5,6 +5,8 @@ import { HomeScreen } from './components/Home';
 import { Overlays } from './components/Overlays';
 import { UpdateDialog, initUpdates } from './components/Updates';
 import { LookupPanel } from './components/lookup/LookupPanel';
+import { AssistantPanel } from './components/assistant/AssistantPanel';
+import { toggleAssistant } from './components/assistant/assistantStore';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { VersionHistoryDialog, openHistory } from './components/settings/VersionHistory';
 import { openSettings, setting } from './lib/settings';
@@ -24,7 +26,8 @@ const DocEditor = lazy(() => import('./editors/doc/DocEditor'));
 const SheetEditor = lazy(() => import('./editors/sheet/SheetEditor'));
 const CodeEditor = lazy(() => import('./editors/code/CodeEditor'));
 const SlidesEditor = lazy(() => import('./editors/slides/SlidesEditor'));
-const ImageViewer = lazy(() => import('./editors/image/ImageViewer'));
+const PhotoEditor = lazy(() => import('./editors/photo/PhotoEditor'));
+const VideoEditor = lazy(() => import('./editors/video/VideoEditor'));
 
 function EditorFor({ tab, active }: { tab: Tab; active: boolean }) {
   switch (tab.kind) {
@@ -39,7 +42,9 @@ function EditorFor({ tab, active }: { tab: Tab; active: boolean }) {
     case 'code':
       return <CodeEditor tab={tab} active={active} />;
     case 'image':
-      return <ImageViewer tab={tab} active={active} />;
+      return <PhotoEditor tab={tab} active={active} />;
+    case 'video':
+      return <VideoEditor tab={tab} active={active} />;
     default:
       return null;
   }
@@ -129,8 +134,13 @@ export function App() {
         e.preventDefault();
         requestCloseTab(activeId);
       } else if (k === 'j' && !e.shiftKey) {
+        // (In the image editor Ctrl+J is Photoshop's Duplicate layer; the Encyclopedia is on its button there.)
+        if (tabs.find((t) => t.id === activeId)?.kind === 'image') return;
         e.preventDefault();
         toggleLookup();
+      } else if (k === 'j' && e.shiftKey) {
+        e.preventDefault();
+        toggleAssistant();
       } else if (k === '\\') {
         e.preventDefault();
         const st = useTabs.getState();
@@ -212,6 +222,7 @@ export function App() {
           <div
             key={`${t.id}:${t.version}`}
             className={`pane ${split && t.id === activeId ? 'focused' : ''}`}
+            data-tab={t.id}
             hidden={t.id !== activeId && !(split && (t.id === split.left || t.id === split.right))}
             style={paneStyle(t.id)}
             onPointerDownCapture={() => split && t.id !== activeId && useTabs.getState().setActive(t.id)}
@@ -250,6 +261,7 @@ export function App() {
         )}
       </div>
       <LookupPanel />
+      <AssistantPanel />
       </div>
       {dragging && (
         <div className="drop-overlay">

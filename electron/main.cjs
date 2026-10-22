@@ -38,7 +38,8 @@ process.on('unhandledRejection', (err) => log('unhandledRejection', err));
 
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  require('./media.cjs').SCHEME
 ]);
 
 // Developer aid: KEA_USERDATA runs a separate profile (and lock), so tests don't touch a running copy.
@@ -306,6 +307,8 @@ app.whenReady().then(() => {
   require('./google.cjs').register({ log });
   require('./cite.cjs').register({ log });
   require('./wiki.cjs').register();
+  require('./assistant.cjs').register();
+  require('./media.cjs').register();
   require('./account.cjs').register();
   require('./scholar/index.cjs').register();
   require('./dict.cjs').register();
@@ -351,7 +354,7 @@ app.whenReady().then(() => {
     const headers = isoHeaders(res);
     headers.set(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'"
+      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: kea-media:; media-src 'self' data: blob: kea-media:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' data: blob: kea-media:; object-src 'none'; base-uri 'none'"
     );
     return new Response(res.body, { status: res.status, headers });
   });
@@ -424,7 +427,9 @@ ipcMain.handle('dialog:open', async (_e, opts = {}) => {
     filters: opts.filters
   });
   if (res.canceled) return [];
-  return res.filePaths.map(readFileEntry);
+  // Video and audio are streamed by the video editor from disk (electron/media.cjs), so only their paths are sent.
+  const streamed = /\.(mp4|m4v|mov|webm|mkv|mp3|wav|m4a|aac|ogg|oga|opus|flac)$/i;
+  return res.filePaths.map((p) => (streamed.test(p) ? { path: p, name: path.basename(p), data: new Uint8Array(), size: fs.statSync(p).size } : readFileEntry(p)));
 });
 
 ipcMain.handle('dialog:save', async (_e, opts = {}) => {

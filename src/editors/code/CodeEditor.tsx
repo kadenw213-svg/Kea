@@ -26,6 +26,7 @@ import { api } from '../../lib/api';
 import { MenuButton } from '../../components/Popover';
 import './code.css';
 import { LookupButton } from '../../components/lookup/LookupButton';
+import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
 
@@ -317,6 +318,7 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
         )}
         <div className="tb-end">
         <LookupButton />
+        <AssistantButton />
         <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => save(false)} title="Save (Ctrl+S)">
           <Save size={16} /> Save
         </button>

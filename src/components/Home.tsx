@@ -44,7 +44,7 @@ import { Preview } from './home/Preview';
 import { ConnectDrives } from './home/ConnectDrives';
 import { DriveLogo } from './home/DriveLogo';
 import { TemplateGallery } from './home/Templates';
-import { LayoutTemplate } from 'lucide-react';
+import { LayoutTemplate, Clapperboard, ImagePlus } from 'lucide-react';
 import { useSetting } from '../lib/settings';
 
 function greeting() {
@@ -76,7 +76,8 @@ const FILTERS = [
   { id: 'sheet', label: 'Sheets' },
   { id: 'slides', label: 'Slides' },
   { id: 'pdf', label: 'PDFs' },
-  { id: 'image', label: 'Images' }
+  { id: 'image', label: 'Images' },
+  { id: 'video', label: 'Video' }
 ] as const;
 type FilterId = (typeof FILTERS)[number]['id'];
 
@@ -408,6 +409,18 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                 <FileCode2 size={28} />
               </div>
               <span>Text file</span>
+            </button>
+            <button className="start-card" onClick={() => newFile('image')}>
+              <div className="start-thumb image">
+                <ImagePlus size={28} />
+              </div>
+              <span>Image</span>
+            </button>
+            <button className="start-card" onClick={() => newFile('video')}>
+              <div className="start-thumb video">
+                <Clapperboard size={28} />
+              </div>
+              <span>Video</span>
             </button>
             <button className="start-card" onClick={openPdf}>
               <div className="start-thumb pdf">

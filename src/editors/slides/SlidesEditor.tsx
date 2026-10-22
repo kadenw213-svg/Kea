@@ -56,6 +56,7 @@ import { MenuButton } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
 import './slides.css';
 import { LookupButton } from '../../components/lookup/LookupButton';
+import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
 
@@ -492,9 +493,119 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
     await api.printHtml(staticHtml());
   };
   const aiRef = useRef<AiHooks>(null as any);
+  // The Claude Assistant's slide tools. Titles are one line; bodies are lines of text, each a bullet.
+  const titleHtml = (t: string, center = false) => `<p${center ? ' style="text-align:center"' : ''}><b>${escapeHtml(t)}</b></p>`;
+  const bodyHtml = (lines: string[]) => `<ul>${lines.map((l) => `<li>${escapeHtml(String(l).replace(/^\s*([-*•]|\d+[.)])\s+/, ''))}</li>`).join('')}</ul>`;
+  const slideAt = (n: number) => {
+    const d = h.get();
+    if (!Number.isInteger(n) || n < 1 || n > d.slides.length) throw new Error(`There's no slide ${n}; the deck has ${d.slides.length}.`);
+    return n - 1;
+  };
+  const fill = (sl: Slide, p: { title?: string; body?: string[]; notes?: string }): Slide => {
+    const els = sl.els.map((e) => {
+      if (p.title !== undefined && e.role === 'title') return { ...e, html: titleHtml(p.title, /text-align:center/.test(e.html || '')) };
+      if (p.body !== undefined && (e.role === 'body' || e.role === 'subtitle')) return { ...e, html: e.role === 'subtitle' ? `<p style="text-align:center">${escapeHtml(p.body.join(' '))}</p>` : bodyHtml(p.body) };
+      return e;
+    });
+    // Two body boxes (two columns): the lines split between them.
+    const bodies = els.filter((e) => e.role === 'body');
+    if (p.body && bodies.length === 2) {
+      const half = Math.ceil(p.body.length / 2);
+      bodies[0].html = bodyHtml(p.body.slice(0, half));
+      bodies[1].html = bodyHtml(p.body.slice(half));
+    }
+    return { ...sl, els, ...(p.notes !== undefined ? { notes: p.notes } : {}) };
+  };
   aiRef.current = {
     noun: 'presentation',
     insertLabel: 'Add to slide',
+    tools: [
+      {
+        name: 'add_slide',
+        description: 'Add a slide after slide `after` (default: the slide shown), in the deck\u2019s theme. Layouts: "title" (title + subtitle), "content" (title + bullets), "two" (title + two bullet columns), "section" (a section header), "blank".',
+        input_schema: {
+          type: 'object',
+          properties: {
+            layout: { type: 'string', enum: ['title', 'content', 'two', 'section', 'blank'] },
+            title: { type: 'string' },
+            body: { type: 'array', items: { type: 'string' }, description: 'Bullet lines (or the subtitle, for a title slide)' },
+            notes: { type: 'string', description: 'Speaker notes' },
+            after: { type: 'integer', description: 'Slide number to add it after' }
+          },
+          required: ['layout']
+        },
+        run: ({ layout, title, body, notes, after }) => {
+          const d = h.get();
+          const at = after === undefined ? idx : slideAt(after);
+          const made = fill(layoutSlide(layout, themeFromSlide(d.slides[at] || slide), deck.w, deck.h), { title, body, notes });
+          const slides = [...d.slides];
+          slides.splice(at + 1, 0, made);
+          h.commit({ ...d, slides });
+          markDirty();
+          setIdx(at + 1);
+          return `Added slide ${at + 2}.`;
+        }
+      },
+      {
+        name: 'set_slide',
+        description: 'Change a slide\u2019s title, body bullets or speaker notes (only the parts you give). Use read_document to see the current text first.',
+        input_schema: {
+          type: 'object',
+          properties: { slide: { type: 'integer', description: 'Slide number, from 1' }, title: { type: 'string' }, body: { type: 'array', items: { type: 'string' } }, notes: { type: 'string' } },
+          required: ['slide']
+        },
+        run: ({ slide: n, title, body, notes }) => {
+          const i = slideAt(n);
+          const d = h.get();
+          const slides = [...d.slides];
+          slides[i] = fill(slides[i], { title, body, notes });
+          h.commit({ ...d, slides });
+          markDirty();
+          setIdx(i);
+          return `Updated slide ${n}.`;
+        }
+      },
+      {
+        name: 'delete_slide',
+        description: 'Delete a slide.',
+        input_schema: { type: 'object', properties: { slide: { type: 'integer' } }, required: ['slide'] },
+        run: ({ slide: n }) => {
+          const i = slideAt(n);
+          const d = h.get();
+          if (d.slides.length === 1) throw new Error('A deck needs at least one slide.');
+          h.commit({ ...d, slides: d.slides.filter((_, j) => j !== i) });
+          markDirty();
+          setIdx(Math.max(0, Math.min(i, d.slides.length - 2)));
+          return `Deleted slide ${n}.`;
+        }
+      },
+      {
+        name: 'move_slide',
+        description: 'Move a slide to a new position.',
+        input_schema: { type: 'object', properties: { slide: { type: 'integer' }, to: { type: 'integer' } }, required: ['slide', 'to'] },
+        run: ({ slide: n, to }) => {
+          const i = slideAt(n);
+          const j = slideAt(to);
+          const d = h.get();
+          const slides = [...d.slides];
+          const [moved] = slides.splice(i, 1);
+          slides.splice(j, 0, moved);
+          h.commit({ ...d, slides });
+          markDirty();
+          setIdx(j);
+          return `Moved slide ${n} to ${to}.`;
+        }
+      },
+      {
+        name: 'go_to_slide',
+        description: 'Show a slide to the student (and to yourself, with look).',
+        input_schema: { type: 'object', properties: { slide: { type: 'integer' } }, required: ['slide'] },
+        run: ({ slide: n }) => {
+          setIdx(slideAt(n));
+          return `Showing slide ${n}.`;
+        }
+      }
+    ],
     async getDocument() {
       const d = h.get();
       const sections = d.slides.map((s, i) => {
@@ -827,6 +938,7 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
           <Play size={15} /> Present
         </button>
         <LookupButton />
+        <AssistantButton />
         <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => save(false)} title="Save (Ctrl+S)">
           <Save size={16} /> Save
         </button>

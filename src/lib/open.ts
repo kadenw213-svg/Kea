@@ -1,5 +1,5 @@
 import { api, FileEntry } from './api';
-import { kindFor, extOf, UNSUPPORTED_HINT, OPEN_FILTERS } from './fileTypes';
+import { kindFor, extOf, UNSUPPORTED_HINT, OPEN_FILTERS, STREAMED_EXTS } from './fileTypes';
 import { useTabs, toast, ask } from '../store';
 import type { EditorKind } from './fileTypes';
 import { isGoogleShortcut, openGoogleShortcut } from './google';
@@ -40,7 +40,10 @@ export async function openPaths(paths: string[]) {
       continue;
     }
     try {
-      await openEntry(await api.readFile(p));
+      const name = p.split(/[\\/]/).pop() || p;
+      // Video and audio are streamed by the video editor from where they are, so only the path is needed.
+      if (STREAMED_EXTS.includes(extOf(name))) await openEntry({ path: p, name, data: new Uint8Array() } as FileEntry);
+      else await openEntry(await api.readFile(p));
     } catch (err: any) {
       toast(`Couldn't open ${p.split(/[\\/]/).pop()}: ${err?.message || 'file not found'}`, 'error');
       api.removeRecent(p);
@@ -60,7 +63,9 @@ export function newFile(kind: EditorKind) {
     sheet: 'Untitled spreadsheet',
     slides: 'Untitled presentation',
     code: 'Untitled',
-    pdf: 'Untitled'
+    pdf: 'Untitled',
+    image: 'Untitled image.png',
+    video: 'Untitled video.keavideo'
   };
   const n = untitledCounter++;
   let name = n === 1 ? names[kind] : `${names[kind]} ${n}`;

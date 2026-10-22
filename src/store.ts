@@ -51,6 +51,19 @@ export interface AiHooks {
   /** Leave a reviewer comment (from "Kea AI") on a quote; false if the quote can't be found. */
   addComment?(quote: string, text: string): boolean;
   insertLabel?: string;
+  /** What the editor looks like right now, for Claude to see (an image, a slide, a video frame). */
+  getImage?(): Promise<{ dataUrl: string; width: number; height: number; note?: string } | null>;
+  /** The editor's own actions Claude may call (Assistant sidebar): "apply a blur", "split the clip at 4.2 s". */
+  tools?: AssistantTool[];
+}
+
+/** One action an editor offers Claude: a name, what it does, a JSON schema for its input, and the code that runs it. */
+export interface AssistantTool {
+  name: string;
+  description: string;
+  input_schema: { type: 'object'; properties: Record<string, unknown>; required?: string[] };
+  /** Runs the action and returns a short result for Claude ("Blurred layer 2 by 4 px"), or throws with what went wrong. */
+  run(input: any): Promise<string> | string;
 }
 
 /** Stable hooks object that always calls the editor's latest implementation. */
@@ -64,6 +77,10 @@ export function proxyAi(ref: { current: AiHooks }): AiHooks {
       return ref.current.insertLabel;
     },
     getDocument: () => ref.current.getDocument(),
+    get tools() {
+      return ref.current.tools;
+    },
+    ...(c.getImage ? { getImage: () => ref.current.getImage?.() ?? Promise.resolve(null) } : {}),
     ...(c.replaceSelection ? { replaceSelection: (t: string) => ref.current.replaceSelection?.(t) ?? false } : {}),
     ...(c.insertText ? { insertText: (t: string) => ref.current.insertText?.(t) ?? false } : {}),
     ...(c.reveal ? { reveal: (q: string) => ref.current.reveal?.(q) ?? false } : {}),

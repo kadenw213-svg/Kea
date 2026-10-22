@@ -119,6 +119,7 @@ import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
 import { docAiHooks } from './aiHooks';
 import { LookupButton } from '../../components/lookup/LookupButton';
+import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { LEGACY } from '../../lib/legacy';
 
@@ -1141,6 +1142,7 @@ function Toolbar(p: {
       <div className="tb-sep" />
       <div className="tb-end">
       <LookupButton />
+      <AssistantButton />
       <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => p.onSave(false)} title="Save (Ctrl+S)">
         <Save size={16} /> Save
       </button>

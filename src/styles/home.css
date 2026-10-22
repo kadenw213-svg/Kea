@@ -170,6 +170,12 @@
 .start-thumb.pdf {
   color: #f28b82;
 }
+.start-thumb.image {
+  color: #fdd663;
+}
+.start-thumb.video {
+  color: #ff8bcb;
+}
 .start-thumb.tpl {
   color: #80d5cf;
 }

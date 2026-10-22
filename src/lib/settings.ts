@@ -557,10 +557,11 @@ export const SECTIONS: Section[] = [
     fields: [
       { key: 'sites.dark', label: 'Dark mode on class sites', type: 'toggle', default: true, help: 'D2L Brightspace, Canvas, Blackboard, Moodle, Schoology, Google Classroom and publisher sites open dark in Kea’s class-site window. Photos and videos keep their colours; pages that are already dark are left alone. Right-click a page to turn it off for just that site.' },
       { key: 'sites.darkHeader', label: 'Site headers in Kea’s colours', type: 'toggle', default: true, when: (v) => v['sites.dark'] !== false, help: 'The D2L, Canvas and Moodle header bar takes Kea’s background and your accent colour.' },
-      { key: 'sites.darkStrength', label: 'Darkness', type: 'range', default: 0.9, min: 0.7, max: 1, step: 0.02, when: (v) => v['sites.dark'] !== false },
-      { key: 'sites.darkBrightness', label: 'Brightness', type: 'range', default: 1, min: 0.7, max: 1.3, step: 0.05, when: (v) => v['sites.dark'] !== false },
-      { key: 'sites.darkContrast', label: 'Contrast', type: 'range', default: 1, min: 0.7, max: 1.4, step: 0.05, when: (v) => v['sites.dark'] !== false },
-      { key: 'sites.darkWarmth', label: 'Warmth (less blue light)', type: 'range', default: 0, min: 0, max: 0.4, step: 0.05, when: (v) => v['sites.dark'] !== false },
+      { key: 'sites.matchKea', label: 'Pages in Kea’s colours', type: 'toggle', default: true, when: (v) => v['sites.dark'] !== false, help: 'Backgrounds and text take Kea’s exact panel and text colours, and each site’s own brand colour (ALEKS’s blue, Pearson’s teal, buttons, links and tabs) becomes your accent colour. Right and wrong colours (green, red) stay as they are. Off uses the Darkness, Brightness, Contrast and Warmth sliders.' },
+      { key: 'sites.darkStrength', label: 'Darkness', type: 'range', default: 0.9, min: 0.7, max: 1, step: 0.02, when: (v) => v['sites.dark'] !== false && v['sites.matchKea'] === false },
+      { key: 'sites.darkBrightness', label: 'Brightness', type: 'range', default: 1, min: 0.7, max: 1.3, step: 0.05, when: (v) => v['sites.dark'] !== false && v['sites.matchKea'] === false },
+      { key: 'sites.darkContrast', label: 'Contrast', type: 'range', default: 1, min: 0.7, max: 1.4, step: 0.05, when: (v) => v['sites.dark'] !== false && v['sites.matchKea'] === false },
+      { key: 'sites.darkWarmth', label: 'Warmth (less blue light)', type: 'range', default: 0, min: 0, max: 0.4, step: 0.05, when: (v) => v['sites.dark'] !== false && v['sites.matchKea'] === false },
       { key: 'sites.darkDocs', label: 'Darken documents and PDFs shown in the page', type: 'toggle', default: false, when: (v) => v['sites.dark'] !== false, help: 'Off keeps handouts and PDFs white, the way they print.' },
       ...([
         ['d2l', 'D2L Brightspace'],
@@ -626,6 +627,45 @@ export const SECTIONS: Section[] = [
       { key: 'lookup.dictSenses', label: 'Dictionary meanings per part of speech', type: 'number', default: 12, min: 1, max: 30, advanced: true },
       { key: 'lookup.dictExamples', label: 'Example sentences per meaning', type: 'number', default: 4, min: 0, max: 10, advanced: true },
       { key: 'lookup.dictSubsenses', label: 'Show narrower meanings under each meaning', type: 'toggle', default: true, advanced: true }
+    ]
+  },
+  {
+    id: 'assistant',
+    label: 'Claude Assistant',
+    icon: 'Sparkles',
+    blurb: 'Press Ctrl+Shift+J in any file (document, PDF, spreadsheet, slides, code, photo or video) to talk to Claude about it. Claude reads the file and makes the changes you ask for with the editor’s own tools; each change is one Ctrl+Z. It uses your own Anthropic API key, kept encrypted on this computer and sent only to Claude. The Encyclopedia stays Wikipedia only.',
+    fields: [
+      { key: 'assistant.enabled', label: 'Show the Claude button in editors', type: 'toggle', default: true },
+      {
+        key: 'assistant.model',
+        label: 'Model',
+        type: 'select',
+        default: 'claude-opus-5-5',
+        options: [
+          { value: 'claude-opus-5-5', label: 'Claude Opus 5.5 (best for most work)' },
+          { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (faster, half the price)' },
+          { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (quickest and cheapest)' },
+          { value: 'claude-fable-5-1', label: 'Claude Fable 5.1 (most capable, costs the most)' }
+        ]
+      },
+      {
+        key: 'assistant.effort',
+        label: 'How hard Claude thinks',
+        type: 'select',
+        default: 'medium',
+        options: [
+          { value: 'low', label: 'Low (quick answers, fewest tokens)' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'high', label: 'High (careful edits and harder problems)' },
+          { value: 'xhigh', label: 'Extra high' },
+          { value: 'max', label: 'Maximum (slowest, most tokens)' }
+        ],
+        help: 'More thinking costs more tokens. Medium suits most editing; raise it for hard maths, code or long rewrites.'
+      },
+      { key: 'assistant.autoLook', label: 'Show Claude a picture of photos, slides and video frames with each message', type: 'toggle', default: true, help: 'Off: Claude looks only when it decides to (or when you press the eye button). Each picture costs about 1,600 tokens.' },
+      { key: 'assistant.track', label: 'Make Claude’s document edits as suggestions', type: 'toggle', default: false, help: 'Edits show as tracked changes you accept or reject, instead of changing the text directly.' },
+      { key: 'assistant.showThinking', label: 'Show Claude’s reasoning (folded)', type: 'toggle', default: true, advanced: true },
+      { key: 'assistant.showUsage', label: 'Show tokens used under the conversation', type: 'toggle', default: true, advanced: true }
     ]
   },
   {

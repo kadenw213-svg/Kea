@@ -85,6 +85,7 @@ import { MenuButton, Popover } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
 import './sheet.css';
 import { LookupButton } from '../../components/lookup/LookupButton';
+import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
 
@@ -1077,9 +1078,96 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
   const exportPdf = () => exportFile(`${baseName(tab.name)}.pdf`, { name: 'PDF', ext: 'pdf', build: () => api.pdfFromHtml(printHtml()) });
 
   const aiRef = useRef<AiHooks>(null as any);
+  // The Claude Assistant's cell tools: which sheet (by name, else the one shown), and a range like "B2:D10".
+  const sheetIndex = (name?: string) => {
+    if (!name) return si;
+    const i = h.get().sheets.findIndex((x) => x.name.toLowerCase() === String(name).toLowerCase());
+    if (i < 0) throw new Error(`There's no sheet called “${name}”. Sheets: ${h.get().sheets.map((x) => x.name).join(', ')}.`);
+    return i;
+  };
+  const range = (a: string) => {
+    const [p, q] = String(a).split(':');
+    const s1 = parseAddr(p.trim());
+    const s2 = q ? parseAddr(q.trim()) : s1;
+    if (!s1 || !s2) throw new Error(`“${a}” isn't a cell or range like B2 or A1:D10.`);
+    return { r1: Math.min(s1.r, s2.r), c1: Math.min(s1.c, s2.c), r2: Math.max(s1.r, s2.r), c2: Math.max(s1.c, s2.c) };
+  };
   aiRef.current = {
     noun: 'spreadsheet',
     insertLabel: 'Put in cells',
+    tools: [
+      {
+        name: 'set_cells',
+        description: 'Write values or formulas into cells, starting at the top-left cell `start` and filling right and down from the rows given. Each entry is what a person would type: a number, text, a date, or a formula starting with = (e.g. "=SUM(B2:B9)"). An empty string clears a cell. All of it is one undo step.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Top-left cell, e.g. "A1"' },
+            rows: { type: 'array', description: 'Rows of cell entries, e.g. [["Name","Score"],["Ana","91"]]', items: { type: 'array', items: { type: 'string' } } },
+            sheet: { type: 'string', description: 'Sheet name (default: the sheet shown)' }
+          },
+          required: ['start', 'rows']
+        },
+        run: ({ start, rows, sheet: name }) => {
+          const at = parseAddr(String(start).trim());
+          if (!at) throw new Error(`“${start}” isn't a cell like A1.`);
+          const idx = sheetIndex(name);
+          let n = 0;
+          commitSheet((sh) => {
+            rows.forEach((row: unknown[], i: number) =>
+              (Array.isArray(row) ? row : [row]).forEach((v, j) => {
+                const k = key(at.r + i, at.c + j);
+                const prev = sh.cells[k];
+                const { cell, fmt } = parseInput(v == null ? '' : String(v), prev?.s);
+                const style = fmt ? { ...(prev?.s || {}), ...fmt } : prev?.s;
+                const next: Cell = { ...cell, ...(style ? { s: style } : {}) };
+                if (next.v === undefined && next.f === undefined && !next.s) delete sh.cells[k];
+                else sh.cells[k] = next;
+                n++;
+              })
+            );
+          }, idx);
+          if (idx !== si) setSi(idx);
+          return `Wrote ${n} cell${n === 1 ? '' : 's'} from ${addr(at.r, at.c)}.`;
+        }
+      },
+      {
+        name: 'read_range',
+        description: 'Read cells as a grid, with each cell’s shown value and, for formulas, the formula itself ("value  ⟨=formula⟩").',
+        input_schema: { type: 'object', properties: { range: { type: 'string', description: 'e.g. "A1:F30"' }, sheet: { type: 'string' } }, required: ['range'] },
+        run: ({ range: a, sheet: name }) => {
+          const w = h.get();
+          const sh = w.sheets[sheetIndex(name)];
+          const c = new Calc(w);
+          const g = range(a);
+          const lines: string[] = [];
+          for (let r = g.r1; r <= Math.min(g.r2, g.r1 + 499); r++) {
+            const row: string[] = [];
+            for (let col = g.c1; col <= Math.min(g.c2, g.c1 + 59); col++) {
+              const cell = sh.cells[key(r, col)];
+              const v = formatValue(c.value(sh, r, col), cell?.s);
+              row.push(cell?.f !== undefined ? `${v} ⟨${editText(cell)}⟩` : v);
+            }
+            lines.push(`${r + 1}\t${row.join('\t')}`);
+          }
+          return `\t${Array.from({ length: Math.min(g.c2, g.c1 + 59) - g.c1 + 1 }, (_, i) => colName(g.c1 + i)).join('\t')}\n${lines.join('\n')}`;
+        }
+      },
+      {
+        name: 'select_range',
+        description: 'Select a cell or range so the student sees it (and so insert_text writes there).',
+        input_schema: { type: 'object', properties: { range: { type: 'string' }, sheet: { type: 'string' } }, required: ['range'] },
+        run: ({ range: a, sheet: name }) => {
+          const idx = sheetIndex(name);
+          if (idx !== si) setSi(idx);
+          const g = range(a);
+          setAnchor({ r: g.r1, c: g.c1 });
+          setCur({ r: g.r2, c: g.c2 });
+          scrollIntoView({ r: g.r1, c: g.c1 });
+          return `Selected ${a}.`;
+        }
+      }
+    ],
     async getDocument() {
       const w = h.get();
       const c = new Calc(w);
@@ -2360,6 +2448,7 @@ function SheetToolbar(p: {
       <div className="tb-sep" />
       <div className="tb-end">
       <LookupButton />
+      <AssistantButton />
       <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => p.onSave(false)} title="Save (Ctrl+S)">
         <Save size={16} /> Save
       </button>

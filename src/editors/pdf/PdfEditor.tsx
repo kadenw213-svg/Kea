@@ -74,6 +74,7 @@ import { imagesToPdf, imageToPng, mimeFor } from '../../lib/pdfTools';
 import { extOf, baseName } from '../../lib/fileTypes';
 import './pdf.css';
 import { LookupButton } from '../../components/lookup/LookupButton';
+import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
 
@@ -1421,6 +1422,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
         <div className="tb-sep" />
         <div className="tb-end">
         <LookupButton />
+        <AssistantButton />
         <button className="btn primary sm" onClick={() => save(false)} title="Save (Ctrl+S)">
           <Save size={16} /> Save
         </button>

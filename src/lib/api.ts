@@ -236,6 +236,15 @@ export interface KeaApi {
   };
   searchContent(query: string, roots?: string[]): Promise<{ path: string; name: string; snippet: string; nameHit: boolean }[]>;
   citeLookup(query: string): Promise<any>;
+  /** The Claude Assistant (electron/assistant.cjs): the student's own API key, kept encrypted in the main process. */
+  assistant: {
+    status(): Promise<{ hasKey: boolean; hint: string; models: string[] }>;
+    setKey(key: string): Promise<{ ok: boolean; error?: string }>;
+    send(id: string, req: { model: string; effort: string; system: string; messages: unknown[]; tools: unknown[] }): Promise<{ content?: any[]; stop_reason?: string; usage?: any; model?: string; error?: string; stopped?: boolean; retry?: boolean }>;
+    stop(id: string): Promise<boolean>;
+    capture(rect: { x: number; y: number; width: number; height: number }): Promise<{ dataUrl: string; width: number; height: number }>;
+    onEvent(cb: (ev: { id: string; type: 'text' | 'thinking' | 'tool'; text?: string; name?: string }) => void): () => void;
+  };
   google: {
     status(): Promise<{ configured: boolean; signedIn: boolean; email: string | null; name: string | null }>;
     signIn(): Promise<{ email?: string; name?: string }>;

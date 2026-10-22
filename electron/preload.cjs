@@ -185,6 +185,25 @@ contextBridge.exposeInMainWorld('api', {
   },
   searchContent: (q, roots) => ipcRenderer.invoke('search:content', q, roots),
   citeLookup: (q) => ipcRenderer.invoke('cite:lookup', q),
+  // The video editor: stream big media files from disk, and write exports as they're rendered (electron/media.cjs).
+  video: {
+    mediaUrl: (p) => ipcRenderer.sendSync('video:media-url', p),
+    openWrite: (p) => ipcRenderer.invoke('video:open-write', p),
+    writeAt: (id, position, data) => ipcRenderer.invoke('video:write-at', id, position, data),
+    closeWrite: (id, abort) => ipcRenderer.invoke('video:close-write', id, abort)
+  },
+  assistant: {
+    status: () => ipcRenderer.invoke('assistant:status'),
+    setKey: (key) => ipcRenderer.invoke('assistant:set-key', key),
+    send: (id, req) => ipcRenderer.invoke('assistant:send', id, req),
+    stop: (id) => ipcRenderer.invoke('assistant:stop', id),
+    capture: (rect) => ipcRenderer.invoke('assistant:capture', rect),
+    onEvent: (cb) => {
+      const h = (_e, ev) => cb(ev);
+      ipcRenderer.on('assistant:event', h);
+      return () => ipcRenderer.removeListener('assistant:event', h);
+    }
+  },
   google: {
     status: () => ipcRenderer.invoke('google:status'),
     signIn: () => ipcRenderer.invoke('google:sign-in'),

@@ -133,6 +133,7 @@ function darkSettings() {
     sites,
     offHosts: Array.isArray(g('darkOff', [])) ? g('darkOff', []) : [],
     header: g('darkHeader', true) !== false,
+    match: g('matchKea', true) !== false,
     theme: keaTheme()
   };
 }
@@ -147,7 +148,11 @@ function keaTheme() {
     const n = parseInt(custom.slice(1), 16);
     onAccent = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 150 ? '#111111' : '#ffffff';
   }
-  return { surface: '#1b1c1d', text: '#e3e3e3', accent, onAccent };
+  // Kea's panel colour, with Settings → Appearance → Panel contrast (the same sums as the window's own theme).
+  const c = Number(settings.get('appearance.surfaceContrast', 0)) || 0;
+  const x = Math.max(0, Math.min(255, 0x1b + c * 3));
+  const hex = (n) => n.toString(16).padStart(2, '0');
+  return { surface: `#${hex(x)}${hex(x)}${hex(Math.min(255, x + 2))}`, text: '#e3e3e3', accent, onAccent };
 }
 
 /** Right-click in the class-site window: back, forward, reload, and dark mode on or off for this site. */

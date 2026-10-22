@@ -1,0 +1,1111 @@
+/* ---------- Video editor layout ---------- */
+.video-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.ve-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 10px;
+}
+.ve-top {
+  display: flex;
+  min-height: 0;
+}
+.ve-panel {
+  background: var(--surface);
+  border-radius: 14px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.ve-program {
+  flex: 1;
+  flex-shrink: 1;
+  background: #0e0e0f;
+}
+.ve-inspector-wrap {
+  height: 100%;
+}
+.ve-bottom {
+  position: relative;
+}
+.ve-split {
+  flex-shrink: 0;
+  position: relative;
+}
+.ve-split.v {
+  width: 8px;
+  cursor: col-resize;
+}
+.ve-split.h {
+  height: 8px;
+  cursor: row-resize;
+}
+.ve-split::after {
+  content: '';
+  position: absolute;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.12s;
+}
+.ve-split.v::after {
+  left: 3px;
+  width: 2px;
+  top: 30%;
+  bottom: 30%;
+}
+.ve-split.h::after {
+  top: 3px;
+  height: 2px;
+  left: 45%;
+  right: 45%;
+}
+.ve-split:hover::after {
+  background: var(--accent);
+}
+.dim {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.ve-hint-text {
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ve-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ve-field {
+  width: 100%;
+  background-color: var(--surface-3);
+}
+.ve-color {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+.ve-color::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+.ve-color::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+/* ---------- Toolbar pop-ups ---------- */
+.ve-settings-pop {
+  width: 300px;
+  padding-bottom: 4px;
+}
+.ve-aspects {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 2px 10px 8px;
+}
+.ve-aspect {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 12px;
+}
+.ve-aspect:hover {
+  background: var(--hover);
+}
+.ve-aspect.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ve-aspect-box {
+  height: 26px;
+  max-width: 40px;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+}
+.ve-shortcuts {
+  width: 380px;
+  max-height: 70vh;
+  overflow: auto;
+  padding-bottom: 6px;
+}
+.ve-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.ve-shortcut .kbd-chip {
+  min-width: 128px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ---------- Library (left panel) ---------- */
+.ve-library {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.ve-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 8px 4px;
+  flex-shrink: 0;
+}
+.ve-tab {
+  flex: 1;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.ve-tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.ve-tab.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ve-library-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.ve-bin {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 2px dashed transparent;
+  border-radius: 12px;
+  margin: 0 4px 4px;
+}
+.ve-bin.drop {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ve-bin-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 8px;
+}
+.ve-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  min-width: 0;
+}
+.ve-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12.5px;
+  user-select: text;
+}
+.ve-bin-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-2);
+  cursor: pointer;
+  text-align: center;
+  padding: 20px;
+  border-radius: 10px;
+}
+.ve-bin-empty:hover {
+  background: var(--hover);
+}
+.ve-bin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+  padding: 0 4px 8px;
+  overflow: auto;
+}
+.ve-bin-item {
+  border-radius: 10px;
+  padding: 4px;
+  cursor: grab;
+  border: 1px solid transparent;
+}
+.ve-bin-item:hover {
+  background: var(--hover);
+}
+.ve-bin-item.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ve-bin-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 7px;
+  background: #0e0e0f;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--text-3);
+}
+.ve-bin-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.ve-bin-item.offline .ve-bin-thumb {
+  outline: 1px solid var(--danger);
+}
+.ve-bin-missing {
+  position: absolute;
+  inset: auto 4px 4px auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: #5c1d1a;
+  color: #f9dedc;
+  font-size: 11px;
+}
+.ve-bin-dur {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.ve-bin-used {
+  position: absolute;
+  left: 5px;
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.ve-bin-name {
+  margin-top: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ve-bin-meta {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* Source viewer */
+.ve-source {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 8px 8px;
+}
+.ve-source.empty {
+  justify-content: center;
+}
+.ve-source-view {
+  flex: 1;
+  min-height: 80px;
+  border-radius: 10px;
+  background: #0b0b0c;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  position: relative;
+  cursor: grab;
+}
+.ve-source-view video,
+.ve-source-view img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.ve-source-icon {
+  color: var(--text-3);
+}
+.ve-source-wave {
+  position: absolute;
+  inset: auto 0 0 0;
+  width: 100%;
+  height: 50%;
+  opacity: 0.8;
+}
+.ve-source-bar {
+  position: relative;
+  height: 16px;
+  margin: 8px 2px 0;
+  border-radius: 4px;
+  background: var(--surface-3);
+  cursor: pointer;
+}
+.ve-source-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  border-left: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
+}
+.ve-source-head {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: #fff;
+  pointer-events: none;
+}
+.ve-source-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+.ve-source-name {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Text, graphics and transitions */
+.ve-presets {
+  padding: 4px 8px 10px;
+}
+.ve-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  padding: 8px 4px 6px;
+}
+.ve-hint {
+  margin: 4px 4px 10px;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.5;
+}
+.ve-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+.ve-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: var(--surface-2);
+  cursor: grab;
+  text-align: left;
+}
+.ve-preset:hover {
+  border-color: var(--border-strong);
+}
+.ve-preset-look {
+  height: 54px;
+  border-radius: 7px;
+  background: #0e0e0f;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 0 6px;
+}
+.ve-preset-name {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.ve-preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ve-row-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface-2);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+}
+.ve-row-btn:hover {
+  background: var(--surface-3);
+}
+.ve-row-btn.tall {
+  align-items: flex-start;
+  cursor: grab;
+}
+.ve-row-btn.tall b {
+  display: block;
+  font-weight: 500;
+}
+.ve-row-btn.tall .dim {
+  display: block;
+  margin-top: 2px;
+}
+.ve-tr-swatch {
+  width: 34px;
+  height: 26px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #fff;
+  background: linear-gradient(90deg, #3b6fd1, #c58af9);
+}
+.ve-tr-swatch.dipBlack {
+  background: linear-gradient(90deg, #3b6fd1, #000 50%, #c58af9);
+}
+.ve-tr-swatch.dipWhite {
+  background: linear-gradient(90deg, #3b6fd1, #fff 50%, #c58af9);
+  color: #333;
+}
+.ve-tr-swatch.wipe {
+  background: linear-gradient(90deg, #c58af9 50%, #3b6fd1 50%);
+}
+.ve-tr-swatch.slide {
+  background: linear-gradient(90deg, #3b6fd1 35%, #1b1c1d 35%, #1b1c1d 40%, #c58af9 40%);
+}
+.ve-tr-swatch.zoom {
+  background: radial-gradient(circle, #c58af9 35%, #3b6fd1 36%);
+}
+
+/* ---------- Program monitor ---------- */
+.ve-monitor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ve-monitor-stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+.ve-monitor-frame {
+  position: relative;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px #262729;
+  background: #000;
+}
+.ve-monitor-frame canvas {
+  display: block;
+}
+.ve-monitor-box {
+  position: absolute;
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.ve-safe {
+  position: absolute;
+  border: 1px dashed rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+}
+.ve-safe.title {
+  border-color: rgba(253, 214, 99, 0.55);
+}
+.ve-safe-cross {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  pointer-events: none;
+  background: linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.5)) center / 1px 100% no-repeat,
+    linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.5)) center / 100% 1px no-repeat;
+}
+.ve-transport {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 44px;
+  padding: 0 10px;
+  flex-shrink: 0;
+  background: var(--surface);
+}
+.ve-transport.small {
+  height: 38px;
+  background: transparent;
+  padding: 0 2px;
+}
+.ve-play {
+  width: 38px;
+  height: 38px;
+  background: var(--surface-3);
+  color: var(--text);
+}
+.ve-tc {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}
+.ve-tc.big {
+  font-size: 14px;
+  color: var(--accent);
+}
+.ve-tc.dim {
+  color: var(--text-3);
+  margin-left: 6px;
+}
+.ve-rate {
+  font-size: 12px;
+  color: var(--warning);
+  margin-right: 6px;
+}
+.ve-small-select {
+  height: 26px;
+  font-size: 12px;
+}
+
+/* ---------- Timeline ---------- */
+.ve-timeline {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ve-tl-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+.ve-tl-inner {
+  position: relative;
+  min-height: 100%;
+}
+.ve-tl-rulerrow {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  height: 30px;
+  background: var(--surface);
+}
+.ve-tl-corner {
+  position: sticky;
+  left: 0;
+  z-index: 7;
+  width: 172px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.ve-tl-corner .ve-tc {
+  color: var(--accent);
+  font-size: 13px;
+}
+.ve-ruler {
+  position: relative;
+  height: 30px;
+  flex-shrink: 0;
+  cursor: text;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+.ve-ruler-head {
+  position: absolute;
+  top: 16px;
+  width: 12px;
+  height: 14px;
+  margin-left: -6px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
+  pointer-events: none;
+}
+.ve-ruler-in,
+.ve-ruler-out {
+  position: absolute;
+  top: 0;
+  height: 30px;
+  width: 6px;
+  border: 2px solid var(--warning);
+  pointer-events: none;
+}
+.ve-ruler-in {
+  border-right: none;
+}
+.ve-ruler-out {
+  border-left: none;
+  margin-left: -6px;
+}
+.ve-marker {
+  position: absolute;
+  top: 2px;
+  width: 11px;
+  height: 13px;
+  margin-left: -5px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
+  cursor: grab;
+  z-index: 2;
+}
+.ve-marker.on {
+  outline: 2px solid #fff;
+  filter: brightness(1.25);
+}
+.ve-tl-body {
+  display: flex;
+}
+.ve-tl-heads {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  width: 172px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.ve-th {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ve-th.video {
+  box-shadow: inset 3px 0 0 #7cacf8;
+}
+.ve-th.audio {
+  box-shadow: inset 3px 0 0 #81c995;
+}
+.ve-th-name {
+  flex: 1;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ve-th-btn {
+  width: 26px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.ve-th-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.ve-th-btn.on {
+  color: var(--warning);
+  background: rgba(253, 214, 99, 0.12);
+}
+.ve-th-btn.solo.on {
+  color: #062e6f;
+  background: var(--warning);
+}
+.ve-th-add {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+}
+.ve-th-addbtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.ve-th-addbtn:hover {
+  color: var(--text);
+  border-color: var(--text-3);
+}
+.ve-tl-lanes {
+  position: relative;
+  flex-shrink: 0;
+}
+.ve-tl-lanes.tool-razor .ve-clip {
+  cursor: crosshair;
+}
+.ve-tl-lanes.tool-slip .ve-clip {
+  cursor: ew-resize;
+}
+.ve-lane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-bottom: 1px solid var(--border);
+}
+.ve-lane.video {
+  background: rgba(124, 172, 248, 0.025);
+}
+.ve-lane.locked {
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0 6px, transparent 6px 12px);
+}
+.ve-lane.off {
+  opacity: 0.5;
+}
+.ve-inout {
+  position: absolute;
+  top: 0;
+  background: rgba(253, 214, 99, 0.06);
+  border-left: 1px solid rgba(253, 214, 99, 0.5);
+  border-right: 1px solid rgba(253, 214, 99, 0.5);
+  pointer-events: none;
+}
+.ve-marker-line {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+.ve-playhead {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 4;
+}
+.ve-snapline {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  background: var(--warning);
+  pointer-events: none;
+  z-index: 4;
+}
+.ve-marquee {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  pointer-events: none;
+  z-index: 4;
+}
+.ve-tl-empty {
+  position: absolute;
+  left: calc(172px + 24px);
+  top: 70px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+/* Clips */
+.ve-clip {
+  position: absolute;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: grab;
+  background: color-mix(in srgb, var(--clip) 38%, #1b1c1d);
+  border: 1px solid color-mix(in srgb, var(--clip) 70%, #000);
+  z-index: 1;
+}
+.ve-clip:active {
+  cursor: grabbing;
+}
+.ve-clip.audio {
+  background: color-mix(in srgb, var(--clip) 55%, #1b1c1d);
+}
+.ve-clip.sel {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px #fff;
+  z-index: 2;
+}
+.ve-clip.offline {
+  background: #5c1d1a;
+  border-color: var(--danger);
+}
+.ve-clip.drop {
+  box-shadow: 0 0 0 2px var(--warning);
+}
+.ve-clip-strip {
+  position: absolute;
+  inset: 0;
+  opacity: 0.75;
+  pointer-events: none;
+}
+.ve-clip-strip img {
+  position: absolute;
+  top: 0;
+  object-fit: cover;
+}
+.ve-clip-wave {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ve-clip-icon {
+  position: absolute;
+  right: 5px;
+  top: 4px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.ve-clip-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  background: linear-gradient(rgba(0, 0, 0, 0.45), transparent);
+  pointer-events: none;
+}
+.ve-clip-label span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ve-clip-badge {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 10px;
+}
+.ve-clip-fades {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ve-clip-fades path {
+  fill: rgba(0, 0, 0, 0.35);
+}
+.ve-clip-key {
+  position: absolute;
+  bottom: 3px;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  background: var(--warning);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+.ve-clip-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+}
+.ve-clip-edge.l {
+  left: 0;
+}
+.ve-clip-edge.r {
+  right: 0;
+}
+.ve-clip-edge:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+.ve-tl-lanes.tool-razor .ve-clip-edge,
+.ve-tl-lanes.tool-slip .ve-clip-edge {
+  display: none;
+}
+
+/* Transitions */
+.ve-trans {
+  position: absolute;
+  z-index: 3;
+  border-radius: 5px;
+  background: linear-gradient(135deg, rgba(197, 138, 249, 0.85), rgba(124, 172, 248, 0.85));
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+.ve-trans.on {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--warning);
+}
+.ve-trans-label {
+  font-size: 10px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 8px;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.ve-trans-h {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+.ve-trans-h.l {
+  left: 0;
+}
+.ve-trans-h.r {
+  right: 0;
+}
+.ve-trans-h:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* ---------- Export dialog ---------- */
+.ve-export {
+  width: 480px;
+}
+.ve-export-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ve-export-head h2 {
+  margin: 0;
+}
+.ve-form {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 10px 12px;
+  align-items: center;
+  margin-top: 16px;
+}
+.ve-form > label {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.ve-seg {
+  display: flex;
+  background: var(--surface-3);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.ve-seg button {
+  flex: 1;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 12px;
+}
+.ve-seg button:hover:not(:disabled) {
+  background: var(--hover);
+}
+.ve-seg button.on {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.ve-seg button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.ve-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2) !important;
+}
+.dialog p.ve-export-sum {
+  margin: 16px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.dialog p.ve-export-warn {
+  margin: 10px 0 0;
+  color: var(--danger);
+  font-size: 12.5px;
+}
+.dialog p.ve-export-note,
+.ve-export-note {
+  margin: 8px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.ve-export-progress {
+  margin-top: 16px;
+}
