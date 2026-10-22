@@ -181,6 +181,8 @@ function contextMenu(w, params) {
   Menu.buildFromTemplate(items).popup({ window: w });
 }
 ipcMain.on('class-site:dark', (e) => (e.returnValue = darkSettings()));
+let themeScript = '';
+ipcMain.on('class-site:theme-script', (e) => (e.returnValue = themeScript || (themeScript = require('fs').readFileSync(path.join(__dirname, 'site-theme.js'), 'utf8'))));
 require('../settings.cjs').onChange(() => {
   if (!win || win.isDestroyed()) return;
   const d = darkSettings();

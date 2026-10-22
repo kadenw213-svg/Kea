@@ -103,6 +103,13 @@ public class KeaPlugin extends Plugin {
     }
 
     /** The file Kea was opened with, if any (once). */
+    /** Kea's colours for class sites (see SiteActivity.theme), kept for the next page opened. */
+    @PluginMethod
+    public void siteTheme(PluginCall call) {
+        Store.plain(getContext()).edit().putString("siteTheme", call.getString("json", "")).apply();
+        call.resolve();
+    }
+
     @PluginMethod
     public void takeOpenedFile(PluginCall call) {
         JSObject r = new JSObject();

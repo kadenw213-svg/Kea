@@ -99,3 +99,6 @@ app/src/main/assets/public
 app/src/main/assets/capacitor.config.json
 app/src/main/assets/capacitor.plugins.json
 app/src/main/res/xml/config.xml
+
+# Copied in by scripts/mobile-apk.cjs from electron/scholar/site-theme.js
+app/src/main/assets/site-theme.js

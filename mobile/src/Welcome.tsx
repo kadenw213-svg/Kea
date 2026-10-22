@@ -544,6 +544,10 @@ function Appearance() {
             </button>
           ))}
         </div>
+        <label className="toggle">
+          <input type="checkbox" checked={look.siteColors !== false} onChange={(e) => setLook({ siteColors: e.target.checked })} />
+          <span>Class sites and ALEKS in these colours</span>
+        </label>
         <span className="muted small">Size</span>
         <div className="bk-opts">
           {[

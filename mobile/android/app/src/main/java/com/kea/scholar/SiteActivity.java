@@ -36,6 +36,30 @@ public class SiteActivity extends Activity {
     private boolean fileGiven = false;
     private String mode;
 
+    private String themeScript;
+
+    /**
+     * Kea's colours on the page (the same script as the desktop's class-site window, built into the app as
+     * assets/site-theme.js): dark themes darken it to the phone's colours, and the site's brand colour becomes the accent.
+     * Run as the page starts (so it doesn't flash white) and again once it's loaded.
+     */
+    private void theme(WebView view) {
+        String settings = Store.plain(this).getString("siteTheme", "");
+        if (settings.isEmpty()) return;
+        if (themeScript == null) {
+            try (java.io.InputStream in = getAssets().open("site-theme.js")) {
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[16384];
+                for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+                themeScript = out.toString("UTF-8");
+            } catch (Exception e) {
+                themeScript = "";
+            }
+        }
+        if (themeScript.isEmpty()) return;
+        view.evaluateJavascript(themeScript + "\n;window.__keaSiteTheme && window.__keaSiteTheme.setDark(" + settings + ");", null);
+    }
+
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
     protected void onCreate(Bundle state) {
@@ -89,7 +113,13 @@ public class SiteActivity extends Activity {
             int tries = 0;
 
             @Override
+            public void onPageStarted(WebView view, String u, android.graphics.Bitmap icon) {
+                theme(view);
+            }
+
+            @Override
             public void onPageFinished(WebView view, String u) {
+                theme(view);
                 currentUrl = u;
                 CookieManager.getInstance().flush();
                 view.evaluateJavascript(ClassSite.CAPTURE_SCRIPT, null);

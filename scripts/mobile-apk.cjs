@@ -15,6 +15,8 @@ const run = (cmd, cwd) => execSync(cmd, { stdio: 'inherit', cwd, env });
 fs.writeFileSync(path.join(mobile, 'android', 'local.properties'), `sdk.dir=${env.ANDROID_HOME.replace(/\\/g, '\\\\')}\n`);
 run('npx vite build', mobile);
 run('npx cap sync android', mobile);
+// Kea's colours for class sites: the desktop's own script, injected by the phone's class-site screen.
+fs.copyFileSync(path.join(__dirname, '..', 'electron', 'scholar', 'site-theme.js'), path.join(mobile, 'android', 'app', 'src', 'main', 'assets', 'site-theme.js'));
 run('.\\gradlew.bat assembleDebug --no-daemon -q', path.join(mobile, 'android'));
 const apk = path.join(kb, 'mobile-build', 'app', 'outputs', 'apk', 'debug', 'app-debug.apk');
 fs.copyFileSync(apk, path.join(kb, 'Kea.apk'));

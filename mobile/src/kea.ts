@@ -6,6 +6,8 @@ import { phoneRequests, studyOut } from './study';
 import type { ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 
 interface KeaNative {
+  /** Kea's colours for class sites and publisher pages opened on the phone (electron/scholar/site-theme.js settings, as JSON). */
+  siteTheme?(o: { json: string }): Promise<void>;
   setup(o: { home: string; user?: string; pass?: string }): Promise<void>;
   /** `drive`: where the chosen files or folder live (see DriveFrom). */
   state(): Promise<{ home: string; hasLogin: boolean; signedIn: boolean; dataFolder: string; dataFileOnly?: boolean; files?: string[]; drive?: DriveFrom; notifications: boolean }>;

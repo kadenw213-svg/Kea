@@ -9,6 +9,8 @@ export type PageId = 'match' | 'white' | 'sepia' | 'dark' | 'black';
 export interface Look {
   theme: ThemeId;
   accent: AccentId;
+  /** Class sites and publisher pages (ALEKS, Pearson…) opened from Kea take these colours. */
+  siteColors: boolean;
   /** Size of everything, as a share of normal. */
   scale: number;
   /** The book's pages: as the theme, or a paper colour of their own. */
@@ -24,7 +26,7 @@ export interface Look {
   docFont: 'sans' | 'serif' | 'mono';
   docLeading: number;
 }
-const DEFAULT: Look = { theme: 'dark', accent: 'silver', scale: 1, page: 'match', voice: '', rate: 1, follow: true, highlight: 'fill', docScale: 1, docFont: 'serif', docLeading: 1.6 };
+const DEFAULT: Look = { theme: 'dark', accent: 'silver', siteColors: true, scale: 1, page: 'match', voice: '', rate: 1, follow: true, highlight: 'fill', docScale: 1, docFont: 'serif', docLeading: 1.6 };
 const KEY = 'kea.look';
 
 const THEMES: Record<ThemeId, { label: string; dark: boolean; c: Record<string, string> }> = {
@@ -113,4 +115,8 @@ export function applyLook(l: Look = getLook()) {
   document.documentElement.dataset.theme = t.dark ? 'dark' : 'light';
   const meta = document.querySelector('meta[name=theme-color]') || document.head.appendChild(Object.assign(document.createElement('meta'), { name: 'theme-color' }));
   meta.setAttribute('content', t.c.bg);
+  // Class sites opened from Kea: dark themes darken the page to these exact colours; light ones keep the page light.
+  // Either way the site's own brand colour (its buttons, links and tabs) becomes the accent.
+  const site = { on: l.siteColors !== false, match: true, invert: t.dark, header: true, docs: false, sites: {}, offHosts: [], theme: { surface: t.c.surface, text: t.c.text, accent, onAccent: t.dark ? '#111214' : '#ffffff' } };
+  import('./kea').then(({ Kea }) => Kea.siteTheme?.({ json: JSON.stringify(site) })).catch(() => {});
 }
