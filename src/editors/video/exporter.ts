@@ -41,7 +41,7 @@ export interface ExportOptions {
   path: string;
   /** Video codec; 'auto' = H.264 in MP4, VP9 in WebM. */
   codec?: ExportCodec;
-  /** The graphics card's encoder: 'auto' (the browser decides), 'on' (prefer it), or 'off' (software). */
+  /** The graphics card's encoder: 'auto' (use it when it accepts the job — better quality per bit), 'on', or 'off' (software). */
   hardware?: 'auto' | 'on' | 'off';
   /** Sound quality (default very high — AAC/Opus at a high bitrate). */
   audioQuality?: QualityLevel;
@@ -239,9 +239,12 @@ export async function exportProject(p: Project, o: ExportOptions, onProgress: (f
       canvas.width = W;
       canvas.height = H;
       const quality = o.bitrate > 0 ? new Quality({ bitrate: o.bitrate * 1000 }) : new Quality(o.quality);
-      // Measured (Ryzen 7 7735U, 20 s at 1080p): rendering, not encoding, is what takes the time — forcing the
-      // graphics card's encoder was slower (3.5 s software vs 4.7 s) — so 'auto' leaves the choice to the browser.
-      const hardwareAcceleration = o.hardware === 'off' ? 'prefer-software' : o.hardware === 'on' ? 'prefer-hardware' : 'no-preference';
+      // Measured on photographic 1080p (Ryzen 7 7735U / Radeon 680M) against an 80 Mbps reference: at the same 8 Mbps
+      // the graphics card's H.264 scored 34.4 dB PSNR vs 31.6 dB for the browser's software encoder, and at the
+      // default quality 38.6 vs 30.1 dB (software undershoots its bitrate). So 'auto' prefers the graphics card
+      // whenever it accepts the job; speed is about the same either way (rendering dominates).
+      let hardwareAcceleration: 'prefer-hardware' | 'prefer-software' | 'no-preference' = o.hardware === 'off' ? 'prefer-software' : o.hardware === 'on' ? 'prefer-hardware' : 'no-preference';
+      if (hardwareAcceleration === 'no-preference' && (await canEncodeVideo(codec, { width: W, height: H, quality, hardwareAcceleration: 'prefer-hardware' }).catch(() => false))) hardwareAcceleration = 'prefer-hardware';
       usedHardware = hardwareAcceleration === 'prefer-hardware' ? true : hardwareAcceleration === 'prefer-software' ? false : undefined;
       video = new CanvasSource(canvas, { codec, quality, keyFrameInterval: 2, hardwareAcceleration, latencyMode: 'quality' });
       output.addVideoTrack(video, { frameRate: o.fps });

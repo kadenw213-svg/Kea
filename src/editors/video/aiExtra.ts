@@ -303,7 +303,7 @@ export function extraVideoTools(env: AssistantEnv, tabId: string): AssistantTool
     },
     {
       name: 'export_video',
-      description: 'Export the timeline to a file (runs as a job — poll kea_jobs_status). With lossless:true, stream-copies with no re-encode when the timeline is a single unmodified trimmed clip, otherwise re-encodes (the result says which). format: mp4 (default), webm, m4a or wav. Optional: width/height (keeps the aspect if one is given), fps, quality (medium|high|very-high), bitrate_kbps (overrides quality), codec (avc = plays everywhere, hevc = smaller, av1 = smallest; vp9/av1 in webm), hardware (auto = the computer decides | on = prefer the graphics card | off = software), range [start, end] seconds (default the in/out marks or everything).',
+      description: 'Export the timeline to a file (runs as a job — poll kea_jobs_status). With lossless:true, stream-copies with no re-encode when the timeline is a single unmodified trimmed clip, otherwise re-encodes (the result says which). format: mp4 (default), webm, m4a or wav. Optional: width/height (keeps the aspect if one is given), fps, quality (medium|high|very-high), bitrate_kbps (overrides quality), codec (avc = plays everywhere, hevc = smaller, av1 = smallest; vp9/av1 in webm), hardware (auto = graphics card when available, best quality per bit | on | off = software), range [start, end] seconds (default the in/out marks or everything).',
       input_schema: {
         type: 'object',
         properties: {

@@ -191,9 +191,9 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
                   </option>
                 ))}
               </select>
-              <label title="Which encoder does the work. Automatic lets this computer choose.">Graphics card</label>
+              <label title="The graphics card's encoder gives clearly better quality for the same file size">Graphics card</label>
               <select className="select ve-field" value={hardware} disabled={busy} onChange={(e) => setHardware(e.target.value as 'auto' | 'on' | 'off')}>
-                <option value="auto">Automatic</option>
+                <option value="auto">Use it when available (best quality)</option>
                 <option value="on">Prefer the graphics card</option>
                 <option value="off">Don’t use it (software)</option>
               </select>
