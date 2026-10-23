@@ -58,17 +58,34 @@ function loadModel(repo: string, dtype: string): Promise<void> {
 }
 
 /** The installed segmentation model to use (chosen in Settings, else the default, else the first installed). */
-async function pickModel(): Promise<{ repo: string; dtype: string }> {
+async function pickModel(): Promise<{ id: string; repo: string; dtype: string }> {
   const installed = (await api.models.state('segmentation')).filter((m) => m.installed);
   if (!installed.length) throw new Error('No background-removal model is installed. Open Settings → AI image tools and download one (MODNet is a small, fast default), then try again.');
   const want = setting('ai.segmentModel');
   const m = installed.find((x) => x.id === want) || installed.find((x) => x.default) || installed[0];
-  return { repo: m.repo, dtype: m.dtype };
+  return { id: m.id, repo: m.repo, dtype: m.dtype };
 }
+
+// The native Kea engine (GPU via DirectML, else native CPU) is ~3-10x faster than the in-window worker. If it can't
+// run at all (no engine in this build, binaries missing), stop trying for this session and use the worker.
+let engineBroken = false;
+const accel = () => String(setting('ai.accel') || 'auto');
 
 /** Run background removal on RGBA pixels and return a foreground matte at the same size. */
 export async function segment(img: { data: Uint8ClampedArray; width: number; height: number }, signal?: AbortSignal): Promise<Matte> {
-  const { repo, dtype } = await pickModel();
+  const { id: modelId, repo, dtype } = await pickModel();
+  if (api.engine && !engineBroken && accel() !== 'window') {
+    try {
+      const buf = new Uint8Array(img.data).buffer; // copy; the original stays usable
+      const r = await api.engine.segment('segmentation', modelId, buf, img.width, img.height, accel());
+      if (signal?.aborted) throw new DOMException('Canceled', 'AbortError');
+      return { alpha: r.alpha, width: r.width, height: r.height };
+    } catch (e) {
+      if ((e as Error)?.name === 'AbortError') throw e;
+      console.warn('Kea engine unavailable, using the in-window model:', e);
+      engineBroken = true;
+    }
+  }
   const w = getWorker();
   await loadModel(repo, dtype);
   if (signal?.aborted) throw new DOMException('Canceled', 'AbortError');

@@ -19,10 +19,16 @@ const REGISTRY = {
       task: 'background-removal',
       dtype: 'q8',
       default: true,
+      // The Kea engine runs the fp16 file on both the graphics card (DirectML handles int8 badly) and the native CPU
+      // (measured ~2x faster than int8 there); the in-window WASM fallback uses the int8 file.
+      family: 'modnet',
+      gpuFile: 'onnx/model_fp16.onnx',
+      cpuFile: 'onnx/model_fp16.onnx',
       files: [
         { path: 'config.json', size: 83, sha256: 'e144d8af9b1f09649785c77f592a76bbc69504ae02e43700663b2a9f00d9c8a2' },
         { path: 'preprocessor_config.json', size: 365, sha256: '07d83634b1fdd20142ca6e3fe55ab92b558f56d1b0f005ff3a7926f1c9e1165d' },
-        { path: 'onnx/model_quantized.onnx', size: 6632188, sha256: '92e49898c3e05a6d7a944fc67a8cb87c4aad754ffb6ebd949528c7d1105fee3a' }
+        { path: 'onnx/model_quantized.onnx', size: 6632188, sha256: '92e49898c3e05a6d7a944fc67a8cb87c4aad754ffb6ebd949528c7d1105fee3a' },
+        { path: 'onnx/model_fp16.onnx', size: 12984781, sha256: '25f165da9bfd30830a575f1f0490f1acd995975cb349bc02f3d79332e1fe5cf6' }
       ]
     },
     birefnet: {
@@ -33,6 +39,9 @@ const REGISTRY = {
       license: 'MIT',
       task: 'background-removal',
       dtype: 'fp16',
+      family: 'birefnet',
+      gpuFile: 'onnx/model_fp16.onnx',
+      cpuFile: 'onnx/model_fp16.onnx',
       files: [
         { path: 'config.json', size: 30, sha256: '88b20240c9078cf9cc3843dc7d69a42d274b8c242de56a3b2a41ef9995cb93bf' },
         { path: 'preprocessor_config.json', size: 391, sha256: '447d9ccb2c4129ab0ca045fc293e7d79dbc45e293ac1e94818d865db77f65a54' },
@@ -167,6 +176,13 @@ function resolveServed(rel) {
   return p.startsWith(base + path.sep) ? p : null;
 }
 
+/** On-disk files for the Kea engine (electron/engine.cjs), or null if the model isn't fully installed. */
+function engineModel(type, id) {
+  const c = entry(type, id);
+  if (!c || !c.files.every((f) => sizeOn(fileOf(type, id, f.path)) === f.size)) return null;
+  return { family: c.family, gpu: c.gpuFile ? fileOf(type, id, c.gpuFile) : null, cpu: c.cpuFile ? fileOf(type, id, c.cpuFile) : null };
+}
+
 function register(opts) {
   log = (opts && opts.log) || log;
   getWindow = (opts && opts.getWindow) || getWindow;
@@ -189,4 +205,4 @@ function register(opts) {
   });
 }
 
-module.exports = { register, resolveServed };
+module.exports = { register, resolveServed, engineModel };

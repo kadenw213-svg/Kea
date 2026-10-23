@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, Pause } from 'lucide-react';
-import { api, type AiModel } from '../../lib/api';
+import { api, type AiModel, type EngineStatus } from '../../lib/api';
 import { useSettings } from '../../lib/settings';
 import { formatBytes } from '../../lib/util';
 
@@ -17,12 +17,33 @@ export function AiModelsPanel() {
     });
   }, []);
   const chosen = sel || models.find((m) => m.default)?.id || models[0]?.id;
+  const [engine, setEngine] = useState<EngineStatus | null>(null);
+  useEffect(() => {
+    api.engine?.status().then(setEngine);
+  }, []);
 
   return (
     <div className="voice-models">
       <p className="muted" style={{ marginTop: 0 }}>
-        These models run entirely on this computer and are downloaded once. They power <b>Remove background</b> and <b>Select subject</b> in the image editor (Layer and Select menus, or ask Claude).
+        These models run entirely on this computer and are downloaded once. They power <b>Remove background</b> and <b>Select subject</b> in the image editor (Layer and Select menus), <b>Remove background (AI)</b> on video clips, or ask Claude.
       </p>
+      {engine && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          Kea engine:{' '}
+          {engine.gpuCrashed
+            ? 'running on the processor (the graphics driver crashed once). '
+            : engine.lastDevice
+              ? `last ran on the ${engine.lastDevice === 'gpu' ? 'graphics card' : 'processor'} (${engine.lastMs} ms per image). `
+              : engine.gpuSupported
+                ? 'uses the graphics card (DirectML) when available. '
+                : 'runs natively on the processor. '}
+          {engine.gpuCrashed && (
+            <button className="btn sm" onClick={() => api.engine!.resetGpu().then(setEngine)}>
+              Try the graphics card again
+            </button>
+          )}
+        </p>
+      )}
       <div className="sgroup-title">Background removal</div>
       {models.map((m) => (
         <div key={m.id} className={`voice-model ${chosen === m.id ? 'on' : ''}`}>

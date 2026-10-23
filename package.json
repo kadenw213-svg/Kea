@@ -23,6 +23,7 @@
     "electron-updater": "^6.3.9",
     "markdown-it": "^14.3.3",
     "node-llama-cpp": "^3.21.1",
+    "onnxruntime-node": "1.24.3",
     "sql.js": "^1.13.0",
     "wordnet-db": "3.1.14"
   },
@@ -206,6 +207,11 @@
       }
     ],
     "win": {
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+      ],
       "target": [
         {
           "target": "nsis",
@@ -225,6 +231,10 @@
       "include": "build/installer.nsh"
     },
     "mac": {
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/**"
+      ],
       "target": [
         "dmg"
       ],
@@ -257,7 +267,8 @@
       "node_modules/node-llama-cpp/**",
       "node_modules/@node-llama-cpp/**",
       "electron/ai-worker.mjs",
-      "electron/mcp/stdio-bridge.cjs"
+      "electron/mcp/stdio-bridge.cjs",
+      "node_modules/onnxruntime-node/**"
     ]
   },
   "homepage": "https://github.com/kadenw213-svg/kea",

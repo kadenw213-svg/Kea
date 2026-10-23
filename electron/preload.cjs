@@ -206,6 +206,12 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('models:download', h);
     }
   },
+  // The Kea engine (electron/engine.cjs): native GPU/CPU compute in a utility process.
+  engine: {
+    status: () => ipcRenderer.invoke('engine:status'),
+    resetGpu: () => ipcRenderer.invoke('engine:resetGpu'),
+    segment: (type, id, rgba, width, height, accel) => ipcRenderer.invoke('engine:segment', type, id, rgba, width, height, accel)
+  },
   // The MCP control server (electron/mcp): the main process asks the renderer to run an editor tool or read editor
   // state for a connected outside app, and the renderer answers on the same call id. Plus the Settings "Connect an
   // app" surface (turn the server on, mint/revoke per-app tokens) and an activity feed for the "controlling Kea" chip.

@@ -320,6 +320,7 @@ app.whenReady().then(() => {
   require('./tts.cjs').register();
   require('./speech.cjs').register({ log, getWindow: () => mainWindow });
   require('./models.cjs').register({ log, getWindow: () => mainWindow });
+  require('./engine.cjs').register({ log });
   const applySpell = () => session.defaultSession.setSpellCheckerEnabled(settings.get('general.spellcheck', true) !== false);
   applySpell();
   settings.onChange(applySpell);

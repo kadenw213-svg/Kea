@@ -672,8 +672,23 @@ export const SECTIONS: Section[] = [
     id: 'aimodels',
     label: 'AI image tools',
     icon: 'Wand2',
-    blurb: 'Download on-device AI models for the image editor — background removal and subject selection. They run on this computer; nothing is uploaded.',
-    fields: [{ key: 'ai.segmentModel', label: 'Background-removal model', type: 'text', default: '', advanced: true, help: 'Which downloaded model to use (set from the list below).' }]
+    blurb: 'Download on-device AI models for the photo and video editors — background removal and subject selection. They run on this computer, on your graphics card where possible; nothing is uploaded.',
+    fields: [
+      {
+        key: 'ai.accel',
+        label: 'Run AI on',
+        type: 'select',
+        default: 'auto',
+        options: [
+          { value: 'auto', label: 'Graphics card when it works (fastest)' },
+          { value: 'gpu', label: 'Graphics card always' },
+          { value: 'cpu', label: 'Processor (native)' },
+          { value: 'window', label: 'Compatibility mode (slowest)' }
+        ],
+        help: 'The Kea engine runs AI models natively, on your graphics card through DirectML where it can. If the graphics driver ever crashes, Kea switches to the processor automatically.'
+      },
+      { key: 'ai.segmentModel', label: 'Background-removal model', type: 'text', default: '', advanced: true, help: 'Which downloaded model to use (set from the list below).' }
+    ]
   },
   {
     id: 'control',

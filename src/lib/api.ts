@@ -253,6 +253,12 @@ export interface KeaApi {
     remove(type: string, id: string): Promise<boolean>;
     onDownload(cb: (m: AiModel) => void): () => void;
   };
+  /** The Kea engine (electron/engine.cjs): native on-device compute, on the GPU (DirectML) where it can. */
+  engine?: {
+    status(): Promise<EngineStatus>;
+    resetGpu(): Promise<EngineStatus>;
+    segment(type: string, id: string, rgba: ArrayBuffer, width: number, height: number, accel: string): Promise<{ alpha: Uint8Array; width: number; height: number; ep: string; ms: number }>;
+  };
   /** The MCP control server (electron/mcp + src/lib/controlBridge.ts): lets a connected outside app drive the editors. */
   control: {
     /** Main asks the renderer to run a tool / read a resource for a connected app; the renderer answers via respond(). */
@@ -348,6 +354,15 @@ export interface AiSettings {
   keepLoaded: boolean;
   custom: boolean;
 }
+export interface EngineStatus {
+  available: boolean;
+  running: boolean;
+  gpuSupported: boolean;
+  gpuCrashed: boolean;
+  lastDevice: '' | 'gpu' | 'cpu';
+  lastMs: number;
+}
+
 export interface AiModelState {
   tier: AiTier;
   label: string;
