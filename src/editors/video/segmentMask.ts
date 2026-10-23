@@ -3,7 +3,7 @@
 // nearest cached mask and the ClipFx shader multiplies the frame's alpha by it — exactly like the chroma key.
 // Reuses the Phase-3 segmentation worker (src/lib/segment.ts) and the video decode path (media.ts).
 import { CanvasSink } from 'mediabunny';
-import type { MediaItem } from './model';
+import type { MediaItem, Project } from './model';
 import { mediaKey, videoTrackOf } from './media';
 import { segment } from '../../lib/segment';
 
@@ -83,6 +83,23 @@ export async function buildMasks(media: MediaItem, onProgress: (p: number, note?
   if (!set.masks.length) throw new Error('No frames could be segmented.');
   cache.set(key, set);
   return { frames: set.masks.length };
+}
+
+/** Media whose clips have background removal on but no masks yet (after reopening a project, say). */
+export function missingMasks(p: Project): MediaItem[] {
+  const out: MediaItem[] = [];
+  for (const c of p.clips) {
+    if (!c.removeBg?.enabled) continue;
+    const m = p.media.find((x) => x.id === c.mediaId);
+    if (m && m.kind === 'video' && !hasMasks(mediaKey(m)) && !out.includes(m)) out.push(m);
+  }
+  return out;
+}
+
+/** Build any masks the project needs but doesn't have (masks live in memory, so they're rebuilt after a reopen). */
+export async function ensureMasks(p: Project, onProgress: (f: number, note?: string) => void = () => {}, signal?: AbortSignal) {
+  const need = missingMasks(p);
+  for (let k = 0; k < need.length; k++) await buildMasks(need[k], (f, note) => onProgress((k + f) / need.length, note), signal);
 }
 
 /** Drop a clip's cached masks (e.g. when its source changes). */

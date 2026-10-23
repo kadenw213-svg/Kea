@@ -99,8 +99,9 @@ async function segment({ file, family, ep, rgba, width, height }) {
   if (!(m instanceof Float32Array)) m = Float32Array.from(m);
   const mh = out.dims[out.dims.length - 2];
   const mw = out.dims[out.dims.length - 1];
-  // Logit outputs (BiRefNet) need a sigmoid; matte outputs (MODNet) are already 0..1.
-  if (m.some((v) => v < -1e-3 || v > 1.001)) {
+  // BiRefNet outputs logits (always needs a sigmoid); MODNet outputs a 0..1 matte. Decided by model, not by frame,
+  // so a low-contrast frame can't flip it.
+  if (family === 'birefnet') {
     m = Float32Array.from(m);
     for (let i = 0; i < m.length; i++) m[i] = 1 / (1 + Math.exp(-m[i]));
   }

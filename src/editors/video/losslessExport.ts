@@ -4,7 +4,7 @@
 // existing frame-accurate re-encoder (exporter.ts). (General multi-cut stream-copy is a later step.)
 import { Conversion, Output, Mp4OutputFormat, BufferTarget, StreamTarget } from 'mediabunny';
 import type { Project, Clip } from './model';
-import { mediaOf, projectDuration, DEFAULT_PROPS, NEUTRAL_COLOUR } from './model';
+import { mediaOf, projectDuration, clipEnd, DEFAULT_PROPS, NEUTRAL_COLOUR } from './model';
 import { inputFor, mediaKey } from './media';
 import { openFileSink } from './host';
 import { exportProject, Canceled, type ExportOptions } from './exporter';
@@ -21,8 +21,11 @@ export type VideoExportRequest = { path: string; lossless?: boolean; format?: Ex
 
 const CHANGED = (a: Record<string, unknown>, b: Record<string, unknown>) => Object.keys(b).some((k) => a[k] !== b[k]);
 
-/** Is the project a single unmodified media clip (optionally with its linked audio) we can stream-copy? */
-function eligible(p: Project): { ok: true; clip: Clip } | { ok: false; reason: string } {
+/**
+ * Is the export exactly one unmodified media clip (optionally with its untouched linked sound), starting at 0 and
+ * exported whole at its own size — i.e. would copying the source packets give the same result as rendering?
+ */
+function eligible(p: Project, o: Partial<VideoExportRequest> = {}): { ok: true; clip: Clip } | { ok: false; reason: string } {
   const vTracks = new Set(p.tracks.filter((t) => t.kind === 'video').map((t) => t.id));
   const videoClips = p.clips.filter((c) => c.kind === 'media' && vTracks.has(c.trackId));
   const overlays = p.clips.filter((c) => c.kind !== 'media');
@@ -40,6 +43,22 @@ function eligible(p: Project): { ok: true; clip: Clip } | { ok: false; reason: s
   if (Object.values(c.kf || {}).some((ks) => ks && (ks as unknown[]).length)) return { ok: false, reason: 'the clip has keyframes' };
   if (CHANGED(c.props as any, DEFAULT_PROPS as any)) return { ok: false, reason: 'the clip’s transform/opacity/volume is changed' };
   if (c.colour && CHANGED(c.colour as any, NEUTRAL_COLOUR as any)) return { ok: false, reason: 'the clip is colour-graded' };
+  if (c.lut) return { ok: false, reason: 'the clip has a LUT' };
+  if (c.removeBg?.enabled) return { ok: false, reason: 'background removal is on' };
+  if (c.freeze !== undefined) return { ok: false, reason: 'it’s a freeze frame' };
+  if (c.start > 1e-3) return { ok: false, reason: 'the clip doesn’t start at the beginning of the timeline' };
+  if (o.range && (Math.abs(o.range[0]) > 1e-3 || Math.abs(o.range[1] - clipEnd(c)) > 1e-3)) return { ok: false, reason: 'only part of the timeline is being exported' };
+  if (o.width || o.height || o.fps) return { ok: false, reason: 'a different size or frame rate was asked for' };
+  if (p.settings.master && (p.settings.master.gain || p.settings.master.limiter)) return { ok: false, reason: 'loudness normalisation is on' };
+  // Sound: only the clip's own linked sound, untouched and in step with the picture.
+  const aTracks = new Set(p.tracks.filter((t) => t.kind === 'audio').map((t) => t.id));
+  for (const a of p.clips.filter((x) => aTracks.has(x.trackId))) {
+    if (!c.linkId || a.linkId !== c.linkId) return { ok: false, reason: 'there’s other sound on the timeline (music, effects…)' };
+    if (a.mediaId !== c.mediaId || Math.abs(a.start - c.start) > 1e-3 || Math.abs(a.in - c.in) > 1e-3 || Math.abs(a.out - c.out) > 1e-3) return { ok: false, reason: 'the sound has been moved or replaced' };
+    if (a.audioFx || a.trIn || a.trOut || Object.values(a.kf || {}).some((ks) => ks && (ks as unknown[]).length) || CHANGED(a.props as any, DEFAULT_PROPS as any)) return { ok: false, reason: 'the sound is processed or its level changed' };
+    const tr = p.tracks.find((t) => t.id === a.trackId);
+    if (tr && (tr.volume || tr.muted)) return { ok: false, reason: 'the sound track’s level is changed' };
+  }
   return { ok: true, clip: c };
 }
 
@@ -92,7 +111,7 @@ export async function exportVideo(
   signal: AbortSignal
 ): Promise<ExportResult> {
   if (o.lossless && (!o.format || o.format === 'mp4')) {
-    const el = eligible(p);
+    const el = eligible(p, o);
     if (el.ok) {
       try {
         await streamCopyTrim(p, el.clip, o.path, onProgress, signal);

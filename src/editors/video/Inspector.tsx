@@ -27,8 +27,8 @@ import {
 import { maxTransition, setTransition, partners } from './ops';
 import { frameTime, sizeOf } from './compositor';
 import { guessKeyColour } from './effects';
-import { peaksFor } from './media';
-import { buildMasks } from './segmentMask';
+import { peaksFor, mediaKey } from './media';
+import { buildMasks, hasMasks } from './segmentMask';
 import { loadLut, getLut } from './lut';
 import { AUDIO_PRESETS } from './audioFx';
 import { startNoiseJob } from './proEdit';
@@ -865,7 +865,9 @@ function KeyTab({ clip, player }: { clip: Clip; player: Player }) {
         checked={!!clip.removeBg?.enabled}
         onChange={toggleRemoveBg}
       />
-      {(maskNote || clip.removeBg?.enabled) && <div className="ve-insp-note">{maskNote || 'Background removed (AI).'}</div>}
+      {(maskNote || clip.removeBg?.enabled) && (
+        <div className="ve-insp-note">{maskNote || (mediaOf(project, clip) && hasMasks(mediaKey(mediaOf(project, clip)!)) ? 'Background removed (AI).' : 'Preparing the cutout… (it shows once the masks are rebuilt)')}</div>
+      )}
       <Check label="Remove a background colour" checked={k.enabled} onChange={(v) => edit(v ? 'Turn on key' : 'Turn off key', (c) => (c.key.enabled = v))} />
       <ColourInput
         label="Colour"

@@ -23,6 +23,7 @@ import { mixdown, wavBytes, MIX_RATE } from './audio';
 import { imageFor, mediaKey, videoTrackOf } from './media';
 import { openFileSink } from './host';
 import { preloadLuts } from './lut';
+import { ensureMasks } from './segmentMask';
 
 /* Offline, frame-accurate rendering through the same compositor as the preview. */
 
@@ -216,6 +217,8 @@ export async function exportProject(p: Project, o: ExportOptions, onProgress: (f
     }
 
     await preloadLuts(p);
+    // Background-removal masks live in memory; rebuild any that are missing so the cutout is in the file.
+    await ensureMasks(p, (f, note) => onProgress(0, note || `Removing backgrounds… ${Math.round(f * 100)}%`), signal);
     const audioOnly = o.format === 'm4a';
     const support = await encoderSupport(even(o.width), even(o.height));
     const format = o.format === 'webm' ? new WebMOutputFormat() : new Mp4OutputFormat({ fastStart: sink.write ? false : 'in-memory' });

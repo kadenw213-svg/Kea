@@ -30,7 +30,10 @@ function loadState() {
   }
   if (!Array.isArray(state.clients)) state.clients = [];
 }
+// Test mode (KEA_CONTROL_TEST) never writes: its fixed token must not end up in the real client list.
+const testMode = !!process.env.KEA_CONTROL_TEST;
 function saveState() {
+  if (testMode) return;
   const json = JSON.stringify(state);
   fs.writeFileSync(stateFile(), safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(json) : Buffer.from(json, 'utf8'));
 }
@@ -90,8 +93,12 @@ function httpHandler(req, res) {
     } catch {
       return res.writeHead(400).end();
     }
-    client.lastUsed = new Date().toISOString();
-    saveState();
+    // "Last used" is only shown to the minute in Settings: persist it at most once a minute, not per request (each
+    // save is a synchronous encrypt + write on the main thread).
+    const now = Date.now();
+    const prev = client.lastUsed ? Date.parse(client.lastUsed) : 0;
+    client.lastUsed = new Date(now).toISOString();
+    if (now - prev > 60000) saveState();
     const ctx = {
       renderer: async (kind, payload) => {
         const out = await invokeRenderer(kind, payload);
@@ -100,7 +107,12 @@ function httpHandler(req, res) {
       }
     };
     const batch = Array.isArray(msg);
-    const answers = (await Promise.all((batch ? msg : [msg]).map((m) => jsonrpc.handle(m, ctx)))).filter(Boolean);
+    // Batch entries run in order — mutating tool calls must not interleave.
+    const answers = [];
+    for (const m of batch ? msg : [msg]) {
+      const a = await jsonrpc.handle(m, ctx);
+      if (a) answers.push(a);
+    }
     if (!answers.length) return res.writeHead(202).end();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(batch ? answers : answers[0]));

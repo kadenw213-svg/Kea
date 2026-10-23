@@ -109,7 +109,8 @@ export function envelopeDb(idx: MediaIndex): Float32Array | null {
 async function detectScenes(key: string, duration: number, onProgress: Progress, signal?: AbortSignal): Promise<{ start: number; end: number }[]> {
   const vt = await videoTrackOf(key);
   if (!vt) return [];
-  const fps = 2;
+  // 2 samples a second, spread thinner on long clips so the whole clip is covered within 1800 samples.
+  const fps = Math.min(2, 1800 / Math.max(1, duration));
   const n = Math.min(1800, Math.max(2, Math.ceil(duration * fps)));
   const first = await vt.getFirstTimestamp();
   const times = Array.from({ length: n }, (_, i) => first + i / fps);
@@ -131,7 +132,7 @@ async function detectScenes(key: string, duration: number, onProgress: Progress,
         let diff = 0;
         for (let p = 0; p < data.length; p += 4) diff += Math.abs(data[p] - prev[p]) + Math.abs(data[p + 1] - prev[p + 1]) + Math.abs(data[p + 2] - prev[p + 2]);
         const norm = diff / ((data.length / 4) * 3 * 255);
-        if (norm > 0.18 && times[i] - cuts[cuts.length - 1] > 0.6) cuts.push(times[i] - first);
+        if (norm > 0.18 && times[i] - first - cuts[cuts.length - 1] > 0.6) cuts.push(times[i] - first);
       }
       prev = data;
     }
@@ -216,15 +217,24 @@ async function cacheKey(media: MediaItem): Promise<string | null> {
 /** Build (or load from cache) the index for one media item. */
 export async function buildIndex(media: MediaItem, onProgress: Progress, signal?: AbortSignal): Promise<MediaIndex> {
   const key = mediaKey(media);
+  // A cached index is reused unless its transcript could now be better: none was made (no speech model then, or it
+  // failed) or it has no word timing while a word-timing model is installed now.
+  const models = await api.speech.state().catch(() => []);
+  const stale = (idx: MediaIndex) =>
+    media.hasAudio &&
+    models.some((m) => m.installed) &&
+    (!idx.transcript || (idx.transcript.segments.length > 0 && !idx.transcript.words?.length && models.some((m) => m.installed && m.words)));
   const have = mem.get(key);
-  if (have) return have;
+  if (have && !stale(have)) return have;
   const ckey = await cacheKey(media);
   if (ckey) {
     const cached = await api.video.indexGet(ckey).catch(() => null);
     if (cached) {
       const idx = JSON.parse(cached) as MediaIndex;
-      mem.set(key, idx);
-      return idx;
+      if (!stale(idx)) {
+        mem.set(key, idx);
+        return idx;
+      }
     }
   }
 

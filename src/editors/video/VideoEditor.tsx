@@ -52,6 +52,8 @@ import { renderStill } from './exporter';
 import { describeProject, projectSections, snapshot, videoTools } from './assistant';
 import { extraVideoTools, videoResources, readVideoResource } from './aiExtra';
 import { proVideoTools } from './proEdit';
+import { missingMasks, ensureMasks } from './segmentMask';
+import { startJob } from '../../lib/jobs';
 import * as act from './actions';
 import './video.css';
 import { LookupButton } from '../../components/lookup/LookupButton';
@@ -271,6 +273,10 @@ function Shell({ tab, active, store, player }: { tab: Tab; active: boolean; stor
   };
 
   const env = useMemo(() => ({ store, player, importPaths }), [store, player]);
+  // Background-removal masks aren't saved with the project; rebuild them in the background after it opens.
+  useEffect(() => {
+    if (missingMasks(store.getState().project).length) startJob('segment', (onProgress, signal) => ensureMasks(store.getState().project, onProgress, signal).then(() => player.requestRender()));
+  }, [store, player]);
   const tools = useMemo(() => [...videoTools(env), ...extraVideoTools(env, tab.id), ...proVideoTools(env)], [env, tab.id]);
   const aiRef = useRef<AiHooks>(null as any);
   aiRef.current = {

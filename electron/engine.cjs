@@ -34,7 +34,16 @@ function start() {
   worker = utilityProcess.fork(path.join(__dirname, 'engine-worker.cjs'), [], { serviceName: 'Kea Engine', stdio: 'pipe' });
   worker.stderr?.on('data', (d) => log('engine stderr', String(d).slice(0, 500)));
   ready = new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error('The Kea engine did not start.')), 20000);
+    // A cold start (antivirus scanning the native DLLs, a slow disk) can be slow; if it never comes up, kill it so the
+    // next call starts fresh instead of failing forever.
+    const t = setTimeout(() => {
+      reject(new Error('The Kea engine did not start.'));
+      try {
+        worker?.kill();
+      } catch {}
+      worker = null;
+      ready = null;
+    }, 60000);
     worker.on('message', (m) => {
       if (m?.type === 'ready') {
         clearTimeout(t);

@@ -8,7 +8,8 @@ const MIN_LEN = 1 / 60;
 
 /** Stills, text and shapes can be stretched to any length; audio/video can't run past their source. */
 export function isStill(p: Project, c: Clip) {
-  return c.kind !== 'media' || mediaOf(p, c)?.kind === 'image';
+  // A freeze frame behaves like a still: any length, its source times are just bookkeeping.
+  return c.kind !== 'media' || mediaOf(p, c)?.kind === 'image' || c.freeze !== undefined;
 }
 function srcMax(p: Project, c: Clip) {
   if (isStill(p, c)) return Infinity;
