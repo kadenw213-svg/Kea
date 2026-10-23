@@ -11,6 +11,7 @@ import { buildIndex, getIndex, indexSummary, tc, type MediaIndex } from './media
 import { exportVideo } from './losslessExport';
 import { buildMasks } from './segmentMask';
 import { addCaptions } from './proEdit';
+import { getAlignment, alignmentSummary } from './scriptAlign';
 import { startJob } from '../../lib/jobs';
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -20,6 +21,7 @@ const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 export function videoResources(store: AssistantEnv['store'], tabId: string) {
   const p = store.getState().project;
   const out: { uri: string; name: string; mimeType: string; description?: string }[] = [{ uri: `kea://video/${tabId}/project`, name: 'Video project (JSON)', mimeType: 'application/json', description: 'The whole timeline as structured JSON (media bin, tracks, clips).' }];
+  if (getAlignment(store)) out.push({ uri: `kea://video/${tabId}/script`, name: 'Script ↔ takes', mimeType: 'application/json', description: 'Every script line with its takes in the footage (times, scores, what was said) from align_script.' });
   for (const m of p.media) {
     const idx = getIndex(mediaKey(m));
     if (!idx) continue;
@@ -35,6 +37,10 @@ const transcriptText = (idx: MediaIndex) => (idx.transcript ? idx.transcript.seg
 export async function readVideoResource(store: AssistantEnv['store'], tabId: string, uri: string): Promise<{ text?: string; blob?: string; mimeType: string } | null> {
   const p = store.getState().project;
   if (uri === `kea://video/${tabId}/project`) return { text: serializeProject(p), mimeType: 'application/json' };
+  if (uri === `kea://video/${tabId}/script`) {
+    const a = getAlignment(store);
+    return a ? { text: JSON.stringify(alignmentSummary(a)), mimeType: 'application/json' } : { text: 'No script yet — call align_script.', mimeType: 'text/plain' };
+  }
   const m = new RegExp(`^kea://video/${tabId}/media/([^/]+)/(index|transcript|contactsheet)$`).exec(uri);
   if (!m) return null;
   const media = p.media.find((x) => x.id === m[1]);

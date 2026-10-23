@@ -13,6 +13,8 @@ import { getIndex } from './mediaIndex';
 import { decodeRange, mixdown } from './audio';
 import { measureBuffer } from './loudness';
 import { buildMasks } from './segmentMask';
+import { buildIndex } from './mediaIndex';
+import { alignScript, alignmentSummary, roughCut, takeSegments, setAlignment, getAlignment } from './scriptAlign';
 import { startJob } from '../../lib/jobs';
 import { uid } from '../../lib/util';
 
@@ -363,6 +365,11 @@ interface Tr {
   direction?: TransitionDir;
 }
 interface PlanMain {
+  /** A script line (after align_script): plays its best take, or `take`. */
+  line?: number;
+  take?: number;
+  /** Cut the long pauses out of the take (jump cuts). */
+  tighten?: boolean;
   media_id?: string;
   in?: number;
   out?: number;
@@ -446,7 +453,9 @@ const validTr = (t?: Tr) => {
 };
 
 /** Apply a plan to a draft project. Returns a summary + a map of where each storyline entry landed. */
-export function applyPlan(p: Project, plan: EditPlan): { summary: string; main: { index: number; start: number; end: number; clip?: string; audio?: string }[]; needsMasks: MediaItem[] } {
+type LineResolver = (line: number, take: number | undefined, tighten: boolean) => { media_id: string; in: number; out: number }[];
+
+export function applyPlan(p: Project, plan: EditPlan, resolveLine?: LineResolver): { summary: string; main: { index: number; start: number; end: number; clip?: string; audio?: string }[]; needsMasks: MediaItem[] } {
   const media = (id?: string) => {
     const m = p.media.find((x) => x.id === id);
     if (!m) throw new Error(`No media with id ${id} in the bin. Import it first.`);
@@ -479,34 +488,52 @@ export function applyPlan(p: Project, plan: EditPlan): { summary: string; main: 
       at += Math.max(0, e.gap);
       return;
     }
-    const m = media(e.media_id);
-    const clips = clipsForMedia(p, m, snap(at), { vTrack: vMain.id, aTrack: aDia.id, in: e.in, out: e.out, findFree: false });
-    const speed = typeof e.speed === 'number' ? Math.max(0.25, Math.min(4, e.speed)) : 1;
-    for (const c of clips) {
-      if (speed !== 1) {
-        c.speed = speed;
-        c.keepPitch = true;
-      }
-      if (typeof e.volume_db === 'number' && p.tracks.find((t) => t.id === c.trackId)?.kind === 'audio') c.props.volume = Math.max(-60, Math.min(12, e.volume_db));
+    let segs: { media_id?: string; in?: number; out?: number }[] = [{ media_id: e.media_id, in: e.in, out: e.out }];
+    if (typeof e.line === 'number') {
+      if (!resolveLine) throw new Error('Run align_script first so storyline entries can use script lines.');
+      segs = resolveLine(e.line, e.take, !!e.tighten);
     }
-    overwrite(p, clips);
-    const v = clips.find((c) => c.trackId === vMain.id);
-    const a = clips.find((c) => c.trackId === aDia.id);
-    if (v) {
-      applyLook(v, e.look, e.colour);
-      if (e.ken_burns) kenBurns(v, e.ken_burns.from || {}, e.ken_burns.to || {});
-      for (const z of e.zoom || []) punchIn(v, v.start + (z.at || 0), z);
-      if (e.remove_background) {
-        v.removeBg = { enabled: true };
-        if (!needsMasks.includes(m)) needsMasks.push(m);
+    const entryStart = snap(at);
+    const vs: Clip[] = [];
+    let firstA: Clip | undefined;
+    for (const sg of segs) {
+      const m = media(sg.media_id);
+      const clips = clipsForMedia(p, m, snap(at), { vTrack: vMain.id, aTrack: aDia.id, in: sg.in, out: sg.out, findFree: false });
+      const speed = typeof e.speed === 'number' ? Math.max(0.25, Math.min(4, e.speed)) : 1;
+      for (const c of clips) {
+        if (speed !== 1) {
+          c.speed = speed;
+          c.keepPitch = true;
+        }
+        if (typeof e.volume_db === 'number' && p.tracks.find((t) => t.id === c.trackId)?.kind === 'audio') c.props.volume = Math.max(-60, Math.min(12, e.volume_db));
       }
+      overwrite(p, clips);
+      const v = clips.find((c) => c.trackId === vMain.id);
+      firstA = firstA || clips.find((c) => c.trackId === aDia.id);
+      if (v) {
+        vs.push(v);
+        applyLook(v, e.look, e.colour);
+        if (e.remove_background) {
+          v.removeBg = { enabled: true };
+          if (!needsMasks.includes(m)) needsMasks.push(m);
+        }
+      }
+      at = Math.max(...clips.map(clipEnd));
     }
-    let end = Math.max(...clips.map(clipEnd));
-    if (v && e.freeze_end && e.freeze_end > 0) {
-      freezeFrame(p, v, clipEnd(v) - 1 / fps, e.freeze_end, false);
+    // Moves apply to the first piece; each zoom goes on the piece playing at that moment.
+    if (vs[0] && e.ken_burns) kenBurns(vs[0], e.ken_burns.from || {}, e.ken_burns.to || {});
+    for (const z of e.zoom || []) {
+      const t = entryStart + (z.at || 0);
+      const v = vs.find((c) => t >= c.start - EPS && t < clipEnd(c)) || vs[0];
+      if (v) punchIn(v, t, z);
+    }
+    let end = at;
+    const lastV = vs[vs.length - 1];
+    if (lastV && e.freeze_end && e.freeze_end > 0) {
+      freezeFrame(p, lastV, clipEnd(lastV) - 1 / fps, e.freeze_end, false);
       end += e.freeze_end;
     }
-    placed.push({ index, start: snap(at), end, clip: v?.id, audio: a?.id });
+    placed.push({ index, start: entryStart, end, clip: vs[0]?.id, audio: firstA?.id });
     at = end;
   });
   // Transitions and split edits need the neighbours in place, so they go second.
@@ -705,13 +732,25 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
     return c;
   };
   const startMasks = (items: MediaItem[]) => items.map((m) => startJob('segment', (onProgress, signal) => buildMasks(m, onProgress, signal)));
+  const lineResolver = (): LineResolver | undefined => {
+    const a = getAlignment(store);
+    if (!a) return undefined;
+    return (line, take, tighten) => {
+      const L = a.lines.find((x) => x.index === line);
+      if (!L) throw new Error(`No script line ${line} (0-${a.lines.length - 1}).`);
+      const k = take ?? L.best;
+      const t = L.takes[k];
+      if (!t) throw new Error(L.takes.length ? `Line ${line} has takes 0-${L.takes.length - 1}.` : `Line ${line} ("${L.text.slice(0, 40)}") wasn't found in the footage.`);
+      return takeSegments(t, tighten);
+    };
+  };
 
   return [
     {
       name: 'edit_plan',
       description: [
         'Build or extend a professional edit in ONE undo step, in editor language. Read the media index/transcript first (index_media), then describe the whole cut:',
-        '• main: the storyline, back to back on the Main track with sound on Dialogue — [{media_id, in, out, transition:{type,duration,direction} (into this shot), j_cut:s (its sound starts early), l_cut:s (its sound runs into the next shot), speed, volume_db, look, colour:{exposure,contrast,saturation,temperature,tint,highlights,shadows,vignette}, zoom:[{at,duration,scale,x,y,style:"cut"|"smooth"}] (punch-ins, at = s from the shot start), ken_burns:{from:{scale,x,y},to:{…}}, freeze_end:s, remove_background}] or {gap:s}.',
+        '• main: the storyline, back to back on the Main track with sound on Dialogue — [{line, take, tighten} (a script line after align_script) or {media_id, in, out}, plus transition:{type,duration,direction} (into this shot), j_cut:s (its sound starts early), l_cut:s (its sound runs into the next shot), speed, volume_db, look, colour:{exposure,contrast,saturation,temperature,tint,highlights,shadows,vignette}, zoom:[{at,duration,scale,x,y,style:"cut"|"smooth"}] (punch-ins, at = s from the shot start), ken_burns:{from:{scale,x,y},to:{…}}, freeze_end:s, remove_background}] or {gap:s}.',
         '• broll: cutaways on the B-roll track — [{media_id, in, out | duration, at | over:entryIndex+offset, transition_in, transition_out, keep_audio, volume_db, look, zoom, ken_burns, position:{scale,x,y} (picture-in-picture)}].',
         `• titles: [{text, at | over+offset, duration, preset: ${TITLE_PRESETS.join('|')}, style, x, y}].`,
         '• captions: true or {media_id, max_words, style} — burned in from the transcript at the right times.',
@@ -730,6 +769,9 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
             items: {
               type: 'object',
               properties: {
+                line: { type: 'number', description: 'Script line index (after align_script) — plays its best take.' },
+                take: { type: 'number', description: 'Pick a specific take of that line.' },
+                tighten: { type: 'boolean', description: 'Cut long pauses out of the take (jump cuts).' },
                 media_id: { type: 'string' },
                 in: { type: 'number' },
                 out: { type: 'number' },
@@ -785,7 +827,7 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
         if (!plan || typeof plan !== 'object') throw new Error('Give an edit plan.');
         let res: ReturnType<typeof applyPlan> | null = null;
         store.getState().commit('Apply edit plan', (p) => {
-          res = applyPlan(p, plan);
+          res = applyPlan(p, plan, lineResolver());
         });
         const r = res as unknown as ReturnType<typeof applyPlan>;
         const jobs = startMasks(r.needsMasks);
@@ -873,6 +915,62 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
           const c = addTitle(p, i, laneTrack(p, 'titles').id);
           return `Added "${String(i.text).slice(0, 40)}" (${i.preset || 'title'}) at ${r1(c.start)} s (clip ${c.id}).`;
         });
+      }
+    },
+    {
+      name: 'align_script',
+      description:
+        'Match a script to raw footage: finds every take of every line in the clips (indexes them first if needed — transcription needs a speech model in Settings → Voice typing), scores each take (completeness, stumbles, fillers, pauses; later complete takes win ties) and picks the best, with cut points snapped into the pauses. Runs as a job; the result (and the resource kea://video/<tab>/script) lists lines → takes {take, media_id, in, out, score, said}. Then cut_to_script for the automatic rough cut, or edit_plan with main:[{line, take?, tighten?}, …] to choose yourself. [Bracketed] directions in the script come back as notes.',
+      input_schema: { type: 'object', properties: { script: { type: 'string' }, media_ids: { type: 'array', items: { type: 'string' }, description: 'Default: every video/audio clip in the bin.' }, min_coverage: { type: 'number', description: 'How much of a line must be said to count as a take (default 0.5).' }, max_pause: { type: 'number', description: 'Pauses longer than this (s) inside a take are what tighten removes. Default 0.6.' } }, required: ['script'] },
+      run(i) {
+        const script = String(i.script || '');
+        if (!script.trim()) throw new Error('Give the script text.');
+        const proj = store.getState().project;
+        const items = (i.media_ids?.length ? proj.media.filter((m) => (i.media_ids as string[]).includes(m.id)) : proj.media.filter((m) => m.kind !== 'image' && m.hasAudio));
+        if (!items.length) throw new Error('No clips with sound in the bin to match the script against.');
+        const jobId = startJob('align', async (onProgress, signal) => {
+          const media: { item: MediaItem; idx: Awaited<ReturnType<typeof buildIndex>> }[] = [];
+          for (let k = 0; k < items.length; k++) {
+            const idx = await buildIndex(items[k], (f, note) => onProgress((k + f) / items.length * 0.95, note ? `${items[k].name}: ${note}` : undefined), signal);
+            if (!idx.transcript) throw new Error(`${items[k].name}: ${idx.transcriptNote || 'no transcript'}.`);
+            media.push({ item: items[k], idx });
+          }
+          onProgress(0.97, 'Matching the script…');
+          const a = alignScript(script, media, { minCoverage: i.min_coverage, maxPause: i.max_pause });
+          setAlignment(store, a);
+          const sum = alignmentSummary(a);
+          return { lineCount: a.lines.length, found: a.lines.length - sum.missing.length, takeCount: a.lines.reduce((n, L) => n + L.takes.length, 0), ...sum };
+        });
+        return `Matching the script to ${items.length} clip${items.length === 1 ? '' : 's'} (job ${jobId}). Poll kea_jobs_status {jobId:"${jobId}"}.`;
+      }
+    },
+    {
+      name: 'cut_to_script',
+      description: 'Build the rough cut from align_script: the best take of every line in script order (or your picks via overrides {"<line>": take}), lines said in one go kept as one continuous clip, optional tighten (long pauses cut out — jump-cut style). Replaces the storyline in one undo step and returns where each line landed; then add B-roll, titles, music with edit_plan {replace:false, …}.',
+      input_schema: { type: 'object', properties: { overrides: { type: 'object', description: '{"3": 1} = use take 1 for line 3.' }, tighten: { type: 'boolean' }, transition: TR_SCHEMA, captions: { type: 'boolean' } } },
+      run(i) {
+        const a = getAlignment(store);
+        if (!a) throw new Error('Run align_script first.');
+        const overrides: Record<number, number> = {};
+        for (const [k, v] of Object.entries(i.overrides || {})) overrides[Number(k)] = Number(v);
+        const runs = roughCut(a, { overrides, tighten: !!i.tighten });
+        if (!runs.length) throw new Error('None of the script lines were found in the footage.');
+        const main = runs.flatMap((r, k) => r.segments.map((s, j) => ({ ...s, ...(k > 0 && j === 0 && i.transition ? { transition: i.transition } : {}) })));
+        let res: ReturnType<typeof applyPlan> | null = null;
+        store.getState().commit('Cut to script', (p) => {
+          res = applyPlan(p, { replace: true, main, captions: !!i.captions });
+        });
+        const r = res as unknown as ReturnType<typeof applyPlan>;
+        // Map storyline pieces back to script lines.
+        let n = 0;
+        const lines = runs.map((run) => {
+          const first = r.main[n];
+          n += run.segments.length;
+          const last = r.main[n - 1];
+          return { lines: run.lines, start: first.start, end: last.end, pieces: run.segments.length };
+        });
+        const missing = a.lines.filter((L) => L.best < 0).map((L) => L.index);
+        return JSON.stringify({ result: r.summary, lines, ...(missing.length ? { missingLines: missing } : {}) });
       }
     },
     {

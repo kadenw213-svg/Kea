@@ -17,6 +17,8 @@ export interface MediaIndex {
   /** Quiet spans (candidate cuts / pauses). */
   silences: { start: number; end: number }[];
   transcript: { text: string; segments: TranscriptSegment[]; model: string } | null;
+  /** Loudness envelope for precise cuts: `rate` frames per second, each byte = dBFS + 100 (base64). */
+  envelope?: { rate: number; db: string };
   /** Why there's no transcript (no speech model installed, no audio…). */
   transcriptNote?: string;
   /** A grid of keyframes as a JPEG data URL. */
@@ -70,6 +72,37 @@ async function decodeMono16k(key: string, signal?: AbortSignal): Promise<Float32
   const ab = new AudioBuffer({ numberOfChannels: 1, length: total, sampleRate: sr });
   ab.copyToChannel(full, 0);
   return to16kMono(ab);
+}
+
+// ---------- Loudness envelope (10 ms RMS) for snapping cuts to pauses ----------
+export const ENV_RATE = 100;
+function envelopeOf(audio16k: Float32Array): { rate: number; db: string } {
+  const hop = 16000 / ENV_RATE;
+  const n = Math.floor(audio16k.length / hop);
+  const bytes = new Uint8Array(n);
+  for (let f = 0; f < n; f++) {
+    let ss = 0;
+    for (let i = f * hop; i < (f + 1) * hop; i++) ss += audio16k[i] * audio16k[i];
+    const db = ss > 0 ? 10 * Math.log10(ss / hop) : -100;
+    bytes[f] = Math.max(0, Math.min(255, Math.round(db + 100)));
+  }
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { rate: ENV_RATE, db: btoa(bin) };
+}
+
+/** The envelope as dBFS per frame (decoded once per index and cached). */
+const envCache = new WeakMap<object, Float32Array>();
+export function envelopeDb(idx: MediaIndex): Float32Array | null {
+  if (!idx.envelope) return null;
+  let d = envCache.get(idx.envelope);
+  if (!d) {
+    const bin = atob(idx.envelope.db);
+    d = new Float32Array(bin.length);
+    for (let i = 0; i < bin.length; i++) d[i] = bin.charCodeAt(i) - 100;
+    envCache.set(idx.envelope, d);
+  }
+  return d;
 }
 
 // ---------- Scene-change detection ----------
@@ -199,10 +232,12 @@ export async function buildIndex(media: MediaItem, onProgress: Progress, signal?
   onProgress(0.02, 'Listening to the audio…');
   let transcript: MediaIndex['transcript'] = null;
   let transcriptNote: string | undefined;
+  let envelope: MediaIndex['envelope'];
   try {
     const audio = media.hasAudio ? await decodeMono16k(key, signal) : null;
     if (!audio) transcriptNote = 'No audio to transcribe.';
     else {
+      envelope = envelopeOf(audio); // before transcribe(), which hands the buffer to the worker
       onProgress(0.08, 'Transcribing…');
       transcript = await transcribe(audio, { timestamps: true }, signal);
     }
@@ -218,7 +253,7 @@ export async function buildIndex(media: MediaItem, onProgress: Progress, signal?
   onProgress(0.9, 'Making a contact sheet…');
   const sheet = await contactSheet(key, scenes, media.duration, signal).catch(() => undefined);
 
-  const index: MediaIndex = { mediaId: media.id, name: media.name, duration: media.duration, scenes, silences, transcript, transcriptNote, contactSheet: sheet, builtAt: Date.now() };
+  const index: MediaIndex = { mediaId: media.id, name: media.name, duration: media.duration, scenes, silences, transcript, envelope, transcriptNote, contactSheet: sheet, builtAt: Date.now() };
   mem.set(key, index);
   if (ckey) api.video.indexSet(ckey, JSON.stringify(index)).catch(() => {});
   onProgress(1, 'Done.');
