@@ -11,7 +11,7 @@ export function hasColour(c: Colour) {
   return (Object.keys(NEUTRAL_COLOUR) as (keyof Colour)[]).some((k) => Math.abs(c[k]) > 1e-4);
 }
 export function needsFx(c: Clip) {
-  return c.kind === 'media' && (hasColour(c.colour) || c.key.enabled);
+  return c.kind === 'media' && (hasColour(c.colour) || c.key.enabled || !!c.removeBg?.enabled);
 }
 
 const VERT = `
@@ -29,6 +29,8 @@ uniform sampler2D u_tex;
 uniform float u_exposure, u_contrast, u_saturation, u_temp, u_tint, u_high, u_shadow, u_vignette;
 uniform float u_keyOn, u_tol, u_soft, u_spill;
 uniform vec3 u_key;
+uniform sampler2D u_mask;
+uniform float u_maskOn;
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 vec2 chroma(vec3 c) {
   return vec2(dot(c, vec3(-0.1146, -0.3854, 0.5)), dot(c, vec3(0.5, -0.4542, -0.0458)));
@@ -52,6 +54,7 @@ void main() {
     float y = dot(rgb, LUMA);
     rgb = vec3(y + 1.5748 * fixedC.y, y - 0.1873 * fixedC.x - 0.4681 * fixedC.y, y + 1.8556 * fixedC.x);
   }
+  if (u_maskOn > 0.5) a *= texture2D(u_mask, v_uv).r;
   rgb *= exp2(u_exposure);
   rgb += vec3(u_temp * 0.08 + u_tint * 0.04, -u_tint * 0.08, -u_temp * 0.08 + u_tint * 0.04);
   float l = dot(rgb, LUMA);
@@ -79,6 +82,7 @@ export class ClipFx {
   private gl: WebGLRenderingContext | null;
   private loc: Record<string, WebGLUniformLocation | null> = {};
   private tex: WebGLTexture | null = null;
+  private maskTex: WebGLTexture | null = null;
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -114,19 +118,24 @@ export class ClipFx {
     const pos = gl.getAttribLocation(prog, 'a_pos');
     gl.enableVertexAttribArray(pos);
     gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-    for (const n of ['u_tex', 'u_exposure', 'u_contrast', 'u_saturation', 'u_temp', 'u_tint', 'u_high', 'u_shadow', 'u_vignette', 'u_keyOn', 'u_tol', 'u_soft', 'u_spill', 'u_key']) this.loc[n] = gl.getUniformLocation(prog, n);
-    this.tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    for (const n of ['u_tex', 'u_exposure', 'u_contrast', 'u_saturation', 'u_temp', 'u_tint', 'u_high', 'u_shadow', 'u_vignette', 'u_keyOn', 'u_tol', 'u_soft', 'u_spill', 'u_key', 'u_mask', 'u_maskOn']) this.loc[n] = gl.getUniformLocation(prog, n);
+    const mkTex = () => {
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return t;
+    };
+    this.tex = mkTex();
+    this.maskTex = mkTex();
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   }
 
   /** Run the effects on a frame at w×h; returns the canvas holding the result (or null without WebGL). */
-  process(src: TexImageSource, w: number, h: number, colour: Colour, key: ChromaKey): HTMLCanvasElement | null {
+  process(src: TexImageSource, w: number, h: number, colour: Colour, key: ChromaKey, mask?: TexImageSource | null): HTMLCanvasElement | null {
     const gl = this.gl;
     if (!gl) return null;
     w = Math.max(1, Math.round(w));
@@ -136,6 +145,7 @@ export class ClipFx {
       this.canvas.height = h;
     }
     gl.viewport(0, 0, w, h);
+    gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     try {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
@@ -144,6 +154,20 @@ export class ClipFx {
     }
     const u = this.loc;
     gl.uniform1i(u.u_tex, 0);
+    let maskOn = 0;
+    if (mask) {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
+      try {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, mask);
+        gl.uniform1i(u.u_mask, 1);
+        maskOn = 1;
+      } catch {
+        // If the mask upload fails, skip it rather than dropping the whole frame.
+      }
+      gl.activeTexture(gl.TEXTURE0);
+    }
+    gl.uniform1f(u.u_maskOn, maskOn);
     gl.uniform1f(u.u_exposure, colour.exposure);
     gl.uniform1f(u.u_contrast, colour.contrast / 100);
     gl.uniform1f(u.u_saturation, colour.saturation / 100);

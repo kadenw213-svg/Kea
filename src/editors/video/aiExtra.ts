@@ -9,6 +9,7 @@ import { clipsForMedia, overwrite, textClip, setTransition, defaultTransition, a
 import { mediaKey } from './media';
 import { buildIndex, getIndex, indexSummary, tc, type MediaIndex } from './mediaIndex';
 import { exportVideo } from './losslessExport';
+import { buildMasks } from './segmentMask';
 import { startJob } from '../../lib/jobs';
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -283,6 +284,41 @@ export function extraVideoTools(env: AssistantEnv, tabId: string): AssistantTool
           }
           return `Added ${cues.length} caption${cues.length === 1 ? '' : 's'} on ${track.name}.`;
         });
+      }
+    },
+    {
+      name: 'remove_background',
+      description:
+        'Remove the background from a video clip with on-device AI — no green screen. The subject is cut out and whatever is behind the clip (another track, or the project background) shows through. Needs a background-removal model installed in Settings → AI image tools (MODNet is a small, fast default). Masks are precomputed as a job (returns a jobId — poll kea_jobs_status); the cutout appears in both preview and export once it finishes. Target a clip with clip_id, or every clip using a bin item with media_id. enabled:false turns it back off.',
+      input_schema: { type: 'object', properties: { clip_id: { type: 'string' }, media_id: { type: 'string', description: 'Affects all clips using this bin item.' }, enabled: { type: 'boolean', description: 'Default true.' } }, required: [] },
+      run(i) {
+        const enabled = i.enabled !== false;
+        const proj = store.getState().project;
+        let media: MediaItem | undefined;
+        const targets = proj.clips.filter((c) => {
+          if (c.kind !== 'media') return false;
+          if (i.clip_id) return c.id === i.clip_id;
+          if (i.media_id) return c.mediaId === i.media_id;
+          return false;
+        });
+        if (!targets.length) throw new Error('Give a clip_id or media_id that matches a video clip on the timeline.');
+        const msg = edit(enabled ? 'Remove background' : 'Restore background', (p) => {
+          let n = 0;
+          for (const c of p.clips) {
+            if (c.kind !== 'media') continue;
+            if (i.clip_id ? c.id === i.clip_id : i.media_id ? c.mediaId === i.media_id : false) {
+              c.removeBg = { enabled };
+              if (!media) media = mediaOf(p, c) || undefined;
+              n++;
+            }
+          }
+          return `${enabled ? 'Enabled' : 'Disabled'} AI background removal on ${n} clip${n === 1 ? '' : 's'}.`;
+        });
+        if (!enabled) return msg;
+        if (!media || media.kind === 'image') throw new Error('Background removal needs a video clip.');
+        const target = media;
+        const jobId = startJob('segment', async (onProgress, signal) => buildMasks(target, onProgress, signal));
+        return `${msg} Masking frames (job ${jobId}). Poll kea_jobs_status {jobId:"${jobId}"}; once done the cutout shows in preview and export.`;
       }
     },
     {

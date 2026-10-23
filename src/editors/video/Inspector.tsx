@@ -26,6 +26,8 @@ import { maxTransition, setTransition, partners } from './ops';
 import { frameTime, sizeOf } from './compositor';
 import { guessKeyColour } from './effects';
 import { peaksFor } from './media';
+import { buildMasks } from './segmentMask';
+import { startJob, jobStatus } from '../../lib/jobs';
 import { useVE, useVEStore } from './state';
 import { toast } from '../../store';
 import { clamp } from '../../lib/util';
@@ -746,6 +748,45 @@ function KeyTab({ clip, player }: { clip: Clip; player: Player }) {
       c.key.enabled = true;
     });
   };
+  const [maskJob, setMaskJob] = useState<string | null>(null);
+  const [maskNote, setMaskNote] = useState<string>('');
+  useEffect(() => {
+    if (!maskJob) return;
+    const id = setInterval(() => {
+      const s = jobStatus(maskJob) as import('../../lib/jobs').JobView | null;
+      if (!s || s.status === 'running') {
+        setMaskNote(s ? s.note || `Masking… ${Math.round((s.progress || 0) * 100)}%` : '');
+        return;
+      }
+      clearInterval(id);
+      setMaskJob(null);
+      if (s.status === 'error') {
+        setMaskNote('');
+        toast(s.error || s.note || 'Background removal failed.');
+      } else {
+        setMaskNote('Background removed.');
+        setTimeout(() => setMaskNote(''), 2500);
+      }
+    }, 400);
+    return () => clearInterval(id);
+  }, [maskJob]);
+  const toggleRemoveBg = (on: boolean) => {
+    edit(on ? 'Remove background (AI)' : 'Restore background', (c) => (c.removeBg = { enabled: on }));
+    if (!on) {
+      setMaskJob(null);
+      setMaskNote('');
+      return;
+    }
+    const media = mediaOf(project, clip);
+    if (!media || media.kind === 'image') return toast('Background removal needs a video clip.');
+    try {
+      const jobId = startJob('segment', async (onProgress, signal) => buildMasks(media, onProgress, signal));
+      setMaskJob(jobId);
+      setMaskNote('Masking…');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not start background removal.');
+    }
+  };
   const num = (field: 'tolerance' | 'softness' | 'spill', label: string, title: string) => (
     <Slider
       label={label}
@@ -762,6 +803,12 @@ function KeyTab({ clip, player }: { clip: Clip; player: Player }) {
   );
   return (
     <Section title="Green screen" onReset={() => edit('Reset key', (c) => (c.key = { ...DEFAULT_KEY }))}>
+      <Check
+        label="Remove background (AI) — no green screen"
+        checked={!!clip.removeBg?.enabled}
+        onChange={toggleRemoveBg}
+      />
+      {(maskNote || clip.removeBg?.enabled) && <div className="ve-insp-note">{maskNote || 'Background removed (AI).'}</div>}
       <Check label="Remove a background colour" checked={k.enabled} onChange={(v) => edit(v ? 'Turn on key' : 'Turn off key', (c) => (c.key.enabled = v))} />
       <ColourInput
         label="Colour"

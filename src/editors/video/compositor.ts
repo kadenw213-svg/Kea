@@ -2,6 +2,8 @@ import type { Project, Clip, TextStyle, ShapeStyle } from './model';
 import { clipDuration, mediaOf, propAt, sourceTime, trackClips } from './model';
 import { clipWindow, layerMod, transitionAt, LayerMod } from './transitions';
 import { ClipFx, needsFx, cssColourFilter } from './effects';
+import { mediaKey } from './media';
+import { maskAt } from './segmentMask';
 
 /*
  * The compositor draws one frame of the project onto a 2D canvas. The program monitor,
@@ -170,7 +172,8 @@ function drawMedia(ctx: CanvasRenderingContext2D, o: RenderOptions, c: Clip, fil
   if (needsFx(c)) {
     // Process at no more than the size it ends up on screen.
     const k = Math.min(1, (dw * Math.abs(s) * scale) / sw);
-    const out = o.fx.process(frame as TexImageSource, sw * k, sh * k, c.colour, c.key);
+    const mask = c.removeBg?.enabled && m ? maskAt(mediaKey(m), frameTime(p, c, t)) : null;
+    const out = o.fx.process(frame as TexImageSource, sw * k, sh * k, c.colour, c.key, mask);
     if (out) {
       img = out;
       iw = out.width;

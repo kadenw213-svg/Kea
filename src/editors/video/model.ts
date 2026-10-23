@@ -238,6 +238,8 @@ export interface Clip {
   key: ChromaKey;
   crop: Crop;
   blend: BlendMode;
+  /** AI background removal (no green screen): masks are precomputed per frame and composited like the chroma key. */
+  removeBg?: { enabled: boolean };
   trIn?: Transition;
   trOut?: Transition;
   text?: TextStyle;
@@ -357,6 +359,7 @@ export function parseProject(json: string): Project {
       colour: { ...b.colour, ...c.colour },
       key: { ...b.key, ...c.key },
       crop: { ...b.crop, ...c.crop },
+      removeBg: c.removeBg,
       kf: c.kf || {},
       text: c.text ? { ...DEFAULT_TEXT, ...c.text } : undefined,
       shape: c.shape ? { ...DEFAULT_SHAPE, ...c.shape } : undefined
