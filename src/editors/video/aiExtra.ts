@@ -303,13 +303,30 @@ export function extraVideoTools(env: AssistantEnv, tabId: string): AssistantTool
     },
     {
       name: 'export_video',
-      description: 'Export the timeline to a file (runs as a job — poll kea_jobs_status). With lossless:true, stream-copies with no re-encode when the timeline is a single unmodified trimmed clip, otherwise re-encodes at high quality (the result says which). format: mp4 (default), webm, m4a or wav.',
-      input_schema: { type: 'object', properties: { path: { type: 'string', description: 'Absolute output path.' }, lossless: { type: 'boolean' }, format: { type: 'string', enum: ['mp4', 'webm', 'm4a', 'wav'] } }, required: ['path'] },
+      description: 'Export the timeline to a file (runs as a job — poll kea_jobs_status). With lossless:true, stream-copies with no re-encode when the timeline is a single unmodified trimmed clip, otherwise re-encodes (the result says which). format: mp4 (default), webm, m4a or wav. Optional: width/height (keeps the aspect if one is given), fps, quality (medium|high|very-high), bitrate_kbps (overrides quality), codec (avc = plays everywhere, hevc = smaller, av1 = smallest; vp9/av1 in webm), hardware (auto = the computer decides | on = prefer the graphics card | off = software), range [start, end] seconds (default the in/out marks or everything).',
+      input_schema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Absolute output path.' },
+          lossless: { type: 'boolean' },
+          format: { type: 'string', enum: ['mp4', 'webm', 'm4a', 'wav'] },
+          width: { type: 'number' },
+          height: { type: 'number' },
+          fps: { type: 'number' },
+          quality: { type: 'string', enum: ['medium', 'high', 'very-high'] },
+          bitrate_kbps: { type: 'number' },
+          codec: { type: 'string', enum: ['auto', 'avc', 'hevc', 'av1', 'vp9'] },
+          hardware: { type: 'string', enum: ['auto', 'on', 'off'] },
+          range: { type: 'array', items: { type: 'number' } }
+        },
+        required: ['path']
+      },
       run(i) {
         if (!i.path) throw new Error('Give an absolute output path.');
         const project = store.getState().project;
         const jobId = startJob('export', async (onProgress, signal) => {
-          const r = await exportVideo(project, { path: String(i.path), lossless: !!i.lossless, format: i.format }, (f, note) => onProgress(f, note), signal);
+          const range: [number, number] | undefined = Array.isArray(i.range) && i.range.length === 2 ? [Number(i.range[0]), Number(i.range[1])] : project.inPoint !== null && project.outPoint !== null ? [project.inPoint, project.outPoint] : undefined;
+          const r = await exportVideo(project, { path: String(i.path), lossless: !!i.lossless, format: i.format, width: i.width, height: i.height, fps: i.fps, quality: i.quality, bitrate: i.bitrate_kbps, codec: i.codec, hardware: i.hardware, range }, (f, note) => onProgress(f, note), signal);
           return r;
         });
         return `Exporting (job ${jobId}). Poll kea_jobs_status {jobId:"${jobId}"}; the result says the output path and whether it was stream-copied or re-encoded.`;

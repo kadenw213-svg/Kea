@@ -6,7 +6,7 @@ import { toast } from '../../store';
 import { baseName } from '../../lib/fileTypes';
 import type { Project } from './model';
 import { projectDuration, timecode, FPS_CHOICES } from './model';
-import { encoderSupport, exportProject, EncoderSupport, ExportFormat, Canceled } from './exporter';
+import { encoderSupport, exportProject, EncoderSupport, ExportFormat, ExportCodec, EXPORT_CODECS, Canceled } from './exporter';
 import { canStreamWrite } from './host';
 
 /* Export: pick format, size, frame rate, quality and range, then render offline with a progress bar. */
@@ -41,6 +41,8 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
   const [fps, setFps] = useState<number>(project.settings.fps);
   const [quality, setQuality] = useState<QualityLevel>(saved.quality || 'high');
   const [bitrate, setBitrate] = useState<number>(0);
+  const [codec, setCodec] = useState<ExportCodec>(saved.codec || 'auto');
+  const [hardware, setHardware] = useState<'auto' | 'on' | 'off'>(saved.hardware || 'auto');
   const hasRange = project.inPoint !== null || project.outPoint !== null;
   const [range, setRange] = useState<'all' | 'inout'>(hasRange ? 'inout' : 'all');
   const [audio, setAudio] = useState(true);
@@ -87,7 +89,7 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
     const path = await api.saveDialog({ title: 'Export', defaultPath: `${baseName(name)}.${f.ext}`, filters: [{ name: f.filter, extensions: [f.ext] }] });
     if (!path) return;
     try {
-      localStorage.setItem(LAST, JSON.stringify({ format, quality }));
+      localStorage.setItem(LAST, JSON.stringify({ format, quality, codec, hardware }));
     } catch {
       /* not important */
     }
@@ -96,7 +98,8 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
     abort.current = ac;
     setProgress({ f: 0, note: 'Starting…' });
     try {
-      await exportProject(project, { format, width, height: Math.round(height / 2) * 2, fps, quality, bitrate, range: [a, b], audio, path }, (fr, n) => setProgress({ f: fr, note: n }), ac.signal);
+      const useCodec = EXPORT_CODECS.find((c) => c.id === codec)?.formats.includes(format) ? codec : 'auto';
+      await exportProject(project, { format, width, height: Math.round(height / 2) * 2, fps, quality, bitrate, range: [a, b], audio, path, codec: useCodec, hardware }, (fr, n) => setProgress({ f: fr, note: n }), ac.signal);
       const fileName = path.split(/[\\/]/).pop();
       toast(`Exported ${fileName}`, 'success');
       api.addRecent(path).catch(() => {});
@@ -179,6 +182,21 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
                 />
                 <span className="dim">Mbit/s {bitrate ? '' : '(automatic)'}</span>
               </div>
+              <label title="H.264 plays everywhere; HEVC and AV1 make smaller files at the same quality">Codec</label>
+              <select className="select ve-field" value={EXPORT_CODECS.find((c) => c.id === codec)?.formats.includes(format) ? codec : 'auto'} disabled={busy} onChange={(e) => setCodec(e.target.value as ExportCodec)}>
+                {EXPORT_CODECS.filter((c) => c.formats.includes(format)).map((c) => (
+                  <option key={c.id} value={c.id} disabled={c.id !== 'auto' && !!support && !support[c.id as 'avc' | 'hevc' | 'av1' | 'vp9']}>
+                    {c.label}
+                    {c.id !== 'auto' && support && !support[c.id as 'avc' | 'hevc' | 'av1' | 'vp9'] ? ' — not on this computer' : ''}
+                  </option>
+                ))}
+              </select>
+              <label title="Which encoder does the work. Automatic lets this computer choose.">Graphics card</label>
+              <select className="select ve-field" value={hardware} disabled={busy} onChange={(e) => setHardware(e.target.value as 'auto' | 'on' | 'off')}>
+                <option value="auto">Automatic</option>
+                <option value="on">Prefer the graphics card</option>
+                <option value="off">Don’t use it (software)</option>
+              </select>
             </>
           )}
           <label>Range</label>

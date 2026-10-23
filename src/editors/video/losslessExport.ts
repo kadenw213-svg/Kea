@@ -13,7 +13,11 @@ export interface ExportResult {
   mode: 'copied' | 'reencoded';
   path: string;
   note: string;
+  /** Re-encodes: true if the graphics card's encoder was requested, false for software, absent when the computer chose. */
+  hardware?: boolean;
 }
+
+export type VideoExportRequest = { path: string; lossless?: boolean; format?: ExportOptions['format']; quality?: ExportOptions['quality']; bitrate?: number; range?: [number, number]; audio?: boolean; width?: number; height?: number; fps?: number; codec?: ExportOptions['codec']; hardware?: ExportOptions['hardware']; audioQuality?: ExportOptions['audioQuality'] };
 
 const CHANGED = (a: Record<string, unknown>, b: Record<string, unknown>) => Object.keys(b).some((k) => a[k] !== b[k]);
 
@@ -63,12 +67,15 @@ async function streamCopyTrim(p: Project, clip: Clip, path: string, onProgress: 
 }
 
 /** Build full re-encode options from the project + overrides. */
-function reencodeOptions(p: Project, o: { path: string; format?: ExportOptions['format']; quality?: ExportOptions['quality']; bitrate?: number; range?: [number, number]; audio?: boolean }): ExportOptions {
+function reencodeOptions(p: Project, o: VideoExportRequest): ExportOptions {
   return {
     format: o.format || 'mp4',
-    width: p.settings.width,
-    height: p.settings.height,
-    fps: p.settings.fps,
+    width: o.width || (o.height ? Math.round((o.height * p.settings.width) / p.settings.height) : p.settings.width),
+    height: o.height || (o.width ? Math.round((o.width * p.settings.height) / p.settings.width) : p.settings.height),
+    fps: o.fps || p.settings.fps,
+    codec: o.codec,
+    hardware: o.hardware,
+    audioQuality: o.audioQuality,
     quality: o.quality || 'high',
     bitrate: o.bitrate || 0,
     range: o.range || [0, projectDuration(p)],
@@ -80,7 +87,7 @@ function reencodeOptions(p: Project, o: { path: string; format?: ExportOptions['
 /** Export the project. With `lossless`, stream-copies when the timeline is a single unmodified trim, else re-encodes. */
 export async function exportVideo(
   p: Project,
-  o: { path: string; lossless?: boolean; format?: ExportOptions['format']; quality?: ExportOptions['quality']; bitrate?: number; range?: [number, number]; audio?: boolean },
+  o: VideoExportRequest,
   onProgress: (f: number, note: string) => void,
   signal: AbortSignal
 ): Promise<ExportResult> {
@@ -93,15 +100,15 @@ export async function exportVideo(
       } catch (err: any) {
         if (err instanceof Canceled || err?.name === 'AbortError') throw err;
         console.warn('lossless copy failed, re-encoding instead', err);
-        await exportProject(p, reencodeOptions(p, o), onProgress, signal);
-        return { mode: 'reencoded', path: o.path, note: `Re-encoded at high quality (couldn’t stream-copy: ${String(err?.message || err)}).` };
+        const r = await exportProject(p, reencodeOptions(p, o), onProgress, signal);
+        return { mode: 'reencoded', path: o.path, hardware: r.hardware, note: `Re-encoded at high quality (couldn’t stream-copy: ${String(err?.message || err)}).` };
       }
     }
-    await exportProject(p, reencodeOptions(p, o), onProgress, signal);
-    return { mode: 'reencoded', path: o.path, note: `Re-encoded at high quality (lossless needs a single unmodified clip; ${el.reason}).` };
+    const r = await exportProject(p, reencodeOptions(p, o), onProgress, signal);
+    return { mode: 'reencoded', path: o.path, hardware: r.hardware, note: `Re-encoded at high quality (lossless needs a single unmodified clip; ${el.reason}).` };
   }
-  await exportProject(p, reencodeOptions(p, o), onProgress, signal);
-  return { mode: 'reencoded', path: o.path, note: 'Re-encoded.' };
+  const r = await exportProject(p, reencodeOptions(p, o), onProgress, signal);
+  return { mode: 'reencoded', path: o.path, hardware: r.hardware, note: r.hardware ? 'Re-encoded, preferring the graphics card.' : 'Re-encoded.' };
 }
 
 export { eligible as _losslessEligible };
