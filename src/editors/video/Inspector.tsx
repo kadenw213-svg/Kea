@@ -10,6 +10,8 @@ import {
   FONTS,
   TEXT_ANIMS,
   TRANSITIONS,
+  TRANSITION_DIRS,
+  DIRECTIONAL,
   DEFAULT_PROPS,
   DEFAULT_CROP,
   DEFAULT_KEY,
@@ -467,6 +469,14 @@ function TransitionPanel() {
         options={TRANSITIONS.map((x) => ({ id: x.id, label: x.label }))}
         onChange={(v) => store.getState().commit('Change transition', (p) => void setTransition(p, c.id, ref.edge, { ...tr, type: v }))}
       />
+      {DIRECTIONAL[tr.type] && (
+        <Select<string>
+          label="Direction"
+          value={tr.dir || DIRECTIONAL[tr.type]!}
+          options={TRANSITION_DIRS.map((d) => ({ id: d, label: d[0].toUpperCase() + d.slice(1) }))}
+          onChange={(v) => store.getState().commit('Change transition direction', (p) => void setTransition(p, c.id, ref.edge, { ...tr, dir: v as any }))}
+        />
+      )}
       <Slider
         label="Length"
         undo="Change transition length"

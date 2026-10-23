@@ -12,6 +12,7 @@ import {
   DEFAULT_PROPS,
   TEXT_ANIMS,
   TRANSITIONS,
+  TRANSITION_DIRS,
   aspectOf,
   clipDuration,
   clipEnd,
@@ -66,8 +67,9 @@ function describeClip(p: Project, c: Clip): string[] {
   const cr = c.crop;
   if (cr.left || cr.right || cr.top || cr.bottom) extra.push(`crop left ${cr.left}% right ${cr.right}% top ${cr.top}% bottom ${cr.bottom}%`);
   if (c.blend !== 'normal') extra.push(`blend ${c.blend}`);
-  if (c.trIn) extra.push(`transition in: ${c.trIn.type} ${n2(c.trIn.duration)} s`);
-  if (c.trOut) extra.push(`transition out: ${c.trOut.type} ${n2(c.trOut.duration)} s`);
+  if (c.trIn) extra.push(`transition in: ${c.trIn.type}${c.trIn.dir ? ' ' + c.trIn.dir : ''} ${n2(c.trIn.duration)} s`);
+  if (c.trOut) extra.push(`transition out: ${c.trOut.type}${c.trOut.dir ? ' ' + c.trOut.dir : ''} ${n2(c.trOut.duration)} s`);
+  if (c.freeze !== undefined) extra.push(`freeze frame at source ${n2(c.freeze)} s`);
   if (c.text) {
     const t = c.text;
     extra.push(`text "${t.text.replace(/\n/g, '\\n')}" · ${t.font} ${t.size}px ${t.color}${t.bold ? ' bold' : ''}${t.italic ? ' italic' : ''} ${t.align}${t.box ? ` · box ${t.box}` : ''}${t.outline && t.outlineWidth ? ` · outline ${t.outline} ${t.outlineWidth}px` : ''} · animation in ${t.animIn}, out ${t.animOut}`);
@@ -581,7 +583,8 @@ export function videoTools(env: AssistantEnv): AssistantTool[] {
           clip_id: { type: 'string' },
           edge: { type: 'string', enum: ['in', 'out'] },
           type: { type: 'string', enum: TRANSITIONS.map((t) => t.id), description: TRANSITIONS.map((t) => `${t.id}: ${t.hint}`).join(' ') },
-          duration: { type: 'number', description: 'Seconds. Default 1 for dissolve, 0.6 for others.' }
+          duration: { type: 'number', description: 'Seconds. Default 1 for dissolve, 0.6 for others.' },
+          direction: { type: 'string', enum: TRANSITION_DIRS, description: 'Which way wipe / slide / cover / whip move (left = the new shot enters from the right).' }
         },
         required: ['clip_id', 'edge', 'type']
       },
@@ -594,6 +597,7 @@ export function videoTools(env: AssistantEnv): AssistantTool[] {
           if (i.edge !== 'in' && i.edge !== 'out') throw new Error("edge must be 'in' or 'out'.");
           const tr = defaultTransition(type);
           if (i.duration !== undefined) tr.duration = Math.max(1 / 30, num(i.duration, 'duration'));
+          if (i.direction && TRANSITION_DIRS.includes(i.direction)) tr.dir = i.direction;
           const ref = setTransition(p, c.id, i.edge, tr);
           if (!ref) throw new Error('Could not add the transition.');
           const at = findClip(p, ref.clipId);

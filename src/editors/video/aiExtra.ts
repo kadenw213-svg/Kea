@@ -10,6 +10,7 @@ import { mediaKey } from './media';
 import { buildIndex, getIndex, indexSummary, tc, type MediaIndex } from './mediaIndex';
 import { exportVideo } from './losslessExport';
 import { buildMasks } from './segmentMask';
+import { addCaptions } from './proEdit';
 import { startJob } from '../../lib/jobs';
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -109,15 +110,6 @@ const mapStyle = (text: string, s: Partial<TextStyle> = {}): Partial<TextStyle> 
   const out: Partial<TextStyle> = { text };
   for (const k of ['font', 'size', 'color', 'bold', 'italic', 'align', 'box', 'outline', 'outlineWidth'] as const) if ((s as any)[k] !== undefined) (out as any)[k] = (s as any)[k];
   return out;
-};
-
-/* ---------- Captions ---------- */
-
-const wrapWords = (text: string, n: number) => {
-  const w = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  for (let i = 0; i < w.length; i += n) lines.push(w.slice(i, i + n).join(' '));
-  return lines.join('\n');
 };
 
 /* ---------- SRT ---------- */
@@ -229,28 +221,10 @@ export function extraVideoTools(env: AssistantEnv, tabId: string): AssistantTool
         const idx = getIndex(mediaKey(media));
         if (!idx) throw new Error('Index this clip first with index_media.');
         if (!idx.transcript || !idx.transcript.segments.length) throw new Error(idx.transcriptNote || 'No speech was found in this clip.');
-        const maxWords = Math.max(1, Math.min(12, i.max_words || 5));
         return edit('Add captions', (p) => {
           const track = captionTrack(p, i.track);
-          const clips = p.clips.filter((c) => c.kind === 'media' && c.mediaId === media.id && p.tracks.find((t) => t.id === c.trackId)?.kind === 'video');
-          const y = Math.round(p.settings.height * 0.33);
-          let count = 0;
-          const emit = (tStart: number, tEnd: number, text: string) => {
-            const c = textClip(p, snap(tStart), Math.max(0.3, tEnd - tStart), { text: wrapWords(text, maxWords), align: 'center', box: '#000000' }, track.id);
-            c.props.y = y;
-            overwrite(p, [c]);
-            count++;
-          };
-          const segs = idx.transcript!.segments;
-          if (clips.length)
-            for (const seg of segs)
-              for (const clip of clips) {
-                const s = Math.max(seg.start, clip.in);
-                const e = Math.min(seg.end, clip.out);
-                if (e > s) emit(clip.start + (s - clip.in) / clip.speed, clip.start + (e - clip.in) / clip.speed, seg.text);
-              }
-          else for (const seg of segs) emit(seg.start, seg.end, seg.text);
-          return `Added ${count} caption${count === 1 ? '' : 's'} on ${track.name}.`;
+          const n = addCaptions(p, media, track.id, { maxWords: i.max_words });
+          return `Added ${n} caption${n === 1 ? '' : 's'} on ${track.name}.`;
         });
       }
     },

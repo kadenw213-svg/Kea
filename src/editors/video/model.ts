@@ -19,6 +19,8 @@ export interface Settings {
   aspect: Aspect;
   /** Shown where no clip covers the frame. */
   background: string;
+  /** Master bus: overall gain (dB, set by loudness normalisation) and a peak limiter on the final mix. */
+  master?: { gain: number; limiter: boolean };
 }
 
 export type MediaKind = 'video' | 'audio' | 'image';
@@ -124,20 +126,31 @@ export interface Crop {
   bottom: number;
 }
 
-export type TransitionType = 'dissolve' | 'dipBlack' | 'dipWhite' | 'wipe' | 'slide' | 'zoom';
+export type TransitionType = 'dissolve' | 'dipBlack' | 'dipWhite' | 'wipe' | 'slide' | 'zoom' | 'cover' | 'blur' | 'whip' | 'iris';
+/** Which way a directional transition (wipe, slide, cover, whip) moves. */
+export type TransitionDir = 'left' | 'right' | 'up' | 'down';
+export const TRANSITION_DIRS: TransitionDir[] = ['left', 'right', 'up', 'down'];
+/** Transitions that take a direction, and the direction each one uses by default. */
+export const DIRECTIONAL: Partial<Record<TransitionType, TransitionDir>> = { wipe: 'right', slide: 'left', cover: 'left', whip: 'left' };
 export const TRANSITIONS: { id: TransitionType; label: string; hint: string }[] = [
   { id: 'dissolve', label: 'Cross dissolve', hint: 'Fade one shot into the next. On audio clips: a crossfade.' },
   { id: 'dipBlack', label: 'Dip to black', hint: 'Fade out to black, then in.' },
   { id: 'dipWhite', label: 'Dip to white', hint: 'Fade out to white, then in.' },
   { id: 'wipe', label: 'Wipe', hint: 'The next shot wipes across from the left.' },
   { id: 'slide', label: 'Slide', hint: 'The next shot slides in and pushes the old one out.' },
-  { id: 'zoom', label: 'Zoom', hint: 'The next shot zooms in from the centre.' }
+  { id: 'zoom', label: 'Zoom', hint: 'The next shot zooms in from the centre.' },
+  { id: 'cover', label: 'Cover', hint: 'The next shot slides in over the old one.' },
+  { id: 'blur', label: 'Cross blur', hint: 'The old shot blurs away as the next one comes into focus.' },
+  { id: 'whip', label: 'Whip pan', hint: 'A fast, motion-blurred push to the next shot.' },
+  { id: 'iris', label: 'Iris', hint: 'The next shot opens out of a growing circle.' }
 ];
 
 export interface Transition {
   type: TransitionType;
   /** Seconds. */
   duration: number;
+  /** Direction of movement for wipe / slide / cover / whip (each has a default). */
+  dir?: TransitionDir;
 }
 
 export type TextAnim = 'none' | 'fade' | 'slideUp' | 'slideLeft' | 'typewriter' | 'pop';
@@ -240,6 +253,8 @@ export interface Clip {
   blend: BlendMode;
   /** AI background removal (no green screen): masks are precomputed per frame and composited like the chroma key. */
   removeBg?: { enabled: boolean };
+  /** Freeze frame: the clip shows this one source frame (seconds) for its whole length. */
+  freeze?: number;
   trIn?: Transition;
   trOut?: Transition;
   text?: TextStyle;
@@ -360,6 +375,7 @@ export function parseProject(json: string): Project {
       key: { ...b.key, ...c.key },
       crop: { ...b.crop, ...c.crop },
       removeBg: c.removeBg,
+      freeze: typeof c.freeze === 'number' ? c.freeze : undefined,
       kf: c.kf || {},
       text: c.text ? { ...DEFAULT_TEXT, ...c.text } : undefined,
       shape: c.shape ? { ...DEFAULT_SHAPE, ...c.shape } : undefined
@@ -389,6 +405,7 @@ export function clipEnd(c: Clip) {
 
 /** Where in the source a timeline time falls. */
 export function sourceTime(c: Clip, t: number) {
+  if (c.freeze !== undefined) return c.freeze;
   const d = (t - c.start) * c.speed;
   return c.reverse ? c.out - d : c.in + d;
 }

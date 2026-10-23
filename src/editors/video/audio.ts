@@ -3,6 +3,7 @@ import type { Project, Clip, Track } from './model';
 import { clipDuration, dbToGain, mediaOf, propAt, sourceTime } from './model';
 import { clipWindow, transitionAt, transitionGain } from './transitions';
 import { audioTrackOf, mediaKey } from './media';
+import { limit } from './loudness';
 
 /* ---------- Levels ---------- */
 
@@ -22,6 +23,7 @@ export function clipGainAt(p: Project, c: Clip, t: number, track?: Track) {
   if (c.props.fadeOut > 0 && len - rel < c.props.fadeOut) g *= Math.max(0, (len - rel) / c.props.fadeOut);
   g *= transitionGain(transitionAt(p, c, t));
   if (track) g *= dbToGain(track.volume);
+  if (p.settings.master?.gain) g *= dbToGain(p.settings.master.gain);
   return g;
 }
 
@@ -173,7 +175,10 @@ export async function mixdown(p: Project, a: number, b: number, onProgress: (f: 
     done++;
     onProgress(done / clips.length);
   }
-  return ctx.startRendering();
+  const out = await ctx.startRendering();
+  // Master limiter: nothing above -1 dBFS (streaming platforms' true-peak ceiling) after loudness normalisation.
+  if (p.settings.master?.limiter) limit([out.getChannelData(0), out.getChannelData(1)], out.sampleRate, -1);
+  return out;
 }
 
 /* ---------- WAV writing (for "Export audio as WAV") ---------- */

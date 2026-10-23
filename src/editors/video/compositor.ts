@@ -40,7 +40,7 @@ export function visibleLayers(p: Project, t: number) {
     for (const c of trackClips(p, tr.id)) {
       const [a, b] = clipWindow(p, c);
       if (t < a || t >= b) continue;
-      layers.push({ clip: c, mod: layerMod(transitionAt(p, c, t), p.settings.width) });
+      layers.push({ clip: c, mod: layerMod(transitionAt(p, c, t), p.settings.width, p.settings.height) });
     }
     out.push(layers);
   }
@@ -106,9 +106,20 @@ function drawClip(ctx: CanvasRenderingContext2D, o: RenderOptions, c: Clip, mod:
   if (alpha <= 0.001) return;
 
   ctx.save();
-  if (mod.clipX) {
+  if (mod.clipX || mod.clipY) {
+    const [x0, x1] = mod.clipX || [0, 1];
+    const [y0, y1] = mod.clipY || [0, 1];
     ctx.beginPath();
-    ctx.rect(W * mod.clipX[0], 0, W * (mod.clipX[1] - mod.clipX[0]), H);
+    ctx.rect(W * x0, H * y0, W * (x1 - x0), H * (y1 - y0));
+    ctx.clip();
+  }
+  if (mod.iris !== undefined) {
+    if (mod.iris <= 0.001) {
+      ctx.restore();
+      return;
+    }
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, (mod.iris * Math.hypot(W, H)) / 2, 0, Math.PI * 2);
     ctx.clip();
   }
   ctx.globalAlpha = Math.min(1, alpha);
@@ -117,8 +128,8 @@ function drawClip(ctx: CanvasRenderingContext2D, o: RenderOptions, c: Clip, mod:
   const y = propAt(c, 'y', t);
   const s = (propAt(c, 'scale', t) / 100) * mod.scale * tscale;
   const rot = propAt(c, 'rotation', t);
-  const blur = propAt(c, 'blur', t);
-  ctx.translate(W / 2 + x + mod.dx + tdx, H / 2 + y + tdy);
+  const blur = propAt(c, 'blur', t) + (mod.blur || 0);
+  ctx.translate(W / 2 + x + mod.dx + tdx, H / 2 + y + (mod.dy || 0) + tdy);
   if (rot) ctx.rotate((rot * Math.PI) / 180);
   ctx.scale(s * (c.props.flipH ? -1 : 1), s * (c.props.flipV ? -1 : 1));
   const filters: string[] = [];
