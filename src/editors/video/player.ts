@@ -1,5 +1,6 @@
 import { CanvasSink } from 'mediabunny';
 import type { Clip } from './model';
+import { onLutLoaded } from './lut';
 import { mediaOf, projectDuration, sourceTime, trackOf, speedAt } from './model';
 import type { Store } from './state';
 import { renderFrame, frameTime, Drawable, FrameGetter } from './compositor';
@@ -41,6 +42,7 @@ export class Player {
   private lastSet = -1;
   private unsub: () => void;
   private unsubCache: () => void;
+  private unsubLut: () => void;
 
   constructor(store: Store) {
     this.store = store;
@@ -60,6 +62,7 @@ export class Player {
       prev = s;
     });
     this.unsubCache = useMediaCache.subscribe(() => this.requestRender());
+    this.unsubLut = onLutLoaded(() => this.requestRender());
   }
 
   attach(canvas: HTMLCanvasElement | null) {
@@ -72,6 +75,7 @@ export class Player {
   dispose() {
     this.unsub();
     this.unsubCache();
+    this.unsubLut();
     cancelAnimationFrame(this.raf);
     cancelAnimationFrame(this.renderQueued);
     for (const s of this.slots.values()) this.drop(s);

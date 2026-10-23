@@ -22,6 +22,7 @@ import { ClipFx } from './effects';
 import { mixdown, wavBytes, MIX_RATE } from './audio';
 import { imageFor, mediaKey, videoTrackOf } from './media';
 import { openFileSink } from './host';
+import { preloadLuts } from './lut';
 
 /* Offline, frame-accurate rendering through the same compositor as the preview. */
 
@@ -149,6 +150,11 @@ class OfflineFrames {
         const r = await plan.iter.next();
         w = r.done ? null : r.value;
       } else w = await plan.sink.getCanvas(ts);
+      if (!w && !plan.last) {
+        // Files without a seek index and with few keyframes (browser/screen recordings) can't be jumped into;
+        // decode forward from the start and keep the last frame at or before the time.
+        for await (const c of plan.sink.canvases(0, ts + 1e-3)) w = c;
+      }
       if (w) plan.last = w.canvas;
       if (plan.last) this.current.set(id, plan.last);
     }
@@ -209,6 +215,7 @@ export async function exportProject(p: Project, o: ExportOptions, onProgress: (f
       return { hardware: false };
     }
 
+    await preloadLuts(p);
     const audioOnly = o.format === 'm4a';
     const support = await encoderSupport(even(o.width), even(o.height));
     const format = o.format === 'webm' ? new WebMOutputFormat() : new Mp4OutputFormat({ fastStart: sink.write ? false : 'in-memory' });

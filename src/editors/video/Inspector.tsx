@@ -29,6 +29,8 @@ import { frameTime, sizeOf } from './compositor';
 import { guessKeyColour } from './effects';
 import { peaksFor } from './media';
 import { buildMasks } from './segmentMask';
+import { loadLut, getLut } from './lut';
+import { api } from '../../lib/api';
 import { startJob, jobStatus } from '../../lib/jobs';
 import { useVE, useVEStore } from './state';
 import { toast } from '../../store';
@@ -683,11 +685,53 @@ const COLOUR_FIELDS: { k: keyof Colour; label: string; min: number; max: number;
   { k: 'vignette', label: 'Vignette', min: 0, max: 100 }
 ];
 
+function LutSection({ clip }: { clip: Clip }) {
+  const store = useVEStore();
+  const [err, setErr] = useState('');
+  const choose = async () => {
+    const [f] = await api.openDialog({ title: 'Choose a LUT', filters: [{ name: 'LUT', extensions: ['cube'] }] });
+    if (!f) return;
+    try {
+      await loadLut(f.path);
+      setErr('');
+      store.getState().commit('Apply LUT', (p) => {
+        const c = find(p, clip.id);
+        if (c) c.lut = { path: f.path, amount: c.lut?.amount ?? 100 };
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <Section title="LUT" onReset={clip.lut ? () => store.getState().commit('Remove LUT', (p) => void (find(p, clip.id)!.lut = undefined)) : undefined}>
+      <button className="btn tonal sm ve-insp-wide" title="A .cube file: film looks, camera log conversions, LUT packs" onClick={choose}>
+        {clip.lut ? `LUT: ${getLut(clip.lut.path)?.title || clip.lut.path.split(/[\\/]/).pop()}` : 'Choose a .cube LUT…'}
+      </button>
+      {clip.lut && (
+        <Slider
+          label="Amount"
+          undo="Change LUT amount"
+          value={clip.lut.amount}
+          min={0}
+          max={100}
+          unit="%"
+          apply={(p, v) => {
+            const c = find(p, clip.id);
+            if (c?.lut) c.lut.amount = v;
+          }}
+        />
+      )}
+      {err && <div className="ve-insp-hint left">{err}</div>}
+    </Section>
+  );
+}
+
 function ColourTab({ clip }: { clip: Clip }) {
   const store = useVEStore();
   const active = COLOUR_PRESETS.find((pr) => (Object.keys(NEUTRAL_COLOUR) as (keyof Colour)[]).every((k) => Math.abs((pr.c[k] ?? 0) - clip.colour[k]) < 1e-6));
   return (
     <>
+      <LutSection clip={clip} />
       <Section title="Presets">
         <div className="ve-insp-presets">
           {COLOUR_PRESETS.map((pr) => (

@@ -261,6 +261,8 @@ export interface Clip {
   /** Speed ramp (time remapping): speed keyframes, t = seconds from the clip's start on the timeline, linear
    * between keys, held before the first and after the last. Overrides `speed`. */
   ramp?: { t: number; v: number }[];
+  /** A 3D colour LUT (.cube file on disk), applied after the colour correction, blended by amount (0-100). */
+  lut?: { path: string; amount: number };
   trIn?: Transition;
   trOut?: Transition;
   text?: TextStyle;
@@ -382,6 +384,7 @@ export function parseProject(json: string): Project {
       crop: { ...b.crop, ...c.crop },
       removeBg: c.removeBg,
       freeze: typeof c.freeze === 'number' ? c.freeze : undefined,
+      lut: c.lut && typeof c.lut.path === 'string' ? { path: c.lut.path, amount: Math.max(0, Math.min(100, +c.lut.amount || 100)) } : undefined,
       ramp: Array.isArray(c.ramp) && c.ramp.length ? c.ramp.map((k: any) => ({ t: +k.t || 0, v: Math.max(RAMP_MIN, Math.min(RAMP_MAX, +k.v || 1)) })) : undefined,
       kf: c.kf || {},
       text: c.text ? { ...DEFAULT_TEXT, ...c.text } : undefined,

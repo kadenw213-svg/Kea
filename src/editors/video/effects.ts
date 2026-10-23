@@ -11,7 +11,7 @@ export function hasColour(c: Colour) {
   return (Object.keys(NEUTRAL_COLOUR) as (keyof Colour)[]).some((k) => Math.abs(c[k]) > 1e-4);
 }
 export function needsFx(c: Clip) {
-  return c.kind === 'media' && (hasColour(c.colour) || c.key.enabled || !!c.removeBg?.enabled);
+  return c.kind === 'media' && (hasColour(c.colour) || c.key.enabled || !!c.removeBg?.enabled || !!c.lut);
 }
 
 const VERT = `
@@ -31,7 +31,21 @@ uniform float u_keyOn, u_tol, u_soft, u_spill;
 uniform vec3 u_key;
 uniform sampler2D u_mask;
 uniform float u_maskOn;
+uniform sampler2D u_lut;
+uniform float u_lutOn, u_lutSize, u_lutAmt;
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+// 3D LUT stored as N slices (one per blue level) side by side: sample the two nearest slices and blend.
+vec3 lut3d(vec3 c) {
+  float n = u_lutSize;
+  float b = clamp(c.b, 0.0, 1.0) * (n - 1.0);
+  float b0 = floor(b);
+  float b1 = min(b0 + 1.0, n - 1.0);
+  float x = (clamp(c.r, 0.0, 1.0) * (n - 1.0) + 0.5) / (n * n);
+  float y = (clamp(c.g, 0.0, 1.0) * (n - 1.0) + 0.5) / n;
+  vec3 s0 = texture2D(u_lut, vec2(x + b0 / n, y)).rgb;
+  vec3 s1 = texture2D(u_lut, vec2(x + b1 / n, y)).rgb;
+  return mix(s0, s1, b - b0);
+}
 vec2 chroma(vec3 c) {
   return vec2(dot(c, vec3(-0.1146, -0.3854, 0.5)), dot(c, vec3(0.5, -0.4542, -0.0458)));
 }
@@ -68,6 +82,7 @@ void main() {
     rgb *= mix(1.0, smoothstep(1.15, 0.35, r), u_vignette);
   }
   rgb = clamp(rgb, 0.0, 1.0);
+  if (u_lutOn > 0.5) rgb = mix(rgb, lut3d(rgb), u_lutAmt);
   gl_FragColor = vec4(rgb * a, a);
 }`;
 
@@ -83,6 +98,8 @@ export class ClipFx {
   private loc: Record<string, WebGLUniformLocation | null> = {};
   private tex: WebGLTexture | null = null;
   private maskTex: WebGLTexture | null = null;
+  private lutTex = new Map<string, WebGLTexture | null>();
+  private mkTex: (() => WebGLTexture | null) | null = null;
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -118,7 +135,7 @@ export class ClipFx {
     const pos = gl.getAttribLocation(prog, 'a_pos');
     gl.enableVertexAttribArray(pos);
     gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-    for (const n of ['u_tex', 'u_exposure', 'u_contrast', 'u_saturation', 'u_temp', 'u_tint', 'u_high', 'u_shadow', 'u_vignette', 'u_keyOn', 'u_tol', 'u_soft', 'u_spill', 'u_key', 'u_mask', 'u_maskOn']) this.loc[n] = gl.getUniformLocation(prog, n);
+    for (const n of ['u_tex', 'u_exposure', 'u_contrast', 'u_saturation', 'u_temp', 'u_tint', 'u_high', 'u_shadow', 'u_vignette', 'u_keyOn', 'u_tol', 'u_soft', 'u_spill', 'u_key', 'u_mask', 'u_maskOn', 'u_lut', 'u_lutOn', 'u_lutSize', 'u_lutAmt']) this.loc[n] = gl.getUniformLocation(prog, n);
     const mkTex = () => {
       const t = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, t);
@@ -130,12 +147,13 @@ export class ClipFx {
     };
     this.tex = mkTex();
     this.maskTex = mkTex();
+    this.mkTex = mkTex;
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   }
 
   /** Run the effects on a frame at w×h; returns the canvas holding the result (or null without WebGL). */
-  process(src: TexImageSource, w: number, h: number, colour: Colour, key: ChromaKey, mask?: TexImageSource | null): HTMLCanvasElement | null {
+  process(src: TexImageSource, w: number, h: number, colour: Colour, key: ChromaKey, mask?: TexImageSource | null, lut?: { key: string; size: number; data: Uint8Array; amount: number } | null): HTMLCanvasElement | null {
     const gl = this.gl;
     if (!gl) return null;
     w = Math.max(1, Math.round(w));
@@ -168,6 +186,26 @@ export class ClipFx {
       gl.activeTexture(gl.TEXTURE0);
     }
     gl.uniform1f(u.u_maskOn, maskOn);
+    let lutOn = 0;
+    if (lut && this.mkTex) {
+      let t = this.lutTex.get(lut.key);
+      gl.activeTexture(gl.TEXTURE2);
+      if (t === undefined) {
+        t = this.mkTex();
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        // Raw table, not an image: no flipping.
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, lut.size * lut.size, lut.size, 0, gl.RGBA, gl.UNSIGNED_BYTE, lut.data);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        this.lutTex.set(lut.key, t);
+      } else gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.uniform1i(u.u_lut, 2);
+      gl.uniform1f(u.u_lutSize, lut.size);
+      gl.uniform1f(u.u_lutAmt, Math.max(0, Math.min(1, lut.amount / 100)));
+      lutOn = 1;
+      gl.activeTexture(gl.TEXTURE0);
+    }
+    gl.uniform1f(u.u_lutOn, lutOn);
     gl.uniform1f(u.u_exposure, colour.exposure);
     gl.uniform1f(u.u_contrast, colour.contrast / 100);
     gl.uniform1f(u.u_saturation, colour.saturation / 100);

@@ -4,6 +4,7 @@ import { clipWindow, layerMod, transitionAt, LayerMod } from './transitions';
 import { ClipFx, needsFx, cssColourFilter } from './effects';
 import { mediaKey } from './media';
 import { maskAt } from './segmentMask';
+import { getLut, loadLut } from './lut';
 
 /*
  * The compositor draws one frame of the project onto a 2D canvas. The program monitor,
@@ -184,7 +185,13 @@ function drawMedia(ctx: CanvasRenderingContext2D, o: RenderOptions, c: Clip, fil
     // Process at no more than the size it ends up on screen.
     const k = Math.min(1, (dw * Math.abs(s) * scale) / sw);
     const mask = c.removeBg?.enabled && m ? maskAt(mediaKey(m), frameTime(p, c, t)) : null;
-    const out = o.fx.process(frame as TexImageSource, sw * k, sh * k, c.colour, c.key, mask);
+    let lut: { key: string; size: number; data: Uint8Array; amount: number } | null = null;
+    if (c.lut) {
+      const l = getLut(c.lut.path);
+      if (l) lut = { key: c.lut.path, size: l.size, data: l.data, amount: c.lut.amount };
+      else loadLut(c.lut.path).catch(() => {}); // the preview redraws when it arrives
+    }
+    const out = o.fx.process(frame as TexImageSource, sw * k, sh * k, c.colour, c.key, mask, lut);
     if (out) {
       img = out;
       iw = out.width;

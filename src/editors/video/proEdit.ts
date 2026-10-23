@@ -13,6 +13,7 @@ import { getIndex } from './mediaIndex';
 import { decodeRange, mixdown } from './audio';
 import { measureBuffer } from './loudness';
 import { buildMasks } from './segmentMask';
+import { loadLut, getLut } from './lut';
 import { buildIndex } from './mediaIndex';
 import { alignScript, alignmentSummary, roughCut, takeSegments, setAlignment, getAlignment, wordsOf, type Word } from './scriptAlign';
 import { startJob } from '../../lib/jobs';
@@ -474,6 +475,8 @@ interface PlanMain {
   /** Speed ramp keys {t: s from the shot's start, speed}, or a preset anchored on a source moment. */
   ramp?: { t: number; speed: number }[];
   hero?: { at_source: number; slow?: number; fast?: number; hold?: number };
+  /** A .cube LUT (path) for this shot, or {path, amount}. */
+  lut?: string | { path: string; amount?: number };
 }
 interface PlanBroll {
   media_id: string;
@@ -609,6 +612,7 @@ export function applyPlan(p: Project, plan: EditPlan, resolveLine?: LineResolver
       if (v) {
         vs.push(v);
         applyLook(v, e.look, e.colour);
+        if (e.lut) v.lut = typeof e.lut === 'string' ? { path: e.lut, amount: 100 } : { path: e.lut.path, amount: e.lut.amount ?? 100 };
         if (e.remove_background) {
           v.removeBg = { enabled: true };
           if (!needsMasks.includes(m)) needsMasks.push(m);
@@ -885,6 +889,7 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
                 ken_burns: { type: 'object', properties: { from: MOVE_SCHEMA, to: MOVE_SCHEMA } },
                 freeze_end: { type: 'number' },
                 remove_background: { type: 'boolean' },
+                lut: { description: 'A .cube LUT path for this shot, or {path, amount 0-100}.' },
                 ramp: { type: 'array', items: { type: 'object', properties: { t: { type: 'number' }, speed: { type: 'number' } } }, description: 'Speed ramp keys (t = s from the shot start).' },
                 hero: { type: 'object', properties: { at_source: { type: 'number' }, slow: { type: 'number' }, fast: { type: 'number' }, hold: { type: 'number' } }, description: 'Fast → slow-mo through the moment at source time at_source → fast.' }
               }
@@ -922,9 +927,11 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
           fade_out: { type: 'number' }
         }
       },
-      run(i) {
+      async run(i) {
         const plan = i as EditPlan;
         if (!plan || typeof plan !== 'object') throw new Error('Give an edit plan.');
+        // LUTs load (and are checked) before anything changes.
+        for (const e of plan.main || []) if (e.lut) await loadLut(typeof e.lut === 'string' ? e.lut : e.lut.path);
         let res: ReturnType<typeof applyPlan> | null = null;
         store.getState().commit('Apply edit plan', (p) => {
           res = applyPlan(p, plan, lineResolver());
@@ -991,6 +998,24 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
           const c = clipIn(p, i.clip_id);
           punchIn(c, Number(i.at), i);
           return `Punched in to ${i.scale ?? 115}% at ${r1(i.at)} s on ${c.name}.`;
+        });
+      }
+    },
+    {
+      name: 'apply_lut',
+      description: 'Grade clips with a 3D LUT (.cube file — film looks, camera log-to-Rec.709 conversions, LUT packs). Applied after the clip’s colour correction, blended by amount (0-100, default 100). Give clip_ids, or all:true for every video clip; remove:true takes it off.',
+      input_schema: { type: 'object', properties: { path: { type: 'string', description: 'Absolute path to a .cube file.' }, clip_ids: { type: 'array', items: { type: 'string' } }, all: { type: 'boolean' }, amount: { type: 'number' }, remove: { type: 'boolean' } } },
+      async run(i) {
+        if (i.remove) i.path = '';
+        else if (!i.path) throw new Error('Give the path of a .cube LUT (or remove:true).');
+        if (i.path) await loadLut(String(i.path)); // validates the file before anything changes
+        return edit(i.path ? 'Apply LUT' : 'Remove LUT', (p) => {
+          const vids = p.clips.filter((c) => c.kind === 'media' && p.tracks.find((t) => t.id === c.trackId)?.kind === 'video' && mediaOf(p, c)?.kind !== 'audio');
+          const targets = i.all ? vids : vids.filter((c) => (i.clip_ids || []).includes(c.id));
+          if (!targets.length) throw new Error('Give clip_ids of video clips, or all:true.');
+          for (const c of targets) c.lut = i.path ? { path: String(i.path), amount: Math.max(0, Math.min(100, i.amount ?? 100)) } : undefined;
+          const title = i.path ? getLut(String(i.path))?.title : '';
+          return i.path ? `Applied the ${title} LUT to ${targets.length} clip${targets.length === 1 ? '' : 's'}.` : `Removed the LUT from ${targets.length} clip${targets.length === 1 ? '' : 's'}.`;
         });
       }
     },
