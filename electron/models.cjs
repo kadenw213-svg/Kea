@@ -48,6 +48,26 @@ const REGISTRY = {
         { path: 'onnx/model_fp16.onnx', size: 489666272, sha256: '3654c741eb80bd926ada8fed1713b506ccf8d30eb1f6487e87eb9f234f33df09' }
       ]
     }
+  },
+  // Face detection, for face-tracked reframing (9:16 etc.) in the video editor. OpenCV's YuNet, MIT licence.
+  faces: {
+    yunet: {
+      repo: 'opencv/face_detection_yunet',
+      rev: '3cc26e7f1014a5ee5d74a42acee58bafc9d0a310',
+      label: 'Face finder (YuNet)',
+      blurb: 'Finds faces so Kea can keep the speaker in frame when reframing to vertical or square. Tiny and fast.',
+      license: 'MIT',
+      task: 'face-detection',
+      dtype: 'fp32',
+      default: true,
+      family: 'yunet',
+      gpuFile: 'face_detection_yunet_2023mar.onnx',
+      cpuFile: 'face_detection_yunet_2023mar.onnx',
+      files: [
+        { path: 'face_detection_yunet_2023mar.onnx', size: 232589, sha256: '8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4' },
+        { path: 'LICENSE', size: 1085, sha256: 'c83b8120c50ccbd4c4f96edf53141bdd566ebb8f8e9227e415326aa1b1aba958' }
+      ]
+    }
   }
 };
 

@@ -258,6 +258,7 @@ export interface KeaApi {
     status(): Promise<EngineStatus>;
     resetGpu(): Promise<EngineStatus>;
     segment(type: string, id: string, rgba: ArrayBuffer, width: number, height: number, accel: string): Promise<{ alpha: Uint8Array; width: number; height: number; ep: string; ms: number }>;
+    faces(id: string, rgba: ArrayBuffer, width: number, height: number, accel: string): Promise<{ faces: { x: number; y: number; w: number; h: number; score: number }[]; ep: string }>;
     transcribe(repo: string, audio: ArrayBuffer, englishOnly: boolean, timestamps: boolean | 'word'): Promise<{ text: string; chunks: { text: string; timestamp: [number, number | null] }[] | null; ms: number }>;
   };
   /** The MCP control server (electron/mcp + src/lib/controlBridge.ts): lets a connected outside app drive the editors. */

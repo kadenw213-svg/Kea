@@ -108,6 +108,53 @@ async function segment({ file, family, ep, rgba, width, height }) {
   return { alpha: alpha.buffer, width, height, ms: Date.now() - t0 };
 }
 
+/* ---------- Face detection (YuNet 2023mar: 640×640 BGR 0-255 in; per-stride cls/obj/bbox out) ---------- */
+
+async function faces({ file, ep, rgba, width, height, threshold = 0.6 }) {
+  const s = await session(file, ep);
+  const S = 640;
+  const k = Math.min(S / width, S / height);
+  const nw = Math.max(1, Math.round(width * k));
+  const nh = Math.max(1, Math.round(height * k));
+  // Letterbox: resize into the top-left, pad with black; planes in B, G, R order, raw 0-255.
+  const rgb = toTensor(new Uint8Array(rgba), width, height, nw, nh, [0, 0, 0], [1 / 255, 1 / 255, 1 / 255]);
+  const input = new Float32Array(3 * S * S);
+  for (let c = 0; c < 3; c++) {
+    const from = (2 - c) * nw * nh;
+    for (let y = 0; y < nh; y++) input.set(rgb.subarray(from + y * nw, from + (y + 1) * nw), c * S * S + y * S);
+  }
+  const out = await s.run({ [s.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, S, S]) });
+  const found = [];
+  for (const st of [8, 16, 32]) {
+    const cls = out[`cls_${st}`].data;
+    const obj = out[`obj_${st}`].data;
+    const box = out[`bbox_${st}`].data;
+    const cols = S / st;
+    for (let i = 0; i < cls.length; i++) {
+      const score = Math.sqrt(Math.min(1, Math.max(0, cls[i])) * Math.min(1, Math.max(0, obj[i])));
+      if (score < threshold) continue;
+      const cx = ((i % cols) + box[i * 4]) * st;
+      const cy = (Math.floor(i / cols) + box[i * 4 + 1]) * st;
+      const w = Math.exp(box[i * 4 + 2]) * st;
+      const h = Math.exp(box[i * 4 + 3]) * st;
+      found.push({ x: cx - w / 2, y: cy - h / 2, w, h, score });
+    }
+  }
+  found.sort((a, b) => b.score - a.score);
+  const iou = (a, b) => {
+    const x1 = Math.max(a.x, b.x);
+    const y1 = Math.max(a.y, b.y);
+    const x2 = Math.min(a.x + a.w, b.x + b.w);
+    const y2 = Math.min(a.y + a.h, b.y + b.h);
+    const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+    return inter / (a.w * a.h + b.w * b.h - inter + 1e-9);
+  };
+  const keep = [];
+  for (const f of found) if (keep.length < 100 && keep.every((g) => iou(f, g) < 0.3)) keep.push(f);
+  // Back to fractions of the original image.
+  return { faces: keep.map((f) => ({ x: f.x / k / width, y: f.y / k / height, w: f.w / k / width, h: f.h / k / height, score: Math.round(f.score * 1000) / 1000 })) };
+}
+
 /* ---------- Speech recognition (Whisper via a slim bundle of transformers.js; native CPU) ---------- */
 
 let asr = null;
@@ -142,6 +189,7 @@ async function transcribe({ root, repo, audio, englishOnly, timestamps }) {
 }
 
 const OPS = {
+  faces,
   transcribe,
   ping: async () => ({ version: ort.env?.versions?.common || '', eps: ort.listSupportedBackends ? ort.listSupportedBackends().map((b) => b.name) : [] }),
   segment

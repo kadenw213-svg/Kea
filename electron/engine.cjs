@@ -103,6 +103,12 @@ async function segment(type, id, rgba, width, height, accel) {
   });
 }
 
+async function faces(id, rgba, width, height, accel) {
+  const m = models.engineModel('faces', id);
+  if (!m) throw new Error('No face finder is installed.');
+  return withFallback(accel, (ep) => call({ op: 'faces', file: ep === 'dml' ? m.gpu : m.cpu, ep, rgba, width, height }).then((r) => ({ faces: r.faces, ep })));
+}
+
 /** Whisper on the native CPU (measured ~3x the in-window speed; the GPU doesn't help Whisper's step-by-step decoder). */
 async function transcribe(repo, audio, englishOnly, timestamps) {
   const root = require('./speech.cjs').modelRoot();
@@ -131,6 +137,7 @@ function register(opts) {
     return status();
   });
   ipcMain.handle('engine:segment', (_e, type, id, rgba, width, height, accel) => segment(type, id, rgba, width, height, accel));
+  ipcMain.handle('engine:faces', (_e, id, rgba, width, height, accel) => faces(id, rgba, width, height, accel));
   ipcMain.handle('engine:transcribe', async (_e, repo, audio, englishOnly, timestamps) => {
     const r = await transcribe(repo, audio, englishOnly, timestamps);
     return { text: r.text, chunks: r.chunks, ms: r.ms };

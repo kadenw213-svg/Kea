@@ -15,6 +15,7 @@ import { measureBuffer } from './loudness';
 import { buildMasks } from './segmentMask';
 import { loadLut, getLut } from './lut';
 import { AUDIO_PRESETS, reduceNoise } from './audioFx';
+import { REFRAME_ASPECTS, sizeFor, trackFaces, applyReframe, type ReframeAspect, type FaceSample } from './reframe';
 import { buildIndex } from './mediaIndex';
 import { alignScript, alignmentSummary, roughCut, takeSegments, setAlignment, getAlignment, wordsOf, type Word } from './scriptAlign';
 import { startJob } from '../../lib/jobs';
@@ -1039,6 +1040,40 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
           punchIn(c, Number(i.at), i);
           return `Punched in to ${i.scale ?? 115}% at ${r1(i.at)} s on ${c.name}.`;
         });
+      }
+    },
+    {
+      name: 'reframe',
+      description: `Reframe for vertical / square / 4:5 (or back to 16:9) keeping the speaker in frame: finds faces through each clip on-device, follows the main face with smooth camera-operator moves, and cover-scales + keyframes each clip. Also resizes the project (keeps the short side: 1920×1080 → 1080×1920). aspect: ${REFRAME_ASPECTS.join(' | ')}. clip_ids default to every video clip; smooth = seconds of smoothing (default 0.6; higher = calmer). Needs the face finder from Settings → AI image tools. Runs as a job; one undo step.`,
+      input_schema: { type: 'object', properties: { aspect: { type: 'string', enum: REFRAME_ASPECTS }, clip_ids: { type: 'array', items: { type: 'string' } }, smooth: { type: 'number' } }, required: ['aspect'] },
+      run(i) {
+        const aspect = i.aspect as ReframeAspect;
+        if (!REFRAME_ASPECTS.includes(aspect)) throw new Error(`aspect must be one of ${REFRAME_ASPECTS.join(', ')}.`);
+        const proj = store.getState().project;
+        const vids = proj.clips.filter((c) => c.kind === 'media' && proj.tracks.find((t) => t.id === c.trackId)?.kind === 'video' && mediaOf(proj, c)?.kind !== 'audio');
+        const targets = i.clip_ids?.length ? vids.filter((c) => (i.clip_ids as string[]).includes(c.id)) : vids;
+        if (!targets.length) throw new Error('No video clips to reframe.');
+        const smooth = typeof i.smooth === 'number' ? Math.max(0, Math.min(5, i.smooth)) : 0.6;
+        const jobId = startJob('reframe', async (onProgress, signal) => {
+          const paths = new Map<string, FaceSample[]>();
+          for (let k = 0; k < targets.length; k++) paths.set(targets[k].id, await trackFaces(proj, targets[k], (f, note) => onProgress((k + f) / targets.length, `${targets[k].name}: ${note || ''}`), signal));
+          const report: { clip: string; facesFound: number; samples: number }[] = [];
+          store.getState().commit(`Reframe ${aspect}`, (d) => {
+            const size = sizeFor(d, aspect);
+            d.settings.width = size.width;
+            d.settings.height = size.height;
+            d.settings.aspect = aspect;
+            for (const [id, samples] of paths) {
+              const c = d.clips.find((x) => x.id === id);
+              if (!c) continue;
+              const r = applyReframe(d, c, samples, smooth);
+              report.push({ clip: c.name, facesFound: r.found, samples: r.samples });
+            }
+          });
+          const noFace = report.filter((r) => !r.facesFound).map((r) => r.clip);
+          return { aspect, size: sizeFor(proj, aspect), clips: report, ...(noFace.length ? { note: `No face found in ${noFace.join(', ')} — centred instead.` } : {}) };
+        });
+        return `Reframing ${targets.length} clip${targets.length === 1 ? '' : 's'} to ${aspect} (job ${jobId}). Poll kea_jobs_status {jobId:"${jobId}"}.`;
       }
     },
     {
