@@ -86,6 +86,42 @@ const CATALOG = {
       { path: 'tokenizer.json', size: 2480466, sha256: '27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566' },
       { path: 'tokenizer_config.json', size: 282683, sha256: '2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce' }
     ]
+  },
+  'tiny-words': {
+    repo: 'onnx-community/whisper-tiny.en_timestamped',
+    rev: 'aeaa13760958b03fac5062f457d317d3319c3168',
+    label: 'Fastest + word timing',
+    blurb: 'English only. Times every word — for captions and cutting to a script in the video editor.',
+    englishOnly: true,
+    // Exported with cross-attentions, so Whisper can time every word (video editor: captions, script cuts).
+    words: true,
+    files: [
+      { path: 'config.json', size: 2197, sha256: '251ea843b5901a99efa58c0b99b8052c6019aa3e7d2baf46693a1128ff606233' },
+      { path: 'generation_config.json', size: 1646, sha256: '7b2e8451ed5f118e75fdd991409d72119d21d2fef1eba9723f68fb9c57fe5dc9' },
+      { path: 'onnx/decoder_model_merged_quantized.onnx', size: 30729881, sha256: 'f2df67fbe1cf39c9b050d05029b55e217a9467f3453ae5110e2bcc0f5ba73652' },
+      { path: 'onnx/encoder_model_quantized.onnx', size: 10097112, sha256: '697eaa5668bb13343965f423d6002273479b8508f592bd26970735516ed5039e' },
+      { path: 'preprocessor_config.json', size: 339, sha256: 'a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d' },
+      { path: 'tokenizer.json', size: 2405679, sha256: '5eb60cec1e77aeeb6869a2bb5a8e01a84c3fe5d072d75369343021fe6f5310d0' },
+      { path: 'tokenizer_config.json', size: 282662, sha256: '93879c3dccdd4b976f709acd85b44778873f30c275e67026f30ca1e4c975230c' }
+    ]
+  },
+  'base-words': {
+    repo: 'onnx-community/whisper-base.en_timestamped',
+    rev: 'fa239a41836c3305f6beec180e5940f3823ff5b8',
+    label: 'Balanced + word timing',
+    blurb: 'English only. More accurate, and times every word for captions and script cuts.',
+    englishOnly: true,
+    // Exported with cross-attentions, so Whisper can time every word (video editor: captions, script cuts).
+    words: true,
+    files: [
+      { path: 'config.json', size: 2197, sha256: 'c8a0de5ed8a083565a4319db29d0c210fda35b4d6076c2d711cae53ae00f3cb1' },
+      { path: 'generation_config.json', size: 1556, sha256: '3479b1f44a07e41db799e22599222fee5816738036def94a39841cb9cdbb4120' },
+      { path: 'onnx/decoder_model_merged_quantized.onnx', size: 53712196, sha256: 'afa8065a5f023f6e524417f9459cc09969023dd38149cd4dce16628b2c3a1773' },
+      { path: 'onnx/encoder_model_quantized.onnx', size: 23159173, sha256: '9b4d25507aef3d3a8d718695b8adcb0488e66aad8e884333c3fa73a1c3baa906' },
+      { path: 'preprocessor_config.json', size: 339, sha256: 'a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d' },
+      { path: 'tokenizer.json', size: 2405679, sha256: '5eb60cec1e77aeeb6869a2bb5a8e01a84c3fe5d072d75369343021fe6f5310d0' },
+      { path: 'tokenizer_config.json', size: 282662, sha256: '93879c3dccdd4b976f709acd85b44778873f30c275e67026f30ca1e4c975230c' }
+    ]
   }
 };
 
@@ -116,6 +152,7 @@ function modelState(id) {
     label: c.label,
     blurb: c.blurb,
     englishOnly: c.englishOnly,
+    words: !!c.words,
     size: totalOf(id),
     installed,
     download: d ? { status: d.status, received: d.received, total: d.total, error: d.error } : !installed && have ? { status: 'paused', received: have, total: totalOf(id) } : null
@@ -229,4 +266,7 @@ function register(opts) {
   });
 }
 
-module.exports = { register, resolveServed };
+/** Folder the engine loads Whisper models from (transformers.js localModelPath). */
+const modelRoot = () => root();
+
+module.exports = { modelRoot, register, resolveServed };

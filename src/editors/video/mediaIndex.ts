@@ -16,7 +16,7 @@ export interface MediaIndex {
   scenes: { start: number; end: number }[];
   /** Quiet spans (candidate cuts / pauses). */
   silences: { start: number; end: number }[];
-  transcript: { text: string; segments: TranscriptSegment[]; model: string } | null;
+  transcript: { text: string; segments: TranscriptSegment[]; words?: TranscriptSegment[]; model: string } | null;
   /** Loudness envelope for precise cuts: `rate` frames per second, each byte = dBFS + 100 (base64). */
   envelope?: { rate: number; db: string };
   /** Why there's no transcript (no speech model installed, no audio…). */
@@ -239,7 +239,7 @@ export async function buildIndex(media: MediaItem, onProgress: Progress, signal?
     else {
       envelope = envelopeOf(audio); // before transcribe(), which hands the buffer to the worker
       onProgress(0.08, 'Transcribing…');
-      transcript = await transcribe(audio, { timestamps: true }, signal);
+      transcript = await transcribe(audio, { timestamps: 'word' }, signal);
     }
   } catch (err: any) {
     if (err?.name === 'AbortError') throw err;

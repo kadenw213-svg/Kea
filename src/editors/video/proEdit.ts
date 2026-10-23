@@ -14,7 +14,7 @@ import { decodeRange, mixdown } from './audio';
 import { measureBuffer } from './loudness';
 import { buildMasks } from './segmentMask';
 import { buildIndex } from './mediaIndex';
-import { alignScript, alignmentSummary, roughCut, takeSegments, setAlignment, getAlignment } from './scriptAlign';
+import { alignScript, alignmentSummary, roughCut, takeSegments, setAlignment, getAlignment, wordsOf, type Word } from './scriptAlign';
 import { startJob } from '../../lib/jobs';
 import { uid } from '../../lib/util';
 
@@ -277,30 +277,67 @@ const wrapWords = (text: string, n: number) => {
   return lines.join('\n');
 };
 
-/** Burned-in captions for a clip's transcript, at the timeline times where its picture actually plays. */
-export function addCaptions(p: Project, media: MediaItem, trackId: string, opts: { maxWords?: number; style?: any } = {}): number {
+/** Caption groups from timed words: up to maxWords, breaking after punctuation or at a pause over 0.5 s. */
+function wordGroups(words: Word[], maxWords: number) {
+  const groups: Word[][] = [];
+  let cur: Word[] = [];
+  words.forEach((w, i) => {
+    cur.push(w);
+    const next = words[i + 1];
+    const stop = /[.?!]["”’)]*$/.test(w.raw) || (cur.length >= 2 && /[,;:]$/.test(w.raw));
+    if (cur.length >= maxWords || stop || (next && next.t0 - w.t1 > 0.5)) {
+      groups.push(cur);
+      cur = [];
+    }
+  });
+  if (cur.length) groups.push(cur);
+  return groups;
+}
+
+/**
+ * Burned-in captions for a clip's speech, at the timeline times where its picture actually plays. With timed words
+ * (any indexed clip — exact with a "+ word timing" speech model, estimated from the audio otherwise) each caption
+ * appears as it's said; karaoke highlights the word being spoken.
+ */
+export function addCaptions(p: Project, media: MediaItem, trackId: string, opts: { maxWords?: number; style?: any; karaoke?: boolean | string; mode?: 'current' | 'progress' } = {}): number {
   const idx = getIndex(mediaKey(media));
   if (!idx) throw new Error(`Index ${media.name} first (index_media) so there's a transcript to caption.`);
   if (!idx.transcript || !idx.transcript.segments.length) throw new Error(idx.transcriptNote || `No speech was found in ${media.name}.`);
-  const maxWords = Math.max(1, Math.min(12, opts.maxWords || 5));
+  const karaoke = opts.karaoke ? (typeof opts.karaoke === 'string' ? opts.karaoke : '#FFD400') : '';
+  const maxWords = Math.max(1, Math.min(12, opts.maxWords || (karaoke ? 3 : 5)));
   const pr = titlePreset(p, 'caption');
-  const style = { ...pr.style, ...pickStyle(opts.style) };
+  const style = { ...pr.style, ...(karaoke ? { box: '', outline: '#000000', outlineWidth: Math.max(3, Math.round(6 * Math.min(p.settings.width, p.settings.height) / 1080)), size: Math.round((pr.style.size || 54) * 1.25) } : {}), ...pickStyle(opts.style) };
   const fps = p.settings.fps;
   const clips = p.clips.filter((c) => c.kind === 'media' && c.mediaId === media.id && c.freeze === undefined && p.tracks.find((t) => t.id === c.trackId)?.kind === 'video');
   let n = 0;
-  const emit = (a: number, b: number, text: string) => {
-    const c = textClip(p, Math.max(0, snapToFrame(a, fps)), Math.max(0.3, b - a), { ...style, text: wrapWords(text, maxWords) }, trackId);
+  const emit = (a: number, b: number, text: string, starts?: number[]) => {
+    const at = Math.max(0, snapToFrame(a, fps));
+    const c = textClip(p, at, Math.max(0.3, b - a), { ...style, text, ...(karaoke && starts ? { karaoke: { words: starts.map((t) => Math.max(0, t - at)), color: karaoke, mode: opts.mode || 'current' } } : {}) }, trackId);
     c.props.y = pr.y;
     overwrite(p, [c]);
     n++;
   };
+  const words = wordsOf(idx);
+  if (words.length && (idx.transcript.words?.length || idx.envelope)) {
+    // Map source times to the timeline through each clip that shows this media (trims, speed and cuts followed).
+    const views = clips.length ? clips.filter((c) => !c.reverse) : [null];
+    for (const g of wordGroups(words, maxWords)) {
+      for (const clip of views) {
+        const inside = clip ? g.filter((w) => w.t0 >= clip.in - 0.02 && w.t1 <= clip.out + 0.02) : g;
+        if (!inside.length) continue;
+        const tl = (t: number) => (clip ? clip.start + (Math.max(clip.in, Math.min(clip.out, t)) - clip.in) / clip.speed : t);
+        emit(tl(inside[0].t0), tl(inside[inside.length - 1].t1), inside.map((w) => w.raw).join(' '), inside.map((w) => tl(w.t0)));
+      }
+    }
+    return n;
+  }
   for (const seg of idx.transcript.segments) {
-    if (!clips.length) emit(seg.start, seg.end, seg.text);
+    if (!clips.length) emit(seg.start, seg.end, wrapWords(seg.text, maxWords));
     for (const clip of clips) {
       if (clip.reverse) continue;
-      const s = Math.max(seg.start, clip.in);
-      const e = Math.min(seg.end, clip.out);
-      if (e > s) emit(clip.start + (s - clip.in) / clip.speed, clip.start + (e - clip.in) / clip.speed, seg.text);
+      const s0 = Math.max(seg.start, clip.in);
+      const e0 = Math.min(seg.end, clip.out);
+      if (e0 > s0) emit(clip.start + (s0 - clip.in) / clip.speed, clip.start + (e0 - clip.in) / clip.speed, wrapWords(seg.text, maxWords));
     }
   }
   return n;
@@ -433,7 +470,7 @@ export interface EditPlan {
   main?: PlanMain[];
   broll?: PlanBroll[];
   titles?: PlanTitle[];
-  captions?: { media_id?: string; max_words?: number; style?: any } | boolean;
+  captions?: { media_id?: string; max_words?: number; style?: any; karaoke?: boolean | string } | boolean;
   music?: PlanAudio[];
   duck?: { depth_db?: number; attack?: number; release?: number } | boolean;
   sfx?: PlanAudio[];
@@ -628,7 +665,7 @@ export function applyPlan(p: Project, plan: EditPlan, resolveLine?: LineResolver
     const ids = cap.media_id ? [cap.media_id] : [...new Set(mainEntries.map((e) => e.media_id).filter(Boolean) as string[])];
     for (const id of ids) {
       try {
-        nc += addCaptions(p, media(id), tC.id, { maxWords: cap.max_words, style: cap.style });
+        nc += addCaptions(p, media(id), tC.id, { maxWords: cap.max_words, style: cap.style, karaoke: cap.karaoke });
       } catch (err) {
         notes.push(`Captions: ${(err as Error).message}`);
       }
@@ -753,7 +790,7 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
         '• main: the storyline, back to back on the Main track with sound on Dialogue — [{line, take, tighten} (a script line after align_script) or {media_id, in, out}, plus transition:{type,duration,direction} (into this shot), j_cut:s (its sound starts early), l_cut:s (its sound runs into the next shot), speed, volume_db, look, colour:{exposure,contrast,saturation,temperature,tint,highlights,shadows,vignette}, zoom:[{at,duration,scale,x,y,style:"cut"|"smooth"}] (punch-ins, at = s from the shot start), ken_burns:{from:{scale,x,y},to:{…}}, freeze_end:s, remove_background}] or {gap:s}.',
         '• broll: cutaways on the B-roll track — [{media_id, in, out | duration, at | over:entryIndex+offset, transition_in, transition_out, keep_audio, volume_db, look, zoom, ken_burns, position:{scale,x,y} (picture-in-picture)}].',
         `• titles: [{text, at | over+offset, duration, preset: ${TITLE_PRESETS.join('|')}, style, x, y}].`,
-        '• captions: true or {media_id, max_words, style} — burned in from the transcript at the right times.',
+        '• captions: true or {media_id, max_words, style, karaoke: true | "#color"} — burned in as each phrase is said; karaoke highlights the word being spoken (TikTok style).',
         '• music: [{media_id, at, in, out, duration, volume_db (default -18), fade_in, fade_out}] — automatically ducked under speech (duck:{depth_db,attack,release} or false).',
         '• sfx: [{media_id, at | over+offset, volume_db}]. fade_in / fade_out: open from / close to black (picture + sound).',
         `Transitions: ${TRANSITIONS.map((t) => t.id).join(', ')} (wipe/slide/cover/whip take direction left|right|up|down). Looks: ${COLOUR_PRESETS.map((c) => c.id).join(', ')}.`,
@@ -814,7 +851,7 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
             }
           },
           titles: { type: 'array', items: { type: 'object', properties: { text: { type: 'string' }, ...ANCHOR_PROPS, duration: { type: 'number' }, preset: { type: 'string', enum: TITLE_PRESETS }, style: { type: 'object' }, x: { type: 'number' }, y: { type: 'number' } }, required: ['text'] } },
-          captions: { description: 'true, or {media_id, max_words, style}.' },
+          captions: { description: 'true, or {media_id, max_words, style, karaoke: true | "#FFD400"}.' },
           music: { type: 'array', items: { type: 'object', properties: { media_id: { type: 'string' }, ...ANCHOR_PROPS, in: { type: 'number' }, out: { type: 'number' }, duration: { type: 'number' }, volume_db: { type: 'number' }, fade_in: { type: 'number' }, fade_out: { type: 'number' } }, required: ['media_id'] } },
           duck: { description: 'false, or {depth_db (default 14), attack, release}.' },
           sfx: { type: 'array', items: { type: 'object', properties: { media_id: { type: 'string' }, ...ANCHOR_PROPS, in: { type: 'number' }, out: { type: 'number' }, volume_db: { type: 'number' } }, required: ['media_id'] } },

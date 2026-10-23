@@ -210,7 +210,8 @@ contextBridge.exposeInMainWorld('api', {
   engine: {
     status: () => ipcRenderer.invoke('engine:status'),
     resetGpu: () => ipcRenderer.invoke('engine:resetGpu'),
-    segment: (type, id, rgba, width, height, accel) => ipcRenderer.invoke('engine:segment', type, id, rgba, width, height, accel)
+    segment: (type, id, rgba, width, height, accel) => ipcRenderer.invoke('engine:segment', type, id, rgba, width, height, accel),
+    transcribe: (repo, audio, englishOnly, timestamps) => ipcRenderer.invoke('engine:transcribe', repo, audio, englishOnly, timestamps)
   },
   // The MCP control server (electron/mcp): the main process asks the renderer to run an editor tool or read editor
   // state for a connected outside app, and the renderer answers on the same call id. Plus the Settings "Connect an

@@ -187,6 +187,9 @@ export interface TextStyle {
   animOut: TextAnim;
   /** Seconds each animation lasts. */
   animDuration: number;
+  /** Karaoke captions: each word's start (s from the clip start, in text order); the word being said is drawn in
+   * `color` ('current'), or every word said so far ('progress'). */
+  karaoke?: { words: number[]; color: string; mode?: 'current' | 'progress' };
 }
 
 export const FONTS = ['Inter', 'Segoe UI', 'Arial', 'Georgia', 'Times New Roman', 'Impact', 'Courier New', 'Verdana', 'Trebuchet MS', 'Comic Sans MS'];

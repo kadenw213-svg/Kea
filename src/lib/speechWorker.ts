@@ -66,7 +66,7 @@ self.onmessage = async (e: MessageEvent<In>) => {
           out = await asr(m.audio, opts);
         } else throw err;
       }
-      post({ type: 'result', id: m.id, text: String(out?.text || ''), chunks: out?.chunks || null, ms: Math.round(performance.now() - t0) });
+      post({ type: 'result', id: m.id, text: String(out?.text || ''), chunks: out?.chunks || null, words: opts.return_timestamps === 'word', ms: Math.round(performance.now() - t0) });
     }
   } catch (err: any) {
     post({ type: 'error', id: (m as any).id, message: err?.message || String(err) });

@@ -84,6 +84,8 @@ export function parseScript(script: string): ScriptLine[] {
 
 export interface Word {
   w: string;
+  /** As written in the transcript (for captions). */
+  raw: string;
   t0: number;
   t1: number;
   filler: boolean;
@@ -109,79 +111,140 @@ function islands(e: Env, a: number, b: number): [number, number][] {
   return out.filter(([x, y]) => y - x >= 0.08);
 }
 
+interface Chunk {
+  toks: { raw: string; wt: number }[];
+  /** Total spoken weight (letter units). */
+  wt: number;
+  /** Where Whisper thinks it starts / ends (seconds) — a soft anchor only. */
+  a0: number;
+  a1: number;
+}
+
 /**
- * Group punctuation chunks with speech islands (monotonic DP): each step pairs 1 chunk with k islands or k chunks with
- * 1 island, minimising the mismatch between each group's share of the words and its share of the speaking time.
- * Whisper puts commas and stops where people pause, so chunks and islands usually line up one to one.
+ * Global island alignment: match the transcript's punctuation chunks to the speech islands of the whole clip in one
+ * monotonic DP. Steps pair 1 chunk with up to 4 islands or up to 4 chunks with 1 island, or skip an island (a breath,
+ * cough or music) or a chunk (text with no clear speech). Cost = how far the islands' length is from the words'
+ * expected length + a soft pull toward Whisper's own timing (which runs a few tenths late) + a little for merging.
+ * Banded around the anchors so hour-long clips stay cheap. Returns [chunk0, chunk1, island0, island1] groups.
  */
-function groupChunks(cw: number[], iw: number[]): [number, number, number, number][] {
-  const A = cw.length;
-  const B = iw.length;
-  const ct = cw.reduce((x, y) => x + y, 0);
-  const it = iw.reduce((x, y) => x + y, 0);
-  const cf = cw.map((x) => x / ct);
-  const ifr = iw.map((x) => x / it);
-  const cost = Array.from({ length: A + 1 }, () => new Array(B + 1).fill(Infinity));
-  const from: ([number, number] | null)[][] = Array.from({ length: A + 1 }, () => new Array(B + 1).fill(null));
-  cost[0][0] = 0;
+function alignChunks(chunks: Chunk[], isl: [number, number][]): [number, number, number, number][] {
+  const A = chunks.length;
+  const B = isl.length;
+  if (!A || !B) return [];
+  const voiced = isl.reduce((n, [x, y]) => n + y - x, 0);
+  const rate = voiced / chunks.reduce((n, c) => n + c.wt, 0); // seconds per letter unit
+  const BAND = 12; // seconds either side of the anchors
+  // Island index window per chunk boundary (a = chunks consumed).
+  const lo = new Int32Array(A + 1);
+  const hi = new Int32Array(A + 1);
+  for (let a = 0; a <= A; a++) {
+    const t0 = a < A ? chunks[a].a0 : chunks[A - 1].a1;
+    let l = 0;
+    while (l < B && isl[l][1] < t0 - BAND) l++;
+    let h = l;
+    while (h < B && isl[h][0] < t0 + BAND) h++;
+    lo[a] = a === 0 ? 0 : Math.min(l, lo[a - 1] + B);
+    hi[a] = a === A ? B : Math.max(h, a ? hi[a - 1] : 0);
+  }
+  for (let a = 1; a <= A; a++) lo[a] = Math.max(lo[a], 0), (hi[a] = Math.max(hi[a], hi[a - 1]));
+  for (let a = A - 1; a >= 0; a--) lo[a] = Math.min(lo[a], lo[a + 1]);
+  const rows: Float64Array[] = [];
+  const back: Int32Array[] = []; // island index we came from
+  const backA: Int32Array[] = []; // chunk index we came from
+  for (let a = 0; a <= A; a++) {
+    const w = hi[a] - lo[a] + 1;
+    rows.push(new Float64Array(w).fill(Infinity));
+    back.push(new Int32Array(w).fill(-1));
+    backA.push(new Int32Array(w).fill(-1));
+  }
+  const get = (a: number, b: number) => (b < lo[a] || b > hi[a] ? Infinity : rows[a][b - lo[a]]);
+  const relax = (fa: number, fb: number, a: number, b: number, c: number) => {
+    if (b < lo[a] || b > hi[a]) return;
+    const k = b - lo[a];
+    if (c < rows[a][k]) {
+      rows[a][k] = c;
+      backA[a][k] = fa;
+      back[a][k] = fb;
+    }
+  };
+  const anchorCost = (t: number, isle: number) => 0.35 * Math.min(4, Math.abs(t - isle));
+  const durCost = (exp: number, got: number) => Math.abs(exp - got) / Math.max(0.3, exp, got);
+  rows[0][0 - lo[0]] = 0;
   for (let a = 0; a <= A; a++)
-    for (let b = 0; b <= B; b++) {
-      if (!Number.isFinite(cost[a][b])) continue;
-      // 1 chunk ↔ k islands
-      let sc = 0;
-      for (let k = 1; a < A && b + k <= B; k++) {
-        sc += ifr[b + k - 1];
-        // One-to-one is the usual case (a pause per punctuation mark), so merging costs a little extra.
-        const c = cost[a][b] + Math.abs(cf[a] - sc) + 0.05 * (k - 1);
-        if (c < cost[a + 1][b + k]) (cost[a + 1][b + k] = c), (from[a + 1][b + k] = [a, b]);
+    for (let b = lo[a]; b <= hi[a]; b++) {
+      const c0 = get(a, b);
+      if (!Number.isFinite(c0)) continue;
+      // skip an island (non-speech sound) / skip a chunk (no clear speech for it)
+      if (b < B) relax(a, b, a, b + 1, c0 + 0.5 + 0.4 * Math.min(2, isl[b][1] - isl[b][0]));
+      if (a < A) relax(a, b, a + 1, b, c0 + 1.5);
+      if (a >= A || b >= B) continue;
+      // 1 chunk ↔ m islands
+      let got = 0;
+      for (let m = 1; m <= 4 && b + m <= B; m++) {
+        got += isl[b + m - 1][1] - isl[b + m - 1][0];
+        const exp = chunks[a].wt * rate;
+        relax(a, b, a + 1, b + m, c0 + durCost(exp, got) + anchorCost(chunks[a].a0, isl[b][0]) + 0.08 * (m - 1));
       }
       // k chunks ↔ 1 island
-      sc = 0;
-      for (let k = 2; b < B && a + k <= A; k++) {
-        sc = cf.slice(a, a + k).reduce((x, y) => x + y, 0);
-        const c = cost[a][b] + Math.abs(sc - ifr[b]) + 0.05 * (k - 1);
-        if (c < cost[a + k][b + 1]) (cost[a + k][b + 1] = c), (from[a + k][b + 1] = [a, b]);
+      let wt = chunks[a].wt;
+      for (let k = 2; k <= 4 && a + k <= A; k++) {
+        wt += chunks[a + k - 1].wt;
+        relax(a, b, a + k, b + 1, c0 + durCost(wt * rate, isl[b][1] - isl[b][0]) + anchorCost(chunks[a].a0, isl[b][0]) + 0.08 * (k - 1));
       }
     }
+  if (!Number.isFinite(get(A, B))) return [];
   const groups: [number, number, number, number][] = [];
   let a = A;
   let b = B;
   while (a > 0 || b > 0) {
-    const f = from[a][b];
-    if (!f) return [];
-    groups.unshift([f[0], a, f[1], b]);
-    [a, b] = f;
+    const k = b - lo[a];
+    const fa = backA[a][k];
+    const fb = back[a][k];
+    if (fa < 0) return [];
+    if (fa < a && fb < b) groups.unshift([fa, a, fb, b]);
+    else if (fa < a) groups.unshift([fa, a, -1, -1]); // chunk(s) with no island
+    a = fa;
+    b = fb;
   }
   return groups;
 }
 
 /**
- * Words with estimated times. Whisper gives phrase timing; inside a phrase the words are split at punctuation, the
- * pieces matched to the actual speech islands (loudness envelope), and each piece's words spread by length over the
- * speaking time of its islands — so when Whisper lumps a flubbed take, an "um", a pause and the clean take into one
- * phrase, the clean take's words still land on the clean take.
+ * Words with estimated times. The transcript's words are cut into punctuation chunks and matched to the clip's
+ * speech islands (loudness envelope) by one global alignment; each chunk's words are then spread over the speaking
+ * time of its islands. So when Whisper lumps a flubbed take, an "um", a pause and the clean take together, or its own
+ * word times run late, every word still lands on the speech that's really there. How long each word takes comes from
+ * Whisper's word timing when the model has it (a drawn-out "so…" gets its length), else from its letters.
  */
 export function wordsOf(idx: MediaIndex): Word[] {
   const out: Word[] = [];
   const env = envOf(idx);
-  // Spoken length ≈ letters; fillers are short words said long ("ummm").
-  const wlen = (x: string) => (FILLERS.has(norm(x)) ? 6 : norm(x).length + 1.5);
-  const spread = (words: string[], voiced: number[], a: number, b: number) => {
-    const weights = words.map(wlen);
-    const total = weights.reduce((x, y) => x + y, 0);
+  const timed = (idx.transcript?.words || []).filter((w) => norm(w.text));
+  let ti = 0;
+  type Tok = { raw: string; wt: number; t0?: number; t1?: number };
+  const take = (raw: string): Tok => {
+    const t = timed[ti];
+    if (t && norm(t.text) === norm(raw)) {
+      ti++;
+      return { raw, wt: Math.max(0.08, t.end - t.start) * 15, t0: t.start, t1: t.end };
+    }
+    return { raw, wt: FILLERS.has(norm(raw)) ? 6 : norm(raw).length + 1.5 };
+  };
+  const spread = (toks: Tok[], voiced: number[], a: number, b: number) => {
+    const total = toks.reduce((n, t) => n + t.wt, 0);
     const at = (frac: number) => {
       if (!voiced.length) return a + frac * Math.max(0.05, b - a);
       const k = Math.min(voiced.length - 1, Math.max(0, frac * voiced.length));
       return voiced[Math.floor(k)] + (k % 1) / ENV_RATE;
     };
     let acc = 0;
-    words.forEach((x, i) => {
+    for (const t of toks) {
       const t0 = at(acc / total);
-      acc += weights[i];
+      acc += t.wt;
       const t1 = at(Math.min(1, acc / total) - 1e-6);
-      const w = norm(x);
-      out.push({ w, t0, t1: Math.max(t0 + 0.01, t1 + 1 / ENV_RATE), filler: FILLERS.has(w) });
-    });
+      const w = norm(t.raw);
+      out.push({ w, raw: t.raw, t0, t1: Math.max(t0 + 0.01, t1 + 1 / ENV_RATE), filler: FILLERS.has(w) });
+    }
   };
   const voicedIn = (spans: [number, number][]) => {
     const v: number[] = [];
@@ -189,28 +252,48 @@ export function wordsOf(idx: MediaIndex): Word[] {
     for (const [a, b] of spans) for (let f = Math.max(0, Math.floor(a * ENV_RATE)); f <= Math.min(env.db.length - 1, Math.ceil(b * ENV_RATE)); f++) if (env.db[f] >= env.thr) v.push(f / ENV_RATE);
     return v.length >= 3 ? v : [];
   };
+  // Punctuation chunks across the whole transcript, each with an anchor time from Whisper.
+  const chunks: Chunk[] = [];
   for (const seg of idx.transcript?.segments || []) {
-    const raw = seg.text.split(/\s+/).filter((x) => norm(x));
-    if (!raw.length) continue;
-    const isl = env ? islands(env, seg.start, seg.end) : [];
-    // Punctuation chunks: break after , . ; : ! ? … and before/after a filler.
-    const chunks: string[][] = [[]];
-    raw.forEach((x, i) => {
-      const filler = FILLERS.has(norm(x));
-      if (filler && chunks[chunks.length - 1].length) chunks.push([]);
-      chunks[chunks.length - 1].push(x);
-      if ((/[,.;:!?…]["”’)]*$/.test(x) || filler) && i < raw.length - 1) chunks.push([]);
+    const toks = seg.text.split(/\s+/).filter((x) => norm(x)).map(take);
+    if (!toks.length) continue;
+    const segW = toks.reduce((n, t) => n + t.wt, 0);
+    let acc = 0;
+    let cur: Tok[] = [];
+    const flush = () => {
+      if (!cur.length) return;
+      const w = cur.reduce((n, t) => n + t.wt, 0);
+      const est0 = seg.start + (acc / segW) * (seg.end - seg.start);
+      const est1 = seg.start + ((acc + w) / segW) * (seg.end - seg.start);
+      chunks.push({ toks: cur, wt: w, a0: cur[0].t0 ?? est0, a1: cur[cur.length - 1].t1 ?? est1 });
+      acc += w;
+      cur = [];
+    };
+    toks.forEach((t, i) => {
+      const filler = FILLERS.has(norm(t.raw));
+      if (filler) flush();
+      cur.push(t);
+      if ((/[,.;:!?…]["”’)]*$/.test(t.raw) || filler) && i < toks.length - 1) flush();
     });
-    const cs = chunks.filter((c) => c.length);
-    const groups = isl.length > 1 && cs.length > 1 ? groupChunks(cs.map((c) => c.reduce((n, x) => n + wlen(x), 0)), isl.map(([a, b]) => b - a)) : [];
-    if (!groups.length) {
-      spread(raw, voicedIn(isl.length ? isl : [[seg.start, seg.end]]), seg.start, seg.end);
+    flush();
+  }
+  const isl = env ? islands(env, 0, env.db.length / ENV_RATE) : [];
+  const groups = alignChunks(chunks, isl);
+  if (!groups.length) {
+    // No envelope (or nothing to match): Whisper's timing as it is.
+    for (const c of chunks) spread(c.toks, voicedIn([[c.a0, c.a1]]), c.a0, c.a1);
+    return out;
+  }
+  for (const [c0, c1, i0, i1] of groups) {
+    const toks = chunks.slice(c0, c1).flatMap((c) => c.toks);
+    if (i0 < 0) {
+      const a0 = chunks[c0].a0;
+      const a1 = chunks[c1 - 1].a1;
+      spread(toks, [], a0, a1);
       continue;
     }
-    for (const [c0, c1, i0, i1] of groups) {
-      const span = isl.slice(i0, i1);
-      spread(cs.slice(c0, c1).flat(), voicedIn(span), span[0][0], span[span.length - 1][1]);
-    }
+    const span = isl.slice(i0, i1);
+    spread(toks, voicedIn(span), span[0][0], span[span.length - 1][1]);
   }
   return out;
 }

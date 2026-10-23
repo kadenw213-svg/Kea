@@ -108,7 +108,41 @@ async function segment({ file, family, ep, rgba, width, height }) {
   return { alpha: alpha.buffer, width, height, ms: Date.now() - t0 };
 }
 
+/* ---------- Speech recognition (Whisper via a slim bundle of transformers.js; native CPU) ---------- */
+
+let asr = null;
+let asrKey = '';
+async function transcribe({ root, repo, audio, englishOnly, timestamps }) {
+  const path = require('path');
+  const { pipeline, env } = require(path.join(__dirname, 'vendor', 'transformers.cjs'));
+  env.allowRemoteModels = false;
+  env.localModelPath = root.endsWith(path.sep) ? root : root + path.sep;
+  const key = `${root}|${repo}`;
+  if (!asr || asrKey !== key) {
+    if (asr) await asr.dispose?.();
+    asr = await pipeline('automatic-speech-recognition', repo, { dtype: 'q8', device: 'cpu' });
+    asrKey = key;
+  }
+  const t0 = Date.now();
+  const opts = { chunk_length_s: 30, stride_length_s: 5 };
+  if (timestamps) opts.return_timestamps = timestamps;
+  if (!englishOnly) opts.task = 'transcribe';
+  const pcm = new Float32Array(audio);
+  let out;
+  try {
+    out = await asr(pcm, opts);
+  } catch (err) {
+    // Word timing needs a timestamped export; other models fall back to phrase timing.
+    if (opts.return_timestamps !== 'word') throw err;
+    opts.return_timestamps = true;
+    out = await asr(pcm, opts);
+  }
+  const chunks = (out.chunks || []).map((c) => ({ text: c.text, timestamp: [c.timestamp[0], c.timestamp[1]] }));
+  return { text: String(out.text || ''), chunks, words: timestamps === 'word' && opts.return_timestamps === 'word', ms: Date.now() - t0 };
+}
+
 const OPS = {
+  transcribe,
   ping: async () => ({ version: ort.env?.versions?.common || '', eps: ort.listSupportedBackends ? ort.listSupportedBackends().map((b) => b.name) : [] }),
   segment
 };

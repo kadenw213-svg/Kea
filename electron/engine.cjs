@@ -103,6 +103,12 @@ async function segment(type, id, rgba, width, height, accel) {
   });
 }
 
+/** Whisper on the native CPU (measured ~3x the in-window speed; the GPU doesn't help Whisper's step-by-step decoder). */
+async function transcribe(repo, audio, englishOnly, timestamps) {
+  const root = require('./speech.cjs').modelRoot();
+  return call({ op: 'transcribe', root, repo, audio, englishOnly, timestamps });
+}
+
 function status() {
   const s = readState();
   return {
@@ -125,6 +131,10 @@ function register(opts) {
     return status();
   });
   ipcMain.handle('engine:segment', (_e, type, id, rgba, width, height, accel) => segment(type, id, rgba, width, height, accel));
+  ipcMain.handle('engine:transcribe', async (_e, repo, audio, englishOnly, timestamps) => {
+    const r = await transcribe(repo, audio, englishOnly, timestamps);
+    return { text: r.text, chunks: r.chunks, ms: r.ms };
+  });
   app.on('will-quit', () => {
     try {
       worker?.kill();
@@ -132,4 +142,4 @@ function register(opts) {
   });
 }
 
-module.exports = { register, segment, status };
+module.exports = { register, segment, transcribe, status };

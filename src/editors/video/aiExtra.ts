@@ -218,8 +218,8 @@ export function extraVideoTools(env: AssistantEnv, tabId: string): AssistantTool
     },
     {
       name: 'add_captions',
-      description: 'Add burned-in captions from a clip’s transcript (index_media it first). Captions are placed at the right timeline times for wherever that clip sits (trims and cuts are followed). One undo step.',
-      input_schema: { type: 'object', properties: { media_id: { type: 'string' }, track: { type: 'string', description: 'Video track name; default a new top track.' }, max_words: { type: 'number', description: 'Words per caption line (default 5).' } }, required: [] },
+      description: 'Add burned-in captions from a clip’s transcript (index_media it first). Each caption appears as it’s said, wherever that clip sits (trims and cuts are followed). karaoke: true (or a colour) highlights each word as it’s spoken — exact with a "+ word timing" speech model. One undo step.',
+      input_schema: { type: 'object', properties: { media_id: { type: 'string' }, track: { type: 'string', description: 'Video track name; default a new top track.' }, max_words: { type: 'number', description: 'Words per caption (default 5, 3 for karaoke).' }, karaoke: { description: 'true, or a highlight colour like "#FFD400".' }, mode: { type: 'string', enum: ['current', 'progress'], description: 'Karaoke: highlight just the current word, or every word said so far.' } }, required: [] },
       run(i) {
         const proj = store.getState().project;
         const media = i.media_id ? mediaById(i.media_id) : proj.media.find((m) => getIndex(mediaKey(m))?.transcript);
@@ -229,7 +229,7 @@ export function extraVideoTools(env: AssistantEnv, tabId: string): AssistantTool
         if (!idx.transcript || !idx.transcript.segments.length) throw new Error(idx.transcriptNote || 'No speech was found in this clip.');
         return edit('Add captions', (p) => {
           const track = captionTrack(p, i.track);
-          const n = addCaptions(p, media, track.id, { maxWords: i.max_words });
+          const n = addCaptions(p, media, track.id, { maxWords: i.max_words, karaoke: i.karaoke, mode: i.mode });
           return `Added ${n} caption${n === 1 ? '' : 's'} on ${track.name}.`;
         });
       }

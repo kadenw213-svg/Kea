@@ -137,7 +137,7 @@ function drawClip(ctx: CanvasRenderingContext2D, o: RenderOptions, c: Clip, mod:
 
   if (c.kind === 'text' && c.text) {
     if (filters.length) ctx.filter = filters.join(' ');
-    drawText(ctx, c.text, chars, scale * Math.abs(s));
+    drawText(ctx, c.text, chars, scale * Math.abs(s), rel);
   } else if (c.kind === 'shape' && c.shape) {
     if (filters.length) ctx.filter = filters.join(' ');
     drawShape(ctx, c.shape, W, H);
@@ -268,7 +268,7 @@ export function measureText(ctx: CanvasRenderingContext2D, st: TextStyle) {
 }
 
 /** Draw text centred on the origin. `px` is how many canvas pixels one text pixel becomes (for shadows). */
-function drawText(ctx: CanvasRenderingContext2D, st: TextStyle, chars: number, px: number) {
+function drawText(ctx: CanvasRenderingContext2D, st: TextStyle, chars: number, px: number, rel = 0) {
   const { w, h, lines, lh, textW } = measureText(ctx, st);
   if (st.box) {
     ctx.save();
@@ -304,6 +304,31 @@ function drawText(ctx: CanvasRenderingContext2D, st: TextStyle, chars: number, p
     ctx.fillText(shown, x, y);
     ctx.restore();
   });
+  if (st.karaoke?.words.length) drawKaraoke(ctx, st, lines, lh, x, rel);
+}
+
+/** Redraw the word being said (or every word said so far) in the karaoke colour, over the plain text. */
+function drawKaraoke(ctx: CanvasRenderingContext2D, st: TextStyle, lines: string[], lh: number, x: number, rel: number) {
+  const k = st.karaoke!;
+  let cur = -1;
+  for (let i = 0; i < k.words.length; i++) if (k.words[i] <= rel + 1e-3) cur = i;
+  if (cur < 0) return;
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.fillStyle = k.color;
+  let n = 0;
+  lines.forEach((line, li) => {
+    const y = -((lines.length - 1) * lh) / 2 + li * lh;
+    const lineW = ctx.measureText(line).width;
+    const x0 = st.align === 'left' ? x : st.align === 'right' ? x - lineW : x - lineW / 2;
+    const re = /\S+/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(line))) {
+      if (n === cur || (k.mode === 'progress' && n < cur)) ctx.fillText(m[0], x0 + ctx.measureText(line.slice(0, m.index)).width, y);
+      n++;
+    }
+  });
+  ctx.restore();
 }
 
 function setShadow(ctx: CanvasRenderingContext2D, st: TextStyle, px: number) {
