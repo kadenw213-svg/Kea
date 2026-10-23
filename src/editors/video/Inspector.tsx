@@ -67,6 +67,7 @@ function applySpeed(p: Project, ids: string[], speed: number) {
       len = limit;
     }
     c.speed = speed;
+    c.ramp = undefined; // a constant speed replaces any ramp
   }
 }
 
@@ -861,6 +862,26 @@ function SpeedTab({ clip }: { clip: Clip }) {
         ))}
       </div>
       <div className="ve-insp-note">Length on the timeline: {len.toFixed(2)} s</div>
+      {clip.ramp?.length ? (
+        <>
+          <div className="ve-insp-note">
+            Speed ramp: {clip.ramp.map((k) => `${k.v.toFixed(2)}× at ${k.t.toFixed(2)} s`).join(' → ')}
+          </div>
+          <button
+            className="btn tonal sm ve-insp-wide"
+            onClick={() =>
+              store.getState().commit('Remove speed ramp', (p) => {
+                for (const id of group) {
+                  const c = p.clips.find((x) => x.id === id);
+                  if (c) c.ramp = undefined;
+                }
+              })
+            }
+          >
+            Remove speed ramp
+          </button>
+        </>
+      ) : null}
       <Check
         label="Play backwards"
         checked={clip.reverse}

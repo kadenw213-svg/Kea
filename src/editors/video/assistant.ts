@@ -49,7 +49,8 @@ function describeClip(p: Project, c: Clip): string[] {
   const lines = [`- clip ${c.id} "${c.name}" [${kind}] ${n2(c.start)}–${n2(clipEnd(c))} s (${timecode(c.start, fps)}–${timecode(clipEnd(c), fps)})`];
   const d: string[] = [];
   if (c.kind === 'media' && m && m.kind !== 'image') d.push(`source ${n2(c.in)}–${n2(c.out)} s of ${m.name}`);
-  if (c.speed !== 1 || c.reverse) d.push(`speed ${c.speed}×${c.reverse ? ' reversed' : ''}${c.speed !== 1 ? (c.keepPitch ? ' (pitch kept)' : ' (pitch changes)') : ''}`);
+  if (c.ramp?.length) d.push(`speed ramp ${c.ramp.map((k) => `${n2(k.t)}s:${n2(k.v)}×`).join(' → ')}`);
+  else if (c.speed !== 1 || c.reverse) d.push(`speed ${c.speed}×${c.reverse ? ' reversed' : ''}${c.speed !== 1 ? (c.keepPitch ? ' (pitch kept)' : ' (pitch changes)') : ''}`);
   if (c.linkId) d.push(`linked (${c.linkId})`);
   const props = c.props as unknown as Record<string, number | boolean>;
   const def = DEFAULT_PROPS as unknown as Record<string, number | boolean>;
@@ -226,6 +227,7 @@ function needAnim(v: unknown): TextAnim {
 function applySpeed(p: Project, c: Clip, speed: number) {
   const next = trackClips(p, c.trackId).find((x) => x.id !== c.id && x.start >= clipEnd(c) - 1e-6);
   c.speed = speed;
+  c.ramp = undefined; // a constant speed replaces any ramp
   if (isStill(p, c)) return;
   if (next && clipEnd(c) > next.start) {
     const len = next.start - c.start;

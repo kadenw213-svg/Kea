@@ -1,6 +1,6 @@
 import { CanvasSink } from 'mediabunny';
 import type { Clip } from './model';
-import { mediaOf, projectDuration, sourceTime, trackOf } from './model';
+import { mediaOf, projectDuration, sourceTime, trackOf, speedAt } from './model';
 import type { Store } from './state';
 import { renderFrame, frameTime, Drawable, FrameGetter } from './compositor';
 import { ClipFx } from './effects';
@@ -266,7 +266,7 @@ export class Player {
       }
       const forward = playing && active && rate > 0 && !c.reverse && !atEdge;
       if (forward) {
-        const pr = Math.min(16, c.speed * rate);
+        const pr = Math.min(16, speedAt(c, t) * rate);
         if (Math.abs(el.playbackRate - pr) > 1e-3) el.playbackRate = pr;
         el.preservesPitch = c.keepPitch;
         if (el.paused) {

@@ -258,6 +258,9 @@ export interface Clip {
   removeBg?: { enabled: boolean };
   /** Freeze frame: the clip shows this one source frame (seconds) for its whole length. */
   freeze?: number;
+  /** Speed ramp (time remapping): speed keyframes, t = seconds from the clip's start on the timeline, linear
+   * between keys, held before the first and after the last. Overrides `speed`. */
+  ramp?: { t: number; v: number }[];
   trIn?: Transition;
   trOut?: Transition;
   text?: TextStyle;
@@ -379,6 +382,7 @@ export function parseProject(json: string): Project {
       crop: { ...b.crop, ...c.crop },
       removeBg: c.removeBg,
       freeze: typeof c.freeze === 'number' ? c.freeze : undefined,
+      ramp: Array.isArray(c.ramp) && c.ramp.length ? c.ramp.map((k: any) => ({ t: +k.t || 0, v: Math.max(RAMP_MIN, Math.min(RAMP_MAX, +k.v || 1)) })) : undefined,
       kf: c.kf || {},
       text: c.text ? { ...DEFAULT_TEXT, ...c.text } : undefined,
       shape: c.shape ? { ...DEFAULT_SHAPE, ...c.shape } : undefined
@@ -399,8 +403,70 @@ export function serializeProject(p: Project): string {
 
 export const EPS = 1e-6;
 
+/* Speed ramps: speed s(t) is piecewise linear, so source progress F(t) = ∫0^t s is piecewise quadratic and has a
+   closed-form inverse. */
+export const RAMP_MIN = 0.1;
+export const RAMP_MAX = 8;
+
+/** Speed at a timeline time (the ramp, or the clip's constant speed). */
+export function speedAt(c: Clip, t: number) {
+  const k = c.ramp;
+  if (!k || !k.length) return c.speed;
+  const r = t - c.start;
+  if (r <= k[0].t) return k[0].v;
+  for (let i = 0; i < k.length - 1; i++) if (r <= k[i + 1].t) return k[i].v + ((k[i + 1].v - k[i].v) * (r - k[i].t)) / Math.max(1e-9, k[i + 1].t - k[i].t);
+  return k[k.length - 1].v;
+}
+
+/** Source seconds played in the first `r` timeline seconds of a ramped clip (negative r: before the start). */
+export function rampIntegral(k: { t: number; v: number }[], r: number): number {
+  if (r <= k[0].t) return k[0].v * r;
+  let acc = k[0].v * k[0].t;
+  for (let i = 0; i < k.length - 1; i++) {
+    const a = k[i];
+    const b = k[i + 1];
+    const L = b.t - a.t;
+    const x = Math.min(r, b.t) - a.t;
+    acc += a.v * x + ((b.v - a.v) / Math.max(1e-9, L)) * x * x * 0.5;
+    if (r <= b.t) return acc;
+  }
+  const last = k[k.length - 1];
+  return acc + last.v * (r - last.t);
+}
+
+/** Timeline seconds needed to play `S` source seconds of a ramped clip (inverse of rampIntegral, S ≥ 0). */
+export function rampInverse(k: { t: number; v: number }[], S: number): number {
+  const head = k[0].v * Math.max(0, k[0].t);
+  if (S <= head) return S / k[0].v;
+  let acc = head;
+  for (let i = 0; i < k.length - 1; i++) {
+    const a = k[i];
+    const b = k[i + 1];
+    const L = b.t - a.t;
+    const seg = ((a.v + b.v) / 2) * L;
+    if (S <= acc + seg) {
+      const rem = S - acc;
+      const m = (b.v - a.v) / Math.max(1e-9, L);
+      if (Math.abs(m) < 1e-9) return a.t + rem / a.v;
+      // a.v·x + m·x²/2 = rem
+      const x = (-a.v + Math.sqrt(Math.max(0, a.v * a.v + 2 * m * rem))) / m;
+      return a.t + x;
+    }
+    acc += seg;
+  }
+  const last = k[k.length - 1];
+  return last.t + (S - acc) / last.v;
+}
+
 export function clipDuration(c: Clip) {
+  if (c.ramp?.length) return rampInverse(c.ramp, c.out - c.in);
   return (c.out - c.in) / c.speed;
+}
+
+/** The timeline time at which a source time plays (inverse of sourceTime). */
+export function timelineAt(c: Clip, src: number) {
+  const d = c.reverse ? c.out - src : src - c.in;
+  return c.start + (c.ramp?.length ? (d >= 0 ? rampInverse(c.ramp, d) : d / c.ramp[0].v) : d / c.speed);
 }
 export function clipEnd(c: Clip) {
   return c.start + clipDuration(c);
@@ -409,7 +475,7 @@ export function clipEnd(c: Clip) {
 /** Where in the source a timeline time falls. */
 export function sourceTime(c: Clip, t: number) {
   if (c.freeze !== undefined) return c.freeze;
-  const d = (t - c.start) * c.speed;
+  const d = c.ramp?.length ? rampIntegral(c.ramp, t - c.start) : (t - c.start) * c.speed;
   return c.reverse ? c.out - d : c.in + d;
 }
 

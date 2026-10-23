@@ -1,6 +1,6 @@
 import { uid } from '../../lib/util';
 import type { Project, Clip, MediaItem, Track, TrackKind, Transition, TransitionType } from './model';
-import { baseClip, clipEnd, clipDuration, mediaOf, newTrack, shiftKeys, trackClips, neighbours, EPS, DEFAULT_TEXT, DEFAULT_SHAPE, TextStyle, ShapeStyle } from './model';
+import { baseClip, clipEnd, clipDuration, mediaOf, newTrack, shiftKeys, trackClips, neighbours, EPS, DEFAULT_TEXT, DEFAULT_SHAPE, TextStyle, ShapeStyle, speedAt, rampIntegral } from './model';
 
 /* Editing operations. Each one changes the project passed in (a draft copy made by `commit`). */
 
@@ -35,8 +35,8 @@ export function trimRange(p: Project, c: Clip, edge: 'start' | 'end'): [number, 
   if (isStill(p, c)) return edge === 'start' ? [-c.start, len - MIN_LEN] : [-(len - MIN_LEN), Infinity];
   const max = srcMax(p, c);
   // Timeline seconds of spare source before the clip's head / after its tail.
-  const headRoom = (c.reverse ? max - c.out : c.in) / c.speed;
-  const tailRoom = (c.reverse ? c.in : max - c.out) / c.speed;
+  const headRoom = (c.reverse ? max - c.out : c.in) / speedAt(c, c.start);
+  const tailRoom = (c.reverse ? c.in : max - c.out) / speedAt(c, clipEnd(c));
   if (edge === 'start') return [-Math.min(headRoom, c.start), len - MIN_LEN];
   return [-(len - MIN_LEN), tailRoom];
 }
@@ -45,6 +45,18 @@ export function trimRange(p: Project, c: Clip, edge: 'start' | 'end'): [number, 
 export function trimStart(p: Project, c: Clip, d: number) {
   const [lo, hi] = trimRange(p, c, 'start');
   d = Math.max(lo, Math.min(hi, d));
+  if (c.ramp?.length && !isStill(p, c)) {
+    // Time remapping: advance the source by what the ramp plays in those d seconds, then move the ramp with it.
+    const adv = rampIntegral(c.ramp, d);
+    if (c.reverse) c.out -= adv;
+    else c.in += adv;
+    const at0 = speedAt(c, c.start + d);
+    const keys = c.ramp.map((k) => ({ t: k.t - d, v: k.v })).filter((k) => k.t > 1e-6);
+    c.ramp = [{ t: 0, v: at0 }, ...keys];
+    c.start += d;
+    shiftKeys(c, d);
+    return d;
+  }
   c.start += d;
   if (isStill(p, c)) c.out -= d;
   else if (c.reverse) c.out -= d * c.speed;
@@ -57,6 +69,12 @@ export function trimStart(p: Project, c: Clip, d: number) {
 export function trimEnd(p: Project, c: Clip, d: number) {
   const [lo, hi] = trimRange(p, c, 'end');
   d = Math.max(lo, Math.min(hi, d));
+  if (c.ramp?.length && !isStill(p, c)) {
+    const len = rampIntegral(c.ramp, clipDuration(c) + d);
+    if (c.reverse) c.in = c.out - len;
+    else c.out = c.in + len;
+    return d;
+  }
   if (isStill(p, c) || !c.reverse) c.out += d * (isStill(p, c) ? 1 : c.speed);
   else c.in -= d * c.speed;
   return d;

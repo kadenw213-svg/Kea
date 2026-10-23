@@ -916,7 +916,8 @@ const ClipView = memo(function ClipView({ clip: c, project, top, height, zoom, s
   const colour = labelColour(project, c);
   const keys = selected ? ANIMATABLE.flatMap((p) => (c.kf[p] || []).map((k) => k.t)) : [];
   const badges: string[] = [];
-  if (c.speed !== 1) badges.push(`${+c.speed.toFixed(2)}×`);
+  if (c.ramp?.length) badges.push('Ramp');
+  else if (c.speed !== 1) badges.push(`${+c.speed.toFixed(2)}×`);
   if (c.reverse) badges.push('Reverse');
   if (c.key.enabled) badges.push('Key');
   return (

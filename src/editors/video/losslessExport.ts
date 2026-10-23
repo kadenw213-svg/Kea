@@ -32,7 +32,7 @@ function eligible(p: Project): { ok: true; clip: Clip } | { ok: false; reason: s
   const m = mediaOf(p, c);
   if (!m?.path) return { ok: false, reason: 'the clip isn’t a file on disk' };
   if (m.kind === 'image') return { ok: false, reason: 'it’s a still image' };
-  if (c.speed !== 1 || c.reverse) return { ok: false, reason: 'the clip’s speed is changed' };
+  if (c.speed !== 1 || c.reverse || c.ramp?.length) return { ok: false, reason: 'the clip’s speed is changed' };
   if (c.trIn || c.trOut) return { ok: false, reason: 'the clip has a transition' };
   if (c.blend && c.blend !== 'normal') return { ok: false, reason: 'the clip uses a blend mode' };
   if (c.key?.enabled) return { ok: false, reason: 'chroma key is on' };

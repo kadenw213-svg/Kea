@@ -1,6 +1,6 @@
 import { AudioBufferSink } from 'mediabunny';
 import type { Project, Clip, Track } from './model';
-import { clipDuration, dbToGain, mediaOf, propAt, sourceTime } from './model';
+import { clipDuration, dbToGain, mediaOf, propAt, sourceTime, speedAt } from './model';
 import { clipWindow, transitionAt, transitionGain } from './transitions';
 import { audioTrackOf, mediaKey } from './media';
 import { limit } from './loudness';
@@ -156,12 +156,19 @@ export async function mixdown(p: Project, a: number, b: number, onProgress: (f: 
     if (!buf) continue;
     if (c.reverse) reverseBuffer(buf);
     const node = ctx.createBufferSource();
-    if (c.speed !== 1 && c.keepPitch) buf = timeStretch(buf, c.speed);
+    const ramped = !!c.ramp?.length;
+    if (ramped) {
+      // Speed ramp: the decoded range is exactly [t0, t1] on the timeline; vary the playback rate along it.
+      const n = Math.max(2, Math.ceil((t1 - t0) * 100));
+      const rates = new Float32Array(n);
+      for (let i = 0; i < n; i++) rates[i] = speedAt(c, t0 + (i / (n - 1)) * (t1 - t0));
+      node.playbackRate.setValueCurveAtTime(rates, Math.max(0, t0 - a), Math.max(0.001, t1 - t0));
+    } else if (c.speed !== 1 && c.keepPitch) buf = timeStretch(buf, c.speed);
     else node.playbackRate.value = c.speed;
     node.buffer = buf;
     // When the decoded audio starts on the timeline.
-    const startsAt = c.reverse ? c.start + (c.out - s1) / c.speed : c.start + (s0 - c.in) / c.speed;
-    const playLen = (s1 - s0) / c.speed;
+    const startsAt = ramped ? t0 : c.reverse ? c.start + (c.out - s1) / c.speed : c.start + (s0 - c.in) / c.speed;
+    const playLen = ramped ? t1 - t0 : (s1 - s0) / c.speed;
     const gain = ctx.createGain();
     const steps = Math.max(2, Math.ceil(playLen * 50));
     const curve = new Float32Array(steps);

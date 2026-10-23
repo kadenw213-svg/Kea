@@ -6,7 +6,7 @@
 import type { AssistantTool } from '../../store';
 import type { AssistantEnv } from './assistant';
 import type { Project, Clip, Track, MediaItem, TransitionType, TransitionDir, TextStyle, TextAnim, Keyframe, Ease, Colour } from './model';
-import { clipEnd, clipDuration, mediaOf, propAt, snapToFrame, projectDuration, neighbours, TRANSITIONS, TRANSITION_DIRS, COLOUR_PRESETS, NEUTRAL_COLOUR, TEXT_ANIMS, EPS } from './model';
+import { clipEnd, clipDuration, mediaOf, propAt, snapToFrame, projectDuration, neighbours, sourceTime, timelineAt, speedAt, RAMP_MIN, RAMP_MAX, TRANSITIONS, TRANSITION_DIRS, COLOUR_PRESETS, NEUTRAL_COLOUR, TEXT_ANIMS, EPS } from './model';
 import { addTrack, clipsForMedia, overwrite, textClip, setTransition, defaultTransition, splitAt, trimStart, trimEnd, trimRange, partners, isLocked } from './ops';
 import { mediaKey } from './media';
 import { getIndex } from './mediaIndex';
@@ -101,8 +101,8 @@ export function speechRanges(p: Project, tracks: Track[], minGap = 0.8): [number
     if (sil && !c.reverse) {
       for (const s of sil) {
         if (s.end - s.start < minGap) continue;
-        const a = c.start + (s.start - c.in) / c.speed;
-        const b = c.start + (s.end - c.in) / c.speed;
+        const a = timelineAt(c, s.start);
+        const b = timelineAt(c, s.end);
         parts = parts.flatMap(([x, y]): [number, number][] => (b <= x || a >= y ? [[x, y]] : ([[x, a], [b, y]] as [number, number][]).filter(([u, v]) => v - u > 0.05)));
       }
     }
@@ -161,9 +161,9 @@ export function freezeFrame(p: Project, c: Clip, at: number, duration: number, r
   if (c.kind !== 'media' || mediaOf(p, c)?.kind !== 'video') throw new Error('Freeze frames need a video clip.');
   if (at < c.start - EPS || at > clipEnd(c) + EPS) throw new Error(`${at.toFixed(2)} s isn't inside ${c.name}.`);
   const fz: Clip = structuredClone(c);
-  const src = c.reverse ? c.out - (at - c.start) * c.speed : c.in + (at - c.start) * c.speed;
+  const src = sourceTime(c, at);
   for (const k of ['x', 'y', 'scale', 'rotation', 'opacity', 'blur'] as const) fz.props[k] = propAt(c, k, at);
-  Object.assign(fz, { id: uid(), start: at, in: src, out: src + duration, speed: 1, reverse: false, freeze: src, linkId: undefined, trIn: undefined, trOut: undefined, kf: {}, name: `${c.name} (freeze)` });
+  Object.assign(fz, { id: uid(), start: at, in: src, out: src + duration, speed: 1, reverse: false, freeze: src, ramp: undefined, linkId: undefined, trIn: undefined, trOut: undefined, kf: {}, name: `${c.name} (freeze)` });
   if (ripple) {
     splitAt(p, at);
     for (const x of p.clips) if (x.start >= at - EPS && !isLocked(p, x)) x.start += duration;
@@ -212,6 +212,55 @@ export function punchIn(c: Clip, at: number, opts: { scale?: number; duration?: 
         ];
     placeKeys(c, prop, ks);
   }
+}
+
+/* ---------- Speed ramps ---------- */
+
+/**
+ * Give a clip (and its linked sound, so they stay in sync) a speed ramp. keys: t = seconds from the clip's start,
+ * v = speed. ripple: everything after the clip moves by the change in length. Returns that change (s).
+ */
+export function speedRamp(p: Project, c: Clip, keys: { t: number; v: number }[] | null, ripple = true): number {
+  if (c.kind !== 'media' || mediaOf(p, c)?.kind === 'image') throw new Error('Speed ramps need a video or audio clip.');
+  const group = [c, ...partners(p, c)];
+  const oldEnd = clipEnd(c);
+  const ks = keys?.length ? [...keys].map((k) => ({ t: Math.max(0, k.t), v: Math.max(RAMP_MIN, Math.min(RAMP_MAX, k.v)) })).sort((a, b) => a.t - b.t) : undefined;
+  for (const g of group) g.ramp = ks ? ks.map((k) => ({ ...k })) : undefined;
+  const delta = clipEnd(c) - oldEnd;
+  if (ripple && Math.abs(delta) > 1e-6) {
+    const ids = new Set(group.map((g) => g.id));
+    for (const x of p.clips) if (!ids.has(x.id) && x.start >= oldEnd - EPS && !isLocked(p, x)) x.start += delta;
+    for (const m of p.markers) if (m.t >= oldEnd - EPS) m.t += delta;
+  }
+  return delta;
+}
+
+/**
+ * Ramp presets anchored on a moment in the SOURCE (so the moment itself is what gets the slow motion, wherever it
+ * lands after the ramp): 'hero' = fast → slow-mo through the moment → fast; 'slow_down' / 'speed_up' from the moment on.
+ */
+export function rampPreset(c: Clip, kind: 'hero' | 'slow_down' | 'speed_up', atSource: number, o: { slow?: number; fast?: number; hold?: number; ease?: number } = {}) {
+  const slow = Math.max(RAMP_MIN, Math.min(1, o.slow ?? 0.3));
+  const fast = Math.max(1, Math.min(RAMP_MAX, o.fast ?? 1.8));
+  const ease = Math.max(0.05, o.ease ?? 0.35);
+  const hold = Math.max(0, o.hold ?? 0.6);
+  const S = Math.max(0, c.reverse ? c.out - atSource : atSource - c.in); // source seconds into the clip
+  if (kind === 'hero') {
+    // Speed is `fast` until r-ease, then eases to `slow` at r: F(r) = fast·(r−ease) + (fast+slow)/2·ease = S.
+    const r = Math.max(ease, (S - ((fast + slow) / 2) * ease) / fast + ease);
+    return [
+      { t: 0, v: fast },
+      { t: r - ease, v: fast },
+      { t: r, v: slow },
+      { t: r + hold, v: slow },
+      { t: r + hold + ease, v: fast }
+    ];
+  }
+  const target = kind === 'slow_down' ? slow : fast;
+  return [
+    { t: S, v: 1 },
+    { t: S + ease, v: target }
+  ];
 }
 
 /** Ken Burns: a slow push/pan from one framing to another over the whole clip. */
@@ -325,7 +374,7 @@ export function addCaptions(p: Project, media: MediaItem, trackId: string, opts:
       for (const clip of views) {
         const inside = clip ? g.filter((w) => w.t0 >= clip.in - 0.02 && w.t1 <= clip.out + 0.02) : g;
         if (!inside.length) continue;
-        const tl = (t: number) => (clip ? clip.start + (Math.max(clip.in, Math.min(clip.out, t)) - clip.in) / clip.speed : t);
+        const tl = (t: number) => (clip ? timelineAt(clip, Math.max(clip.in, Math.min(clip.out, t))) : t);
         emit(tl(inside[0].t0), tl(inside[inside.length - 1].t1), inside.map((w) => w.raw).join(' '), inside.map((w) => tl(w.t0)));
       }
     }
@@ -337,7 +386,7 @@ export function addCaptions(p: Project, media: MediaItem, trackId: string, opts:
       if (clip.reverse) continue;
       const s0 = Math.max(seg.start, clip.in);
       const e0 = Math.min(seg.end, clip.out);
-      if (e0 > s0) emit(clip.start + (s0 - clip.in) / clip.speed, clip.start + (e0 - clip.in) / clip.speed, wrapWords(seg.text, maxWords));
+      if (e0 > s0) emit(timelineAt(clip, s0), timelineAt(clip, e0), wrapWords(seg.text, maxWords));
     }
   }
   return n;
@@ -422,6 +471,9 @@ interface PlanMain {
   ken_burns?: { from: Move; to: Move };
   freeze_end?: number;
   remove_background?: boolean;
+  /** Speed ramp keys {t: s from the shot's start, speed}, or a preset anchored on a source moment. */
+  ramp?: { t: number; speed: number }[];
+  hero?: { at_source: number; slow?: number; fast?: number; hold?: number };
 }
 interface PlanBroll {
   media_id: string;
@@ -506,6 +558,9 @@ export function applyPlan(p: Project, plan: EditPlan, resolveLine?: LineResolver
   }
   const fps = p.settings.fps;
   const snap = (t: number) => Math.max(0, snapToFrame(t, fps));
+  // Storyline shots start on the next frame boundary: a ramped shot's length isn't a whole number of frames, and
+  // rounding down would trim its end.
+  const nextFrame = (t: number) => Math.max(0, Math.ceil(t * fps - 1e-6) / fps);
   if (plan.replace !== false) {
     p.clips = [];
     p.settings.master = undefined;
@@ -530,12 +585,12 @@ export function applyPlan(p: Project, plan: EditPlan, resolveLine?: LineResolver
       if (!resolveLine) throw new Error('Run align_script first so storyline entries can use script lines.');
       segs = resolveLine(e.line, e.take, !!e.tighten);
     }
-    const entryStart = snap(at);
+    const entryStart = nextFrame(at);
     const vs: Clip[] = [];
     let firstA: Clip | undefined;
     for (const sg of segs) {
       const m = media(sg.media_id);
-      const clips = clipsForMedia(p, m, snap(at), { vTrack: vMain.id, aTrack: aDia.id, in: sg.in, out: sg.out, findFree: false });
+      const clips = clipsForMedia(p, m, nextFrame(at), { vTrack: vMain.id, aTrack: aDia.id, in: sg.in, out: sg.out, findFree: false });
       const speed = typeof e.speed === 'number' ? Math.max(0.25, Math.min(4, e.speed)) : 1;
       for (const c of clips) {
         if (speed !== 1) {
@@ -544,6 +599,10 @@ export function applyPlan(p: Project, plan: EditPlan, resolveLine?: LineResolver
         }
         if (typeof e.volume_db === 'number' && p.tracks.find((t) => t.id === c.trackId)?.kind === 'audio') c.props.volume = Math.max(-60, Math.min(12, e.volume_db));
       }
+      // Ramps change the length, so they go on before the clips are placed.
+      const rampKeys = e.hero ? rampPreset(clips[0], 'hero', e.hero.at_source, e.hero) : e.ramp?.length ? e.ramp.map((k) => ({ t: k.t, v: k.speed })) : null;
+      if (rampKeys && segs.length === 1)
+        for (const c of clips) c.ramp = rampKeys.map((k) => ({ t: Math.max(0, k.t), v: Math.max(RAMP_MIN, Math.min(RAMP_MAX, k.v)) })).sort((x, y) => x.t - y.t);
       overwrite(p, clips);
       const v = clips.find((c) => c.trackId === vMain.id);
       firstA = firstA || clips.find((c) => c.trackId === aDia.id);
@@ -728,7 +787,9 @@ export function applyPlan(p: Project, plan: EditPlan, resolveLine?: LineResolver
   if (nm) parts.push(`music${nd ? ` ducked under ${nd} speech passage${nd === 1 ? '' : 's'}` : ''}`);
   if (ns) parts.push(`${ns} sound effect${ns === 1 ? '' : 's'}`);
   const summary = `Applied the edit plan: ${parts.join(', ')}. Timeline is ${projectDuration(p).toFixed(2)} s.${notes.length ? ' Notes: ' + notes.join(' ') : ''}`;
-  return { summary, main: placed.map((x) => ({ ...x, start: r1(x.start), end: r1(x.end) })), needsMasks };
+  // Millisecond precision: agents anchor B-roll and titles on these times.
+  const r3 = (v: number) => Math.round(v * 1000) / 1000;
+  return { summary, main: placed.map((x) => ({ ...x, start: r3(x.start), end: r3(x.end) })), needsMasks };
 }
 
 /* ---------- Tools ---------- */
@@ -787,7 +848,7 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
       name: 'edit_plan',
       description: [
         'Build or extend a professional edit in ONE undo step, in editor language. Read the media index/transcript first (index_media), then describe the whole cut:',
-        '• main: the storyline, back to back on the Main track with sound on Dialogue — [{line, take, tighten} (a script line after align_script) or {media_id, in, out}, plus transition:{type,duration,direction} (into this shot), j_cut:s (its sound starts early), l_cut:s (its sound runs into the next shot), speed, volume_db, look, colour:{exposure,contrast,saturation,temperature,tint,highlights,shadows,vignette}, zoom:[{at,duration,scale,x,y,style:"cut"|"smooth"}] (punch-ins, at = s from the shot start), ken_burns:{from:{scale,x,y},to:{…}}, freeze_end:s, remove_background}] or {gap:s}.',
+        '• main: the storyline, back to back on the Main track with sound on Dialogue — [{line, take, tighten} (a script line after align_script) or {media_id, in, out}, plus transition:{type,duration,direction} (into this shot), j_cut:s (its sound starts early), l_cut:s (its sound runs into the next shot), speed, volume_db, look, colour:{exposure,contrast,saturation,temperature,tint,highlights,shadows,vignette}, zoom:[{at,duration,scale,x,y,style:"cut"|"smooth"}] (punch-ins, at = s from the shot start), ken_burns:{from:{scale,x,y},to:{…}}, freeze_end:s, ramp:[{t,speed}] or hero:{at_source,slow,fast,hold} (speed ramps), remove_background}] or {gap:s}.',
         '• broll: cutaways on the B-roll track — [{media_id, in, out | duration, at | over:entryIndex+offset, transition_in, transition_out, keep_audio, volume_db, look, zoom, ken_burns, position:{scale,x,y} (picture-in-picture)}].',
         `• titles: [{text, at | over+offset, duration, preset: ${TITLE_PRESETS.join('|')}, style, x, y}].`,
         '• captions: true or {media_id, max_words, style, karaoke: true | "#color"} — burned in as each phrase is said; karaoke highlights the word being spoken (TikTok style).',
@@ -823,7 +884,9 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
                 zoom: ZOOM_SCHEMA,
                 ken_burns: { type: 'object', properties: { from: MOVE_SCHEMA, to: MOVE_SCHEMA } },
                 freeze_end: { type: 'number' },
-                remove_background: { type: 'boolean' }
+                remove_background: { type: 'boolean' },
+                ramp: { type: 'array', items: { type: 'object', properties: { t: { type: 'number' }, speed: { type: 'number' } } }, description: 'Speed ramp keys (t = s from the shot start).' },
+                hero: { type: 'object', properties: { at_source: { type: 'number' }, slow: { type: 'number' }, fast: { type: 'number' }, hold: { type: 'number' } }, description: 'Fast → slow-mo through the moment at source time at_source → fast.' }
               }
             }
           },
@@ -928,6 +991,41 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
           const c = clipIn(p, i.clip_id);
           punchIn(c, Number(i.at), i);
           return `Punched in to ${i.scale ?? 115}% at ${r1(i.at)} s on ${c.name}.`;
+        });
+      }
+    },
+    {
+      name: 'speed_ramp',
+      description: `Speed ramp (time remapping) on a video clip and its sound. preset "hero" = fast → slow motion through a moment → fast (the moment is given in SOURCE seconds, at_source, e.g. from the transcript or scenes); "slow_down"/"speed_up" change speed from that moment on; or give keys [{t: seconds from the clip start, speed}] (${RAMP_MIN}-${RAMP_MAX}×, linear between keys). clear:true removes the ramp. Later clips move so everything stays in sync (ripple, default true).`,
+      input_schema: {
+        type: 'object',
+        properties: {
+          clip_id: { type: 'string' },
+          preset: { type: 'string', enum: ['hero', 'slow_down', 'speed_up'] },
+          at_source: { type: 'number' },
+          slow: { type: 'number' },
+          fast: { type: 'number' },
+          hold: { type: 'number', description: 'Seconds of slow motion (hero).' },
+          keys: { type: 'array', items: { type: 'object', properties: { t: { type: 'number' }, speed: { type: 'number' } }, required: ['t', 'speed'] } },
+          clear: { type: 'boolean' },
+          ripple: { type: 'boolean' }
+        },
+        required: ['clip_id']
+      },
+      run(i) {
+        return edit('Speed ramp', (p) => {
+          const c = clipIn(p, i.clip_id);
+          let keys: { t: number; v: number }[] | null = null;
+          if (!i.clear) {
+            if (i.preset) {
+              if (typeof i.at_source !== 'number') throw new Error('Give at_source: the source time of the moment.');
+              keys = rampPreset(c, i.preset, i.at_source, i);
+            } else if (Array.isArray(i.keys) && i.keys.length) keys = i.keys.map((k: any) => ({ t: Number(k.t), v: Number(k.speed) }));
+            else throw new Error('Give a preset with at_source, or keys, or clear:true.');
+          }
+          const before = clipDuration(c);
+          const d = speedRamp(p, c, keys, i.ripple !== false);
+          return keys ? `Ramped ${c.name}: ${r1(before)} s → ${r1(clipDuration(c))} s (${d >= 0 ? '+' : ''}${r1(d)} s${i.ripple !== false ? ', later clips moved' : ''}).` : `Removed the speed ramp from ${c.name}.`;
         });
       }
     },
