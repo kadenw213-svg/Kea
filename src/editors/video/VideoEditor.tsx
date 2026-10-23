@@ -589,7 +589,7 @@ function Shell({ tab, active, store, player }: { tab: Tab; active: boolean; stor
           </section>
           <div className="ve-split v" onPointerDown={(e) => resize('right', e)} />
           <aside className="ve-panel ve-inspector-wrap" style={{ width: layout.right }}>
-            <Inspector player={player} />
+            <Inspector player={player} importPaths={importPaths} />
           </aside>
         </div>
         <div className="ve-split h" onPointerDown={(e) => resize('bottom', e)} />

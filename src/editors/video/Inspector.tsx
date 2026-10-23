@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, ReactNode } from 'react';
 import { Diamond, ChevronLeft, ChevronRight, X, RotateCcw, FlipHorizontal2, FlipVertical2, Pipette, Wand2, Trash2, Bold, Italic, AlignLeft, AlignCenter, AlignRight, Volume2 } from 'lucide-react';
 import type { Player } from './player';
-import type { Project, Clip, AnimProp, Colour, Ease, TextStyle, ShapeStyle, ShapeKind, BlendMode, TransitionType, TextAnim } from './model';
+import type { Project, Clip, AudioFx, MediaItem, AnimProp, Colour, Ease, TextStyle, ShapeStyle, ShapeKind, BlendMode, TransitionType, TextAnim } from './model';
 import {
   BLEND_MODES,
   COLOUR_PRESETS,
@@ -30,6 +30,8 @@ import { guessKeyColour } from './effects';
 import { peaksFor } from './media';
 import { buildMasks } from './segmentMask';
 import { loadLut, getLut } from './lut';
+import { AUDIO_PRESETS } from './audioFx';
+import { startNoiseJob } from './proEdit';
 import { api } from '../../lib/api';
 import { startJob, jobStatus } from '../../lib/jobs';
 import { useVE, useVEStore } from './state';
@@ -401,7 +403,7 @@ function AnimSlider(props: { clip: Clip; prop: AnimProp; label: string; min: num
 
 /* ---------- The panel ---------- */
 
-export function Inspector({ player }: { player: Player }) {
+export function Inspector({ player, importPaths }: { player: Player; importPaths?: (paths: string[]) => Promise<MediaItem[]> }) {
   const project = useVE((s) => s.project);
   const sel = useVE((s) => s.sel);
   const selTr = useVE((s) => s.selTransition);
@@ -414,7 +416,7 @@ export function Inspector({ player }: { player: Player }) {
     body = <TransitionPanel />;
   } else if (clip) {
     title = clip.kind === 'text' ? 'Text' : clip.kind === 'shape' ? 'Shape' : trackOf(project, clip)?.kind === 'audio' ? 'Audio clip' : 'Clip';
-    body = <ClipPanel key={clip.id} clip={clip} count={sel.length} player={player} />;
+    body = <ClipPanel key={clip.id} clip={clip} count={sel.length} player={player} importPaths={importPaths} />;
   } else {
     const s = project.settings;
     body = (
@@ -505,7 +507,7 @@ function TransitionPanel() {
   );
 }
 
-function ClipPanel({ clip, count, player }: { clip: Clip; count: number; player: Player }) {
+function ClipPanel({ clip, count, player, importPaths }: { clip: Clip; count: number; player: Player; importPaths?: (paths: string[]) => Promise<MediaItem[]> }) {
   const project = useVE((s) => s.project);
   const track = trackOf(project, clip);
   const isAudio = track?.kind === 'audio';
@@ -560,7 +562,7 @@ function ClipPanel({ clip, count, player }: { clip: Clip; count: number; player:
       {cur === 'speed' && <SpeedTab clip={clip} />}
       {cur === 'text' && clip.text && <TextTab clip={clip} />}
       {cur === 'shape' && clip.shape && <ShapeTab clip={clip} />}
-      {cur === 'audio' && audioClip && <AudioTab clip={audioClip} player={player} linked={audioClip !== clip} />}
+      {cur === 'audio' && audioClip && <AudioTab clip={audioClip} player={player} linked={audioClip !== clip} importPaths={importPaths} />}
     </>
   );
 }
@@ -1087,7 +1089,65 @@ function ShapeTab({ clip }: { clip: Clip }) {
   );
 }
 
-function AudioTab({ clip, player, linked }: { clip: Clip; player: Player; linked: boolean }) {
+function SoundSection({ clip, importPaths }: { clip: Clip; importPaths?: (paths: string[]) => Promise<MediaItem[]> }) {
+  const store = useVEStore();
+  const project = useVE((s) => s.project);
+  const media = mediaOf(project, clip);
+  const fx = clip.audioFx || {};
+  const [amount, setAmount] = useState(70);
+  const [job, setJob] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  useEffect(() => {
+    if (!job) return;
+    const t = setInterval(() => {
+      const s = jobStatus(job) as import('../../lib/jobs').JobView | null;
+      if (!s || s.status === 'running') return setNote(s ? `${s.note || 'Cleaning…'} ${Math.round(s.progress * 100)}%` : '');
+      clearInterval(t);
+      setJob(null);
+      setNote('');
+      if (s.status === 'error') toast(s.error || 'Noise reduction failed.', 'error');
+      else toast('Cleaned — the clip now plays the cleaned copy (undo to go back).', 'success');
+    }, 400);
+    return () => clearInterval(t);
+  }, [job]);
+  const setFx = (p: Project, patch: AudioFx) => {
+    const c = find(p, clip.id);
+    if (c) c.audioFx = { ...(c.audioFx || {}), ...patch };
+  };
+  const band = (k: 'low' | 'mid' | 'high', label: string) => (
+    <Slider label={label} undo={`Change ${label.toLowerCase()}`} value={fx[k] || 0} min={-15} max={15} step={0.5} digits={1} unit="dB" apply={(p, v) => setFx(p, { [k]: v })} />
+  );
+  return (
+    <Section title="Sound" onReset={clip.audioFx ? () => store.getState().commit('Remove sound processing', (p) => void (find(p, clip.id)!.audioFx = undefined)) : undefined}>
+      <div className="ve-insp-presets">
+        {AUDIO_PRESETS.map((pr) => (
+          <button key={pr.id} title={pr.hint} className={JSON.stringify(clip.audioFx) === JSON.stringify(pr.fx) ? 'on' : ''} onClick={() => store.getState().commit(`Sound: ${pr.label}`, (p) => void (find(p, clip.id)!.audioFx = { ...pr.fx }))}>
+            {pr.label}
+          </button>
+        ))}
+      </div>
+      <Slider label="Low cut" undo="Change low cut" value={fx.highpass || 0} min={0} max={400} step={5} unit="Hz" title="Removes rumble below this (0 = off)" apply={(p, v) => setFx(p, { highpass: v })} />
+      {band('low', 'Bass')}
+      {band('mid', 'Presence')}
+      {band('high', 'Treble')}
+      <Slider label="Compress" undo="Change compression" value={fx.compress || 0} min={0} max={100} title="Evens out loud and quiet words" apply={(p, v) => setFx(p, { compress: v })} />
+      <label className="ve-insp-note" title="How strongly Reduce noise turns the noise down">
+        Noise reduction {amount}%
+        <input type="range" min={0} max={100} value={amount} onChange={(e) => setAmount(Number(e.target.value))} style={{ width: '100%' }} />
+      </label>
+      <button
+        className="btn tonal sm ve-insp-wide"
+        disabled={!!job || !media?.path || !importPaths}
+        title="Removes steady noise (hum, hiss, fans, room tone). Writes a cleaned copy next to the file."
+        onClick={() => media && importPaths && setJob(startNoiseJob(store, importPaths, media, amount, clip))}
+      >
+        {job ? note || 'Cleaning…' : 'Reduce noise'}
+      </button>
+    </Section>
+  );
+}
+
+function AudioTab({ clip, player, linked, importPaths }: { clip: Clip; player: Player; linked: boolean; importPaths?: (paths: string[]) => Promise<MediaItem[]> }) {
   const store = useVEStore();
   const project = useVE((s) => s.project);
   const [busy, setBusy] = useState(false);
@@ -1143,6 +1203,7 @@ function AudioTab({ clip, player, linked }: { clip: Clip; player: Player; linked
           <Volume2 size={14} /> {busy ? 'Measuring…' : 'Normalize'}
         </button>
       </Section>
+      <SoundSection clip={clip} importPaths={importPaths} />
       <Section title="Fades">
         <Slider label="Fade in" undo="Change fade in" value={clip.props.fadeIn} min={0} max={Math.max(0.1, len / 2)} step={0.05} digits={2} unit="s" apply={prop('fadeIn')} />
         <Slider label="Fade out" undo="Change fade out" value={clip.props.fadeOut} min={0} max={Math.max(0.1, len / 2)} step={0.05} digits={2} unit="s" apply={prop('fadeOut')} />

@@ -1,9 +1,10 @@
 import { AudioBufferSink } from 'mediabunny';
-import type { Project, Clip, Track } from './model';
+import type { Project, Clip, Track, AudioFx } from './model';
 import { clipDuration, dbToGain, mediaOf, propAt, sourceTime, speedAt } from './model';
 import { clipWindow, transitionAt, transitionGain } from './transitions';
 import { audioTrackOf, mediaKey } from './media';
 import { limit } from './loudness';
+import { buildChain, hasFx } from './audioFx';
 
 /* ---------- Levels ---------- */
 
@@ -177,7 +178,11 @@ export async function mixdown(p: Project, a: number, b: number, onProgress: (f: 
     gain.gain.setValueCurveAtTime(curve, when, Math.max(0.001, playLen));
     const pan = ctx.createStereoPanner();
     pan.pan.value = c.props.pan / 100;
-    node.connect(gain).connect(pan).connect(ctx.destination);
+    if (hasFx(c.audioFx)) {
+      const chain = buildChain(ctx, c.audioFx!);
+      node.connect(gain).connect(chain.input);
+      chain.output.connect(pan).connect(ctx.destination);
+    } else node.connect(gain).connect(pan).connect(ctx.destination);
     node.start(when);
     done++;
     onProgress(done / clips.length);
@@ -225,7 +230,7 @@ export function wavBytes(b: AudioBuffer): Uint8Array {
 export class AudioEngine {
   ctx: AudioContext | null = null;
   master: GainNode | null = null;
-  private nodes = new WeakMap<HTMLMediaElement, { gain: GainNode; pan: StereoPannerNode }>();
+  private nodes = new WeakMap<HTMLMediaElement, { gain: GainNode; pan: StereoPannerNode; chain: ReturnType<typeof buildChain>; fx: string }>();
 
   private ensure() {
     if (!this.ctx) {
@@ -244,14 +249,21 @@ export class AudioEngine {
     const src = ctx.createMediaElementSource(el);
     const gain = ctx.createGain();
     const pan = ctx.createStereoPanner();
-    src.connect(gain).connect(pan).connect(this.master!);
-    n = { gain, pan };
+    const chain = buildChain(ctx, {});
+    src.connect(gain).connect(chain.input);
+    chain.output.connect(pan).connect(this.master!);
+    n = { gain, pan, chain, fx: '' };
     this.nodes.set(el, n);
     return n;
   }
 
-  set(el: HTMLMediaElement, gain: number, pan: number) {
+  set(el: HTMLMediaElement, gain: number, pan: number, fx?: AudioFx) {
     const n = this.attach(el);
+    const key = fx ? JSON.stringify(fx) : '';
+    if (key !== n.fx) {
+      n.chain.set(fx || {});
+      n.fx = key;
+    }
     const now = this.ctx!.currentTime;
     n.gain.gain.setTargetAtTime(gain, now, 0.015);
     n.pan.pan.setTargetAtTime(pan, now, 0.015);

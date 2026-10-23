@@ -266,7 +266,7 @@ export class Player {
       const atEdge = active && Math.abs(target - sourceTime(c, t)) > 1e-3;
       if (isAudio) {
         const g = active && audible.has(tr.id) && Math.abs(rate) <= 4 ? clipGainAt(p, c, t, tr) : 0;
-        this.audio.set(el, g, c.props.pan / 100);
+        this.audio.set(el, g, c.props.pan / 100, c.audioFx);
       }
       const forward = playing && active && rate > 0 && !c.reverse && !atEdge;
       if (forward) {

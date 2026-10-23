@@ -5,7 +5,7 @@
 // Ops mutate a draft project (inside store.commit); tools wrap them. Loudness work renders audio, so it runs as a job.
 import type { AssistantTool } from '../../store';
 import type { AssistantEnv } from './assistant';
-import type { Project, Clip, Track, MediaItem, TransitionType, TransitionDir, TextStyle, TextAnim, Keyframe, Ease, Colour } from './model';
+import type { Project, Clip, Track, MediaItem, TransitionType, TransitionDir, TextStyle, TextAnim, Keyframe, Ease, Colour, AudioFx } from './model';
 import { clipEnd, clipDuration, mediaOf, propAt, snapToFrame, projectDuration, neighbours, sourceTime, timelineAt, speedAt, RAMP_MIN, RAMP_MAX, TRANSITIONS, TRANSITION_DIRS, COLOUR_PRESETS, NEUTRAL_COLOUR, TEXT_ANIMS, EPS } from './model';
 import { addTrack, clipsForMedia, overwrite, textClip, setTransition, defaultTransition, splitAt, trimStart, trimEnd, trimRange, partners, isLocked } from './ops';
 import { mediaKey } from './media';
@@ -14,6 +14,7 @@ import { decodeRange, mixdown } from './audio';
 import { measureBuffer } from './loudness';
 import { buildMasks } from './segmentMask';
 import { loadLut, getLut } from './lut';
+import { AUDIO_PRESETS, reduceNoise } from './audioFx';
 import { buildIndex } from './mediaIndex';
 import { alignScript, alignmentSummary, roughCut, takeSegments, setAlignment, getAlignment, wordsOf, type Word } from './scriptAlign';
 import { startJob } from '../../lib/jobs';
@@ -213,6 +214,41 @@ export function punchIn(c: Clip, at: number, opts: { scale?: number; duration?: 
         ];
     placeKeys(c, prop, ks);
   }
+}
+
+/* ---------- Sound processing ---------- */
+
+export function resolveFx(fx: string | AudioFx): AudioFx {
+  if (typeof fx === 'string') {
+    const pr = AUDIO_PRESETS.find((x) => x.id === fx || x.label.toLowerCase() === fx.toLowerCase());
+    if (!pr) throw new Error(`Sound preset must be one of: ${AUDIO_PRESETS.map((x) => x.id).join(', ')}.`);
+    return { ...pr.fx };
+  }
+  const out: AudioFx = {};
+  for (const k of ['highpass', 'low', 'mid', 'midFreq', 'high', 'compress'] as const) if (typeof fx[k] === 'number') out[k] = fx[k];
+  return out;
+}
+
+/**
+ * Noise reduction as a job: write the cleaned copy, import it, and move the sound clips (all of this media's, or just
+ * `clip`'s linked group) onto it in one undo step. Returns the job id.
+ */
+export function startNoiseJob(store: AssistantEnv['store'], importPaths: (paths: string[]) => Promise<MediaItem[]>, media: MediaItem, amount: number, clip?: Clip) {
+  return startJob('denoise', async (onProgress, signal) => {
+    const out = await reduceNoise(media, amount, onProgress, signal);
+    const [clean] = await importPaths([out]);
+    let n = 0;
+    store.getState().commit('Reduce noise', (d) => {
+      if (!d.media.some((m) => m.id === clean.id)) d.media.push(clean);
+      for (const c of d.clips) {
+        if (c.mediaId !== media.id || d.tracks.find((t) => t.id === c.trackId)?.kind !== 'audio') continue;
+        if (clip && c.id !== clip.id && (!clip.linkId || c.linkId !== clip.linkId)) continue;
+        c.mediaId = clean.id;
+        n++;
+      }
+    });
+    return { cleanedFile: out, clipsMoved: n, amount };
+  });
 }
 
 /* ---------- Speed ramps ---------- */
@@ -477,6 +513,8 @@ interface PlanMain {
   hero?: { at_source: number; slow?: number; fast?: number; hold?: number };
   /** A .cube LUT (path) for this shot, or {path, amount}. */
   lut?: string | { path: string; amount?: number };
+  /** Sound preset (voice, podcast, warm, bright, phone) or {highpass, low, mid, midFreq, high, compress}. */
+  audio_fx?: string | AudioFx;
 }
 interface PlanBroll {
   media_id: string;
@@ -609,6 +647,7 @@ export function applyPlan(p: Project, plan: EditPlan, resolveLine?: LineResolver
       overwrite(p, clips);
       const v = clips.find((c) => c.trackId === vMain.id);
       firstA = firstA || clips.find((c) => c.trackId === aDia.id);
+      if (e.audio_fx) for (const c of clips) if (c.trackId === aDia.id) c.audioFx = resolveFx(e.audio_fx);
       if (v) {
         vs.push(v);
         applyLook(v, e.look, e.colour);
@@ -890,6 +929,7 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
                 freeze_end: { type: 'number' },
                 remove_background: { type: 'boolean' },
                 lut: { description: 'A .cube LUT path for this shot, or {path, amount 0-100}.' },
+                audio_fx: { description: `Sound preset (${AUDIO_PRESETS.map((x) => x.id).join(', ')}) or {highpass, low, mid, midFreq, high, compress}.` },
                 ramp: { type: 'array', items: { type: 'object', properties: { t: { type: 'number' }, speed: { type: 'number' } } }, description: 'Speed ramp keys (t = s from the shot start).' },
                 hero: { type: 'object', properties: { at_source: { type: 'number' }, slow: { type: 'number' }, fast: { type: 'number' }, hold: { type: 'number' } }, description: 'Fast → slow-mo through the moment at source time at_source → fast.' }
               }
@@ -999,6 +1039,34 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
           punchIn(c, Number(i.at), i);
           return `Punched in to ${i.scale ?? 115}% at ${r1(i.at)} s on ${c.name}.`;
         });
+      }
+    },
+    {
+      name: 'audio_fx',
+      description: `Process sound clips: a preset (${AUDIO_PRESETS.map((x) => `${x.id} = ${x.hint}`).join(' ')}) and/or settings {highpass Hz, low/mid/high dB (mid centred on midFreq Hz), compress 0-100}. Heard live in the preview and in the export. Target clip_ids, a track by name, or the Dialogue track by default; clear:true removes it.`,
+      input_schema: { type: 'object', properties: { preset: { type: 'string', enum: AUDIO_PRESETS.map((x) => x.id) }, highpass: { type: 'number' }, low: { type: 'number' }, mid: { type: 'number' }, midFreq: { type: 'number' }, high: { type: 'number' }, compress: { type: 'number' }, clip_ids: { type: 'array', items: { type: 'string' } }, track: { type: 'string' }, clear: { type: 'boolean' } } },
+      run(i) {
+        return edit(i.clear ? 'Remove sound processing' : 'Sound processing', (p) => {
+          const tr = i.track ? findTrackByName(p, i.track) : laneTrack(p, 'dialogue');
+          const targets = i.clip_ids?.length ? p.clips.filter((c) => (i.clip_ids as string[]).includes(c.id)) : p.clips.filter((c) => c.trackId === tr?.id && c.kind === 'media');
+          if (!targets.length) throw new Error('No sound clips to process.');
+          const fx = i.clear ? undefined : { ...(i.preset ? resolveFx(i.preset) : {}), ...resolveFx(i) };
+          for (const c of targets) c.audioFx = fx;
+          return i.clear ? `Removed sound processing from ${targets.length} clip${targets.length === 1 ? '' : 's'}.` : `Processed ${targets.length} clip${targets.length === 1 ? '' : 's'}: ${JSON.stringify(fx)}.`;
+        });
+      }
+    },
+    {
+      name: 'reduce_noise',
+      description: 'Remove steady background noise (hum, hiss, fans, air conditioning, room tone) from a clip’s sound: learns the noise from the quiet parts and gates it out. Writes a cleaned copy next to the source ("name (cleaned).wav") and moves the clip’s sound onto it (one undo step; the original file is untouched). amount 0-100 (default 70). Runs as a job.',
+      input_schema: { type: 'object', properties: { clip_id: { type: 'string' }, media_id: { type: 'string' }, amount: { type: 'number' } } },
+      run(i) {
+        const proj = store.getState().project;
+        const clip = i.clip_id ? proj.clips.find((c) => c.id === i.clip_id) : undefined;
+        const media = clip ? mediaOf(proj, clip) : proj.media.find((m) => m.id === i.media_id);
+        if (!media || !media.hasAudio) throw new Error('Give a clip_id or media_id with sound.');
+        const jobId = startNoiseJob(store, env.importPaths, media, typeof i.amount === 'number' ? i.amount : 70, clip);
+        return `Cleaning the sound (job ${jobId}). Poll kea_jobs_status {jobId:"${jobId}"}.`;
       }
     },
     {
