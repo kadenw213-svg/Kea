@@ -7,6 +7,7 @@ import { FILTER_GROUPS, FILTER_LABELS } from './filters';
 import type { DialogSpec } from './dialogs';
 import { lastFilterRun } from './dialogs';
 import * as ops from './ops';
+import { removeBackground } from './segment';
 import { toast } from '../../store';
 
 /** File / Edit / Image / Layer / Select / Filter / View menus. */
@@ -154,6 +155,10 @@ export function MenuBar({ e, cmd }: { e: Engine; cmd: Commands }) {
             <Item close={c} label="Apply mask" disabled={!l?.mask || !pixel} onClick={() => ops.deleteMask(e, true)} />
             <Item close={c} label="Delete mask" disabled={!l?.mask} onClick={() => ops.deleteMask(e, false)} />
             <Sep />
+            <Title>AI</Title>
+            <Item close={c} label="Remove background" disabled={!pixel} onClick={() => removeBackground(e, 'erase')} />
+            <Item close={c} label="Remove background as mask" disabled={!pixel} onClick={() => removeBackground(e, 'mask')} />
+            <Sep />
             <Item close={c} label={l?.clip ? 'Release clipping mask' : 'Create clipping mask'} kbd="Ctrl+Alt+G" disabled={!l} onClick={() => ops.toggleClip(e)} />
             <Item close={c} label="Group layer" kbd="Ctrl+G" disabled={!l} onClick={() => ops.groupActive(e)} />
             <Item close={c} label="Ungroup" kbd="Ctrl+Shift+G" disabled={l?.kind !== 'group'} onClick={() => ops.ungroup(e)} />
@@ -174,6 +179,7 @@ export function MenuBar({ e, cmd }: { e: Engine; cmd: Commands }) {
             <Item close={c} label="Deselect" kbd="Ctrl+D" disabled={!sel} onClick={() => ops.deselect(e)} />
             <Item close={c} label="Inverse" kbd="Ctrl+Shift+I" onClick={() => ops.invertSelection(e)} />
             <Item close={c} label="Layer pixels" disabled={!pixel} onClick={() => ops.selectLayerPixels(e, l!.id)} />
+            <Item close={c} label="Subject (AI)" disabled={!pixel} onClick={() => removeBackground(e, 'selection')} />
             <Item close={c} label="Color range…" onClick={() => cmd.dialog({ kind: 'colorRange' })} />
             <Sep />
             <Item close={c} label="Feather…" kbd="Shift+F6" disabled={!sel} onClick={() => cmd.dialog({ kind: 'modify', op: 'feather' })} />

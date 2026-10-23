@@ -245,6 +245,14 @@ export interface KeaApi {
     indexGet(key: string): Promise<string | null>;
     indexSet(key: string, json: string): Promise<boolean>;
   };
+  /** On-device AI models beyond speech (electron/models.cjs): download/cache/run locally, by type. */
+  models: {
+    state(type: string): Promise<AiModel[]>;
+    download(type: string, id: string): Promise<boolean>;
+    pause(type: string, id: string): Promise<boolean>;
+    remove(type: string, id: string): Promise<boolean>;
+    onDownload(cb: (m: AiModel) => void): () => void;
+  };
   /** The MCP control server (electron/mcp + src/lib/controlBridge.ts): lets a connected outside app drive the editors. */
   control: {
     /** Main asks the renderer to run a tool / read a resource for a connected app; the renderer answers via respond(). */
@@ -902,6 +910,21 @@ export interface SpeechModel {
   label: string;
   blurb: string;
   englishOnly: boolean;
+  size: number;
+  installed: boolean;
+  download: { status: string; received: number; total: number; error?: string } | null;
+}
+
+export interface AiModel {
+  type: string;
+  id: string;
+  repo: string;
+  label: string;
+  blurb: string;
+  license: string;
+  task: string;
+  dtype: string;
+  default: boolean;
   size: number;
   installed: boolean;
   download: { status: string; received: number; total: number; error?: string } | null;

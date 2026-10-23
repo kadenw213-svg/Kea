@@ -669,6 +669,13 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'aimodels',
+    label: 'AI image tools',
+    icon: 'Wand2',
+    blurb: 'Download on-device AI models for the image editor — background removal and subject selection. They run on this computer; nothing is uploaded.',
+    fields: [{ key: 'ai.segmentModel', label: 'Background-removal model', type: 'text', default: '', advanced: true, help: 'Which downloaded model to use (set from the list below).' }]
+  },
+  {
     id: 'control',
     label: 'Connect an app',
     icon: 'Plug',

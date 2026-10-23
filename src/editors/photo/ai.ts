@@ -8,6 +8,7 @@ import { TOOL_NAMES } from './toolOptions';
 import { downscale } from './canvas';
 import { textBox } from './vector';
 import * as ops from './ops';
+import { removeBackground, selectSubject } from './segment';
 
 /**
  * What the Assistant sidebar sees and can do in the photo editor: a text description
@@ -169,6 +170,13 @@ export function photoAi(e: Engine): AiHooks {
     { name: 'select_all', description: 'Select the whole image.', input_schema: { type: 'object', properties: {} }, run: () => oneStep(e, () => ops.selectAll(e)) },
     { name: 'select_none', description: 'Remove the selection.', input_schema: { type: 'object', properties: {} }, run: () => oneStep(e, () => ops.deselect(e)) },
     { name: 'invert_selection', description: 'Select everything that is not selected now.', input_schema: { type: 'object', properties: {} }, run: () => oneStep(e, () => ops.invertSelection(e)) },
+    {
+      name: 'remove_background',
+      description: 'Remove the background from the active layer with an on-device AI model (needs a background-removal model downloaded in Settings → AI image tools). output: "erase" wipes the background pixels (default), "mask" hides it non-destructively as a layer mask, "selection" just selects the subject.',
+      input_schema: { type: 'object', properties: { output: { type: 'string', enum: ['erase', 'mask', 'selection'] } } },
+      run: (i) => oneStep(e, () => removeBackground(e, i.output || 'erase'))
+    },
+    { name: 'select_subject', description: 'Select the main subject of the active layer with an on-device AI model (needs a background-removal model in Settings → AI image tools).', input_schema: { type: 'object', properties: {} }, run: () => oneStep(e, () => selectSubject(e)) },
     {
       name: 'select_color_range',
       description: 'Select every pixel close to a colour in the whole picture. fuzziness 1-255 (default 60).',

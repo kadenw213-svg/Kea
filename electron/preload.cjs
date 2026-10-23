@@ -194,6 +194,18 @@ contextBridge.exposeInMainWorld('api', {
     indexGet: (key) => ipcRenderer.invoke('video:index-get', key),
     indexSet: (key, json) => ipcRenderer.invoke('video:index-set', key, json)
   },
+  // On-device AI models (segmentation, …): download/cache/run locally (electron/models.cjs).
+  models: {
+    state: (type) => ipcRenderer.invoke('models:state', type),
+    download: (type, id) => ipcRenderer.invoke('models:download', type, id),
+    pause: (type, id) => ipcRenderer.invoke('models:pause', type, id),
+    remove: (type, id) => ipcRenderer.invoke('models:delete', type, id),
+    onDownload: (cb) => {
+      const h = (_e, m) => cb(m);
+      ipcRenderer.on('models:download', h);
+      return () => ipcRenderer.removeListener('models:download', h);
+    }
+  },
   // The MCP control server (electron/mcp): the main process asks the renderer to run an editor tool or read editor
   // state for a connected outside app, and the renderer answers on the same call id. Plus the Settings "Connect an
   // app" surface (turn the server on, mint/revoke per-app tokens) and an activity feed for the "controlling Kea" chip.

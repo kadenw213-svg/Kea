@@ -1,0 +1,54 @@
+import { useEffect, useState } from 'react';
+import { Download, Pause } from 'lucide-react';
+import { api, type AiModel } from '../../lib/api';
+import { useSettings } from '../../lib/settings';
+import { formatBytes } from '../../lib/util';
+
+/** Settings → AI image tools: download/manage the on-device background-removal models, pick which one to use. */
+export function AiModelsPanel() {
+  const [models, setModels] = useState<AiModel[]>([]);
+  const sel = useSettings((s) => (s.values['ai.segmentModel'] as string) || '');
+  const refresh = () => api.models.state('segmentation').then(setModels);
+  useEffect(() => {
+    refresh();
+    return api.models.onDownload((x) => {
+      if (x.type !== 'segmentation') return;
+      setModels((ms) => ms.map((y) => (y.id === x.id ? x : y)));
+    });
+  }, []);
+  const chosen = sel || models.find((m) => m.default)?.id || models[0]?.id;
+
+  return (
+    <div className="voice-models">
+      <p className="muted" style={{ marginTop: 0 }}>
+        These models run entirely on this computer and are downloaded once. They power <b>Remove background</b> and <b>Select subject</b> in the image editor (Layer and Select menus, or ask Claude).
+      </p>
+      <div className="sgroup-title">Background removal</div>
+      {models.map((m) => (
+        <div key={m.id} className={`voice-model ${chosen === m.id ? 'on' : ''}`}>
+          <label>
+            <input type="radio" name="segment-model" checked={chosen === m.id} onChange={() => useSettings.getState().set({ 'ai.segmentModel': m.id })} />
+            <span>
+              <b>{m.label}</b> · {formatBytes(m.size)} · {m.license}
+              <div className="muted">{m.blurb}</div>
+            </span>
+          </label>
+          {m.installed ? (
+            <button className="btn sm" onClick={() => api.models.remove('segmentation', m.id).then(refresh)}>
+              Delete
+            </button>
+          ) : m.download && m.download.status === 'downloading' ? (
+            <button className="btn sm" onClick={() => api.models.pause('segmentation', m.id)}>
+              <Pause size={13} /> {Math.round((m.download.received / Math.max(1, m.download.total)) * 100)}%
+            </button>
+          ) : (
+            <button className="btn sm" onClick={() => api.models.download('segmentation', m.id)}>
+              <Download size={13} /> {m.download ? 'Resume' : 'Download'}
+            </button>
+          )}
+        </div>
+      ))}
+      {models.some((m) => m.download?.status === 'error') && <p className="muted" style={{ color: 'var(--danger)', fontSize: 12 }}>{models.find((m) => m.download?.status === 'error')?.download?.error}</p>}
+    </div>
+  );
+}

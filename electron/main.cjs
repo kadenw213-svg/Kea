@@ -319,6 +319,7 @@ app.whenReady().then(() => {
   require('./search.cjs').register();
   require('./tts.cjs').register();
   require('./speech.cjs').register({ log, getWindow: () => mainWindow });
+  require('./models.cjs').register({ log, getWindow: () => mainWindow });
   const applySpell = () => session.defaultSession.setSpellCheckerEnabled(settings.get('general.spellcheck', true) !== false);
   applySpell();
   settings.onChange(applySpell);
@@ -342,6 +343,11 @@ app.whenReady().then(() => {
     const isolated = (res, extra) => new Response(res.body, { status: res.status, headers: isoHeaders(res, extra) });
     if (rel.startsWith('/__speech/')) {
       const p = require('./speech.cjs').resolveServed(rel.slice('/__speech/'.length));
+      if (!p || !fs.existsSync(p)) return new Response('Not found', { status: 404 });
+      return isolated(await net.fetch(pathToFileURL(p).toString()));
+    }
+    if (rel.startsWith('/__aimodels/')) {
+      const p = require('./models.cjs').resolveServed(rel.slice('/__aimodels/'.length));
       if (!p || !fs.existsSync(p)) return new Response('Not found', { status: 404 });
       return isolated(await net.fetch(pathToFileURL(p).toString()));
     }
