@@ -13,7 +13,12 @@ const DOC_LIMIT = 400_000;
 const GLOBAL_TOOLS = [
   { name: 'kea_list_tabs', description: 'List the files open in Kea: each with its id, name, kind, whether it offers tools, and which one is active. Also readable, with no turn cost, as the resource kea://workspace/tabs.', input_schema: { type: 'object', properties: {} } },
   { name: 'kea_focus_tab', description: 'Make a tab the active editor, so the editor tools (and the look picture) act on it. Pass the id from kea_list_tabs.', input_schema: { type: 'object', properties: { tab: { type: 'string' } }, required: ['tab'] } },
-  { name: 'kea_open_file', description: 'Open a file from disk in Kea (absolute path) and make it the active editor. The file opens in the right editor for its type.', input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } }
+  { name: 'kea_open_file', description: 'Open a file from disk in Kea (absolute path) and make it the active editor. The file opens in the right editor for its type.', input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
+  {
+    name: 'kea_batch',
+    description: 'Run several tool calls in order as one request — e.g. to apply an edit plan. Stops at the first failure and reports each step. Each call is {name, input}. (Each call is still its own undo step.)',
+    input_schema: { type: 'object', properties: { calls: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, input: { type: 'object' } }, required: ['name'] } } }, required: ['calls'] }
+  }
 ];
 
 const stripRun = (t: { name: string; description: string; input_schema: any }) => ({ name: t.name, description: t.description, input_schema: t.input_schema });
@@ -73,6 +78,18 @@ async function callTool(name: string, input: any): Promise<{ ok: boolean; text: 
     } catch (err: any) {
       return { ok: false, text: `Couldn’t open it: ${err?.message || err}` };
     }
+  }
+  if (name === 'kea_batch') {
+    const calls = Array.isArray(input?.calls) ? input.calls : [];
+    const lines: string[] = [];
+    for (let i = 0; i < calls.length; i++) {
+      const c = calls[i] || {};
+      if (c.name === 'kea_batch') return { ok: false, text: `Step ${i + 1}: a batch can’t contain another batch.` };
+      const r = await callTool(c.name, c.input || {});
+      lines.push(`${i + 1}. ${c.name}: ${r.ok ? 'ok' : 'FAILED'} — ${r.text}`);
+      if (!r.ok) return { ok: false, text: lines.join('\n') };
+    }
+    return { ok: true, text: lines.join('\n') || 'Nothing to do.' };
   }
   const tabId = activeTabId();
   const hooks = editorRegistry.get(tabId)?.ai;

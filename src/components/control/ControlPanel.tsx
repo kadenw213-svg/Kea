@@ -11,6 +11,8 @@ export function ControlPanel() {
   const [st, setSt] = useState<Status | null>(null);
   const [name, setName] = useState('');
   const [config, setConfig] = useState('');
+  const [configStdio, setConfigStdio] = useState('');
+  const [mode, setMode] = useState<'http' | 'stdio'>('http');
   const [copied, setCopied] = useState(false);
 
   const refresh = () => api.control.status().then(setSt);
@@ -28,14 +30,16 @@ export function ControlPanel() {
     const r = await api.control.addClient(name.trim() || 'App');
     setName('');
     setConfig(r.config);
+    setConfigStdio(r.configStdio);
     refresh();
   };
   const revoke = async (id: string) => {
     await api.control.revokeClient(id);
     refresh();
   };
+  const shown = mode === 'http' ? config : configStdio;
   const copy = () => {
-    navigator.clipboard.writeText(config).then(() => {
+    navigator.clipboard.writeText(shown).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
@@ -78,14 +82,28 @@ export function ControlPanel() {
       {config && (
         <div className="control-config">
           <div className="control-config-head">
-            <span>Its setup — paste into the app’s MCP config. The key is shown once; copy it now.</span>
+            <div className="seg">
+              <button className={mode === 'http' ? 'on' : ''} onClick={() => setMode('http')}>
+                HTTP (Claude Code, your app)
+              </button>
+              <button className={mode === 'stdio' ? 'on' : ''} onClick={() => setMode('stdio')}>
+                stdio (Claude Desktop, OpenAI)
+              </button>
+            </div>
             <button className="btn sm tonal" onClick={copy}>
               {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
-          <pre className="control-config-box">{config}</pre>
+          <pre className="control-config-box">{shown}</pre>
           <div className="muted small">
-            For Claude Code, save it as a file and run with <code>--mcp-config &lt;file&gt; --strict-mcp-config</code>. For Claude Desktop or an OpenAI agent, add the <code>kea</code> server to its MCP settings.
+            The key is shown once — copy it now.{' '}
+            {mode === 'http' ? (
+              <>
+                For Claude Code, save it and run with <code>--mcp-config &lt;file&gt; --strict-mcp-config</code>; or add the <code>kea</code> server to any app that speaks HTTP MCP.
+              </>
+            ) : (
+              <>Add the <code>kea</code> server to the app’s MCP settings. It launches a small bridge (needs Node). Keep Kea open with this turned on.</>
+            )}
           </div>
         </div>
       )}

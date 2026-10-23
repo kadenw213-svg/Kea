@@ -256,7 +256,8 @@
     "asarUnpack": [
       "node_modules/node-llama-cpp/**",
       "node_modules/@node-llama-cpp/**",
-      "electron/ai-worker.mjs"
+      "electron/ai-worker.mjs",
+      "electron/mcp/stdio-bridge.cjs"
     ]
   },
   "homepage": "https://github.com/kadenw213-svg/kea",

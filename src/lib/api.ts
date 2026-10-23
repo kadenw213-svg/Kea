@@ -243,7 +243,7 @@ export interface KeaApi {
     respond(callId: string, result: { ok: boolean; result?: any; error?: string }): void;
     status(): Promise<{ enabled: boolean; url: string | null; clients: { id: string; name: string; createdAt: string; lastUsed: string | null }[] }>;
     setEnabled(on: boolean): Promise<{ enabled: boolean; url: string | null }>;
-    addClient(name: string): Promise<{ id: string; name: string; config: string }>;
+    addClient(name: string): Promise<{ id: string; name: string; config: string; configStdio: string }>;
     revokeClient(id: string): Promise<boolean>;
     onActivity(cb: (ev: { client: string; kind: string; name?: string; ok?: boolean; active: boolean }) => void): () => void;
   };

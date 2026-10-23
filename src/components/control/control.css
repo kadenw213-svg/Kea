@@ -51,6 +51,28 @@
   justify-content: space-between;
   gap: 8px;
   font-size: 12.5px;
+  flex-wrap: wrap;
+}
+/* Local segmented control (not relying on the editor CSS's .seg). */
+.control-config-head .seg {
+  display: inline-flex;
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 2px;
+}
+.control-config-head .seg button {
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.control-config-head .seg button.on {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .control-config-box {
   margin: 0;

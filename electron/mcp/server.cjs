@@ -140,8 +140,12 @@ function stopServer() {
   } catch {}
 }
 
-/** The ready-to-paste MCP config for a client with this token. */
+/** The ready-to-paste HTTP MCP config for a client with this token (Claude Code, your own app). */
 const configFor = (token) => JSON.stringify({ mcpServers: { kea: { type: 'http', url: url || `http://127.0.0.1:${PREFERRED_PORT}/mcp`, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
+
+/** The stdio MCP config (Claude Desktop, OpenAI agents) — spawns the bridge, which talks to the HTTP server. */
+const bridgePath = () => path.join(__dirname.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1'), 'stdio-bridge.cjs');
+const configStdioFor = (token) => JSON.stringify({ mcpServers: { kea: { command: 'node', args: [bridgePath()], env: { KEA_MCP_ENDPOINT: endpointFile(), KEA_MCP_TOKEN: token } } } }, null, 2);
 
 /** Mint and persist a new connected-app token; returns what the UI shows (and the raw token for tests). */
 function mintClient(name) {
@@ -149,7 +153,7 @@ function mintClient(name) {
   state.clients.push(client);
   state.enabled = true;
   saveState();
-  return { id: client.id, name: client.name, token: client.token, config: configFor(client.token) };
+  return { id: client.id, name: client.name, token: client.token, config: configFor(client.token), configStdio: configStdioFor(client.token) };
 }
 
 function register(opts) {
