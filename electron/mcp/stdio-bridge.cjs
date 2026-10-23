@@ -80,6 +80,7 @@ process.stdin.on('data', (chunk) => {
     if (!line) continue;
     const msg = safeParse(line);
     if (!msg) continue;
+    if (msg.method === 'notifications/initialized') watchLists();
     inflight++;
     forward(msg)
       .then((reply) => {
@@ -93,5 +94,34 @@ process.stdin.on('data', (chunk) => {
 });
 process.stdin.on('end', () => {
   ended = true;
+  clearInterval(watcher);
   maybeExit();
 });
+
+// Kea's tools and resources follow the active tab (a document's tools, the video editor's…). Its HTTP server only
+// answers requests, so the bridge checks the lists every two seconds and tells the client when they change
+// (the listChanged capability Kea advertises).
+let watcher = null;
+function watchLists() {
+  if (watcher) return;
+  const last = {};
+  let n = 0;
+  const check = async (method, key, note) => {
+    const r = await forward({ jsonrpc: '2.0', id: `kea-bridge-${++n}`, method });
+    const items = r && r.result && r.result[key];
+    if (!Array.isArray(items)) return;
+    const sig = items.map((x) => x.name || x.uri).sort().join('\n');
+    if (last[key] !== undefined && last[key] !== sig) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: note }) + '\n');
+    last[key] = sig;
+  };
+  let busy = false;
+  const tick = async () => {
+    if (busy || ended) return;
+    busy = true;
+    await check('tools/list', 'tools', 'notifications/tools/list_changed').catch(() => {});
+    await check('resources/list', 'resources', 'notifications/resources/list_changed').catch(() => {});
+    busy = false;
+  };
+  tick();
+  watcher = setInterval(tick, 2000);
+}

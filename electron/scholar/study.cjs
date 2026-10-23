@@ -589,7 +589,7 @@ async function teacherContext(courseCode) {
     const tests = (src.tests || []).filter((t) => String(t.date || '').slice(0, 10) >= today && (t.chapters || []).includes(c.label));
     if (!tests.length) continue;
     const items = [];
-    const add = (text, key, words) => items.push({ h: hash(key), text, ...(words ? { words } : {}) });
+    const add = (text, key, words) => items.push({ h: hash(key), text, ...(words ? { words } : {}), ...(key.startsWith('file|') ? { file: true } : {}) });
     const wordsOf = (x) => [...new Set(squeeze(htmlText(String(x))).toLowerCase().match(/[a-z0-9]{3,}/g) || [])].join(' ');
     for (const t of tests) {
       const when = `${t.title} (${String(t.date).slice(0, 10)})`;
@@ -598,7 +598,15 @@ async function teacherContext(courseCode) {
       for (const l of t.review_links || []) add(`${when} review link: ${l.label || l.url}`, `link|${l.url}`);
     }
     for (const l of c.review_links || []) if (SHEET.test(l.label) && !NOT_SHEET.test(l.label)) add(`Review sheet: ${l.label}`, `link|${l.url}`);
-    for (const f of files) if (chapterNum(path.basename(f.path)) === chapterNum(c.label)) add(`Class file: ${path.basename(f.path)}`, `file|${f.path}|${f.bytes}`);
+    // Files count by name only: Kea's own text copy of a PDF (Review.pdf → Review.pdf.txt) or a re-synced page whose
+    // size changed is not new teacher material. Unnumbered files and chapters never match each other.
+    const num = chapterNum(c.label);
+    if (num)
+      for (const f of files)
+        if (chapterNum(path.basename(f.path)) === num) {
+          const name = f.path.replace(/\.(pdf|docx|pptx)\.txt$/i, '.$1');
+          add(`Class file: ${path.basename(name)}`, `file|${name}`);
+        }
     out.set(c.label, { test: { id: tests[0].id, title: tests[0].title, date: String(tests[0].date).slice(0, 10) }, items });
   }
   return { course: src.course, chapters: out };

@@ -61,7 +61,8 @@ function register() {
       return { ok: true };
     }
     try {
-      await client(key).models.retrieve('claude-opus-5-5');
+      // Listing models works for any valid key, whichever models its organisation may use.
+      await client(key).models.list({ limit: 1 });
       writeKey(key);
       return { ok: true };
     } catch (err) {

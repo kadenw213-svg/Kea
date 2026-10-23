@@ -57,6 +57,9 @@ public class ReadAloud extends Service {
     // (One reading at a time, the reader talks to it directly.)
     static Listener listener;
     private static ReadAloud running;
+    /** The running service has stopped itself and is about to be destroyed: a new start waits for that. */
+    private static boolean finishing = false;
+    private static Context pendingStart = null;
     private static final List<Item> items = new ArrayList<>();
     private static int index = 0;
     private static boolean playing = false;
@@ -87,8 +90,15 @@ public class ReadAloud extends Service {
         if (voice != null) voiceName = voice;
         if (speed > 0) rate = speed;
         playing = true;
-        if (running != null) running.speakCurrent();
-        else if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(new Intent(ctx, ReadAloud.class));
+        if (running != null && finishing) pendingStart = ctx.getApplicationContext();
+        else if (running != null) {
+            running.applyVoice();
+            running.speakCurrent();
+        } else launch(ctx);
+    }
+
+    private static void launch(Context ctx) {
+        if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(new Intent(ctx, ReadAloud.class));
         else ctx.startService(new Intent(ctx, ReadAloud.class));
     }
 
@@ -195,6 +205,7 @@ public class ReadAloud extends Service {
     public void onCreate() {
         super.onCreate();
         running = this;
+        finishing = false;
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
             NotificationChannel ch = new NotificationChannel(CHANNEL, "Reading aloud", NotificationManager.IMPORTANCE_LOW);
@@ -249,12 +260,18 @@ public class ReadAloud extends Service {
 
     @Override
     public void onDestroy() {
-        running = null;
-        playing = false;
+        if (running == this) running = null;
+        finishing = false;
         if (tts != null) tts.shutdown();
         if (wake != null && wake.isHeld()) wake.release();
         dropFocus();
         super.onDestroy();
+        // Started again while this one was stopping: begin the new reading now.
+        if (pendingStart != null) {
+            Context c = pendingStart;
+            pendingStart = null;
+            launch(c);
+        } else playing = false;
     }
 
     private void applyVoice() {
@@ -322,6 +339,7 @@ public class ReadAloud extends Service {
 
     private void finish(String state) {
         playing = false;
+        finishing = true;
         cancelGap();
         report(state);
         if (tts != null) tts.stop();

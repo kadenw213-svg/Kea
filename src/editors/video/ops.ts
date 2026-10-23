@@ -169,7 +169,7 @@ export function splitAt(p: Project, t: number, ids?: string[]) {
 }
 
 /** Make room on a track between a and b: trims, splits or removes whatever is there (except `keep`). */
-export function clearRange(p: Project, trackId: string, a: number, b: number, keep: Set<string> = new Set()) {
+export function clearRange(p: Project, trackId: string, a: number, b: number, keep: Set<string> = new Set(), relink = new Map<string, string>()) {
   for (const c of [...p.clips]) {
     if (c.trackId !== trackId || keep.has(c.id)) continue;
     const s = c.start;
@@ -178,7 +178,12 @@ export function clearRange(p: Project, trackId: string, a: number, b: number, ke
     if (s >= a - EPS && e <= b + EPS) {
       p.clips.splice(p.clips.indexOf(c), 1);
     } else if (s < a && e > b) {
-      splitClip(p, c, b);
+      // The right half is a new piece: it links only with its partners' right halves (cleared in the same call).
+      const r = splitClip(p, c, b);
+      if (r && c.linkId) {
+        if (!relink.has(c.linkId)) relink.set(c.linkId, uid());
+        r.linkId = relink.get(c.linkId);
+      }
       setDuration(p, c, a - s);
       c.trOut = undefined;
     } else if (s < a) {
@@ -225,7 +230,8 @@ export function rippleDeleteGap(p: Project, trackId: string, t: number) {
 
 /** Place clips, overwriting what's under them (Premiere's default drop). */
 export function overwrite(p: Project, clips: Clip[]) {
-  for (const c of clips) clearRange(p, c.trackId, c.start, clipEnd(c));
+  const relink = new Map<string, string>();
+  for (const c of clips) clearRange(p, c.trackId, c.start, clipEnd(c), new Set(), relink);
   p.clips.push(...clips);
 }
 
@@ -235,7 +241,10 @@ export function insert(p: Project, clips: Clip[]) {
   const at = Math.min(...clips.map((c) => c.start));
   const len = Math.max(...clips.map(clipEnd)) - at;
   const tracks = new Set(clips.map((c) => c.trackId));
-  for (const tid of tracks) for (const c of p.clips.filter((x) => x.trackId === tid)) splitClip(p, c, at);
+  // Linked partners (a video's own sound) are split and pushed too, so picture and sound stay in sync.
+  for (const c of p.clips) if (tracks.has(c.trackId) && c.linkId && clipEnd(c) > at + EPS) for (const x of p.clips) if (x.linkId === c.linkId) tracks.add(x.trackId);
+  const crossing = p.clips.filter((x) => tracks.has(x.trackId) && x.start < at - EPS && clipEnd(x) > at + EPS).map((x) => x.id);
+  if (crossing.length) splitAt(p, at, crossing);
   shiftAfter(p, tracks, at, len);
   p.clips.push(...clips);
 }

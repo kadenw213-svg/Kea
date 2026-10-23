@@ -48,7 +48,7 @@ export async function readVideoResource(store: AssistantEnv['store'], tabId: str
   if (!idx) return { text: `This clip hasn't been indexed yet — call index_media first.`, mimeType: 'text/plain' };
   if (m[2] === 'transcript') return { text: transcriptText(idx), mimeType: 'text/plain' };
   if (m[2] === 'contactsheet') return idx.contactSheet ? { blob: idx.contactSheet.split(',')[1], mimeType: 'image/jpeg' } : { text: 'No contact sheet.', mimeType: 'text/plain' };
-  return { text: JSON.stringify({ mediaId: idx.mediaId, duration: idx.duration, scenes: idx.scenes, silences: idx.silences, transcript: idx.transcript ? `${idx.transcript.segments.length} segments` : idx.transcriptNote }, null, 1), mimeType: 'application/json' };
+  return { text: JSON.stringify({ mediaId: media!.id, duration: idx.duration, scenes: idx.scenes, silences: idx.silences, transcript: idx.transcript ? `${idx.transcript.segments.length} segments` : idx.transcriptNote }, null, 1), mimeType: 'application/json' };
 }
 
 /* ---------- The EDL applier (one undo step) ---------- */
@@ -89,6 +89,11 @@ function applyEdl(p: Project, edl: Edl, resolve: (id: string) => MediaItem | und
       const m = resolve(String(e.mediaId));
       if (!m) throw new Error(`EDL entry ${n + 1}: no media with id ${e.mediaId}.`);
       const start = snap(e.start !== undefined ? e.start : at);
+      if (m.kind !== 'image') {
+        const lo = e.in ?? 0;
+        const hi = e.out ?? m.duration;
+        if (!(lo >= 0) || !(hi > lo + 0.01) || (m.duration > 0 && hi > m.duration + 0.05)) throw new Error(`EDL entry ${n + 1}: in/out must be 0 ≤ in < out ≤ ${m.duration.toFixed(2)} s (the length of ${m.name}); got ${lo}–${hi}.`);
+      } else if (e.in !== undefined && e.out !== undefined && !(e.out > e.in + 0.01)) throw new Error(`EDL entry ${n + 1}: out must be after in.`);
       const clips = clipsForMedia(p, m, start, { vTrack: m.kind === 'audio' ? undefined : vTrack.id, aTrack: aTrack.id, in: e.in, out: e.out, findFree: false });
       overwrite(p, clips);
       const vid = clips.find((c) => c.trackId === vTrack.id) || clips[0];
@@ -121,11 +126,12 @@ const mapStyle = (text: string, s: Partial<TextStyle> = {}): Partial<TextStyle> 
 /* ---------- SRT ---------- */
 
 const srtTime = (t: number) => {
-  t = Math.max(0, t);
-  const h = Math.floor(t / 3600);
-  const m = Math.floor((t % 3600) / 60);
-  const s = Math.floor(t % 60);
-  const ms = Math.round((t - Math.floor(t)) * 1000);
+  // Round to whole milliseconds first, so 1.9996 s is 00:00:02,000 (not 00:00:01,1000).
+  const all = Math.round(Math.max(0, t) * 1000);
+  const h = Math.floor(all / 3600000);
+  const m = Math.floor((all % 3600000) / 60000);
+  const s = Math.floor((all % 60000) / 1000);
+  const ms = all % 1000;
   const pad = (x: number, n = 2) => String(x).padStart(n, '0');
   return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
 };

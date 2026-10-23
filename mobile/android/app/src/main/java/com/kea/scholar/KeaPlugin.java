@@ -65,7 +65,16 @@ public class KeaPlugin extends Plugin {
         if (intent == null) return false;
         String saved = intent.getStringExtra("keaFile");
         if (saved != null) {
+            intent.removeExtra("keaFile");
             File f = new File(saved);
+            // Only Kea's own downloads (in its documents folder): any app can send this intent, and must not be able
+            // to make Kea show (and offer to share) its other private files.
+            try {
+                String root = docsDir().getCanonicalPath() + File.separator;
+                if (!f.getCanonicalPath().startsWith(root)) return false;
+            } catch (java.io.IOException e) {
+                return false;
+            }
             opened = new JSObject();
             opened.put("path", f.getAbsolutePath());
             opened.put("name", f.getName());

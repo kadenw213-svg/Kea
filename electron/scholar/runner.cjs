@@ -214,6 +214,14 @@ async function depthRows(code) {
     for (const r of rows) if (r.reviewed_at) seen[code][r.label] = seenOf(ctx?.chapters.get(r.label)?.items || []);
     fs.writeFileSync(contextFile(), JSON.stringify(seen));
   }
+  // Class files used to be keyed by path and size, now by name only: the files reviewed chapters had already count as
+  // seen under the new key (once per class), so the change itself never starts a review.
+  const filesKey = `${code}:files-by-name`;
+  if (!seen[filesKey]) {
+    for (const r of rows) if (r.reviewed_at && seen[code][r.label]) seen[code][r.label] = seenOf((ctx?.chapters.get(r.label)?.items || []).filter((i) => i.file), seen[code][r.label]);
+    seen[filesKey] = true;
+    fs.writeFileSync(contextFile(), JSON.stringify(seen));
+  }
   return rows.map((r) => {
     const c = ctx?.chapters.get(r.label);
     const old = seen[code][r.label] || { h: [], w: [] };

@@ -25,7 +25,7 @@ const CHANGED = (a: Record<string, unknown>, b: Record<string, unknown>) => Obje
  * Is the export exactly one unmodified media clip (optionally with its untouched linked sound), starting at 0 and
  * exported whole at its own size — i.e. would copying the source packets give the same result as rendering?
  */
-function eligible(p: Project, o: Partial<VideoExportRequest> = {}): { ok: true; clip: Clip } | { ok: false; reason: string } {
+function eligible(p: Project, o: Partial<VideoExportRequest> = {}): { ok: true; clip: Clip; audio: boolean } | { ok: false; reason: string } {
   const vTracks = new Set(p.tracks.filter((t) => t.kind === 'video').map((t) => t.id));
   const videoClips = p.clips.filter((c) => c.kind === 'media' && vTracks.has(c.trackId));
   const overlays = p.clips.filter((c) => c.kind !== 'media');
@@ -52,17 +52,19 @@ function eligible(p: Project, o: Partial<VideoExportRequest> = {}): { ok: true; 
   if (p.settings.master && (p.settings.master.gain || p.settings.master.limiter)) return { ok: false, reason: 'loudness normalisation is on' };
   // Sound: only the clip's own linked sound, untouched and in step with the picture.
   const aTracks = new Set(p.tracks.filter((t) => t.kind === 'audio').map((t) => t.id));
-  for (const a of p.clips.filter((x) => aTracks.has(x.trackId))) {
+  const sound = p.clips.filter((x) => aTracks.has(x.trackId));
+  for (const a of sound) {
     if (!c.linkId || a.linkId !== c.linkId) return { ok: false, reason: 'there’s other sound on the timeline (music, effects…)' };
     if (a.mediaId !== c.mediaId || Math.abs(a.start - c.start) > 1e-3 || Math.abs(a.in - c.in) > 1e-3 || Math.abs(a.out - c.out) > 1e-3) return { ok: false, reason: 'the sound has been moved or replaced' };
     if (a.audioFx || a.trIn || a.trOut || Object.values(a.kf || {}).some((ks) => ks && (ks as unknown[]).length) || CHANGED(a.props as any, DEFAULT_PROPS as any)) return { ok: false, reason: 'the sound is processed or its level changed' };
     const tr = p.tracks.find((t) => t.id === a.trackId);
     if (tr && (tr.volume || tr.muted)) return { ok: false, reason: 'the sound track’s level is changed' };
   }
-  return { ok: true, clip: c };
+  // No sound on the timeline (deleted, or export without audio) → the copy must be silent too.
+  return { ok: true, clip: c, audio: sound.length > 0 && o.audio !== false };
 }
 
-async function streamCopyTrim(p: Project, clip: Clip, path: string, onProgress: (f: number, note: string) => void, signal: AbortSignal): Promise<void> {
+async function streamCopyTrim(p: Project, clip: Clip, audio: boolean, path: string, onProgress: (f: number, note: string) => void, signal: AbortSignal): Promise<void> {
   const m = mediaOf(p, clip)!;
   const input = await inputFor(mediaKey(m));
   const sink = await openFileSink(path);
@@ -70,7 +72,7 @@ async function streamCopyTrim(p: Project, clip: Clip, path: string, onProgress: 
   const target = sink.write ? new StreamTarget(new WritableStream({ write: (chunk) => sink.write!(chunk.position, chunk.data) }), { chunked: true }) : buffer!;
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.write ? false : 'in-memory' }), target });
   try {
-    const conv = await Conversion.init({ input, output, trim: { start: clip.in, end: clip.out } });
+    const conv = await Conversion.init({ input, output, trim: { start: clip.in, end: clip.out }, ...(audio ? {} : { audio: { discard: true } }) });
     conv.onProgress = (pr) => onProgress(Math.min(0.98, pr), 'Copying (no re-encode)…');
     if (!conv.isValid) throw new Error('these tracks can’t be copied as-is');
     signal.addEventListener('abort', () => conv.cancel().catch(() => {}), { once: true });
@@ -114,9 +116,11 @@ export async function exportVideo(
     const el = eligible(p, o);
     if (el.ok) {
       try {
-        await streamCopyTrim(p, el.clip, o.path, onProgress, signal);
+        await streamCopyTrim(p, el.clip, el.audio, o.path, onProgress, signal);
         return { mode: 'copied', path: o.path, note: 'Stream-copied the trimmed clip — no re-encode, no quality loss.' };
       } catch (err: any) {
+        // A cancel surfaces as mediabunny's ConversionCanceledError: never fall back to a re-encode then.
+        if (signal.aborted) throw err instanceof Canceled ? err : new Canceled();
         if (err instanceof Canceled || err?.name === 'AbortError') throw err;
         console.warn('lossless copy failed, re-encoding instead', err);
         const r = await exportProject(p, reencodeOptions(p, o), onProgress, signal);

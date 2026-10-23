@@ -228,8 +228,14 @@ public class SiteActivity extends Activity {
                 if (cookies != null) c.setRequestProperty("Cookie", cookies);
                 if (agent != null) c.setRequestProperty("User-Agent", agent);
                 c.setInstanceFollowRedirects(true);
+                int code = c.getResponseCode();
+                if (code >= 400) throw new Exception("the class site answered " + code + ". Sign in again and retry.");
                 String cd = c.getHeaderField("Content-Disposition");
                 String type = c.getContentType() != null ? c.getContentType() : mime;
+                // A sign-in or error page where a file was expected (an expired session) isn't the file.
+                boolean wantedPage = mime != null && mime.toLowerCase().startsWith("text/html");
+                if (!wantedPage && type != null && type.toLowerCase().startsWith("text/html") && (cd == null || !cd.toLowerCase().contains("attachment")))
+                    throw new Exception("the class site sent a web page instead of the file. Sign in again and retry.");
                 String name = android.webkit.URLUtil.guessFileName(url, cd != null ? cd : disposition, type);
                 java.io.File dir = KeaPlugin.docsDir(this);
                 dir.mkdirs();
@@ -238,6 +244,9 @@ public class SiteActivity extends Activity {
                     byte[] buf = new byte[65536];
                     int n;
                     while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+                } catch (Exception e) {
+                    out.delete();
+                    throw e;
                 }
                 final String t = type;
                 runOnUiThread(() -> startActivity(new Intent(this, MainActivity.class).putExtra("keaFile", out.getAbsolutePath()).putExtra("keaType", t == null ? "" : t).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)));

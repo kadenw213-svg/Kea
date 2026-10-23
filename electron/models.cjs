@@ -133,6 +133,7 @@ async function download(type, id) {
   const controller = new AbortController();
   const d = (downloads[key] = { status: 'downloading', received: 0, total: totalOf(type, id), controller });
   emit(type, id);
+  let out = null;
   try {
     let done = 0;
     for (const f of c.files) {
@@ -146,26 +147,32 @@ async function download(type, id) {
       const part = dest + '.part';
       let start = sizeOn(part);
       if (start > f.size) start = 0;
-      const url = `https://huggingface.co/${c.repo}/resolve/${c.rev}/${f.path}`;
-      const res = await fetch(url, { headers: start ? { Range: `bytes=${start}-` } : {}, signal: controller.signal, redirect: 'follow' });
-      if (!res.ok && res.status !== 206) throw new Error(`Download failed (HTTP ${res.status})`);
-      if (start && res.status !== 206) start = 0;
-      const out = fs.createWriteStream(part, { flags: start ? 'a' : 'w' });
-      let got = start;
-      let lastEmit = 0;
-      const reader = res.body.getReader();
-      for (;;) {
-        const { done: end, value } = await reader.read();
-        if (end) break;
-        if (!out.write(value)) await new Promise((r) => out.once('drain', r));
-        got += value.length;
-        d.received = done + got;
-        if (Date.now() - lastEmit > 250) {
-          lastEmit = Date.now();
-          emit(type, id);
+      // A .part that's already whole (Kea closed while it was being checked) only needs its check; asking the server
+      // for bytes past the end would get HTTP 416.
+      if (start < f.size) {
+        const url = `https://huggingface.co/${c.repo}/resolve/${c.rev}/${f.path}`;
+        const res = await fetch(url, { headers: start ? { Range: `bytes=${start}-` } : {}, signal: controller.signal, redirect: 'follow' });
+        if (!res.ok && res.status !== 206) throw new Error(`Download failed (HTTP ${res.status})`);
+        if (start && res.status !== 206) start = 0;
+        out = fs.createWriteStream(part, { flags: start ? 'a' : 'w' });
+        let got = start;
+        let lastEmit = 0;
+        const reader = res.body.getReader();
+        for (;;) {
+          const { done: end, value } = await reader.read();
+          if (end) break;
+          if (!out.write(value)) await new Promise((r) => out.once('drain', r));
+          got += value.length;
+          d.received = done + got;
+          if (Date.now() - lastEmit > 250) {
+            lastEmit = Date.now();
+            emit(type, id);
+          }
         }
+        const w = out;
+        await new Promise((r, j) => w.end((err) => (err ? j(err) : r())));
+        out = null;
       }
-      await new Promise((r, j) => out.end((err) => (err ? j(err) : r())));
       if ((await hashFile(part)) !== f.sha256) {
         fs.rmSync(part, { force: true });
         throw new Error('The download was corrupted. Please try again.');
@@ -177,6 +184,13 @@ async function download(type, id) {
     delete downloads[key];
     emit(type, id);
   } catch (err) {
+    // Close the .part file now: a stray handle would block deleting the model, and late buffered writes could land
+    // after a resume has started appending. (Waits so a quick resume can't race it.)
+    if (out && !out.closed)
+      await new Promise((r) => {
+        out.once('close', r);
+        out.end();
+      });
     if (controller.signal.aborted) d.status = 'paused';
     else {
       log('AI model download failed', type, id, err);

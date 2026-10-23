@@ -43,6 +43,8 @@ const patchItem = (tabId: string, id: string, p: Partial<ChatItem> | ((i: ChatIt
   patchChat(tabId, (c) => ({ items: c.items.map((i) => (i.id === id ? { ...i, ...(typeof p === 'function' ? p(i) : p) } : i)) }));
 
 const stopped = new Set<string>();
+// Bumped by clear(): a loop still running for the old conversation must not add to the new one.
+const generation = new Map<string, number>();
 
 /** Send what the student typed and let Claude work until it's done (or is stopped). */
 export async function ask(tabId: string, text: string, opts: { look?: boolean } = {}) {
@@ -63,6 +65,8 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean } 
   patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content }], busy: true }));
   addItem(tabId, { kind: 'user', text, image: shown });
   stopped.delete(tabId);
+  const gen = generation.get(tabId) || 0;
+  const live = () => (generation.get(tabId) || 0) === gen;
 
   const defs = tools.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
   let retries = 0;
@@ -86,6 +90,7 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean } 
         } else if (ev.type === 'tool') textItem = '';
       });
       const r = await api.assistant.send(reqId, { model: setting('assistant.model') || 'claude-opus-5-5', effort: setting('assistant.effort') || 'medium', system: SYSTEM, messages: chatOf(tabId).messages, tools: defs }).finally(off);
+      if (!live()) break;
       if (r.content) patchChat(tabId, (c) => ({ items: c.items.filter((i) => !streamed.includes(i.id)) }));
       for (const b of r.content || []) {
         if (b.type === 'text' && b.text) addItem(tabId, { kind: 'assistant', text: b.text });
@@ -110,16 +115,20 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean } 
       const uses = r.content.filter((b: any) => b.type === 'tool_use');
       if (!uses.length) break;
       if (r.stop_reason === 'max_tokens') {
+        // Every tool_use needs a tool_result, or the next message in this chat is refused.
+        const cut = uses.map((u: any) => ({ type: 'tool_result', tool_use_id: u.id, is_error: true, content: 'Not run: the answer was cut off (max_tokens) before this call was complete.' }));
+        patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content: cut }] }));
         addItem(tabId, { kind: 'error', text: 'Claude’s answer was too long and got cut off. Ask for a smaller step.' });
         break;
       }
       // Tools run one at a time (they change the same file), and all their results go back together.
       const results: any[] = [];
       for (const u of uses) results.push(await runTool(tabId, tools, u));
+      if (!live()) break;
       patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content: results }] }));
     }
   } finally {
-    patchChat(tabId, { busy: false, reqId: undefined });
+    if (live()) patchChat(tabId, { busy: false, reqId: undefined });
   }
 }
 
@@ -151,5 +160,6 @@ export function stop(tabId: string) {
 
 export function clear(tabId: string) {
   stop(tabId);
+  generation.set(tabId, (generation.get(tabId) || 0) + 1);
   patchChat(tabId, { messages: [], items: [], busy: false, usage: { input: 0, output: 0, cached: 0 } });
 }

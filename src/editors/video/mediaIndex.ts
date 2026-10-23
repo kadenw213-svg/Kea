@@ -46,32 +46,44 @@ async function decodeMono16k(key: string, signal?: AbortSignal): Promise<Float32
   const at = await audioTrackOf(key);
   if (!at) return null;
   const sink = new AudioBufferSink(at);
-  const chunks: Float32Array[] = [];
+  // Mixed to mono and resampled a minute at a time, so a long recording never sits in memory at its source rate.
+  // Whole-minute blocks resample to exactly 960 000 samples each, so the blocks join without drift.
+  const out: Float32Array[] = [];
   let sr = 0;
-  let total = 0;
+  let block: Float32Array | null = null;
+  let fill = 0;
+  const flush = async () => {
+    if (!block || !fill) return;
+    const ab = new AudioBuffer({ numberOfChannels: 1, length: fill, sampleRate: sr });
+    ab.copyToChannel((fill === block.length ? block : block.subarray(0, fill)) as Float32Array<ArrayBuffer>, 0);
+    out.push(await to16kMono(ab));
+    fill = 0;
+  };
   for await (const { buffer } of sink.buffers()) {
     ck(signal);
-    sr = buffer.sampleRate;
+    if (!sr) {
+      sr = buffer.sampleRate;
+      block = new Float32Array(sr * 60);
+    }
     const n = buffer.length;
     const chs = buffer.numberOfChannels;
-    const mono = new Float32Array(n);
-    for (let c = 0; c < chs; c++) {
-      const d = buffer.getChannelData(c);
-      for (let i = 0; i < n; i++) mono[i] += d[i] / chs;
+    const data = Array.from({ length: chs }, (_, c) => buffer.getChannelData(c));
+    for (let i = 0; i < n; i++) {
+      let v = 0;
+      for (let c = 0; c < chs; c++) v += data[c][i];
+      block![fill++] = v / chs;
+      if (fill === block!.length) await flush();
     }
-    chunks.push(mono);
-    total += n;
   }
-  if (!total || !sr) return null;
-  const full = new Float32Array(total);
+  await flush();
+  if (!out.length) return null;
+  const full = new Float32Array(out.reduce((s, c) => s + c.length, 0));
   let off = 0;
-  for (const c of chunks) {
+  for (const c of out) {
     full.set(c, off);
     off += c.length;
   }
-  const ab = new AudioBuffer({ numberOfChannels: 1, length: total, sampleRate: sr });
-  ab.copyToChannel(full, 0);
-  return to16kMono(ab);
+  return full;
 }
 
 // ---------- Loudness envelope (10 ms RMS) for snapping cuts to pauses ----------
@@ -224,8 +236,10 @@ export async function buildIndex(media: MediaItem, onProgress: Progress, signal?
     media.hasAudio &&
     models.some((m) => m.installed) &&
     (!idx.transcript || (idx.transcript.segments.length > 0 && !idx.transcript.words?.length && models.some((m) => m.installed && m.words)));
+  // Cached by file, but reported under this project's id for the file (it changes between projects and sessions).
+  const own = (idx: MediaIndex): MediaIndex => ({ ...idx, mediaId: media.id, name: media.name });
   const have = mem.get(key);
-  if (have && !stale(have)) return have;
+  if (have && !stale(have)) return own(have);
   const ckey = await cacheKey(media);
   if (ckey) {
     const cached = await api.video.indexGet(ckey).catch(() => null);
@@ -233,7 +247,7 @@ export async function buildIndex(media: MediaItem, onProgress: Progress, signal?
       const idx = JSON.parse(cached) as MediaIndex;
       if (!stale(idx)) {
         mem.set(key, idx);
-        return idx;
+        return own(idx);
       }
     }
   }

@@ -102,8 +102,10 @@ export function invalid(tool: AssistantTool, input: any): string | null {
   for (const [k, spec] of Object.entries(tool.input_schema.properties) as [string, any][]) {
     const v = input[k];
     if (v === undefined || !spec?.type) continue;
-    const ok = spec.type === 'array' ? Array.isArray(v) : spec.type === 'integer' ? Number.isInteger(v) : spec.type === 'number' ? typeof v === 'number' : spec.type === 'object' ? typeof v === 'object' && !Array.isArray(v) : typeof v === spec.type;
-    if (!ok) return `“${k}” should be ${spec.type === 'integer' ? 'a whole number' : `a ${spec.type}`}.`;
+    // A list of types (JSON-schema union, e.g. ['number', 'null']) accepts any one of them.
+    const types: string[] = Array.isArray(spec.type) ? spec.type : [spec.type];
+    const is = (t: string) => (t === 'null' ? v === null : t === 'array' ? Array.isArray(v) : t === 'integer' ? Number.isInteger(v) : t === 'number' ? typeof v === 'number' : t === 'object' ? typeof v === 'object' && v !== null && !Array.isArray(v) : typeof v === t);
+    if (!types.some(is)) return `“${k}” should be ${types.map((t) => (t === 'integer' ? 'a whole number' : t === 'null' ? 'null' : `a ${t}`)).join(' or ')}.`;
   }
   return null;
 }

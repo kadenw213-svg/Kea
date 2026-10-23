@@ -29,22 +29,25 @@ function writeState(s) {
   } catch {}
 }
 
+let quitting = false;
+
 function start() {
   if (ready) return ready;
-  worker = utilityProcess.fork(path.join(__dirname, 'engine-worker.cjs'), [], { serviceName: 'Kea Engine', stdio: 'pipe' });
-  worker.stderr?.on('data', (d) => log('engine stderr', String(d).slice(0, 500)));
+  const w = utilityProcess.fork(path.join(__dirname, 'engine-worker.cjs'), [], { serviceName: 'Kea Engine', stdio: 'pipe' });
+  worker = w;
+  w.stderr?.on('data', (d) => log('engine stderr', String(d).slice(0, 500)));
   ready = new Promise((resolve, reject) => {
     // A cold start (antivirus scanning the native DLLs, a slow disk) can be slow; if it never comes up, kill it so the
-    // next call starts fresh instead of failing forever.
+    // next call starts fresh instead of failing forever. Its later 'exit' must not touch the worker that replaces it.
     const t = setTimeout(() => {
       reject(new Error('The Kea engine did not start.'));
-      try {
-        worker?.kill();
-      } catch {}
       worker = null;
       ready = null;
+      try {
+        w.kill();
+      } catch {}
     }, 60000);
-    worker.on('message', (m) => {
+    w.on('message', (m) => {
       if (m?.type === 'ready') {
         clearTimeout(t);
         return resolve();
@@ -54,11 +57,13 @@ function start() {
       pending.delete(m.id);
       m.ok ? p.resolve(m) : p.reject(new Error(m.message || 'Engine error'));
     });
-    worker.on('exit', (code) => {
+    w.on('exit', (code) => {
       clearTimeout(t);
       log('engine exit', code);
+      if (worker !== w) return reject(new Error('The Kea engine stopped.'));
+      // Kea killing the worker on quit isn't a driver crash.
       const gpuJob = [...pending.values()].some((p) => p.ep === 'dml');
-      if (gpuJob && code !== 0) writeState({ ...readState(), gpuCrashed: true, crashedAt: Date.now() });
+      if (gpuJob && code !== 0 && !quitting) writeState({ ...readState(), gpuCrashed: true, crashedAt: Date.now() });
       worker = null;
       ready = null;
       for (const p of pending.values()) p.reject(Object.assign(new Error('The Kea engine stopped unexpectedly.'), { crashed: true, gpu: p.ep === 'dml' }));
@@ -149,9 +154,10 @@ function register(opts) {
   ipcMain.handle('engine:faces', (_e, id, rgba, width, height, accel) => faces(id, rgba, width, height, accel));
   ipcMain.handle('engine:transcribe', async (_e, repo, audio, englishOnly, timestamps) => {
     const r = await transcribe(repo, audio, englishOnly, timestamps);
-    return { text: r.text, chunks: r.chunks, ms: r.ms };
+    return { text: r.text, chunks: r.chunks, words: r.words, ms: r.ms };
   });
   app.on('will-quit', () => {
+    quitting = true;
     try {
       worker?.kill();
     } catch {}

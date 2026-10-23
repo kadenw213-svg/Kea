@@ -397,7 +397,7 @@ export function parseProject(json: string): Project {
       removeBg: c.removeBg,
       freeze: typeof c.freeze === 'number' ? c.freeze : undefined,
       audioFx: c.audioFx && typeof c.audioFx === 'object' ? { ...c.audioFx } : undefined,
-      lut: c.lut && typeof c.lut.path === 'string' ? { path: c.lut.path, amount: Math.max(0, Math.min(100, +c.lut.amount || 100)) } : undefined,
+      lut: c.lut && typeof c.lut.path === 'string' ? { path: c.lut.path, amount: Math.max(0, Math.min(100, Number.isFinite(+c.lut.amount) ? +c.lut.amount : 100)) } : undefined,
       ramp: Array.isArray(c.ramp) && c.ramp.length ? c.ramp.map((k: any) => ({ t: +k.t || 0, v: Math.max(RAMP_MIN, Math.min(RAMP_MAX, +k.v || 1)) })) : undefined,
       kf: c.kf || {},
       text: c.text ? { ...DEFAULT_TEXT, ...c.text } : undefined,

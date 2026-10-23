@@ -19,7 +19,7 @@ import type { Project, Clip } from './model';
 import { mediaOf } from './model';
 import { renderFrame, visibleLayers, frameTime, Drawable, FrameGetter } from './compositor';
 import { ClipFx } from './effects';
-import { mixdown, wavBytes, MIX_RATE } from './audio';
+import { mixdown, mixdownChunks, wavBytes, wavHeader, pcm16, MIX_RATE } from './audio';
 import { imageFor, mediaKey, videoTrackOf } from './media';
 import { openFileSink } from './host';
 import { preloadLuts } from './lut';
@@ -207,11 +207,31 @@ export async function exportProject(p: Project, o: ExportOptions, onProgress: (f
   try {
     if (o.format === 'wav') {
       onProgress(0, 'Mixing audio…');
-      const mix = await mixdown(p, a, b, (f) => onProgress(f * 0.9, 'Mixing audio…'), signal);
-      check();
-      const bytes = wavBytes(mix);
-      if (sink.write) await sink.write(0, bytes);
-      await sink.finish(sink.write ? null : (bytes.buffer as ArrayBuffer));
+      if (sink.write) {
+        // Straight to the file, piece by piece: a header, then each mixed piece as 16-bit PCM.
+        const total = Math.max(1, Math.ceil((b - a) * MIX_RATE));
+        await sink.write(0, wavHeader(2, MIX_RATE, total));
+        let at = 44;
+        await mixdownChunks(
+          p,
+          a,
+          b,
+          async (mix, from, n, f) => {
+            check();
+            const bytes = pcm16(mix, from, n);
+            await sink.write!(at, bytes);
+            at += bytes.length;
+            onProgress(f * 0.98, 'Mixing audio…');
+          },
+          signal
+        );
+        check();
+        await sink.finish(null);
+      } else {
+        const mix = await mixdown(p, a, b, (f) => onProgress(f * 0.9, 'Mixing audio…'), signal);
+        check();
+        await sink.finish(wavBytes(mix).buffer as ArrayBuffer);
+      }
       onProgress(1, 'Done');
       return { hardware: false };
     }
@@ -268,18 +288,25 @@ export async function exportProject(p: Project, o: ExportOptions, onProgress: (f
     const audioShare = audioOnly ? 0.95 : audio ? 0.12 : 0;
     if (audio) {
       onProgress(0, 'Mixing audio…');
-      const mix = await mixdown(p, a, b, (f) => onProgress(f * audioShare * 0.8, 'Mixing audio…'), signal);
+      // Mixed in 30-second pieces (flat memory on long recordings), handed over in 5-second pieces so the encoder keeps up.
+      await mixdownChunks(
+        p,
+        a,
+        b,
+        async (mix, from, len, f) => {
+          const step = MIX_RATE * 5;
+          for (let i = 0; i < len; i += step) {
+            check();
+            const n = Math.min(step, len - i);
+            const part = new AudioBuffer({ numberOfChannels: mix.numberOfChannels, length: n, sampleRate: MIX_RATE });
+            for (let k = 0; k < mix.numberOfChannels; k++) part.copyToChannel(mix.getChannelData(k).subarray(from + i, from + i + n), k);
+            await audio!.add(part);
+          }
+          onProgress(audioShare * f, 'Mixing and encoding audio…');
+        },
+        signal
+      );
       check();
-      // Hand it over in 5-second pieces so the encoder can keep up.
-      const step = MIX_RATE * 5;
-      for (let i = 0; i < mix.length; i += step) {
-        check();
-        const n = Math.min(step, mix.length - i);
-        const part = new AudioBuffer({ numberOfChannels: mix.numberOfChannels, length: n, sampleRate: MIX_RATE });
-        for (let k = 0; k < mix.numberOfChannels; k++) part.copyToChannel(mix.getChannelData(k).subarray(i, i + n), k);
-        await audio.add(part);
-        onProgress(audioShare * (0.8 + (0.2 * (i + n)) / mix.length), 'Encoding audio…');
-      }
       audio.close();
     }
 

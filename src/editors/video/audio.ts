@@ -193,7 +193,63 @@ export async function mixdown(p: Project, a: number, b: number, onProgress: (f: 
   return out;
 }
 
+/**
+ * The same mix in pieces of `chunk` seconds, so memory stays flat however long the timeline is (an hour of 48 kHz
+ * stereo is ~1.4 GB per full-length copy). Each piece is rendered from `pre` seconds earlier, so filters, compressors
+ * and the limiter have settled by the time its own audio starts, and that lead-in is dropped. Piece offsets from `a`
+ * are whole seconds, so every piece lands on the same sample grid as one long render would.
+ */
+export async function mixdownChunks(p: Project, a: number, b: number, onChunk: (buf: AudioBuffer, from: number, n: number, fraction: number) => Promise<void>, signal?: AbortSignal, chunk = 30, pre = 1) {
+  const total = Math.max(1, Math.ceil((b - a) * MIX_RATE));
+  for (let k = 0; k * chunk * MIX_RATE < total; k++) {
+    const t = a + k * chunk;
+    const e = Math.min(b, t + chunk);
+    const s = Math.max(a, t - pre);
+    const buf = await mixdown(p, s, Math.max(e, s + 1 / MIX_RATE), () => {}, signal);
+    const first = k * chunk * MIX_RATE;
+    const n = Math.min(total, (k + 1) * chunk * MIX_RATE) - first;
+    await onChunk(buf, Math.round((t - s) * MIX_RATE), Math.min(n, buf.length - Math.round((t - s) * MIX_RATE)), (first + n) / total);
+  }
+  return total;
+}
+
 /* ---------- WAV writing (for "Export audio as WAV") ---------- */
+
+/** A 16-bit PCM WAV header for n frames. */
+export function wavHeader(ch: number, rate: number, n: number): Uint8Array {
+  const out = new DataView(new ArrayBuffer(44));
+  const str = (o: number, s: string) => [...s].forEach((c, i) => out.setUint8(o + i, c.charCodeAt(0)));
+  str(0, 'RIFF');
+  out.setUint32(4, 36 + n * ch * 2, true);
+  str(8, 'WAVE');
+  str(12, 'fmt ');
+  out.setUint32(16, 16, true);
+  out.setUint16(20, 1, true);
+  out.setUint16(22, ch, true);
+  out.setUint32(24, rate, true);
+  out.setUint32(28, rate * ch * 2, true);
+  out.setUint16(32, ch * 2, true);
+  out.setUint16(34, 16, true);
+  str(36, 'data');
+  out.setUint32(40, n * ch * 2, true);
+  return new Uint8Array(out.buffer);
+}
+
+/** Interleaved 16-bit PCM for frames [from, from + n) of a buffer. */
+export function pcm16(b: AudioBuffer, from: number, n: number): Uint8Array {
+  const ch = b.numberOfChannels;
+  const out = new DataView(new ArrayBuffer(n * ch * 2));
+  const data = Array.from({ length: ch }, (_, k) => b.getChannelData(k));
+  let o = 0;
+  for (let i = from; i < from + n; i++)
+    for (let k = 0; k < ch; k++) {
+      const v = Math.max(-1, Math.min(1, data[k][i]));
+      out.setInt16(o, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+      o += 2;
+    }
+  return new Uint8Array(out.buffer);
+}
+
 
 export function wavBytes(b: AudioBuffer): Uint8Array {
   const ch = b.numberOfChannels;

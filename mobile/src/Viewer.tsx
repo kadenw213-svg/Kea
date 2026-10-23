@@ -49,9 +49,16 @@ const textOf = (b: Uint8Array) => new TextDecoder('utf-8').decode(b);
 /** A document's HTML, made safe to show: no scripts, frames, event handlers or script links. */
 function safe(html: string) {
   const d = new DOMParser().parseFromString(html, 'text/html');
-  d.querySelectorAll('script, iframe, frame, object, embed, link, meta, base, form').forEach((e) => e.remove());
+  d.querySelectorAll('script, iframe, frame, object, embed, link, meta, base, form, animate, set').forEach((e) => e.remove());
+  // URLs are checked the way the browser reads them (tabs, newlines and control characters dropped), so
+  // "java&#9;script:" can't slip through; only web, mail, phone, in-page and inline-image links are kept.
+  const unsafeUrl = (v: string) => {
+    const u = v.replace(/[\u0000- \u007f-\u009f]/g, '').toLowerCase();
+    const scheme = /^([a-z][a-z0-9+.-]*):/.exec(u)?.[1];
+    return !!scheme && !['http', 'https', 'mailto', 'tel'].includes(scheme) && !/^data:image\/(png|jpe?g|gif|webp);/.test(u);
+  };
   d.querySelectorAll('*').forEach((e) => {
-    for (const a of [...e.attributes]) if (/^on/i.test(a.name) || (/^(href|src|xlink:href)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) e.removeAttribute(a.name);
+    for (const a of [...e.attributes]) if (/^on/i.test(a.name) || (/^(href|src|xlink:href|action|formaction|srcset|poster|background)$/i.test(a.name) && unsafeUrl(a.value))) e.removeAttribute(a.name);
   });
   return d.body.innerHTML;
 }

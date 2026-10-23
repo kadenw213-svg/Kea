@@ -259,7 +259,7 @@ export interface KeaApi {
     resetGpu(): Promise<EngineStatus>;
     segment(type: string, id: string, rgba: ArrayBuffer, width: number, height: number, accel: string): Promise<{ alpha: Uint8Array; width: number; height: number; ep: string; ms: number }>;
     faces(id: string, rgba: ArrayBuffer, width: number, height: number, accel: string): Promise<{ faces: { x: number; y: number; w: number; h: number; score: number }[]; ep: string }>;
-    transcribe(repo: string, audio: ArrayBuffer, englishOnly: boolean, timestamps: boolean | 'word'): Promise<{ text: string; chunks: { text: string; timestamp: [number, number | null] }[] | null; ms: number }>;
+    transcribe(repo: string, audio: ArrayBuffer, englishOnly: boolean, timestamps: boolean | 'word'): Promise<{ text: string; chunks: { text: string; timestamp: [number, number | null] }[] | null; words?: boolean; ms: number }>;
   };
   /** The MCP control server (electron/mcp + src/lib/controlBridge.ts): lets a connected outside app drive the editors. */
   control: {
@@ -746,6 +746,8 @@ export interface StudyCard {
   topic?: string | null;
   /** A card made from a question: its answer choices and explanation (read by Listen). */
   choices?: string[];
+  /** Select-all question: several choices are right, so they can't serve as wrong answers. */
+  multi?: boolean;
   explain?: string;
 }
 export type StudySetFull = Omit<StudySet, 'known' | 'attempts' | 'best' | 'last'> & {

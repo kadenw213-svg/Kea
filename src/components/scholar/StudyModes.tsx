@@ -65,7 +65,7 @@ const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
  */
 function distractors(card: StudyCard, all: StudyCard[], side: 'front' | 'back', n = 3) {
   const right = card[side].trim().toLowerCase();
-  if (side === 'back' && card.choices && card.choices.length > n) {
+  if (side === 'back' && !card.multi && card.choices && card.choices.length > n) {
     const own = card.choices.map((c) => c.trim()).filter((c) => c && c.toLowerCase() !== right);
     if (own.length >= n) return shuffle(own).slice(0, n);
   }
