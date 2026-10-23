@@ -236,6 +236,17 @@ export interface KeaApi {
   };
   searchContent(query: string, roots?: string[]): Promise<{ path: string; name: string; snippet: string; nameHit: boolean }[]>;
   citeLookup(query: string): Promise<any>;
+  /** The MCP control server (electron/mcp + src/lib/controlBridge.ts): lets a connected outside app drive the editors. */
+  control: {
+    /** Main asks the renderer to run a tool / read a resource for a connected app; the renderer answers via respond(). */
+    onRequest(cb: (req: { callId: string; kind: string; [k: string]: any }) => void): () => void;
+    respond(callId: string, result: { ok: boolean; result?: any; error?: string }): void;
+    status(): Promise<{ enabled: boolean; url: string | null; clients: { id: string; name: string; createdAt: string; lastUsed: string | null }[] }>;
+    setEnabled(on: boolean): Promise<{ enabled: boolean; url: string | null }>;
+    addClient(name: string): Promise<{ id: string; name: string; config: string }>;
+    revokeClient(id: string): Promise<boolean>;
+    onActivity(cb: (ev: { client: string; kind: string; name?: string; ok?: boolean; active: boolean }) => void): () => void;
+  };
   /** The Claude Assistant (electron/assistant.cjs): the student's own API key, kept encrypted in the main process. */
   assistant: {
     status(): Promise<{ hasKey: boolean; hint: string; models: string[] }>;

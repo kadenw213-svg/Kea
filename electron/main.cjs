@@ -309,6 +309,7 @@ app.whenReady().then(() => {
   require('./wiki.cjs').register();
   require('./assistant.cjs').register();
   require('./media.cjs').register();
+  require('./mcp/server.cjs').register({ getWindow: () => mainWindow });
   require('./account.cjs').register();
   require('./scholar/index.cjs').register();
   require('./dict.cjs').register();

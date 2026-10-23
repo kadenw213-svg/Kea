@@ -669,6 +669,14 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'control',
+    label: 'Connect an app',
+    icon: 'Plug',
+    blurb:
+      'Let another app you trust drive Kea’s editors through MCP (the Model Context Protocol) — the same tools the Claude sidebar uses, but from outside Kea. Claude Code, Claude Desktop, an OpenAI agent, or your own app can read the file you have open and change it, each change one Ctrl+Z. It runs only on this computer, it’s off until you turn it on, and every app you connect gets its own key you can revoke.',
+    fields: []
+  },
+  {
     id: 'updates',
     label: 'Updates',
     icon: 'RefreshCw',

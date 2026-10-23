@@ -1,0 +1,111 @@
+/* Connect-an-app settings panel + the "controlling Kea" chip. */
+.control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.toggle.big {
+  font-weight: 600;
+}
+.control-url code,
+.control-config-box,
+.control-foot code {
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 12px;
+}
+.control-section-title {
+  font-weight: 600;
+  margin-top: 8px;
+}
+.control-client {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.control-client-name {
+  font-weight: 500;
+}
+.control-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.control-add .input {
+  flex: 1;
+}
+.control-config {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.control-config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.control-config-box {
+  margin: 0;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  overflow-x: auto;
+  white-space: pre;
+  user-select: all;
+}
+.control-foot {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  line-height: 1.5;
+}
+.control-foot svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* The banner shown while an app is driving Kea. */
+.control-chip {
+  position: fixed;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 999px;
+  padding: 7px 8px 7px 14px;
+  font-size: 13px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  animation: pop 0.15s ease-out;
+}
+.control-chip svg {
+  flex-shrink: 0;
+}
+.control-chip-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.22);
+  color: inherit;
+  border: none;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.control-chip-stop:hover {
+  background: rgba(0, 0, 0, 0.35);
+}

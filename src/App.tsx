@@ -11,6 +11,9 @@ import { SettingsDialog } from './components/settings/SettingsDialog';
 import { VersionHistoryDialog, openHistory } from './components/settings/VersionHistory';
 import { openSettings, setting } from './lib/settings';
 import { initAutosave, restoreOnStart } from './lib/autosave';
+import { startControlBridge } from './lib/controlBridge';
+import { ControlChip } from './components/control/ControlChip';
+import { initControlChip } from './components/control/controlStore';
 import { CommandPalette, openPalette } from './components/CommandPalette';
 import { toggleLookup } from './components/lookup/lookupStore';
 import { useTabs, editorRegistry, Tab } from './store';
@@ -85,6 +88,8 @@ export function App() {
     const offOpen = api.onOpenPaths((p) => openPaths(p));
     const offClose = api.onBeforeClose(() => requestQuit());
     initUpdates();
+    startControlBridge();
+    initControlChip();
     return () => {
       offOpen();
       offClose();
@@ -273,6 +278,7 @@ export function App() {
       <CommandPalette />
       <VoiceTypingPanel />
       <VersionHistoryDialog />
+      <ControlChip />
       <Overlays />
     </div>
   );

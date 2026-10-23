@@ -192,6 +192,26 @@ contextBridge.exposeInMainWorld('api', {
     writeAt: (id, position, data) => ipcRenderer.invoke('video:write-at', id, position, data),
     closeWrite: (id, abort) => ipcRenderer.invoke('video:close-write', id, abort)
   },
+  // The MCP control server (electron/mcp): the main process asks the renderer to run an editor tool or read editor
+  // state for a connected outside app, and the renderer answers on the same call id. Plus the Settings "Connect an
+  // app" surface (turn the server on, mint/revoke per-app tokens) and an activity feed for the "controlling Kea" chip.
+  control: {
+    onRequest: (cb) => {
+      const h = (_e, req) => cb(req);
+      ipcRenderer.on('kea-control:req', h);
+      return () => ipcRenderer.removeListener('kea-control:req', h);
+    },
+    respond: (callId, result) => ipcRenderer.send('kea-control:res', { callId, ...result }),
+    status: () => ipcRenderer.invoke('control:status'),
+    setEnabled: (on) => ipcRenderer.invoke('control:set-enabled', on),
+    addClient: (name) => ipcRenderer.invoke('control:add-client', name),
+    revokeClient: (id) => ipcRenderer.invoke('control:revoke-client', id),
+    onActivity: (cb) => {
+      const h = (_e, ev) => cb(ev);
+      ipcRenderer.on('control:activity', h);
+      return () => ipcRenderer.removeListener('control:activity', h);
+    }
+  },
   assistant: {
     status: () => ipcRenderer.invoke('assistant:status'),
     setKey: (key) => ipcRenderer.invoke('assistant:set-key', key),
