@@ -236,6 +236,15 @@ export interface KeaApi {
   };
   searchContent(query: string, roots?: string[]): Promise<{ path: string; name: string; snippet: string; nameHit: boolean }[]>;
   citeLookup(query: string): Promise<any>;
+  /** The video editor's main-process helpers (electron/media.cjs): streaming media, export writing, and the index cache. */
+  video: {
+    mediaUrl(path: string): string;
+    openWrite(path: string): Promise<string>;
+    writeAt(id: string, position: number, data: Uint8Array): Promise<void>;
+    closeWrite(id: string, abort?: boolean): Promise<void>;
+    indexGet(key: string): Promise<string | null>;
+    indexSet(key: string, json: string): Promise<boolean>;
+  };
   /** The MCP control server (electron/mcp + src/lib/controlBridge.ts): lets a connected outside app drive the editors. */
   control: {
     /** Main asks the renderer to run a tool / read a resource for a connected app; the renderer answers via respond(). */

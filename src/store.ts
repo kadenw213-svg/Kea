@@ -55,6 +55,10 @@ export interface AiHooks {
   getImage?(): Promise<{ dataUrl: string; width: number; height: number; note?: string } | null>;
   /** The editor's own actions Claude may call (Assistant sidebar): "apply a blur", "split the clip at 4.2 s". */
   tools?: AssistantTool[];
+  /** Extra MCP resources this editor exposes for cheap reads (a video's transcript, a project's JSON). Full kea:// URIs. */
+  resources?(): { uri: string; name: string; mimeType: string; description?: string }[];
+  /** Read one of this editor's own resources; null if the URI isn't one of them. */
+  readResource?(uri: string): Promise<{ text?: string; blob?: string; mimeType: string } | null>;
 }
 
 /** One action an editor offers Claude: a name, what it does, a JSON schema for its input, and the code that runs it. */
@@ -80,6 +84,8 @@ export function proxyAi(ref: { current: AiHooks }): AiHooks {
     get tools() {
       return ref.current.tools;
     },
+    ...(c.resources ? { resources: () => ref.current.resources?.() ?? [] } : {}),
+    ...(c.readResource ? { readResource: (uri: string) => ref.current.readResource?.(uri) ?? Promise.resolve(null) } : {}),
     ...(c.getImage ? { getImage: () => ref.current.getImage?.() ?? Promise.resolve(null) } : {}),
     ...(c.replaceSelection ? { replaceSelection: (t: string) => ref.current.replaceSelection?.(t) ?? false } : {}),
     ...(c.insertText ? { insertText: (t: string) => ref.current.insertText?.(t) ?? false } : {}),

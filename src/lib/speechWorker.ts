@@ -22,7 +22,7 @@ onnx.wasm.numThreads = (self as any).crossOriginIsolated ? Math.max(1, Math.min(
 let asr: any = null;
 let loadedRepo = '';
 
-type In = { type: 'load'; repo: string } | { type: 'transcribe'; id: number; audio: Float32Array; language?: string; englishOnly: boolean };
+type In = { type: 'load'; repo: string } | { type: 'transcribe'; id: number; audio: Float32Array; language?: string; englishOnly: boolean; timestamps?: boolean | 'word' };
 
 self.onmessage = async (e: MessageEvent<In>) => {
   const m = e.data;
@@ -51,12 +51,22 @@ self.onmessage = async (e: MessageEvent<In>) => {
       if (!asr) throw new Error('Voice typing is not ready yet.');
       const t0 = performance.now();
       const opts: any = { chunk_length_s: 30, stride_length_s: 5 };
+      if (m.timestamps) opts.return_timestamps = m.timestamps; // true = segment ranges, 'word' = per word
       if (!m.englishOnly) {
         opts.task = 'transcribe';
         if (m.language && m.language !== 'auto') opts.language = m.language;
       }
-      const out = await asr(m.audio, opts);
-      post({ type: 'result', id: m.id, text: String(out?.text || ''), ms: Math.round(performance.now() - t0) });
+      let out: any;
+      try {
+        out = await asr(m.audio, opts);
+      } catch (err) {
+        // Word-level alignment isn't in every model (needs alignment_heads); fall back to segment ranges.
+        if (opts.return_timestamps === 'word') {
+          opts.return_timestamps = true;
+          out = await asr(m.audio, opts);
+        } else throw err;
+      }
+      post({ type: 'result', id: m.id, text: String(out?.text || ''), chunks: out?.chunks || null, ms: Math.round(performance.now() - t0) });
     }
   } catch (err: any) {
     post({ type: 'error', id: (m as any).id, message: err?.message || String(err) });

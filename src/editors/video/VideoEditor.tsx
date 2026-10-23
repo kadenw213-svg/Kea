@@ -50,6 +50,7 @@ import { Inspector } from './Inspector';
 import { ExportDialog } from './ExportDialog';
 import { renderStill } from './exporter';
 import { describeProject, projectSections, snapshot, videoTools } from './assistant';
+import { extraVideoTools, videoResources, readVideoResource } from './aiExtra';
 import * as act from './actions';
 import './video.css';
 import { LookupButton } from '../../components/lookup/LookupButton';
@@ -268,7 +269,8 @@ function Shell({ tab, active, store, player }: { tab: Tab; active: boolean; stor
     });
   };
 
-  const tools = useMemo(() => videoTools({ store, player, importPaths }), [store, player]);
+  const env = useMemo(() => ({ store, player, importPaths }), [store, player]);
+  const tools = useMemo(() => [...videoTools(env), ...extraVideoTools(env, tab.id)], [env, tab.id]);
   const aiRef = useRef<AiHooks>(null as any);
   aiRef.current = {
     noun: 'video',
@@ -276,7 +278,9 @@ function Shell({ tab, active, store, player }: { tab: Tab; active: boolean; stor
       return { full: describeProject(store), sections: projectSections(store) };
     },
     getImage: () => snapshot(store),
-    tools
+    tools,
+    resources: () => videoResources(store, tab.id),
+    readResource: (uri) => readVideoResource(store, tab.id, uri)
   };
   const handlers = useRef({ save });
   handlers.current = { save };

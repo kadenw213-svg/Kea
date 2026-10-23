@@ -190,7 +190,9 @@ contextBridge.exposeInMainWorld('api', {
     mediaUrl: (p) => ipcRenderer.sendSync('video:media-url', p),
     openWrite: (p) => ipcRenderer.invoke('video:open-write', p),
     writeAt: (id, position, data) => ipcRenderer.invoke('video:write-at', id, position, data),
-    closeWrite: (id, abort) => ipcRenderer.invoke('video:close-write', id, abort)
+    closeWrite: (id, abort) => ipcRenderer.invoke('video:close-write', id, abort),
+    indexGet: (key) => ipcRenderer.invoke('video:index-get', key),
+    indexSet: (key, json) => ipcRenderer.invoke('video:index-set', key, json)
   },
   // The MCP control server (electron/mcp): the main process asks the renderer to run an editor tool or read editor
   // state for a connected outside app, and the renderer answers on the same call id. Plus the Settings "Connect an

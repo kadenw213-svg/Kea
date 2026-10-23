@@ -74,6 +74,23 @@ function register() {
     await w.fd.close();
     if (abort) await fs.promises.rm(w.path, { force: true });
   });
+
+  // Media-index cache: the per-clip transcript/scenes/silences/contact-sheet, keyed by "path|size|mtime" so it's
+  // rebuilt only when the file changes. Lives in userData so it's never synced with the project.
+  const indexDir = () => path.join(require('electron').app.getPath('userData'), 'cache', 'video-index');
+  const indexPath = (key) => path.join(indexDir(), crypto.createHash('sha1').update(String(key)).digest('hex') + '.json');
+  ipcMain.handle('video:index-get', async (_e, key) => {
+    try {
+      return await fs.promises.readFile(indexPath(key), 'utf8');
+    } catch {
+      return null;
+    }
+  });
+  ipcMain.handle('video:index-set', async (_e, key, json) => {
+    await fs.promises.mkdir(indexDir(), { recursive: true });
+    await fs.promises.writeFile(indexPath(key), String(json));
+    return true;
+  });
 }
 
 module.exports = { register, SCHEME };

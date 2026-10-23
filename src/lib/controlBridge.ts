@@ -6,6 +6,7 @@ import { api } from './api';
 import { useTabs, editorRegistry } from '../store';
 import { listTabs, toolsFor, runToolHeadless, picture, hooksForTab, activeTabId } from './editorTools';
 import { openPaths } from './open';
+import { jobStatus, cancelJob } from './jobs';
 
 const DOC_LIMIT = 400_000;
 
@@ -18,7 +19,13 @@ const GLOBAL_TOOLS = [
     name: 'kea_batch',
     description: 'Run several tool calls in order as one request — e.g. to apply an edit plan. Stops at the first failure and reports each step. Each call is {name, input}. (Each call is still its own undo step.)',
     input_schema: { type: 'object', properties: { calls: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, input: { type: 'object' } }, required: ['name'] } } }, required: ['calls'] }
-  }
+  },
+  {
+    name: 'kea_jobs_status',
+    description: 'Check long-running work started by a tool (indexing a clip, exporting a video). With a jobId, returns that job; otherwise lists recent jobs. Each has status (running/done/error/canceled), progress 0–1, a note, and — when done — a small result. Poll until done.',
+    input_schema: { type: 'object', properties: { jobId: { type: 'string' } } }
+  },
+  { name: 'kea_jobs_cancel', description: 'Cancel a running job.', input_schema: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] } }
 ];
 
 const stripRun = (t: { name: string; description: string; input_schema: any }) => ({ name: t.name, description: t.description, input_schema: t.input_schema });
@@ -32,13 +39,19 @@ async function documentText(tabId: string): Promise<string> {
   return text.length > DOC_LIMIT ? `${text.slice(0, DOC_LIMIT)}\n\n[cut off: ${text.length - DOC_LIMIT} more characters]` : text;
 }
 
-/** The MCP resources currently available, built from the open tabs. */
+/** The MCP resources currently available, built from the open tabs (generic ones plus each editor's own). */
 function resourceList() {
   const resources: { uri: string; name: string; mimeType: string; description?: string }[] = [{ uri: 'kea://workspace/tabs', name: 'Open tabs', mimeType: 'application/json', description: 'The files open in Kea right now.' }];
   for (const t of listTabs()) {
     if (!t.tools) continue;
     resources.push({ uri: `kea://tab/${t.id}/document`, name: `${t.name} (text)`, mimeType: 'text/plain', description: `The ${t.noun || 'file'} "${t.name}" as text.` });
     resources.push({ uri: `kea://tab/${t.id}/image`, name: `${t.name} (picture)`, mimeType: 'image/png', description: `What "${t.name}" looks like right now.` });
+    // Resources the editor contributes itself (e.g. a video's transcript, scene index, project JSON).
+    try {
+      for (const r of hooksForTab(t.id)?.resources?.() || []) resources.push(r);
+    } catch {
+      /* an editor still loading its resources isn't fatal */
+    }
   }
   return {
     resources,
@@ -52,13 +65,20 @@ function resourceList() {
 async function readResource(uri: string): Promise<{ text?: string; blob?: string; mimeType: string }> {
   if (uri === 'kea://workspace/tabs') return { text: JSON.stringify(listTabs(), null, 1), mimeType: 'application/json' };
   const m = /^kea:\/\/tab\/([^/]+)\/(document|image)$/.exec(uri);
-  if (!m) throw new Error(`Unknown resource "${uri}".`);
-  const [, tabId, what] = m;
-  if (!useTabs.getState().tabs.some((t) => t.id === tabId)) throw new Error('That tab is not open.');
-  if (what === 'document') return { text: await documentText(tabId), mimeType: 'text/plain' };
-  const img = await picture(tabId);
-  if (!img) throw new Error('That tab can’t produce a picture right now.');
-  return { blob: img.dataUrl.split(',')[1], mimeType: 'image/png' };
+  if (m) {
+    const [, tabId, what] = m;
+    if (!useTabs.getState().tabs.some((t) => t.id === tabId)) throw new Error('That tab is not open.');
+    if (what === 'document') return { text: await documentText(tabId), mimeType: 'text/plain' };
+    const img = await picture(tabId);
+    if (!img) throw new Error('That tab can’t produce a picture right now.');
+    return { blob: img.dataUrl.split(',')[1], mimeType: 'image/png' };
+  }
+  // Otherwise ask each editor whether this is one of its own resources.
+  for (const t of useTabs.getState().tabs) {
+    const got = await hooksForTab(t.id)?.readResource?.(uri);
+    if (got) return got;
+  }
+  throw new Error(`Unknown resource "${uri}".`);
 }
 
 /** Run a workspace-level global tool, or the active editor's tool. */
@@ -78,6 +98,11 @@ async function callTool(name: string, input: any): Promise<{ ok: boolean; text: 
     } catch (err: any) {
       return { ok: false, text: `Couldn’t open it: ${err?.message || err}` };
     }
+  }
+  if (name === 'kea_jobs_status') return { ok: true, text: JSON.stringify(jobStatus(input?.jobId), null, 1) };
+  if (name === 'kea_jobs_cancel') {
+    const done = cancelJob(String(input?.jobId || ''));
+    return { ok: done, text: done ? 'Canceled.' : 'No running job with that id.' };
   }
   if (name === 'kea_batch') {
     const calls = Array.isArray(input?.calls) ? input.calls : [];
