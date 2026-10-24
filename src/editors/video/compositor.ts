@@ -26,6 +26,8 @@ export interface RenderOptions {
   scale: number;
   getFrame: FrameGetter;
   fx: ClipFx;
+  /** Playing back: the 16-bit renderer may use its cheaper shrink (never for exports or paused frames). */
+  fast?: boolean;
 }
 
 export function sizeOf(d: Drawable): [number, number] {

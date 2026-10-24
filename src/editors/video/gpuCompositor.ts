@@ -56,6 +56,9 @@ export interface GpuFrameSource {
   project: Project;
   t: number;
   scale: number;
+  /** During playback: shrink with the GPU's mipmaps instead of Lanczos (much cheaper; paused frames and exports use
+   *  full quality). */
+  fast?: boolean;
   getFrame: (clip: Clip, srcTime: number) => Drawable | 'offline' | null;
 }
 
@@ -1010,7 +1013,19 @@ export class GpuCompositor {
     const shownW = dw * (1 - l - r) * Math.abs(s) * scale; // output pixels across
     let k = shownW / cw0;
     let layer: Target;
-    if (k < 0.9) {
+    if (k < 0.9 && o.fast && !input) {
+      // Playback: let the GPU build mipmaps of the frame and grade straight from them at the size it's shown
+      // (one cheap pass instead of a two-pass Lanczos over the full frame).
+      const gl = this.gl;
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      layer = this.target('graded', Math.max(1, Math.round(cw0 * k)), Math.max(1, Math.round(ch0 * k)));
+      this.gradeInto(layer, null, crop, c, mask as TexImageSource | null, lut);
+      gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    } else if (k < 0.9) {
       // (From the input stage the crop is already applied: shrink its whole layer.)
       const region = input ?? { region: [l * sw, b * sh, cw0, ch0] as [number, number, number, number], sw, sh };
       let shrunk: Target | null = null;

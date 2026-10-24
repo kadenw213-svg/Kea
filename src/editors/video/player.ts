@@ -199,7 +199,7 @@ export class Player {
     const c = this.canvas;
     if (!ctx || !c) return;
     const s = this.store.getState();
-    renderFrame(ctx, { project: s.project, t: s.playhead, scale: c.width / s.project.settings.width, getFrame: this.getFrame, fx: this.fx });
+    renderFrame(ctx, { project: s.project, t: s.playhead, scale: c.width / s.project.settings.width, getFrame: this.getFrame, fx: this.fx, fast: s.playing });
     for (const cb of this.frameListeners) cb();
   }
 
