@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Play, Pause, SkipBack, SkipForward, StepBack, StepForward, Repeat, Brackets, ArrowRightFromLine, ArrowLeftToLine, Grid2x2 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, StepBack, StepForward, Repeat, Brackets, ArrowRightFromLine, ArrowLeftToLine, Grid2x2, Activity } from 'lucide-react';
 import type { Clip, AnimProp } from './model';
 import { projectDuration, propAt, setKey, timecode } from './model';
 import { useVE, useVEStore } from './state';
@@ -7,6 +7,7 @@ import type { Player } from './player';
 import { hitTest, clipBox, visibleLayers } from './compositor';
 import { withLinked, isLocked } from './ops';
 import * as act from './actions';
+import { Scopes } from './ScopesPanel';
 
 /* Program monitor: the composited picture at the playhead, with transport controls. */
 
@@ -32,6 +33,21 @@ export function Monitor({ player }: { player: Player }) {
   const [stage, setStage] = useState({ w: 640, h: 360 });
   const [zoom, setZoom] = useState<number | 'fit'>('fit');
   const [safe, setSafe] = useState(false);
+  const [scopes, setScopes] = useState(() => {
+    try {
+      return localStorage.getItem('kea.video.scopesOpen') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleScopes = (on: boolean) => {
+    setScopes(on);
+    try {
+      localStorage.setItem('kea.video.scopesOpen', on ? '1' : '0');
+    } catch {
+      /* remembered per viewer only */
+    }
+  };
   const W = project.settings.width;
   const H = project.settings.height;
 
@@ -161,6 +177,7 @@ export function Monitor({ player }: { player: Player }) {
           )}
         </div>
       </div>
+        {scopes && <Scopes player={player} onClose={() => toggleScopes(false)} />}
       <div className="ve-transport">
         <span className="ve-tc big" title="Playhead">
           {timecode(playhead, fps)}
@@ -194,6 +211,9 @@ export function Monitor({ player }: { player: Player }) {
         </button>
         <button className={`icon-btn sm ${loop ? 'active' : ''}`} title="Loop playback" onClick={() => store.getState().set({ loop: !loop })}>
           <Repeat size={16} />
+        </button>
+        <button className={`icon-btn sm ${scopes ? 'active' : ''}`} title="Scopes: waveform, RGB parade, vectorscope, histogram" onClick={() => toggleScopes(!scopes)}>
+          <Activity size={16} />
         </button>
         <button className={`icon-btn sm ${safe ? 'active' : ''}`} title="Safe margins" onClick={() => setSafe(!safe)}>
           <Grid2x2 size={16} />

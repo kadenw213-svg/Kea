@@ -1109,3 +1109,33 @@
 .ve-export-progress {
   margin-top: 16px;
 }
+
+/* Scopes over the program monitor */
+.ve-monitor-stage {
+  position: relative;
+}
+.ve-scopes {
+  position: absolute;
+  right: 8px;
+  bottom: 52px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(10, 12, 16, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+.ve-scopes canvas {
+  display: block;
+  border-radius: 6px;
+  background: #000;
+  max-width: 40vw;
+}
+.ve-scopes-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

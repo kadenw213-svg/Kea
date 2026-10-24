@@ -65,6 +65,18 @@ export class Player {
     this.unsubLut = onLutLoaded(() => this.requestRender());
   }
 
+  /** The monitor canvas (for scopes). */
+  get view() {
+    return this.canvas;
+  }
+
+  private frameListeners = new Set<() => void>();
+  /** Called after every monitor frame is drawn; returns the unsubscribe function. */
+  onFrame(cb: () => void) {
+    this.frameListeners.add(cb);
+    return () => this.frameListeners.delete(cb);
+  }
+
   attach(canvas: HTMLCanvasElement | null) {
     this.canvas = canvas;
     this.ctx = canvas ? canvas.getContext('2d') : null;
@@ -188,6 +200,7 @@ export class Player {
     if (!ctx || !c) return;
     const s = this.store.getState();
     renderFrame(ctx, { project: s.project, t: s.playhead, scale: c.width / s.project.settings.width, getFrame: this.getFrame, fx: this.fx });
+    for (const cb of this.frameListeners) cb();
   }
 
   /** Draw the current frame into another canvas (snapshots). */

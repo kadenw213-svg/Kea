@@ -20,6 +20,8 @@ import { buildIndex } from './mediaIndex';
 import { alignScript, alignmentSummary, roughCut, takeSegments, setAlignment, getAlignment, wordsOf, type Word } from './scriptAlign';
 import { startJob } from '../../lib/jobs';
 import { uid } from '../../lib/util';
+import { measurePicture } from './scopes';
+import { renderStill } from './exporter';
 
 /* ---------- Lanes: named tracks the plan writes to ---------- */
 
@@ -1234,6 +1236,24 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
         });
         const missing = a.lines.filter((L) => L.best < 0).map((L) => L.index);
         return JSON.stringify({ result: r.summary, lines, ...(missing.length ? { missingLines: missing } : {}) });
+      }
+    },
+    {
+      name: 'measure_picture',
+      description:
+        'Read the picture like a colourist reads scopes, as numbers: luma levels (black point, shadows, median, highlights, white point in %), clipping, the average colour of shadows / midtones / highlights with any cast named ("highlights blue +4%"), saturation and the dominant hue, plus plain-English notes. Use it before and after a grade, and to match shots (measure both, then set colour so the numbers agree). time: timeline seconds (default: the playhead); clip_id: measure that clip (at time, or its middle); solo: measure only that clip, without anything layered over it.',
+      input_schema: { type: 'object', properties: { time: { type: 'number' }, clip_id: { type: 'string' }, solo: { type: 'boolean' } } },
+      async run(i) {
+        const proj = store.getState().project;
+        const clip = i.clip_id ? proj.clips.find((c) => c.id === i.clip_id) : null;
+        if (i.clip_id && !clip) throw new Error(`No clip with id ${i.clip_id}.`);
+        const t = typeof i.time === 'number' ? i.time : clip ? clip.start + Math.min(1, clipDuration(clip) / 2) : store.getState().playhead;
+        const p = clip && i.solo ? { ...proj, clips: [clip] } : proj;
+        const w = 640;
+        const h = Math.max(2, Math.round((w * proj.settings.height) / proj.settings.width));
+        const cv = await renderStill(p, t, w, h);
+        const img = cv.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, w, h);
+        return JSON.stringify({ time: Math.round(t * 1000) / 1000, ...(clip ? { clip: clip.name } : {}), ...measurePicture(img) });
       }
     },
     {
