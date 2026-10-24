@@ -113,7 +113,9 @@ export function App() {
   }, []);
   const syncLibrary = async () => {
     setLibrary((l) => ({ busy: true, files: l?.files || 0 }));
-    const r = await Kea.syncLibrary().catch(() => null);
+    // (The size the PC wrote: a zip the drive app hasn't finished downloading is left for next time.)
+    const size = (cachedData() as { library?: { size?: number } | null } | null)?.library?.size;
+    const r = await Kea.syncLibrary(size ? { size } : {}).catch(() => null);
     setLibrary({ busy: false, files: r?.files || 0, missing: r?.missing });
     if (r?.root) {
       setDesktopData(cachedData(), r.root);

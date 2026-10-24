@@ -11,17 +11,15 @@ const precheck = require('./precheck.cjs');
 const settings = require('../settings.cjs');
 
 // ---------- Kea's own state for a profile (what's checked off) ----------
+// kea.json is written all-or-nothing with a .bak of the last good copy (profiles.writeJsonSafe): a copy cut short (Kea
+// killed mid-write) is read from the .bak, and one that can't be read at all is set aside before anything is saved
+// over it, so a damaged file never silently turns into "nothing checked off".
 function readState() {
-  try {
-    return JSON.parse(fs.readFileSync(profiles.paths().state, 'utf8'));
-  } catch {
-    return { done: {} };
-  }
+  const { value } = profiles.readJsonSafe(profiles.paths().state, null);
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : { done: {} };
 }
 function writeState(s) {
-  const p = profiles.paths();
-  fs.mkdirSync(p.dir, { recursive: true });
-  fs.writeFileSync(p.state, JSON.stringify(s, null, 2));
+  profiles.writeJsonSafe(profiles.paths().state, s);
 }
 
 /**
@@ -55,14 +53,35 @@ function mergePhone() {
     return false;
   }
   if (st.mtimeMs === phoneSeen) return false;
-  phoneSeen = st.mtimeMs;
   let phone;
   try {
     phone = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
+    // Half downloaded (the drive app still bringing it down): looked at again next time, so no tap is lost.
     return false;
   }
-  return applyMarks(phone);
+  if (!phone || typeof phone !== 'object') return false;
+  phoneSeen = st.mtimeMs;
+  return applyMarks({ ...phone, read: freshPhoneReads(phone.read) });
+}
+
+/**
+ * The phone sends every message it has ever read. Only ids new to that list since the last merge count: an
+ * announcement the teacher edits comes back unread here, and an old read on the phone mustn't mark it read again
+ * (the same guard as another computer's reads in devices.cjs marksOf). The first merge only notes the list.
+ */
+function freshPhoneReads(list) {
+  const read = (Array.isArray(list) ? list : []).filter((id) => typeof id === 'string');
+  const s = readState();
+  const first = !Array.isArray(s.phoneReadSeen);
+  const seen = new Set(s.phoneReadSeen || []);
+  const fresh = first ? [] : read.filter((id) => !seen.has(id));
+  const next = [...new Set([...(s.phoneReadSeen || []), ...read])].slice(-3000);
+  if (first || fresh.length || next.length !== seen.size) {
+    s.phoneReadSeen = next;
+    writeState(s);
+  }
+  return fresh;
 }
 
 /**
@@ -674,7 +693,9 @@ function register() {
   ipcMain.handle('scholar:studyReviewMark', (_e, k, grade, ctx) => study.reviewMark(String(k), ['again', 'good', 'easy'].includes(grade) ? grade : 'good', ctx || {}));
   ipcMain.handle('scholar:resume', (_e, task) => {
     if (devices.follower()) return (devices.relay({ task: 'resume', arg: task || '' }), true);
-    return runner.pending() ? runner.resume() : runner.resumeLast(task || 'import');
+    // Nothing set aside: nothing to continue. (Falling back to the last run of a task could restart an import that
+    // already finished.)
+    return runner.pending() ? runner.resume() : false;
   });
 
   // Developer aid (unpackaged builds only): read a page through the class-site browser.

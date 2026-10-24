@@ -264,6 +264,38 @@ def find_item_by_fingerprint(
     ).scalar_one_or_none()
 
 
+def find_item_for_upsert(session: Session, item: domain.AcademicItem) -> AcademicItemRow | None:
+    """The stored row for an incoming item: by its fingerprint, or else by the fingerprint the same title had before
+    part/section/initial/reply qualifiers joined the identity (2026-10-24), so rows stored under the old rule are
+    updated (and re-keyed by upsert) instead of duplicated. A legacy row is only taken when it is recognisably the
+    same work (same_work_title), and kept-apart variants ("<fp>~xxxx") are checked the same way."""
+    if not item.fingerprint:
+        return None
+    row = find_item_by_fingerprint(session, item.course_id, item.fingerprint)
+    if row is not None:
+        return row
+    from academic_sync.reconciliation.fingerprint import legacy_fingerprint
+
+    # The disambiguators the extractor uses: none for a numbered title, else the date or the module label.
+    candidates = dict.fromkeys([None, item.module_label, item.date.isoformat() if item.date else None])
+    for d in candidates:
+        old = legacy_fingerprint(item.course_id, item.item_type.value, item.title, disambiguator=d)
+        if not old:
+            return None
+        rows = session.execute(
+            select(AcademicItemRow).where(
+                AcademicItemRow.course_id == item.course_id,
+                (AcademicItemRow.fingerprint == old) | AcademicItemRow.fingerprint.like(f"{old}~%"),
+            )
+        ).scalars().all()
+        # The exact legacy key first, then kept-apart variants.
+        rows.sort(key=lambda r: r.fingerprint != old)
+        hit = next((r for r in rows if same_work_title(r.title, item.title)), None)
+        if hit is not None:
+            return hit
+    return None
+
+
 
 # ---------- Never overwrite one piece of work with another ----------
 # Fingerprints are deliberately loose ("quiz" + its number), so a reworded item updates in place. But two different
@@ -295,10 +327,65 @@ def _guard_words(title: str) -> set[str]:
     return {w[:-1] if len(w) > 4 and w.endswith("s") else w for w in re.findall(r"[a-z]+", (title or "").lower()) if len(w) >= 4 and w not in _GUARD_STOP}
 
 
+# Second numbers and qualifiers that make two titles different work (2026-10-24 audit): "Ch 5 Problem Set Part 1" vs
+# "Part 2", "Homework Chapter 2 Section 3" vs "Section 4", "Discussion Initial Post" vs "Replies", "Quiz 4 (Ch 7-8)"
+# vs "Ch 4 Quiz". Dates, times and point values in a title are not identity numbers.
+_NOT_IDENT_NUM = re.compile(
+    r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b|\b\d{1,2}:\d{2}\b|\b\d+\s*(?:%|pts?\b|points?\b|minutes?\b|mins?\b|percent\b)",
+    re.IGNORECASE,
+)
+_GUARD_PART = re.compile(r"\b(?:part|pt)\.?\s*#?\s*(\d+|[ivx]+|[a-d])\b", re.IGNORECASE)
+_GUARD_SECTION = re.compile(r"\b(?:section|sec)\.?\s*#?\s*(\d+(?:\.\d+)*)\b", re.IGNORECASE)
+_GUARD_CHAPTER = re.compile(
+    r"\b(?:ch|chs|chap|chapters?)\.?\s*#?\s*(\d+(?:\s*(?:-|–|—|&|,|and|to)\s*\d+)*)", re.IGNORECASE
+)
+_GUARD_REPLY = re.compile(r"\brepl(?:y|ies)\b|\brespond(?:ing)?\b|\bresponses\b", re.IGNORECASE)
+
+
+def _guard_numbers(title: str) -> set[str]:
+    return set(re.findall(r"\d+(?:\.\d+)*", _NOT_IDENT_NUM.sub(" ", title or "")))
+
+
+def _guard_chapters(title: str) -> set[str]:
+    out: set[str] = set()
+    for m in _GUARD_CHAPTER.finditer(_NOT_IDENT_NUM.sub(" ", title or "")):
+        out.update(re.findall(r"\d+", m.group(1)))
+    return out
+
+
+def _qualifiers_differ(old_title: str, new_title: str) -> bool:
+    """Part, section, initial/reply and second-number differences between two titles."""
+    a, b = (old_title or "").lower(), (new_title or "").lower()
+    na, nb = _guard_numbers(a), _guard_numbers(b)
+    for pat in (_GUARD_PART, _GUARD_SECTION):
+        sa, sb = {m.group(1) for m in pat.finditer(a)}, {m.group(1) for m in pat.finditer(b)}
+        if sa == sb:
+            continue
+        if sa and sb:
+            return True
+        # Only one names a part/section: the same work only if the other has that number too ("HW 1.3" / "HW Section 1.3").
+        if not ((sa or sb) <= (nb if sa else na)):
+            return True
+    reply_a, reply_b = _GUARD_REPLY.search(a) is not None, _GUARD_REPLY.search(b) is not None
+    init_a, init_b = re.search(r"\binitial\b", a) is not None, re.search(r"\binitial\b", b) is not None
+    # A reply deadline is its own piece of work, apart from the first post (or the whole discussion).
+    if reply_a != reply_b or (init_a and reply_b and not init_b) or (init_b and reply_a and not init_a):
+        return True
+    ca, cb = _guard_chapters(a), _guard_chapters(b)
+    if ca and cb and ca != cb:
+        return True
+    # Both carry more than one number (a work number plus a chapter/section): they must be the same numbers.
+    if len(na) >= 2 and len(nb) >= 2 and na != nb:
+        return True
+    return False
+
+
 def same_work_title(old_title: str, new_title: str) -> bool:
     """Whether two titles can be the same piece of work (a rewording), not two different ones that share a number."""
     if (old_title or "").strip().lower() == (new_title or "").strip().lower():
         return True
+    if _qualifiers_differ(old_title, new_title):
+        return False
     ia, ka = _guard_ident(old_title)
     ib, kb = _guard_ident(new_title)
     if ia and ib and ia != ib:
@@ -365,7 +452,7 @@ def upsert_academic_item(
     correction (e.g. a source that explicitly says the date was wrong)."""
     row = None
     if item.fingerprint:
-        row = find_item_by_fingerprint(session, item.course_id, item.fingerprint)
+        row = find_item_for_upsert(session, item)
         if row is not None and not same_work_title(row.title, item.title):
             # Different work under the same loose fingerprint: keep both, and leave a note to look at.
             import hashlib

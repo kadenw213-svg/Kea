@@ -17,7 +17,7 @@ interface KeaNative {
   /** Which drive apps are installed. */
   drives(): Promise<Partial<Record<'google' | 'onedrive' | 'dropbox', boolean>>>;
   /** Unpack the library when the PC wrote a new one. */
-  syncLibrary(): Promise<{ root: string; changed: boolean; files?: number; missing?: boolean; error?: string }>;
+  syncLibrary(o?: { size?: number }): Promise<{ root: string; changed: boolean; files?: number; missing?: boolean; error?: string }>;
   addListener(event: 'library', cb: (p: { files: number; bytes: number; name: string }) => void): Promise<{ remove(): void }>;
   addListener(event: 'opened', cb: (f: OpenedFile) => void): Promise<{ remove(): void }>;
   /** The file Kea was opened with (Open with, Share), once. */
@@ -113,6 +113,26 @@ export interface KeaData {
 }
 
 const CACHE = 'kea.data';
+
+/**
+ * Whether kea-data.json arrived whole. The PC ends it with `"integrity":{"length","sha256"}`, covering the UTF-8 bytes of
+ * everything before `,"integrity":` plus the closing `}` (electron/scholar/cloud.cjs withIntegrity). A file from an
+ * older PC has no check, and is taken as it is.
+ */
+async function whole(text: string): Promise<boolean> {
+  const i = text.lastIndexOf(',"integrity":');
+  if (i < 0) return true;
+  try {
+    const want = JSON.parse(text.slice(i + 13, -1)) as { length: number; sha256: string };
+    const bytes = new TextEncoder().encode(text.slice(0, i) + '}');
+    if (bytes.length !== want.length) return false;
+    if (!crypto?.subtle) return true;
+    const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
+    return hash === want.sha256;
+  } catch {
+    return false;
+  }
+}
 export function cachedData(): KeaData | null {
   try {
     return JSON.parse(localStorage.getItem(CACHE) || 'null');
@@ -128,6 +148,7 @@ export function cachedData(): KeaData | null {
 export async function loadData(ms = 45000): Promise<{ data: KeaData | null; error: string | null }> {
   try {
     const r = await Promise.race([Kea.readFile({ path: 'kea-data.json' }), new Promise<never>((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
+    if (!(await whole(r.text))) throw new Error('Unexpected end: the file failed its check');
     const d = JSON.parse(r.text) as KeaData;
     try {
       localStorage.setItem(CACHE, r.text);

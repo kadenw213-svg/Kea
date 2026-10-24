@@ -222,19 +222,104 @@ function writeZip(files, dest) {
   end.writeUInt16LE(files.length, 10);
   end.writeUInt32LE(cd.length, 12);
   end.writeUInt32LE(offset, 16);
-  writeInPlace(dest, Buffer.concat([...parts, cd, end]));
+  const zip = Buffer.concat([...parts, cd, end]);
+  writeInPlace(dest, zip);
+  return zip;
 }
 
-/** Rewrite a file's contents without replacing the file (so the drive keeps it as the same file the phone holds). */
+/**
+ * Rewrite a file's contents without replacing the file (so the drive keeps it as the same file the phone holds). Every
+ * byte is written (fs.writeSync may write less than asked), over the old contents first and only then cut to length,
+ * so the file is never briefly empty. A copy cut short anyway (Kea killed mid-write) fails the phone's length and
+ * sha256 check (see sync: `integrity` in kea-data.json, `library` for the zip).
+ */
 function writeInPlace(file, body) {
+  const buf = typeof body === 'string' ? Buffer.from(body, 'utf8') : body;
   const fd = fs.openSync(file, fs.existsSync(file) ? 'r+' : 'w');
   try {
-    fs.ftruncateSync(fd, 0);
-    const buf = typeof body === 'string' ? Buffer.from(body, 'utf8') : body;
-    fs.writeSync(fd, buf, 0, buf.length, 0);
+    let off = 0;
+    while (off < buf.length) {
+      const n = fs.writeSync(fd, buf, off, buf.length - off, off);
+      if (n <= 0) throw new Error(`Could not write ${path.basename(file)} (${off} of ${buf.length} bytes)`);
+      off += n;
+    }
+    fs.ftruncateSync(fd, buf.length);
+    fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
   }
+}
+
+const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
+
+/**
+ * kea-data.json's text with its own check on the end: `"integrity":{"length":N,"sha256":"..."}` is the last key, and
+ * covers the UTF-8 bytes of everything before `,"integrity":` plus the closing `}` (that is, JSON.stringify of the
+ * data without it). The phone checks it before using the file.
+ */
+function withIntegrity(body) {
+  const bytes = Buffer.from(body, 'utf8');
+  return `${body.slice(0, -1)},"integrity":{"length":${bytes.length},"sha256":"${sha256(bytes)}"}}`;
+}
+/** The data part of a kea-data.json text (without the integrity key), or null when it fails its own check. */
+function verified(text) {
+  const i = text.lastIndexOf(',"integrity":');
+  if (i < 0) return null;
+  const core = text.slice(0, i) + '}';
+  try {
+    const { length, sha256: want } = JSON.parse(text.slice(i + 13, -1));
+    const bytes = Buffer.from(core, 'utf8');
+    return bytes.length === length && sha256(bytes) === want ? core : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What Kea last wrote as the library zip: { sig, size, sha256 } (profile folder, never shared). */
+const libMetaFile = () => path.join(profiles.paths().dir, 'library.json');
+function readLibMeta() {
+  try {
+    return JSON.parse(fs.readFileSync(libMetaFile(), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read a library zip Kea wrote (stored entries only) after checking it whole against `want` ({ size, sha256 } from
+ * kea-data.json). Returns [{ name, data }] with each entry's CRC checked, or null when the zip isn't complete yet.
+ */
+function readLibrary(file, want) {
+  let buf;
+  try {
+    buf = fs.readFileSync(file);
+  } catch {
+    return null;
+  }
+  if (!want || buf.length !== want.size || sha256(buf) !== want.sha256) return null;
+  const end = buf.length - 22;
+  if (end < 0 || buf.readUInt32LE(end) !== 0x06054b50) return null;
+  const count = buf.readUInt16LE(end + 10);
+  let p = buf.readUInt32LE(end + 16);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) return null;
+    const method = buf.readUInt16LE(p + 10);
+    const crc = buf.readUInt32LE(p + 16);
+    const size = buf.readUInt32LE(p + 20);
+    const nameLen = buf.readUInt16LE(p + 28);
+    const extra = buf.readUInt16LE(p + 30);
+    const comment = buf.readUInt16LE(p + 32);
+    const local = buf.readUInt32LE(p + 42);
+    const name = buf.toString('utf8', p + 46, p + 46 + nameLen);
+    p += 46 + nameLen + extra + comment;
+    if (method !== 0 || buf.readUInt32LE(local) !== 0x04034b50) return null;
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const data = buf.subarray(start, start + size);
+    if (data.length !== size || crc32(data) !== crc) return null;
+    out.push({ name, data });
+  }
+  return out;
 }
 
 let timer = null;
@@ -253,23 +338,31 @@ async function sync(build) {
   try {
     fs.mkdirSync(dir, { recursive: true });
     const snap = await build();
-    const body = JSON.stringify(snap);
+    // The library first, only when a textbook or picture changed (its list of names, sizes and times), so the data
+    // file can name the zip it goes with: { size, sha256 }, checked by the phone and other computers before unpacking.
+    const lib = libraryFiles();
+    const sig = sha(JSON.stringify(lib.map((f) => [f.name, f.size, f.mtime])));
+    const libFile = path.join(dir, 'kea-library.zip');
+    let meta = readLibMeta();
+    let onDrive = -1;
+    try {
+      onDrive = fs.statSync(libFile).size;
+    } catch {}
+    if (lib.length && (!meta || meta.sig !== sig || sig !== readSig() || onDrive !== meta.size)) {
+      const zip = writeZip(lib, libFile);
+      meta = { sig, size: zip.length, sha256: sha256(zip) };
+      fs.writeFileSync(path.join(profiles.paths().dir, 'library.sig'), sig);
+      fs.writeFileSync(libMetaFile(), JSON.stringify(meta));
+    }
+    const body = JSON.stringify({ ...snap, library: lib.length && meta ? { size: meta.size, sha256: meta.sha256 } : null });
     const file = path.join(dir, 'kea-data.json');
     let old = '';
     try {
       old = fs.readFileSync(file, 'utf8');
     } catch {}
-    // The time stamp alone changing isn't a change worth uploading.
-    const strip = (s) => s.replace(/"synced":"[^"]*"/, '');
-    if (strip(old) !== strip(body)) writeInPlace(file, body);
-    // The library, only when a textbook or picture changed (its list of names, sizes and times).
-    const lib = libraryFiles();
-    const sig = sha(JSON.stringify(lib.map((f) => [f.name, f.size, f.mtime])));
-    const libFile = path.join(dir, 'kea-library.zip');
-    if (lib.length && (sig !== readSig() || !fs.existsSync(libFile))) {
-      writeZip(lib, libFile);
-      fs.writeFileSync(path.join(profiles.paths().dir, 'library.sig'), sig);
-    }
+    // The time stamp alone changing isn't a change worth uploading (nor is a copy that fails its own check left alone).
+    const strip = (s) => (s || '').replace(/"synced":"[^"]*"/, '');
+    if (strip(verified(old)) !== strip(body)) writeInPlace(file, withIntegrity(body));
     // The phone's own file is made here, empty, so it can be chosen with the other two when the phone is set up.
     const phone = path.join(dir, 'phone.json');
     if (!fs.existsSync(phone)) fs.writeFileSync(phone, '{}');
@@ -282,4 +375,4 @@ async function sync(build) {
   }
 }
 
-module.exports = { drives, drive, target, sync, schedule, mirror, libraryFiles, writeZip };
+module.exports = { drives, drive, target, sync, schedule, mirror, libraryFiles, writeZip, readLibrary, verified, _test: { writeInPlace, withIntegrity } };

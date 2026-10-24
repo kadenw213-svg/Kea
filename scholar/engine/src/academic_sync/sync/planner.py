@@ -34,7 +34,8 @@ def compute_plan(session: Session, course_id: str, incoming_items: list[Academic
         sync_record = None
 
         if incoming.fingerprint:
-            existing_row = repository.find_item_by_fingerprint(session, course_id, incoming.fingerprint)
+            # (Also finds a row stored under the pre-2026-10-24 fingerprint rule, which upsert re-keys.)
+            existing_row = repository.find_item_for_upsert(session, incoming)
             if existing_row is not None:
                 existing = repository.get_academic_item(session, existing_row.id)
                 sr_row = repository.get_sync_record(session, existing_row.id)

@@ -615,6 +615,15 @@ public class KeaPlugin extends Plugin {
                     return;
                 }
                 String sig = signature(uri);
+                // The size the PC wrote: a zip the drive app is still downloading would unpack short and remove
+                // textbooks it seems not to have, so it waits for the next sync.
+                long want = call.getData().optLong("size", 0);
+                if (want > 0 && !sig.isEmpty() && Long.parseLong(sig.substring(0, sig.indexOf(':'))) != want) {
+                    r.put("changed", false);
+                    r.put("error", "The textbooks file is still downloading.");
+                    call.resolve(r);
+                    return;
+                }
                 if (!sig.isEmpty() && sig.equals(Store.plain(getContext()).getString("libSig", "")) && root.isDirectory()) {
                     r.put("changed", false);
                     call.resolve(r);

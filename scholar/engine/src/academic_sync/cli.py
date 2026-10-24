@@ -742,13 +742,45 @@ def coverage_cmd(
 # dismissed with a reason (coverage-dismiss --key d2l:<kind>:<id>). Kea's own snapshots only noticed what *changed*,
 # so anything missing from the first scan stayed missing forever (CHE1011's Practice Final, OA #6 quiz, Exam Work).
 
-def _local_day(value):
+def _class_zone(name: str | None = None):
+    """The configured time zone (config `timezone`, America/Denver by default), or None for this computer's own zone
+    when none is set or it can't be found. (Windows Pythons have no tz database unless `tzdata` is installed, so
+    dateutil's bundled one is the fallback.)"""
+    if name is None:
+        try:
+            name = get_config().timezone
+        except Exception:
+            name = None
+    if not name:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo(name)
+    except Exception:
+        try:
+            from dateutil import tz as _tz
+
+            return _tz.gettz(name)
+        except Exception:
+            return None
+
+
+def _local_day(value, zone=None):
+    """A D2L date-time (UTC, "...Z") as the day it falls on in the class's time zone, not the computer's: a 11:59 PM
+    Mountain due date is the next day in UTC, and a laptop set to another zone must not move it."""
     if not value:
         return None
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone().date()
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+    zone = zone if zone is not None else _class_zone()
+    if zone is None:
+        return dt.astimezone().date()
+    if dt.tzinfo is None:
+        return dt.date()
+    return dt.astimezone(zone).date()
 
 
 def _rich(v) -> str:

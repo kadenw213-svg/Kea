@@ -254,13 +254,16 @@ const norm = (s) =>
  */
 function evidence(db, file) {
   const out = new Map();
-  const add = (courseId, title, state, opens = null) => {
+  const add = (courseId, title, state, opens = null, x = null) => {
     const t = norm(title);
     // A bare group name ("Module 1", "Chapter 5", "Week 3", "Unit 2") is a gradebook category's total (or reads like
     // one): it says nothing about any one assignment in it.
     if (!t || (state === 'graded' && /^(module|chapter|ch|unit|week|part|section|lab|labs|homework|quizzes|exams|discussions?|assignments?)( \d+)?$/.test(t))) return;
     if (!out.has(courseId)) out.set(courseId, []);
-    out.get(courseId).push({ t, state, ...(opens ? { opens } : {}) });
+    // Which class-site object it is (an assignment folder, quiz or discussion topic), and its due date when known:
+    // the only evidence that can cross off work that isn't due yet (see handIn).
+    const key = x?.folder != null ? `dropbox:${x.folder}` : typeof x?.ref === 'string' ? x.ref : null;
+    out.get(courseId).push({ t, state, ...(opens ? { opens } : {}), ...(key ? { key } : {}), ...(x?.due ? { due: x.due } : {}) });
   };
   for (const r of rows(db, "SELECT course_id, payload_json FROM digest_entries WHERE kind = 'grade'")) {
     const p = json(r.payload_json, {});
@@ -271,7 +274,7 @@ function evidence(db, file) {
   try {
     const sub = JSON.parse(fs.readFileSync(path.join(path.dirname(file), '..', '..', 'submissions.json'), 'utf8'));
     const ids = new Map(rows(db, 'SELECT id, course_code FROM courses').map((c) => [c.course_code, c.id]));
-    for (const [code, list] of Object.entries(sub.byCourse || {})) for (const x of list) if (ids.has(code)) add(ids.get(code), x.title, x.state);
+    for (const [code, list] of Object.entries(sub.byCourse || {})) for (const x of list) if (ids.has(code)) add(ids.get(code), x.title, x.state, null, x);
     // Work not open yet on the class site, with the date it opens.
     for (const [code, list] of Object.entries(sub.opens || {})) for (const x of list) if (ids.has(code)) add(ids.get(code), x.title, 'opens', x.opens);
   } catch {}
@@ -309,9 +312,50 @@ function sameWork(a, b) {
 /** Kinds of item that are never handed in or graded (a lab is: its report is graded under its name). */
 const NEVER_GRADED = new Set(['reading', 'weekly_reading', 'lecture', 'recitation', 'seminar', 'office_hours', 'break', 'no_class', 'administrative_deadline']);
 
+/** The class-site objects an item's own links point at: dropbox:<id>, quiz:<id>, topic:<id> (D2L and Canvas). */
+function itemKeys(r) {
+  const out = new Set();
+  for (const u of [r.submission_url, r.reference_url]) {
+    const s = String(u || '');
+    let m;
+    if ((m = /[?&]db=(\d+)/.exec(s)) || (m = /\/dropbox\/folders\/(\d+)/.exec(s)) || (m = /\/assignments\/(\d+)/.exec(s))) out.add(`dropbox:${m[1]}`);
+    if ((m = /[?&]qi=(\d+)/.exec(s)) || (m = /\/quizzes\/(\d+)/.exec(s))) out.add(`quiz:${m[1]}`);
+    if ((m = /\/discussions\/topics\/(\d+)/.exec(s)) || (m = /\/discussion_topics\/(\d+)/.exec(s))) out.add(`topic:${m[1]}`);
+  }
+  return out;
+}
+
+/**
+ * Evidence about work that isn't due yet: only what names the same class-site object (its folder, quiz or topic id,
+ * from the item's own link) or has the same due date. A title alone isn't enough: a weekly title with no number
+ * ("Weekly Reflection") would be crossed off by last week's grade. A discussion's initial and response posts are told
+ * apart, and one item for the whole discussion needs both.
+ */
+function aheadEvidence(r, t, list) {
+  const keys = itemKeys(r);
+  const reply = /\b(repl(y|ies)|respon(se|ses|ding)|peer review)\b/.test(t);
+  const initial = /\binitial\b/.test(t);
+  const out = [];
+  for (const k of keys) {
+    if (k.startsWith('topic:')) {
+      const want = reply ? [`${k}:reply`] : initial ? [k] : [k, `${k}:reply`];
+      const got = want.map((w) => list.find((x) => x.key === w));
+      if (got.every(Boolean)) {
+        // The whole discussion counts only as far as its least-done part.
+        const rank = { graded: 3, submitted: 2, not_submitted: 1, opens: 0 };
+        out.push(got.reduce((a, b) => ((rank[b.state] ?? 0) < (rank[a.state] ?? 0) ? b : a)));
+      }
+    } else out.push(...list.filter((x) => x.key === k));
+  }
+  // The same work by name and due on the same day.
+  for (const x of list) if (x.due && localDay(new Date(x.due)) === r.date && (x.t === t || sameWork(x.t, t))) out.push(x);
+  return out;
+}
+
 /**
  * An item's hand-in state from the evidence: 'graded', 'submitted', 'not_submitted' or null (unknown). Work due more
- * than two days ahead is only ever graded by its exact title: a loose match there would cross off work not done yet.
+ * than two days ahead is only matched by its class-site id or due date (aheadEvidence): a title match there could
+ * cross off work not done yet, and leaving it showing is the safe side.
  */
 function handIn(r, ev) {
   if (NEVER_GRADED.has(r.item_type)) return null;
@@ -319,9 +363,9 @@ function handIn(r, ev) {
   if (!list) return null;
   const t = norm(r.title);
   if (t.length < 3) return null;
-  const exact = list.filter((x) => x.t === t);
   const ahead = r.date && Date.parse(`${r.date}T23:59`) > Date.now() + 2 * 864e5;
-  let close = exact.length || ahead ? exact : list.filter((x) => sameWork(x.t, t));
+  const exact = ahead ? [] : list.filter((x) => x.t === t);
+  let close = ahead ? aheadEvidence(r, t, list) : exact.length ? exact : list.filter((x) => sameWork(x.t, t));
   // What the gradebook calls it may lack the item's own qualifiers: a discussion's grade covers both its initial and
   // response posts, and a lab handout is graded as the lab ("Lab 4 Handout" → "Lab 4 Prokaryotes").
   if (!close.length && !ahead) {
@@ -728,4 +772,4 @@ async function identifyingChapters(file) {
   return out;
 }
 
-module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork };
+module.exports = { practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, _test: { handIn, norm } };

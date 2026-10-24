@@ -219,6 +219,48 @@ function makePrimary(id) {
 }
 
 // ---------- The primary: share results, take in the others' changes, run what they asked for ----------
+/**
+ * A consistent copy of the class database in the profile folder (returns its path, or null to try again next round).
+ * SQLite's backup API, through the engine's own Python, copies one committed state even while the pre-check writes,
+ * and the copy is checked before it's shared. Without the engine's Python, a plain copy is used only when the database
+ * didn't change while it was copied and no write is in progress (no -journal / -wal beside it).
+ */
+async function snapshotDb(P) {
+  const out = path.join(P.dir, 'classes.snapshot.db');
+  fs.rmSync(out, { force: true });
+  const py = path.join(P.workspace, '.venv', 'Scripts', 'python.exe');
+  if (fs.existsSync(py)) {
+    const code = [
+      'import sqlite3, sys',
+      'src = sqlite3.connect(sys.argv[1], timeout=30)',
+      'dst = sqlite3.connect(sys.argv[2])',
+      'src.backup(dst)',
+      'ok = dst.execute("pragma quick_check").fetchone()[0]',
+      'dst.close(); src.close()',
+      'sys.exit(0 if ok == "ok" else 3)'
+    ].join('\n');
+    try {
+      await new Promise((resolve, reject) =>
+        require('child_process').execFile(py, ['-I', '-c', code, P.db, out], { windowsHide: true, timeout: 120000 }, (err) => (err ? reject(err) : resolve()))
+      );
+      return out;
+    } catch (err) {
+      console.error('Devices: could not snapshot the class database', err.message);
+      fs.rmSync(out, { force: true });
+      return null;
+    }
+  }
+  const before = fs.statSync(P.db);
+  if (fs.existsSync(P.db + '-journal') || fs.existsSync(P.db + '-wal')) return null;
+  fs.copyFileSync(P.db, out);
+  const after = fs.statSync(P.db);
+  if (after.mtimeMs !== before.mtimeMs || after.size !== before.size || fs.existsSync(P.db + '-journal')) {
+    fs.rmSync(out, { force: true });
+    return null;
+  }
+  return out;
+}
+
 let lastRunWrite = 0;
 async function lead(dir) {
   const P = profiles.paths();
@@ -262,10 +304,16 @@ async function lead(dir) {
   // Results are shared between runs only, never half-written.
   if (!now.running && fs.existsSync(P.db)) {
     const ds = fs.statSync(P.db);
-    if (!db || db.mtime !== ds.mtimeMs || db.size !== ds.size) {
-      fs.copyFileSync(P.db, path.join(dir, 'classes.db.tmp'));
-      fs.renameSync(path.join(dir, 'classes.db.tmp'), path.join(dir, 'classes.db'));
-      db = { mtime: ds.mtimeMs, size: ds.size, sha: sha(P.db) };
+    if (!db || db.mtime !== ds.mtimeMs || (db.srcSize ?? db.size) !== ds.size) {
+      // A consistent snapshot (the daily pre-check can be writing the database between runs), and the hash of what is
+      // actually shared, so the other devices check the very bytes they receive.
+      const snap = await snapshotDb(P);
+      if (snap) {
+        fs.copyFileSync(snap, path.join(dir, 'classes.db.tmp'));
+        fs.renameSync(path.join(dir, 'classes.db.tmp'), path.join(dir, 'classes.db'));
+        db = { mtime: ds.mtimeMs, srcSize: ds.size, size: fs.statSync(snap).size, sha: sha(snap) };
+        fs.rmSync(snap, { force: true });
+      }
     }
     for (const f of [...FILES, ...MERGED]) if (fs.existsSync(path.join(P.dir, f))) copyIfChanged(path.join(P.dir, f), path.join(dir, 'shared', f));
     for (const d of DIRS) copyTree(path.join(P.dir, d), path.join(dir, 'shared', d));
@@ -327,7 +375,10 @@ async function serveRequest(r) {
   console.log(`Devices: ${r.from || 'another device'} asked for ${r.task}`);
   try {
     if (r.task === 'stop') runner.stop();
-    else if (r.task === 'resume') runner.pending() ? runner.resume() : runner.resumeLast(r.arg || 'import');
+    // (Only what's set aside to continue: the last run of a task may have finished, and mustn't start over.)
+    else if (r.task === 'resume') {
+      if (runner.pending()) runner.resume();
+    }
     else if (r.task === 'banks') hooks.banks?.();
     else if (r.task === 'inbox') precheck.pollAnnouncements().then((ok) => ok && hooks.syncSoon(5000)).catch(() => {});
     else if (r.task === 'practice') {
@@ -340,6 +391,71 @@ async function serveRequest(r) {
     console.error('Devices request', err);
     return false;
   }
+}
+
+/**
+ * Bring the primary's textbooks in from kea-library.zip (the phone's copy, which cloud.sync keeps; it deletes any
+ * Textbooks folder there). Only a zip that matches the `library` { size, sha256 } in a kea-data.json that passes its
+ * own check is used, so a half-downloaded zip never removes anything. Returns whether anything changed.
+ */
+function pullTextbooks(base, P, st) {
+  const dataFile = path.join(base, 'kea-data.json');
+  const zipFile = path.join(base, 'kea-library.zip');
+  let m;
+  try {
+    m = `${fs.statSync(dataFile).mtimeMs}:${fs.statSync(zipFile).mtimeMs}:${fs.statSync(zipFile).size}`;
+  } catch {
+    return false;
+  }
+  if (st.libSeen === m) return false;
+  let text = '';
+  try {
+    text = fs.readFileSync(dataFile, 'utf8');
+  } catch {
+    return false;
+  }
+  const core = cloud.verified(text);
+  if (!core) return false; // (Not fully arrived, or from an older primary: looked at again next time.)
+  const want = JSON.parse(core).library;
+  if (!want?.sha256) return (st.libSeen = m), false;
+  if (want.sha256 === st.pulledLib) return (st.libSeen = m), false;
+  const entries = cloud.readLibrary(zipFile, want);
+  if (!entries) return false;
+  const root = path.resolve(P.textbooks);
+  const keep = new Set();
+  let any = false;
+  for (const e of entries) {
+    const mm = /^Textbooks\/([^/\\]+)\/([^/\\]+\.pdf)$/i.exec(e.name);
+    if (!mm || mm[1].startsWith('.') || mm[2].startsWith('.') || mm[1] === '..') continue;
+    const out = path.resolve(root, mm[1], mm[2]);
+    if (path.dirname(path.dirname(out)) !== root) continue;
+    keep.add(out);
+    try {
+      const cur = fs.readFileSync(out);
+      if (cur.length === e.data.length && cur.equals(e.data)) continue;
+    } catch {}
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out + '.tmp', e.data);
+    fs.renameSync(out + '.tmp', out);
+    any = true;
+  }
+  // Textbooks the primary no longer has go too, once this device follows its classes.
+  if (st.pulledSha && fs.existsSync(root)) {
+    for (const cls of fs.readdirSync(root, { withFileTypes: true }).filter((x) => x.isDirectory())) {
+      const d = path.join(root, cls.name);
+      for (const f of fs.readdirSync(d).filter((x) => /\.pdf$/i.test(x))) {
+        if (!keep.has(path.resolve(d, f))) {
+          fs.rmSync(path.join(d, f), { force: true });
+          any = true;
+        }
+      }
+      if (!fs.readdirSync(d).length) fs.rmdirSync(d);
+    }
+  }
+  // (Before the classes arrive nothing was pruned: looked at once more after they do.)
+  if (st.pulledSha) st.pulledLib = want.sha256;
+  st.libSeen = st.pulledSha ? m : `${m}:early`;
+  return any;
 }
 
 async function follow(dir) {
@@ -409,8 +525,10 @@ async function follow(dir) {
       hooks.writeState(ks);
     }
   }
-  // Textbooks: the phone copy's folder holds the primary's textbooks. (Not pruned until the classes have come in, so
-  // nothing of this device's own is deleted first.)
+  // Textbooks: from the phone copy's library zip (kea-library.zip next to Devices), once it has fully arrived. (Not
+  // pruned until the classes have come in, so nothing of this device's own is deleted first.)
+  if (pullTextbooks(path.dirname(dir), P, st)) any = true;
+  // (A primary older than the library zip kept them in a Textbooks folder there.)
   const books = path.join(path.dirname(dir), 'Textbooks');
   if (fs.existsSync(books)) {
     if (st.pulledSha) cloud.mirror(books, P.textbooks);
