@@ -1166,6 +1166,177 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
           scrollIntoView({ r: g.r1, c: g.c1 });
           return `Selected ${a}.`;
         }
+      },
+      {
+        name: 'format_range',
+        description:
+          'Style a range so the sheet looks finished: bold/italic, text colour, fill (bg), font and size, alignment, wrap, number format (number, currency, percent, date, text) with decimals, borders (outline, all, bottom, or none), merge cells (titles), plus column width and row height in pixels. Only what you give changes; one undo step.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            range: { type: 'string', description: 'e.g. "A1:F1"' },
+            sheet: { type: 'string' },
+            bold: { type: 'boolean' },
+            italic: { type: 'boolean' },
+            color: { type: 'string', description: 'Text colour, hex' },
+            bg: { type: 'string', description: 'Fill colour, hex ("" clears)' },
+            font: { type: 'string' },
+            size: { type: 'number', description: 'Points' },
+            align: { type: 'string', enum: ['left', 'center', 'right'] },
+            valign: { type: 'string', enum: ['top', 'middle', 'bottom'] },
+            wrap: { type: 'boolean' },
+            format: { type: 'string', enum: ['general', 'number', 'currency', 'percent', 'date', 'datetime', 'text'] },
+            decimals: { type: 'integer' },
+            borders: { type: 'string', enum: ['outline', 'all', 'bottom', 'none'] },
+            border_color: { type: 'string' },
+            merge: { type: 'boolean', description: 'Merge the range into one cell (true) or unmerge (false)' },
+            column_width: { type: 'number', description: 'Pixels, for every column in the range' },
+            row_height: { type: 'number', description: 'Pixels, for every row in the range' }
+          },
+          required: ['range']
+        },
+        run: (p) => {
+          const g = range(p.range);
+          const idx = sheetIndex(p.sheet);
+          if ((g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1) > 200000) throw new Error('That range is too big to format at once.');
+          commitSheet((sh) => {
+            const line: Border = { style: 'thin', color: p.border_color || '#c7c7c7' };
+            for (let r = g.r1; r <= g.r2; r++)
+              for (let c = g.c1; c <= g.c2; c++) {
+                const k = key(r, c);
+                const cell: Cell = { ...(sh.cells[k] || {}) } as Cell;
+                const st: any = { ...(cell.s || {}) };
+                if (p.bold !== undefined) st.b = p.bold;
+                if (p.italic !== undefined) st.i = p.italic;
+                if (p.color !== undefined) st.color = p.color || undefined;
+                if (p.bg !== undefined) st.bg = p.bg || undefined;
+                if (p.font !== undefined) st.font = p.font || undefined;
+                if (p.size !== undefined) st.size = p.size;
+                if (p.align !== undefined) st.align = p.align;
+                if (p.valign !== undefined) st.valign = p.valign;
+                if (p.wrap !== undefined) st.wrap = p.wrap;
+                if (p.format !== undefined) (st.fmt = p.format), delete st.numFmt;
+                if (p.decimals !== undefined) st.dp = p.decimals;
+                if (p.borders === 'none') delete st.bt, delete st.bb, delete st.bl, delete st.br;
+                else if (p.borders === 'all') st.bt = st.bb = st.bl = st.br = line;
+                else if (p.borders === 'bottom' && r === g.r2) st.bb = line;
+                else if (p.borders === 'outline') {
+                  if (r === g.r1) st.bt = line;
+                  if (r === g.r2) st.bb = line;
+                  if (c === g.c1) st.bl = line;
+                  if (c === g.c2) st.br = line;
+                }
+                cell.s = st;
+                sh.cells[k] = cell;
+              }
+            if (p.column_width) for (let c = g.c1; c <= g.c2; c++) sh.colW[c] = Math.max(16, Math.min(1200, p.column_width));
+            if (p.row_height) for (let r = g.r1; r <= g.r2; r++) sh.rowH[r] = Math.max(12, Math.min(600, p.row_height));
+            if (p.merge !== undefined) {
+              const overlaps = (m: { r1: number; c1: number; r2: number; c2: number }) => !(m.r2 < g.r1 || m.r1 > g.r2 || m.c2 < g.c1 || m.c1 > g.c2);
+              sh.merges = (sh.merges || []).filter((m) => !overlaps(m));
+              if (p.merge && (g.r2 > g.r1 || g.c2 > g.c1)) sh.merges.push({ ...g });
+            }
+          }, idx);
+          if (idx !== si) setSi(idx);
+          return `Formatted ${p.range}.`;
+        }
+      },
+      {
+        name: 'freeze',
+        description: 'Freeze header rows and/or label columns so they stay visible while scrolling (0 to unfreeze).',
+        input_schema: { type: 'object', properties: { rows: { type: 'integer' }, cols: { type: 'integer' }, sheet: { type: 'string' } } },
+        run: ({ rows, cols, sheet: name }) => {
+          const idx = sheetIndex(name);
+          commitSheet((sh) => {
+            sh.freeze = { rows: rows ?? sh.freeze.rows, cols: cols ?? sh.freeze.cols };
+          }, idx);
+          return `Frozen: ${rows ?? '-'} row(s), ${cols ?? '-'} column(s).`;
+        }
+      },
+      {
+        name: 'add_chart',
+        description: 'Add a chart over the sheet from a data range (first row = series names, first column = category labels by default). Types: column, bar, line, area, pie, doughnut, scatter. Placed beside the data unless x/y (pixels over the grid) are given.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['column', 'bar', 'line', 'area', 'pie', 'doughnut', 'scatter'] },
+            range: { type: 'string' },
+            title: { type: 'string' },
+            sheet: { type: 'string' },
+            legend: { type: 'string', enum: ['right', 'bottom', 'top', 'none'] },
+            stacked: { type: 'boolean' },
+            show_values: { type: 'boolean' },
+            series_by: { type: 'string', enum: ['cols', 'rows'] },
+            x: { type: 'number' },
+            y: { type: 'number' },
+            w: { type: 'number' },
+            h: { type: 'number' }
+          },
+          required: ['type', 'range']
+        },
+        run: (p) => {
+          const g = range(p.range);
+          const idx = sheetIndex(p.sheet);
+          const sh0 = h.get().sheets[idx];
+          const colX = (c: number) => Array.from({ length: c }, (_, i) => sh0.colW[i] ?? 100).reduce((a, b) => a + b, 0);
+          const chart: Chart = { id: uid(), type: p.type, range: g, title: p.title, x: p.x ?? colX(g.c2 + 1) + 40, y: p.y ?? 30, w: p.w ?? 480, h: p.h ?? 300, legend: p.legend ?? (['pie', 'doughnut'].includes(p.type) ? 'right' : 'bottom'), headerRow: true, labelCol: true, seriesBy: p.series_by ?? 'cols', stacked: p.stacked, showValues: p.show_values };
+          commitSheet((sh) => {
+            sh.charts = [...(sh.charts || []), chart];
+          }, idx);
+          if (idx !== si) setSi(idx);
+          return `Added a ${p.type} chart (${chart.id}) of ${p.range}.`;
+        }
+      },
+      {
+        name: 'add_conditional_format',
+        description: 'Highlight cells by rule: gt/lt/gte/lte/eq/neq/between (a, b), contains/startsWith (a), dup/unique, top/bottom (n), aboveAvg/belowAvg, scale (2–3 colours low→high), bars (data bars, one colour), formula (a, e.g. "=B2>C2").',
+        input_schema: {
+          type: 'object',
+          properties: {
+            range: { type: 'string' },
+            sheet: { type: 'string' },
+            type: { type: 'string', enum: ['gt', 'lt', 'gte', 'lte', 'between', 'eq', 'neq', 'contains', 'notContains', 'startsWith', 'empty', 'notEmpty', 'dup', 'unique', 'top', 'bottom', 'aboveAvg', 'belowAvg', 'scale', 'bars', 'formula'] },
+            a: { type: 'string' },
+            b: { type: 'string' },
+            n: { type: 'integer' },
+            bg: { type: 'string' },
+            color: { type: 'string' },
+            bold: { type: 'boolean' },
+            colors: { type: 'array', items: { type: 'string' } }
+          },
+          required: ['range', 'type']
+        },
+        run: (p) => {
+          const g = range(p.range);
+          const idx = sheetIndex(p.sheet);
+          const rule: CondRule = { id: uid(), range: g, type: p.type, a: p.a, b: p.b, n: p.n, style: p.type === 'scale' || p.type === 'bars' ? undefined : { bg: p.bg ?? '#fde68a', color: p.color, b: p.bold }, colors: p.colors ?? (p.type === 'scale' ? ['#f8696b', '#ffeb84', '#63be7b'] : p.type === 'bars' ? ['#5a8ac6'] : undefined) };
+          commitSheet((sh) => {
+            sh.condRules = [...(sh.condRules || []), rule];
+          }, idx);
+          return `Added a ${p.type} rule on ${p.range}.`;
+        }
+      },
+      {
+        name: 'describe_sheet',
+        description: 'The sheet’s structure: used range, frozen panes, merges, column widths, charts and conditional formats, and the styles in use (so formatting stays consistent).',
+        input_schema: { type: 'object', properties: { sheet: { type: 'string' } } },
+        run: ({ sheet: name }) => {
+          const sh = h.get().sheets[sheetIndex(name)];
+          const u = usedRange(sh);
+          const styles = new Map<string, number>();
+          for (const c of Object.values(sh.cells)) if (c.s) styles.set(JSON.stringify(c.s), (styles.get(JSON.stringify(c.s)) || 0) + 1);
+          const rng = (g: { r1: number; c1: number; r2: number; c2: number }) => `${addr(g.r1, g.c1)}:${addr(g.r2, g.c2)}`;
+          return [
+            `Sheet "${sh.name}": used A1:${addr(Math.max(0, u.rows - 1), Math.max(0, u.cols - 1))}; frozen ${sh.freeze.rows} row(s), ${sh.freeze.cols} col(s).`,
+            sh.merges?.length ? `Merged: ${sh.merges.map(rng).join(', ')}` : '',
+            Object.keys(sh.colW).length ? `Column widths (px): ${Object.entries(sh.colW).map(([c, w]) => `${colName(Number(c))}=${w}`).join(', ')}` : '',
+            sh.charts?.length ? `Charts: ${sh.charts.map((c) => `${c.id} ${c.type} of ${rng(c.range)}${c.title ? ` “${c.title}”` : ''}`).join('; ')}` : '',
+            sh.condRules?.length ? `Conditional formats: ${sh.condRules.map((r) => `${r.type} on ${rng(r.range)}`).join('; ')}` : '',
+            styles.size ? `Styles in use (count): ${[...styles.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => `${k} ×${n}`).join('; ')}` : 'No cell styles yet.'
+          ]
+            .filter(Boolean)
+            .join('\n');
+        }
       }
     ],
     async getDocument() {

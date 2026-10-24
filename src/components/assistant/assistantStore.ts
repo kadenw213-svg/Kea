@@ -66,7 +66,7 @@ export const setActivity = (tabId: string, text: string | undefined) => {
 };
 
 /** Steps Claude takes to look and plan, not edits: never listed in the chat. */
-export const INTERNAL_STEPS = new Set(['design_guide', 'describe_slide', 'describe_pages', 'look', 'read_document', 'check_design', 'read_range', 'measure_picture', 'go_to_slide', 'go_to_page', 'show_in_document', 'measure_loudness', 'kea_list_tabs']);
+export const INTERNAL_STEPS = new Set(['design_guide', 'describe_slide', 'describe_pages', 'look', 'read_document', 'check_design', 'read_range', 'measure_picture', 'go_to_slide', 'go_to_page', 'show_in_document', 'measure_loudness', 'kea_list_tabs', 'describe_sheet', 'find_assignment']);
 
 const VERBS: Record<string, string> = { add: 'Adding', set: 'Setting', update: 'Updating', delete: 'Removing', remove: 'Removing', arrange: 'Arranging', replace: 'Rewriting', mark: 'Marking', insert: 'Inserting', format: 'Formatting', place: 'Placing', move: 'Moving', apply: 'Applying', fill: 'Filling', redact: 'Redacting', rotate: 'Rotating', duplicate: 'Duplicating', edit: 'Editing', split: 'Cutting', trim: 'Trimming', select: 'Selecting', crop: 'Cropping', resize: 'Resizing', export: 'Exporting', page: 'Setting up' };
 const DOING: Record<string, string> = {
