@@ -151,6 +151,9 @@ class FontCache {
       }
       try {
         font.encodeText(ch);
+        // An embedded font never refuses a character; it would print an empty box if the font lacks it.
+        const own = (font as any).embedder?.font;
+        if (own?.hasGlyphForCodePoint && !own.hasGlyphForCodePoint(ch.codePointAt(0))) throw new Error('no glyph');
         okSet.add(ch);
         out += ch;
       } catch {
