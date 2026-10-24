@@ -762,7 +762,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
     const pages = s.pages.map((p) => {
       if (!set.has(p.id)) return p;
       const { width, height } = sizeOf(p);
-      const steps = delta > 0 ? 1 : 3;
+      const steps = ((((delta / 90) | 0) % 4) + 4) % 4 || 4; // quarter turns clockwise (90, 180, 270, or -90)
       annots = annots.map((a) => (a.pageId === p.id ? rotateAnn(a, steps, width, height) : a));
       if (p.src < 0) return { ...p, width: p.height, height: p.width };
       return { ...p, rotation: (((p.rotation + delta) % 360) + 360) % 360 };

@@ -177,8 +177,12 @@ class OfflineFrames {
       if (plan.samples) {
         const s = plan.sampleIter ? ((await plan.sampleIter.next()).value ?? null) : await plan.samples.getSample(ts);
         if (s) {
-          const next = (await yuvOf(s as any)) ?? s.toVideoFrame();
-          s.close();
+          let next: Drawable | null = null;
+          try {
+            next = (await yuvOf(s as any)) ?? s.toVideoFrame();
+          } finally {
+            s.close();
+          }
           release(plan.last);
           plan.last = next;
         }
@@ -221,11 +225,15 @@ class OfflineFrames {
 }
 
 /** One frame of the project, exactly as the export would draw it. */
+// One set of effect renderers for every still (measure_picture, snapshots): each new one would open more graphics
+// contexts, and the browser drops the oldest (the monitor's) once there are too many.
+let stillFx: ClipFx | null = null;
+
 export async function renderStill(p: Project, t: number, width: number, height: number): Promise<HTMLCanvasElement> {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(width));
   canvas.height = Math.max(1, Math.round(height));
-  const fx = new ClipFx();
+  const fx = (stillFx ||= new ClipFx());
   // (Same decoding as the export, so HDR and 10-bit footage looks the same in a still.)
   const frames = new OfflineFrames(p, [t], canvas.height, !!studioRenderer(fx));
   await frames.prepare();
@@ -375,7 +383,7 @@ export async function exportProject(p: Project, o: ExportOptions, onProgress: (f
         for (let i = 0; i < total; i++) {
           check();
           await frames.load(i);
-          const ro = { project: p, t: times[i], scale, getFrame: frames.getFrame, fx };
+          const ro = { project: p, t: times[i], scale, getFrame: frames.getFrame, fx, outW: W, outH: H };
           if (ctx) renderFrame(ctx, ro);
           else if (!renderStudio(ro)) throw new Error('The 16-bit renderer stopped during the export. Choose Basic picture quality in Settings → Video editor and export again.');
           await video.add(i / o.fps, 1 / o.fps);

@@ -146,10 +146,20 @@ export function startControlBridge() {
           return done(await callTool(req.name, req.input || {}, req.tabId));
         case 'list_tabs':
           return done({ tabs: listTabs() });
-        case 'resources_list':
-          return done(resourceList());
-        case 'resource_read':
+        case 'resources_list': {
+          const all = resourceList();
+          if (!req.tabId) return done(all);
+          const own = new Set((hooksForTab(req.tabId)?.resources?.() || []).map((r) => r.uri));
+          return done({ resources: all.resources.filter((r) => r.uri.startsWith(`kea://tab/${req.tabId}/`) || own.has(r.uri)), templates: [] });
+        }
+        case 'resource_read': {
+          if (req.tabId && !String(req.uri).startsWith(`kea://tab/${req.tabId}/`)) {
+            const got = await hooksForTab(req.tabId)?.readResource?.(req.uri);
+            if (!got) return fail('That resource belongs to another file.');
+            return done(got);
+          }
           return done(await readResource(req.uri));
+        }
         default:
           return fail(`Unknown control request "${req.kind}".`);
       }

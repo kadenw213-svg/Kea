@@ -30,11 +30,13 @@ export function safeSvg(source: string): { svg: string; width: number; height: n
       if (n.startsWith('on')) el.removeAttribute(a.name);
       // Links only to things inside this drawing (#id); embedded raster data is allowed for <image>.
       else if ((n === 'href' || n === 'xlink:href') && !v.startsWith('#') && !(el.nodeName.toLowerCase() === 'image' && /^data:image\/(png|jpeg|gif|webp);/i.test(v))) el.removeAttribute(a.name);
-      else if (/url\(\s*['"]?(?!#)/i.test(v) || /javascript:|@import/i.test(v)) el.removeAttribute(a.name);
+      else if (/url\(\s*['"]?\s*[^#'"\s)]/i.test(v) || /javascript:|@import/i.test(v)) el.removeAttribute(a.name);
     }
-    if (el.nodeName.toLowerCase() === 'style' && /@import|url\(\s*['"]?(?!#)/i.test(el.textContent || '')) el.textContent = '';
+    if (el.nodeName.toLowerCase() === 'style' && /@import|url\(\s*['"]?\s*[^#'"\s)]/i.test(el.textContent || '')) el.textContent = '';
   };
   walk(root);
+  // <use> can multiply a drawing exponentially (uses of uses): keep it to what real artwork needs.
+  if (root.getElementsByTagName('use').length > 400) throw new Error('That SVG has more than 400 <use> references; draw repeated motifs with <pattern> instead.');
   // Size: the viewBox (what Claude drew in), else width/height.
   const vb = (root.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
   let width = vb.length === 4 && vb[2] > 0 ? vb[2] : parseFloat(root.getAttribute('width') || '');

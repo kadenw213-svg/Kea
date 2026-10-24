@@ -58,21 +58,27 @@ function textHtml(p: { text?: string; html?: string; bold?: boolean; italic?: bo
 /** An image fitted to a box: "contain" keeps it whole (the box shrinks to its shape), "cover" crops it to fill. */
 async function fitImage(src: { dataUrl: string; width: number; height: number; img: HTMLImageElement }, w: number, h: number, fit: string) {
   if (fit !== 'cover') return { src: src.dataUrl, w, h };
+  // In the picture's real pixels (artwork is rendered larger than its nominal size).
+  const iw = src.img.naturalWidth || src.width,
+    ih = src.img.naturalHeight || src.height;
   const target = w / h;
-  const ratio = src.width / src.height;
-  const cw = ratio > target ? src.height * target : src.width;
-  const ch = ratio > target ? src.height : src.width / target;
+  const ratio = iw / ih;
+  const cw = ratio > target ? ih * target : iw;
+  const ch = ratio > target ? ih : iw / target;
   const c = document.createElement('canvas');
   c.width = Math.round(cw);
   c.height = Math.round(ch);
-  c.getContext('2d')!.drawImage(src.img, (src.width - cw) / 2, (src.height - ch) / 2, cw, ch, 0, 0, c.width, c.height);
+  c.getContext('2d')!.drawImage(src.img, (iw - cw) / 2, (ih - ch) / 2, cw, ch, 0, 0, c.width, c.height);
   return { src: c.toDataURL(/png|gif|webp/.test(src.dataUrl.slice(5, 20)) ? 'image/png' : 'image/jpeg', 0.92), w, h };
 }
 
-export function slidesDesignTools(c: SlidesAiCtx): AssistantTool[] {
+export function slidesDesignTools(c0: SlidesAiCtx): AssistantTool[] {
+  // Within one batch the editor hasn't re-rendered yet: remember the slide these tools moved to.
+  let shown: number | undefined;
+  const c: SlidesAiCtx = { ...c0, setIdx: (i) => ((shown = i), c0.setIdx(i)) };
   const at = (n?: number) => {
     const d = c.h.get();
-    const i = n === undefined ? Math.min(c.idx, d.slides.length - 1) : n - 1;
+    const i = n === undefined ? Math.min(shown ?? c0.idx, d.slides.length - 1) : n - 1;
     if (!Number.isInteger(i) || i < 0 || i >= d.slides.length) throw new Error(`There's no slide ${n}; the deck has ${d.slides.length}.`);
     return i;
   };
@@ -129,7 +135,8 @@ export function slidesDesignTools(c: SlidesAiCtx): AssistantTool[] {
           const nb = node.getBoundingClientRect();
           const ib = inner.getBoundingClientRect();
           // Layout sizes (scrollHeight etc.) are in slide points; on-screen rects are zoomed, so divide those by scale.
-          const need = Math.max(ib.height / scale, inner.scrollHeight) + 7.2;
+          // Rotated boxes: on-screen rects are the rotated bounds, so measure in layout units only.
+          const need = (e.rot ? inner.scrollHeight : Math.max(ib.height / scale, inner.scrollHeight)) + 7.2;
           if (need > e.h + 2) issues.push({ severity: 'fix', text: `${name(e)}: the text needs about ${r1(need)} pt of height but the box is ${r1(e.h)} pt, so it spills out. Make the box taller, the text smaller, or the copy shorter.` });
           if (inner.scrollWidth > inner.clientWidth + 2) issues.push({ severity: 'fix', text: `${name(e)}: a word is wider than the box (${r1(inner.scrollWidth)} pt vs ${r1(inner.clientWidth)} pt).` });
           const colours = new Set<string>(),
@@ -153,6 +160,7 @@ export function slidesDesignTools(c: SlidesAiCtx): AssistantTool[] {
         // Text on text.
         for (let a = 0; a < texts.length; a++)
           for (let b = a + 1; b < texts.length; b++) {
+            if (texts[a].e.rot || texts[b].e.rot) continue; // (rotated bounds aren't the text's real area)
             const A = texts[a].box,
               B = texts[b].box;
             const ox = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x);
@@ -373,10 +381,31 @@ export function slidesDesignTools(c: SlidesAiCtx): AssistantTool[] {
         const sx = w / d.w,
           sy = h / d.h,
           sf = Math.min(sx, sy);
-        const slides = d.slides.map((s) => ({ ...s, els: s.els.map((e) => ({ ...e, x: e.x * sx, y: e.y * sy, w: e.w * sx, h: e.h * sy, ...(e.size ? { size: Math.round(e.size * sf * 10) / 10 } : {}) })) }));
+        // Everything keeps its proportions (scaled by the smaller factor and centred); only backgrounds that span the
+        // page stretch to the new edges. Type, inline sizes and outlines scale with it.
+        const ox = (w - d.w * sf) / 2,
+          oy = (h - d.h * sf) / 2;
+        const scaleHtml = (html?: string) => html?.replace(/font-size:\s*([\d.]+)px/g, (_m, v) => `font-size:${Math.round(Number(v) * sf * 10) / 10}px`);
+        const slides = d.slides.map((s) => ({
+          ...s,
+          els: s.els.map((e) => {
+            const fullW = e.x <= 1 && e.x + e.w >= d.w - 1,
+              fullH = e.y <= 1 && e.y + e.h >= d.h - 1;
+            return {
+              ...e,
+              x: fullW ? e.x * sx : ox + e.x * sf,
+              w: fullW ? e.w * sx : e.w * sf,
+              y: fullH ? e.y * sy : oy + e.y * sf,
+              h: fullH ? e.h * sy : e.h * sf,
+              ...(e.size ? { size: Math.round(e.size * sf * 10) / 10 } : {}),
+              ...(e.strokeW ? { strokeW: Math.round(e.strokeW * sf * 10) / 10 } : {}),
+              ...(e.html ? { html: scaleHtml(e.html) } : {})
+            };
+          })
+        }));
         c.h.commit({ ...d, w, h, slides });
         c.markDirty();
-        return `Slides are now ${w} × ${h} pt (elements scaled ${sx.toFixed(2)} × ${sy.toFixed(2)}).`;
+        return `Slides are now ${w} × ${h} pt. Content kept its proportions (scaled ${sf.toFixed(2)}×, centred); full-page backgrounds were stretched to fit. Rearrange for the new shape: a portrait page wants a different layout than a wide one.`;
       }
     }
   ];

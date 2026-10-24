@@ -12,6 +12,14 @@ const workspace = require('./scholar/workspace.cjs');
 const control = require('./mcp/server.cjs');
 
 const running = new Map(); // request id -> child process
+const cancelled = new Set(); // Stop pressed before Claude Code had started
+// The plan, never an API key: if the student has one in their environment, Claude Code would bill it instead.
+const planEnv = () => {
+  const env = { ...process.env, CLAUDE_CODE_ENTRYPOINT: 'kea', ENABLE_TOOL_SEARCH: 'false' };
+  delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  return env;
+};
 const usageFile = () => path.join(app.getPath('userData'), 'plan-usage.json');
 // An empty folder to run in, so no project's CLAUDE.md or settings are picked up.
 const workDir = () => {
@@ -81,6 +89,7 @@ function register({ getWindow }) {
    * and resolves when Claude is done: { session, error?, stopped? }.
    */
   ipcMain.handle('assistant:plan-send', async (_e, id, req) => {
+    cancelled.delete(id);
     const claude = await findClaude();
     if (!claude) return { error: 'Claude Code isn’t installed. Use “Sign in to Claude” in the Claude tab to set it up.' };
     let conn;
@@ -90,13 +99,25 @@ function register({ getWindow }) {
       return { error: String(err.message || err) };
     }
     const mcp = JSON.stringify({ mcpServers: { kea: { type: 'http', url: conn.url, headers: { Authorization: `Bearer ${conn.token}` } } } });
-    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--mcp-config', mcp, '--strict-mcp-config', '--tools', '', '--allowedTools', 'mcp__kea', '--permission-mode', 'dontAsk', '--system-prompt', String(req.system || '')];
+    // Only Kea's tools; none of the student's own Claude Code setup (hooks, settings) from their home folder.
+    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--mcp-config', mcp, '--strict-mcp-config', '--tools', '', '--allowedTools', 'mcp__kea', '--permission-mode', 'dontAsk', '--setting-sources', 'project', '--system-prompt', String(req.system || '')];
     if (req.model) args.push('--model', String(req.model));
     if (req.effort) args.push('--effort', String(req.effort));
     if (req.session) args.push('--resume', String(req.session));
+    if (cancelled.delete(id)) {
+      conn.close();
+      return { session: req.session || null, stopped: true };
+    }
     return new Promise((resolve) => {
-      const child = spawn(claude, args, { cwd: workDir(), windowsHide: true, env: { ...process.env, CLAUDE_CODE_ENTRYPOINT: 'kea', ENABLE_TOOL_SEARCH: 'false' } });
+      let child;
+      try {
+        child = spawn(claude, args, { cwd: workDir(), windowsHide: true, env: planEnv() });
+      } catch (err) {
+        conn.close();
+        return resolve({ error: `Claude Code couldn’t start: ${err.message}` });
+      }
       running.set(id, child);
+      child.stdin.on('error', () => {}); // it may exit before reading a big message (not signed in, bad flag)
       let session = req.session || null;
       let buf = '';
       let errText = '';
@@ -145,7 +166,10 @@ ARGS ${JSON.stringify(args)}
   });
   ipcMain.handle('assistant:plan-stop', (_e, id) => {
     const c = running.get(id);
-    if (!c) return false;
+    if (!c) {
+      cancelled.add(id);
+      return true;
+    }
     c.killedByUser = true;
     c.kill();
     return true;
@@ -156,7 +180,10 @@ ARGS ${JSON.stringify(args)}
     const claude = await findClaude();
     if (!claude) return readUsage();
     await new Promise((resolve) => {
-      const child = spawn(claude, ['-p', '--output-format', 'stream-json', '--verbose', '--strict-mcp-config', '--tools', '', '--model', 'haiku', '--no-session-persistence', '--system-prompt', 'Reply with one character.'], { cwd: workDir(), windowsHide: true });
+      const child = spawn(claude, ['-p', '--output-format', 'stream-json', '--verbose', '--strict-mcp-config', '--tools', '', '--model', 'haiku', '--no-session-persistence', '--setting-sources', 'project', '--system-prompt', 'Reply with one character.'], { cwd: workDir(), windowsHide: true, env: planEnv() });
+      const timer = setTimeout(() => child.kill(), 60000);
+      child.on('close', () => clearTimeout(timer));
+      child.stdin.on('error', () => {});
       let buf = '';
       child.stdout.on('data', (d) => {
         buf += d;

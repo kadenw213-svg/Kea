@@ -19,7 +19,7 @@ import { getLut, loadLut } from './lut';
  * Text and shapes are drawn by the 2D renderer (fonts, shadows, karaoke) and composited here.
  */
 
-type Target = { tex: WebGLTexture; fb: WebGLFramebuffer; w: number; h: number };
+type Target = { tex: WebGLTexture; fb: WebGLFramebuffer; w: number; h: number; /** Last frame that used it (never freed mid-frame). */ frame?: number };
 type Prog = { p: WebGLProgram; u: Record<string, WebGLUniformLocation | null> };
 type Drawable = HTMLVideoElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap | HTMLImageElement | VideoFrame | YuvFrame;
 
@@ -42,8 +42,10 @@ export async function yuvOf(f: { format: string | null; codedWidth: number; code
   if (!m) return null;
   const buf = new Uint8Array(f.allocationSize());
   const layout = await f.copyTo(buf);
-  const W = f.codedWidth;
-  const H = f.codedHeight;
+  // copyTo gives the visible rectangle (1080 lines of a 1088-line coded H.264 frame), so size the planes by that.
+  const vr = (f as any).visibleRect;
+  const W = vr?.width || f.displayWidth || f.codedWidth;
+  const H = vr?.height || f.displayHeight || f.codedHeight;
   const cw = m[1] === '44' ? W : Math.ceil(W / 2);
   const ch = m[1] === '20' ? Math.ceil(H / 2) : H;
   const dims = [[W, H], [cw, ch], [cw, ch]];
@@ -442,6 +444,8 @@ export class GpuCompositor {
   /** Last frame's converted picture of each text / shape clip, by clip id. */
   private rasterCache = new Map<string, { key: string; target: Target; used: number }>();
   private frameNo = 0;
+  /** The browser took the graphics context away (too many open, driver reset). */
+  lost = false;
   /** Dither the final 8-bit picture (on by default; tests turn it off to compare exactly). */
   dither = true;
   /**
@@ -473,6 +477,8 @@ export class GpuCompositor {
       const gl = canvas.getContext('webgl2', { alpha: false, premultipliedAlpha: false, preserveDrawingBuffer: true, antialias: false });
       if (!gl || !gl.getExtension('EXT_color_buffer_float')) return null;
       const c = new GpuCompositor(canvas, gl);
+      // A lost context draws nothing and throws nothing: notice it, so the next frame falls back to Basic.
+      canvas.addEventListener('webglcontextlost', () => (c.lost = true));
       return c.progs ? c : null;
     } catch (err) {
       console.warn('GPU compositor unavailable', err);
@@ -630,10 +636,13 @@ export class GpuCompositor {
       // Most recently used last, so the oldest go first when there are too many.
       this.targets.delete(key);
       this.targets.set(key, t);
+      t.frame = this.frameNo;
       return t;
     }
-    while (this.targets.size >= 32) {
-      const [oldKey, old] = this.targets.entries().next().value as [string, Target];
+    // Too many: free the least recently used, but never one this frame is using (or the accumulators).
+    for (const [oldKey, old] of this.targets) {
+      if (this.targets.size < 32) break;
+      if (old.frame === this.frameNo || oldKey.startsWith('acc')) continue;
       gl.deleteTexture(old.tex);
       gl.deleteFramebuffer(old.fb);
       this.targets.delete(oldKey);
@@ -643,7 +652,7 @@ export class GpuCompositor {
     const fb = gl.createFramebuffer()!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    t = { tex, fb, w, h };
+    t = { tex, fb, w, h, frame: this.frameNo };
     this.targets.set(key, t);
     return t;
   }
@@ -883,6 +892,7 @@ export class GpuCompositor {
   /** Render one frame at outW×outH. Returns the canvas holding it (8-bit, dithered). */
   render(o: GpuFrameSource, h: GpuHelpers, outW: number, outH: number): HTMLCanvasElement {
     const gl = this.gl;
+    if (this.lost || gl.isContextLost()) throw new Error('The graphics card reset the 16-bit renderer.');
     const { project: p, t, scale } = o;
     const W = p.settings.width;
     const H = p.settings.height;

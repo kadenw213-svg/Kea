@@ -44,7 +44,10 @@ export function AssistantPanel() {
   const [plan, setPlan] = useState<{ installed: boolean; loggedIn: boolean; email: string; plan: string } | null>(null);
   const [usage, setUsage] = useState<PlanUsage | null>(null);
   // Files waiting to go with the next message (a flier to recreate, concept images, a PDF brief).
-  const [pending, setPending] = useState<Attachment[]>([]);
+  const [pendingByTab, setPendingByTab] = useState<Record<string, Attachment[]>>({});
+  const pending = pendingByTab[activeId] || [];
+  const setPending = (fn: Attachment[] | ((p: Attachment[]) => Attachment[])) =>
+    setPendingByTab((all) => ({ ...all, [activeId]: typeof fn === 'function' ? fn(all[activeId] || []) : fn }));
   const [dropHere, setDropHere] = useState(false);
 
   useEffect(() => {
@@ -246,7 +249,8 @@ export function AssistantPanel() {
                   const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf');
                   if (!files.length) return;
                   e.preventDefault();
-                  attach(files.map((f, i) => ({ name: f.name && f.name !== 'image.png' ? f.name : `pasted-${Date.now().toString(36)}${i || ''}.${f.type === 'application/pdf' ? 'pdf' : f.type.split('/')[1].replace('jpeg', 'jpg')}`, data: f })));
+                  const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/bmp': 'bmp', 'image/svg+xml': 'svg', 'application/pdf': 'pdf' };
+                  attach(files.map((f, i) => ({ name: f.name && f.name !== 'image.png' ? f.name : `pasted-${Date.now().toString(36)}${i || ''}.${EXT[f.type] || f.type.split('/')[1] || 'bin'}`, data: f })));
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {

@@ -210,7 +210,10 @@ export async function runToolHeadless(tabId: string, tools: AssistantTool[], use
   try {
     if (use.name === 'look') {
       const img = await picture(tabId);
-      if (!img) return { ok: false, text: 'The editor couldn’t make a picture right now.' };
+      if (!img) {
+        const hidden = (document.querySelector(`.pane[data-tab="${CSS.escape(tabId)}"]`) as HTMLElement | null)?.hidden;
+        return { ok: false, text: hidden ? 'This file isn’t on screen right now (the student is looking at another tab), so there’s no picture. Keep working: the describe and check_design tools still measure it exactly.' : 'The editor couldn’t make a picture right now.' };
+      }
       return { ok: true, text: img.note || `${img.width} × ${img.height} px`, image: img };
     }
     const out = String((await tool.run(use.input)) ?? 'Done.');

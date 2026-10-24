@@ -44,7 +44,8 @@ export function docTools(get: () => Editor | null, meta?: { get(): DocMeta; set(
         const e = ed();
         const missing: string[] = [];
         // Attached pictures by id become the pictures themselves.
-        const full = String(html).replace(/src=(["'])attachment:([\w-]+)\1/g, (_m, q, id) => {
+        const full = String(html).replace(/src=(["']?)attachment:([\w-]+)\1/g, (_m, q, id) => {
+          q = q || '"';
           const a = attachment(id);
           if (!a || !a.mime.startsWith('image/')) {
             missing.push(id);

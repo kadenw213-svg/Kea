@@ -15,7 +15,12 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 /** file://localhost/ URL for a local path (Windows drive letters kept, everything else escaped per RFC 2396). */
 export function pathUrl(path: string) {
-  const parts = path.replace(/\\/g, '/').split('/').filter((p, i) => p !== '' || i === 0);
+  const slashed = path.replace(/\\/g, '/');
+  // A network path (\\server\share\clip.mov) names its host: file://server/share/clip.mov.
+  const unc = /^\/\/([^/]+)\/(.*)$/.exec(slashed);
+  const enc1 = (p: string) => encodeURIComponent(p).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16)}`);
+  if (unc) return `file://${enc1(unc[1])}/${unc[2].split('/').filter(Boolean).map(enc1).join('/')}`;
+  const parts = slashed.split('/').filter((p, i) => p !== '' || i === 0);
   const enc = parts.map((p, i) => (i === 0 && /^[A-Za-z]:$/.test(p) ? `${p[0]}%3a` : encodeURIComponent(p).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16)}`)));
   return `file://localhost/${enc.join('/').replace(/^\//, '')}`;
 }
@@ -48,7 +53,7 @@ export function timelineXml(p: Project, name: string, range?: [number, number]):
     const mrate = `<rate><timebase>${mr.timebase}</timebase><ntsc>${mr.ntsc ? 'TRUE' : 'FALSE'}</ntsc></rate>`;
     const video = m.hasVideo || m.kind === 'image' ? `<video><samplecharacteristics>${mrate}<width>${m.width}</width><height>${m.height}</height><pixelaspectratio>square</pixelaspectratio></samplecharacteristics></video>` : '';
     const audio = m.hasAudio ? `<audio><samplecharacteristics><depth>16</depth><samplerate>48000</samplerate></samplecharacteristics><channelcount>2</channelcount></audio>` : '';
-    return `<file id="${id}"><name>${esc(m.name)}</name><pathurl>${esc(pathUrl(m.path || m.name))}</pathurl>${mrate}<duration>${Math.max(1, fr(m.duration || 10))}</duration><media>${video}${audio}</media></file>`;
+    return `<file id="${id}"><name>${esc(m.name)}</name><pathurl>${esc(pathUrl(m.path || m.name))}</pathurl>${mrate}<duration>${Math.max(1, Math.round((m.duration || 10) * mr.fps))}</duration><media>${video}${audio}</media></file>`;
   };
 
   const param = (id: string, label: string, value: string, min?: number, max?: number) =>
@@ -111,8 +116,16 @@ export function timelineXml(p: Project, name: string, range?: [number, number]):
     return `<clipitem id="${id}"><name>${esc(c.name)}</name><enabled>TRUE</enabled><duration>${Math.max(1, fr(m.duration || clipDuration(c)))}</duration>${rate}<start>${start}</start><end>${end}</end><in>${fr(inS)}</in><out>${Math.max(fr(inS) + 1, fr(outS))}</out>${fileEl(m)}${src}${filters.join('')}</clipitem>`;
   };
 
+  // Whether a clip becomes a clipitem on this kind of track (titles, shapes and missing media don't).
+  const exported = (c: Clip | null | undefined, kind: 'video' | 'audio') => {
+    if (!c || c.kind !== 'media') return false;
+    const m = mediaOf(p, c);
+    return !!m && !(kind === 'video' && m.kind === 'audio');
+  };
   const transition = (c: Clip, edge: 'in' | 'out', kind: 'video' | 'audio') => {
-    const { prev, next } = neighbours(p, c);
+    const nb = neighbours(p, c);
+    const prev = exported(nb.prev, kind) ? nb.prev : null;
+    const next = exported(nb.next, kind) ? nb.next : null;
     const tr = edge === 'in' ? c.trIn : c.trOut;
     if (!tr) return '';
     if (edge === 'out' && next) return ''; // the next clip's "in" covers that cut
@@ -145,7 +158,8 @@ export function timelineXml(p: Project, name: string, range?: [number, number]):
             }
             const m = mediaOf(p, c);
             if (kind === 'video' && m?.kind === 'audio') return '';
-            return transition(c, 'in', kind) + clipItem(c, kind) + transition(c, 'out', kind);
+            const item = clipItem(c, kind);
+            return item ? transition(c, 'in', kind) + item + transition(c, 'out', kind) : '';
           })
           .join('');
         const off = kind === 'video' ? t.hidden : t.muted;
@@ -160,7 +174,7 @@ export function timelineXml(p: Project, name: string, range?: [number, number]):
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xmeml>
 <xmeml version="5">
-<sequence id="sequence-1"><name>${esc(name)}</name><duration>${dur}</duration>${rate}<timecode>${rate}<string>00:00:00:00</string><frame>0</frame><displayformat>${R.ntsc ? 'DF' : 'NDF'}</displayformat></timecode>
+<sequence id="sequence-1"><name>${esc(name)}</name><duration>${dur}</duration>${rate}<timecode>${rate}<string>00:00:00:00</string><frame>0</frame><displayformat>${R.ntsc && (R.timebase === 30 || R.timebase === 60) ? 'DF' : 'NDF'}</displayformat></timecode>
 <media>
 <video><format><samplecharacteristics>${rate}<width>${W}</width><height>${H}</height><pixelaspectratio>square</pixelaspectratio><fielddominance>none</fielddominance></samplecharacteristics></format>${video}</video>
 <audio><numOutputChannels>2</numOutputChannels><format><samplecharacteristics><depth>16</depth><samplerate>48000</samplerate></samplecharacteristics></format>${audio}</audio>

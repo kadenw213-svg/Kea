@@ -59,12 +59,36 @@ const addItem = (tabId: string, item: Omit<ChatItem, 'id'>) => {
 const patchItem = (tabId: string, id: string, p: Partial<ChatItem> | ((i: ChatItem) => Partial<ChatItem>)) =>
   patchChat(tabId, (c) => ({ items: c.items.map((i) => (i.id === id ? { ...i, ...(typeof p === 'function' ? p(i) : p) } : i)) }));
 
-const stopped = new Set<string>();
+// The run going on in each tab (one at a time): its own stop flag, so stopping or clearing one run can never be
+// undone by the next message.
+const runs = new Map<string, { stopped: boolean }>();
 // Bumped by clear(): a loop still running for the old conversation must not add to the new one.
 const generation = new Map<string, number>();
 
 /** Send what the student typed and let Claude work until it's done (or is stopped). */
 export async function ask(tabId: string, text: string, opts: { look?: boolean; attachments?: Attachment[] } = {}) {
+  // Taken before anything is awaited, so a double Enter or a double-clicked starter can't start a second run.
+  if (runs.has(tabId) || chatOf(tabId).busy) return;
+  const run = { stopped: false };
+  runs.set(tabId, run);
+  patchChat(tabId, { busy: true });
+  const gen = generation.get(tabId) || 0;
+  const live = () => (generation.get(tabId) || 0) === gen;
+  const mine = () => runs.get(tabId) === run;
+  try {
+    await askRun(tabId, text, opts, run, live);
+  } catch (err: any) {
+    if (live()) addItem(tabId, { kind: 'error', text: String(err?.message || err) });
+  } finally {
+    if (mine()) {
+      runs.delete(tabId);
+      setActivity(tabId, undefined);
+    }
+    if (live()) patchChat(tabId, { busy: false, reqId: undefined });
+  }
+}
+
+async function askRun(tabId: string, text: string, opts: { look?: boolean; attachments?: Attachment[] }, run: { stopped: boolean }, live: () => boolean) {
   const hooks = editorRegistry.get(tabId)?.ai;
   const tools = toolsFor(hooks);
   const content: any[] = [];
@@ -83,16 +107,16 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean; a
   const named = files.map(describeAttachment).join('\n');
   content.push({ type: 'text', text: `${context(tabId, hooks)}${named ? `\n${named}` : ''}\n\n${text || 'Here are the files.'}` });
   addItem(tabId, { kind: 'user', text, image: shown, files: files.map((a) => ({ name: a.name, thumb: a.mime.startsWith('image/') ? a.dataUrl : undefined })) });
-  stopped.delete(tabId);
-  const gen = generation.get(tabId) || 0;
-  const live = () => (generation.get(tabId) || 0) === gen;
-  if (setting('assistant.provider') !== 'api') return askPlan(tabId, content, live);
-  patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content }], busy: true, via: 'api' }));
+  if (run.stopped || !live()) return;
+  if (setting('assistant.provider') !== 'api') return askPlan(tabId, content, live, run);
+  patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content }], via: 'api' }));
 
-  const defs = tools.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
   let retries = 0;
   try {
-    for (let step = 0; step < MAX_STEPS && !stopped.has(tabId); step++) {
+    for (let step = 0; step < MAX_STEPS && !run.stopped; step++) {
+      // The editor's tools are rebuilt each render (they read its current state): take the latest every step.
+      const tools = toolsFor(editorRegistry.get(tabId)?.ai);
+      const defs = tools.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
       const reqId = uid();
       patchChat(tabId, { reqId });
       let textItem = '';
@@ -144,13 +168,12 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean; a
       }
       // Tools run one at a time (they change the same file), and all their results go back together.
       const results: any[] = [];
-      for (const u of uses) results.push(await runTool(tabId, tools, u));
+      for (const u of uses) results.push(await runTool(tabId, tools, u, run));
       if (!live()) break;
       patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content: results }] }));
     }
   } finally {
-    setActivity(tabId, undefined);
-    if (live()) patchChat(tabId, { busy: false, reqId: undefined });
+    if (live()) patchChat(tabId, { reqId: undefined });
   }
 }
 
@@ -159,9 +182,9 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean; a
  * private MCP connection) and we show what it streams: text and reasoning as they arrive, each tool step with its
  * result. Follow-up messages continue the same Claude Code session.
  */
-async function askPlan(tabId: string, content: any[], live: () => boolean) {
+async function askPlan(tabId: string, content: any[], live: () => boolean, run: { stopped: boolean }) {
   const reqId = uid();
-  patchChat(tabId, { busy: true, reqId, via: 'plan' });
+  patchChat(tabId, { reqId, via: 'plan' });
   const steps = new Map<string, string>(); // tool_use id -> panel item id
   const streamedMsgs = new Set<string>();
   let msgId = '';
@@ -178,6 +201,7 @@ async function askPlan(tabId: string, content: any[], live: () => boolean) {
     if (id !== reqId || !live()) return;
     if (ev.type === 'stream_event') {
       const e = ev.event;
+      if (run.stopped) return;
       if (e.type === 'message_start') {
         msgId = e.message?.id || '';
         textItem = thinkItem = '';
@@ -233,16 +257,14 @@ async function askPlan(tabId: string, content: any[], live: () => boolean) {
     if (r.error) addItem(tabId, { kind: 'error', text: r.error });
   } finally {
     off();
-    setActivity(tabId, undefined);
-    if (live()) patchChat(tabId, { busy: false, reqId: undefined });
   }
 }
 
 /** Run one tool for the sidebar: show the step in the panel, then shape the result as an Anthropic tool_result. */
-async function runTool(tabId: string, tools: AssistantTool[], use: { id: string; name: string; input: any }) {
+async function runTool(tabId: string, tools: AssistantTool[], use: { id: string; name: string; input: any }, run: { stopped: boolean }) {
   setActivity(tabId, doing(use.name));
   const item = addItem(tabId, { kind: 'tool', name: use.name, text: summary(use.input) });
-  const out = await runToolHeadless(tabId, tools, use, () => stopped.has(tabId));
+  const out = await runToolHeadless(tabId, tools, use, () => run.stopped);
   if (!out.ok) {
     patchItem(tabId, item, { ok: false, result: out.text });
     return { type: 'tool_result', tool_use_id: use.id, is_error: true, content: out.text };
@@ -260,13 +282,16 @@ async function runTool(tabId: string, tools: AssistantTool[], use: { id: string;
 }
 
 export function stop(tabId: string) {
-  stopped.add(tabId);
+  const run = runs.get(tabId);
+  if (run) run.stopped = true;
   const { reqId: id, via } = chatOf(tabId);
   if (id) via === 'plan' ? api.assistant.planStop(id) : api.assistant.stop(id);
 }
 
 export function clear(tabId: string) {
   stop(tabId);
+  runs.delete(tabId); // the stopped run winds down on its own; a new one may start straight away
+  setActivity(tabId, undefined);
   generation.set(tabId, (generation.get(tabId) || 0) + 1);
   patchChat(tabId, { messages: [], items: [], busy: false, usage: { input: 0, output: 0, cached: 0 }, planSession: undefined });
 }

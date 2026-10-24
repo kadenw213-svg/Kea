@@ -28,6 +28,9 @@ export interface RenderOptions {
   fx: ClipFx;
   /** Playing back: the 16-bit renderer may use its cheaper shrink (never for exports or paused frames). */
   fast?: boolean;
+  /** Exact output size (an export's width × height); otherwise the project size × scale. */
+  outW?: number;
+  outH?: number;
 }
 
 export function sizeOf(d: Drawable): [number, number] {
@@ -108,7 +111,7 @@ export function renderStudio(o: RenderOptions): HTMLCanvasElement | null {
   gpu.linearMix = setting('video.linearMix') !== false;
   try {
     rasterOpts = o;
-    return gpu.render(o, GPU_HELPERS, Math.max(1, Math.round(o.project.settings.width * o.scale)), Math.max(1, Math.round(o.project.settings.height * o.scale)));
+    return gpu.render(o, GPU_HELPERS, o.outW ?? Math.max(1, Math.round(o.project.settings.width * o.scale)), o.outH ?? Math.max(1, Math.round(o.project.settings.height * o.scale)));
   } catch (err) {
     // Never leave a black frame: fall back to the 2D renderer for good.
     console.warn('16-bit renderer failed, using the basic one', err);

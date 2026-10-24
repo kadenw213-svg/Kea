@@ -11,6 +11,8 @@ const jsonrpc = require('./jsonrpc.cjs');
 
 const PREFERRED_PORT = 4849; // a stable port so saved client configs keep working; falls back to ephemeral if taken.
 const CALL_TIMEOUT = 60_000;
+// A tool call can legitimately take a while (a batch of edits with artwork, an export starting).
+const TOOL_TIMEOUT = 5 * 60_000;
 
 let getWindow = () => null;
 let server = null;
@@ -49,8 +51,8 @@ function invokeRenderer(kind, payload) {
     const callId = crypto.randomUUID();
     const timer = setTimeout(() => {
       pending.delete(callId);
-      reject(new Error('Kea didn’t answer in time (is a file open?).'));
-    }, CALL_TIMEOUT);
+      reject(new Error(kind === 'tools_call' ? 'Kea is still working on that and didn’t answer in time. It may have partly run: check the file (describe/read it) before trying again.' : 'Kea didn’t answer in time (is a file open?).'));
+    }, kind === 'tools_call' ? TOOL_TIMEOUT : CALL_TIMEOUT);
     pending.set(callId, { resolve, reject, timer, sender: win.webContents });
     win.webContents.send('kea-control:req', { callId, kind, ...payload });
   });
@@ -105,6 +107,7 @@ function httpHandler(req, res) {
       if (now - prev > 60000) saveState();
     }
     const ctx = {
+      pinned: !!client.tabId,
       renderer: async (kind, payload) => {
         const out = await invokeRenderer(kind, client.tabId ? { ...payload, tabId: client.tabId } : payload);
         if (kind === 'tools_call' && !client.tabId) activity(client.name, 'tools/call', payload && payload.name, out && out.ok);

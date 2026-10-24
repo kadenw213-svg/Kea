@@ -41,9 +41,12 @@ interface Found {
   fontSize: number;
   family: TextItemRect['family'];
   baseY: number;
-  /** What follows the passage on its last line, and where that line ends (so a rewrite can reflow it). */
+  /** What follows the passage on its last line, and where that run of text ends (so a rewrite can reflow it). */
   rest: string;
   lineEnd: number;
+  /** What comes before the passage on its first line (same column and font), and where that starts. */
+  pre: string;
+  lineStart: number;
 }
 
 // Where a character sits inside a run: measured in a matching font, not assumed equal widths.
@@ -121,18 +124,33 @@ function findOnPage(rects: TextItemRect[], quote: string): Omit<Found, 'page' | 
     });
     if (!first) continue;
     const f: TextItemRect = first;
+    // A run continues the same piece of text when it's close by (not across a column gap) and in the same font.
+    const continues = (a: TextItemRect, b: TextItemRect) => a.fontName === b.fontName && Math.abs(a.fontSize - b.fontSize) < 0.5 && Math.min(Math.abs(b.x - (a.x + a.w)), Math.abs(a.x - (b.x + b.w))) < a.fontSize * 1.1;
     // The rest of the last line after the passage.
     let rest = '';
-    const lastLine = map[idx + needle.length - 1]?.line ?? -1;
+    const endM = map[idx + needle.length - 1] || [...map.slice(0, idx + needle.length)].reverse().find(Boolean);
+    let cur = endM ? endM.part : f;
+    let lineEnd = cur.x + cur.w;
     for (let k = idx + needle.length; k < map.length; k++) {
       const m = map[k];
-      if (m && m.line !== lastLine) break;
-      if (!m && k + 1 < map.length && map[k + 1] && map[k + 1]!.line !== lastLine) break;
+      if (m && (m.line !== endM?.line || (m.part !== cur && !continues(cur, m.part)))) break;
+      if (m && m.part !== cur) cur = m.part;
+      if (m) lineEnd = Math.max(lineEnd, m.part.x + m.part.w);
       rest += m ? m.part.str[m.at] : ' ';
     }
-    const ll = lines[lastLine];
-    const lineEnd = ll ? Math.max(...ll.parts.map((q) => q.x + q.w)) : 0;
-    out.push({ lines: [...perLine.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]), fontSize: f.fontSize, family: f.family, baseY: f.baseY, rest: rest.replace(/\s+$/, ''), lineEnd });
+    // And what comes before it on its first line.
+    let pre = '';
+    const startM = map[idx] || map.slice(idx).find(Boolean);
+    let back = startM ? startM.part : f;
+    let lineStart = back.x;
+    for (let k = idx - 1; k >= 0; k--) {
+      const m = map[k];
+      if (m && (m.line !== startM?.line || (m.part !== back && !continues(m.part, back)))) break;
+      if (m && m.part !== back) back = m.part;
+      if (m) lineStart = Math.min(lineStart, m.part.x);
+      pre = (m ? m.part.str[m.at] : ' ') + pre;
+    }
+    out.push({ lines: [...perLine.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]), fontSize: f.fontSize, family: f.family, baseY: f.baseY, rest: rest.replace(/\s+$/, ''), lineEnd, pre: pre.replace(/^\s+/, ''), lineStart });
   }
   return out;
 }
@@ -158,7 +176,21 @@ const fontOf = (family: TextItemRect['family']): FontFamily => (family === 'seri
 const hex = { type: 'string', description: 'CSS hex colour like "#1a73e8"' };
 const pageNo = { type: 'integer', description: 'Page number, from 1' };
 
-export function pdfAi(c: PdfAiCtx): Pick<AiHooks, 'tools'> {
+export function pdfAi(c0: PdfAiCtx): Pick<AiHooks, 'tools'> {
+  // Within one batch of tools the editor hasn't re-rendered yet: remember the page shown and the form values here.
+  let shownPage: number | undefined;
+  let formValues = c0.formValues;
+  const c: PdfAiCtx = {
+    ...c0,
+    scrollToPage: (i) => ((shownPage = i), c0.scrollToPage(i)),
+    setFormValues: (v) => ((formValues = v), c0.setFormValues(v)),
+    get currentIndex() {
+      return shownPage ?? c0.currentIndex;
+    },
+    get formValues() {
+      return formValues;
+    }
+  };
   const pages = () => c.history.get().pages;
   const pageAt = (n: number | undefined) => {
     const ps = pages();
@@ -259,7 +291,9 @@ export function pdfAi(c: PdfAiCtx): Pick<AiHooks, 'tools'> {
           if (!bg)
             for (let k = mine.indexOf(t) - 1; k >= 0 && !bg; k--) {
               const u = mine[k] as any;
-              if (!('w' in u) || !hit(t, u)) continue;
+              const cx = t.x + t.w / 2,
+                cy = t.y + t.h / 2;
+              if (!('w' in u) || cx < u.x || cx > u.x + u.w || cy < u.y || cy > u.y + u.h) continue;
               if (u.type === 'image') bg = await sampleImage(u.dataUrl, { x: (t.x - u.x) / u.w, y: (t.y - u.y) / u.h, w: t.w / u.w, h: t.h / u.h });
               else if (u.fill) bg = parseColour(u.fill);
             }
@@ -309,14 +343,24 @@ export function pdfAi(c: PdfAiCtx): Pick<AiHooks, 'tools'> {
         const colors = c.sampleColors(h.pageId, h.lines[0]);
         // The words after the passage on its line move along with it, so a longer (or shorter) rewrite never runs
         // into them or leaves a gap: cover to the end of that line and set the rest after the new words.
-        const lines = h.lines.map((b, k) => (k === h.lines.length - 1 && h.rest ? { ...b, w: Math.max(b.w, h.lineEnd - b.x) } : b));
-        const covers: Annotation[] = lines.map((b) => ({ id: uid(), pageId: h.pageId, type: 'whiteout', x: b.x - 1, y: b.y - 1, w: b.w + 2, h: b.h + 2, stroke: null, fill: colors.bg, strokeWidth: 0, opacity: 1 }));
-        const words = h.rest ? `${replacement}${/^[\s.,;:!?)]/.test(h.rest) ? '' : ' '}${h.rest}` : replacement;
         const multi = h.lines.length > 1;
-        const t: TextAnn = { id: uid(), pageId: h.pageId, type: 'text', x: multi ? left : h.lines[0].x, y: h.baseY - size * baselineEm(font), w: 10, h: 10, text: words, fontSize: size, font, bold: false, italic: false, color: colors.fg, align: 'left', auto: !multi };
-        if (multi) (t.text = wrapText(t, words, Math.max(right, h.lineEnd) - left)), (t.unwrapped = words);
+        // A passage over several lines is re-set as a wrapped block from the start of its first line, so the words
+        // before it on that line are re-set too (otherwise the new first line would print over them).
+        const start = multi ? Math.min(left, h.lineStart) : h.lines[0].x;
+        const lines = h.lines.map((b, k) => {
+          let x = b.x,
+            r = b.x + b.w;
+          if (k === h.lines.length - 1 && h.rest) r = Math.max(r, h.lineEnd);
+          if (k === 0 && multi && h.pre) x = Math.min(x, h.lineStart);
+          return { ...b, x, w: r - x };
+        });
+        const covers: Annotation[] = lines.map((b) => ({ id: uid(), pageId: h.pageId, type: 'whiteout', x: b.x - 1, y: b.y - 1, w: b.w + 2, h: b.h + 2, stroke: null, fill: colors.bg, strokeWidth: 0, opacity: 1 }));
+        let words = h.rest ? `${replacement}${/^[\s.,;:!?)]/.test(h.rest) ? '' : ' '}${h.rest}` : replacement;
+        if (multi && h.pre) words = `${h.pre}${/\s$/.test(h.pre) ? '' : ' '}${words}`;
+        const t: TextAnn = { id: uid(), pageId: h.pageId, type: 'text', x: start, y: h.baseY - size * baselineEm(font), w: 10, h: 10, text: words, fontSize: size, font, bold: false, italic: false, color: colors.fg, align: 'left', auto: !multi };
+        if (multi) (t.text = wrapText(t, words, Math.max(right, h.lineEnd) - start)), (t.unwrapped = words);
         const m = measureTextAnn(t);
-        t.w = multi ? Math.max(right, h.lineEnd) - left : m.width + 2;
+        t.w = multi ? Math.max(right, h.lineEnd) - start : m.width + 2;
         t.h = m.height;
         add([...covers, t], h.page);
         const z = c.sizeOf(pages()[h.page]);
@@ -514,7 +558,7 @@ export function pdfAi(c: PdfAiCtx): Pick<AiHooks, 'tools'> {
       input_schema: { type: 'object', properties: { pages: { type: 'array', items: { type: 'integer' } }, degrees: { type: 'integer', enum: [90, 180, 270] } }, required: ['pages', 'degrees'] },
       run: ({ pages: ns, degrees }) => {
         const ids = (ns as number[]).map((n) => pageAt(n).ref.id);
-        for (let k = 0; k < degrees / 90; k++) c.rotatePages(90, ids);
+        c.rotatePages(degrees, ids);
         return `Rotated page${ids.length > 1 ? 's' : ''} ${ns.join(', ')} by ${degrees}°.`;
       }
     },

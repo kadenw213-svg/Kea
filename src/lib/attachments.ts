@@ -45,6 +45,9 @@ export async function addAttachment(name: string, data: Uint8Array | Blob): Prom
   const mime = ext === 'pdf' ? 'application/pdf' : IMAGE_MIME[ext];
   if (!mime) throw new Error(`${name}: Claude can be given images (PNG, JPEG, GIF, WebP, BMP, SVG) and PDFs.`);
   const blob = data instanceof Blob ? data : new Blob([data as BlobPart], { type: mime });
+  // Claude's limits: PDFs up to 32 MB per request (leave room for the rest of the message), images are scaled down.
+  if (mime === 'application/pdf' && blob.size > 24e6) throw new Error(`${name} is ${Math.round(blob.size / 1e6)} MB; Claude can read PDFs up to about 24 MB here. Split it or attach the pages that matter.`);
+  if (blob.size > 60e6) throw new Error(`${name} is too large to attach (${Math.round(blob.size / 1e6)} MB).`);
   const a: Attachment = { id: `a${++counter}`, name, mime, dataUrl: await toDataUrl(blob.type ? blob : new Blob([blob], { type: mime })) };
   if (mime.startsWith('image/')) {
     const img = await loadImage(a.dataUrl);

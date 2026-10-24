@@ -12,8 +12,11 @@ export function safeFormatHtml(html: string): string {
         if (['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'svg', 'SVG', 'IMG', 'VIDEO', 'AUDIO', 'LINK', 'META'].includes(child.tagName)) child.remove();
         else {
           const heading = /^H[1-6]$/.test(child.tagName);
-          const repl = document.createElement(heading ? 'p' : 'span');
-          repl.innerHTML = heading ? `<b>${child.innerHTML}</b>` : child.innerHTML;
+          // Built in the parser's inert document and by moving nodes: nothing is parsed into the live page.
+          const doc = root.ownerDocument;
+          const repl = doc.createElement(heading ? 'p' : 'span');
+          const holder = heading ? repl.appendChild(doc.createElement('b')) : repl;
+          while (child.firstChild) holder.appendChild(child.firstChild);
           child.replaceWith(repl);
           clean(repl);
         }
