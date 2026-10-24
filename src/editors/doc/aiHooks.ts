@@ -2,7 +2,8 @@ import type { Editor } from '@tiptap/react';
 import type { AiHooks, DocSection } from '../../store';
 import { markdownToHtml } from '../../lib/markdown';
 import { reviewKey, newCommentId } from './review';
-import type { CommentThread } from './docMeta';
+import type { CommentThread, DocMeta } from './docMeta';
+import { docTools } from './aiTools';
 
 const norm = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -42,9 +43,10 @@ export function findQuote(editor: Editor, quote: string): { from: number; to: nu
   return null;
 }
 
-export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThread) => void): AiHooks {
+export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThread) => void, meta?: { get(): DocMeta; set(m: DocMeta): void }): AiHooks {
   return {
     noun: 'document',
+    tools: docTools(get, meta),
     insertLabel: 'Insert below',
     async getDocument() {
       const ed = get();

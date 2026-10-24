@@ -199,6 +199,7 @@ export function App() {
       e.preventDefault();
       depth = 0;
       setDragging(false);
+      if ((e as any).keaTaken) return; // dropped on the Claude panel: given to Claude, not opened
       const files = Array.from(e.dataTransfer!.files);
       for (const f of files) {
         const p = api.getPathForFile(f);

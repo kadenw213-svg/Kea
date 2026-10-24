@@ -77,6 +77,7 @@ import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
+import { pdfAi } from './ai';
 
 const CSS_UNITS = 96 / 72;
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
@@ -1127,9 +1128,27 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
       .join('\n');
   };
   const aiRef = useRef<AiHooks>(null as any);
+  const pdfTools = pdfAi({
+    history,
+    sizeOf,
+    textRectsFor,
+    sampleColors,
+    markDirty,
+    select: setSelectedId,
+    scrollToPage,
+    currentIndex,
+    rotatePages,
+    deletePages,
+    duplicatePages,
+    reorderPages,
+    formFields,
+    formValues,
+    setFormValues
+  });
   aiRef.current = {
     noun: 'PDF',
     insertLabel: 'Add as comment',
+    tools: pdfTools.tools,
     async getDocument() {
       const sections: { id: string; label: string; text: string }[] = [];
       const pages = history.get().pages;

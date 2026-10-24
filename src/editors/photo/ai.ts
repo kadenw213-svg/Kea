@@ -5,7 +5,8 @@ import { BLEND_MODES } from './types';
 import { ADJ_LABELS, ADJ_ORDER, adjDefaults } from './adjustments';
 import { FILTER_LABELS, filterDefaults } from './filters';
 import { TOOL_NAMES } from './toolOptions';
-import { downscale } from './canvas';
+import { downscale, makeCanvas } from './canvas';
+import { imageSource, resolveImage } from '../../lib/attachments';
 import { textBox } from './vector';
 import * as ops from './ops';
 import { removeBackground, selectSubject } from './segment';
@@ -255,6 +256,33 @@ export function photoAi(e: Engine): AiHooks {
       description: 'Fill the selection (or the whole active layer if nothing is selected) with a colour.',
       input_schema: { type: 'object', properties: { color, opacity: { type: 'number', description: '0-100, default 100' } }, required: ['color'] },
       run: (i) => oneStep(e, () => ops.fill(e, i.color, (i.opacity ?? 100) / 100))
+    },
+    {
+      name: 'place_image',
+      description:
+        'Add a picture (an image the student attached, or a file path) as a new layer. Without a size it is fitted inside the canvas and centred; give width or height in pixels to size it (proportions kept unless you give both), and x/y for its top-left corner.',
+      input_schema: {
+        type: 'object',
+        properties: { ...imageSource, x: { type: 'number' }, y: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' }, name: { type: 'string' } }
+      },
+      run: async (i) => {
+        const img = await resolveImage(i);
+        const ratio = img.height / img.width;
+        const fitS = Math.min(1, e.doc.w / img.width, e.doc.h / img.height);
+        const w = Math.max(1, Math.round(i.width ?? (i.height ? i.height / ratio : img.width * fitS)));
+        const h = Math.max(1, Math.round(i.height ?? w * ratio));
+        const c = makeCanvas(w, h);
+        const g = c.getContext('2d')!;
+        g.imageSmoothingQuality = 'high';
+        g.drawImage(img.img, 0, 0, w, h);
+        const name = i.name || e.uniqueName(img.name.replace(/\.[^.]+$/, '') || 'Image');
+        return oneStep(e, () => {
+          const l = e.newRaster(name, c, Math.round(i.x ?? (e.doc.w - w) / 2), Math.round(i.y ?? (e.doc.h - h) / 2));
+          e.insert(l);
+          e.commit('Place image');
+          return `Placed “${img.name}” as layer "${name}", ${w} × ${h} px at (${l.x}, ${l.y}).`;
+        });
+      }
     },
     {
       name: 'add_text',

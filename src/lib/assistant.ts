@@ -11,6 +11,7 @@ import { editorRegistry, useTabs, type AiHooks, type AssistantTool } from '../st
 import { useLookup } from '../components/lookup/lookupStore';
 import { chatOf, patchChat, type ChatItem } from '../components/assistant/assistantStore';
 import { toolsFor, picture, summary, runToolHeadless } from './editorTools';
+import { contentBlock, describeAttachment, type Attachment } from './attachments';
 
 const MAX_STEPS = 40;
 
@@ -22,7 +23,12 @@ How to work:
 - Keep edits precise: change the passage that needs it, not the whole file. Copy quotes exactly from the latest text.
 - If a tool fails, read its message, fix the input (re-read the file if the text changed) and try again, or explain what's in the way.
 - Answers are shown in a narrow panel: short paragraphs, plain Markdown, no big headings. Don't paste the whole file back.
-- For schoolwork, help the student understand and improve their own work; explain why when you correct something.`;
+- For schoolwork, help the student understand and improve their own work; explain why when you correct something.
+
+Attachments and design:
+- The student may attach images or PDFs (a flier, a sketch, concept art, a brief). Each is named in the message with an id like a1. Look at them closely.
+- "Make this" / "design it like this" means build it in the open file with the editor's own tools: lay out text, shapes, colours and images to match (or improve on) the reference. An attached image can be placed directly with the image tools (attachment: "a1") when the student wants the picture itself in the file.
+- Work like a designer: decide the layout first (size, margins, a clear hierarchy of 2–3 type sizes, a small palette taken from the reference or the student's concept), build it, then use look to check the result and fix overlaps, cramped text, poor contrast or anything off-centre before saying you're done.`;
 
 /** Context sent with each message: which file, and what the student has selected. */
 function context(tabId: string, hooks: AiHooks | undefined) {
@@ -47,7 +53,7 @@ const stopped = new Set<string>();
 const generation = new Map<string, number>();
 
 /** Send what the student typed and let Claude work until it's done (or is stopped). */
-export async function ask(tabId: string, text: string, opts: { look?: boolean } = {}) {
+export async function ask(tabId: string, text: string, opts: { look?: boolean; attachments?: Attachment[] } = {}) {
   const hooks = editorRegistry.get(tabId)?.ai;
   const tools = toolsFor(hooks);
   const content: any[] = [];
@@ -61,9 +67,12 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean } 
       shown = img.dataUrl;
     }
   }
-  content.push({ type: 'text', text: `${context(tabId, hooks)}\n\n${text}` });
+  const files = opts.attachments || [];
+  for (const a of files) content.push(await contentBlock(a));
+  const named = files.map(describeAttachment).join('\n');
+  content.push({ type: 'text', text: `${context(tabId, hooks)}${named ? `\n${named}` : ''}\n\n${text || 'Here are the files.'}` });
   patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content }], busy: true }));
-  addItem(tabId, { kind: 'user', text, image: shown });
+  addItem(tabId, { kind: 'user', text, image: shown, files: files.map((a) => ({ name: a.name, thumb: a.mime.startsWith('image/') ? a.dataUrl : undefined })) });
   stopped.delete(tabId);
   const gen = generation.get(tabId) || 0;
   const live = () => (generation.get(tabId) || 0) === gen;

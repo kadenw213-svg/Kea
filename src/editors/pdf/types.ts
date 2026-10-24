@@ -47,6 +47,8 @@ export interface TextAnn extends Base, Box {
   bg?: string | null;
   /** Width follows the text until the user resizes the box. */
   auto?: boolean;
+  /** Text Claude wrapped to the box: the words before line breaks were added, so a restyle can wrap them afresh. */
+  unwrapped?: string;
 }
 
 export interface ShapeAnn extends Base, Box {

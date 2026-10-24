@@ -465,7 +465,8 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
       debugBuild: () => jsonToDocx(editorRef.current!.getJSON() as any, metaRef.current, baseName(useTabs.getState().tabs.find((t) => t.id === tab.id)?.name || '')),
       ai: docAiHooks(
         () => editorRef.current,
-        (t) => updateMetaRef.current({ ...metaRef.current, comments: [...metaRef.current.comments, t] })
+        (t) => updateMetaRef.current({ ...metaRef.current, comments: [...metaRef.current.comments, t] }),
+        { get: () => metaRef.current, set: (m) => updateMetaRef.current(m) }
       )
     });
   }, [tab.id]);

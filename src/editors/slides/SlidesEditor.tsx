@@ -59,6 +59,7 @@ import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
+import { slidesDesignTools } from './ai';
 
 function useHistory<T>(initial: T) {
   const state = useRef(initial);
@@ -604,7 +605,8 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
           setIdx(slideAt(n));
           return `Showing slide ${n}.`;
         }
-      }
+      },
+      ...slidesDesignTools({ h, idx, setIdx, select: setSelId, markDirty })
     ],
     async getDocument() {
       const d = h.get();

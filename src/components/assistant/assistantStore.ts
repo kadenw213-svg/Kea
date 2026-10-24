@@ -12,6 +12,8 @@ export interface ChatItem {
   ok?: boolean;
   /** A picture sent with the message (what Claude was shown). */
   image?: string;
+  /** Files the student attached to the message. */
+  files?: { name: string; thumb?: string }[];
 }
 
 /** A tab's conversation: the messages as Claude's API holds them, and what the panel shows. */

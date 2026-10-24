@@ -159,3 +159,56 @@
   color: var(--danger);
   font-size: 12px;
 }
+
+/* Attachments: files waiting to go with the next message, and the ones already sent */
+.as-pending {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 12px 6px;
+}
+.as-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 4px 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.as-file img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.as-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.as-file.sent {
+  margin: 4px 0 4px auto;
+  width: fit-content;
+  padding-right: 8px;
+}
+.as-drop {
+  position: absolute;
+  inset: 8px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--accent);
+  font-weight: 500;
+  pointer-events: none;
+}
+body.drop-to-claude .drop-overlay {
+  display: none;
+}

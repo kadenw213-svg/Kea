@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, X, Settings2, Trash2, Square, ArrowUp, Eye, Check, AlertCircle, ChevronRight, KeyRound, ExternalLink, Wrench } from 'lucide-react';
+import { Sparkles, X, Settings2, Trash2, Square, ArrowUp, Eye, Check, AlertCircle, ChevronRight, KeyRound, ExternalLink, Wrench, Paperclip, FileText } from 'lucide-react';
 import MarkdownIt from 'markdown-it';
 import { openSettings, setting, useSettings } from '../../lib/settings';
 import { useTabs, editorRegistry, toast } from '../../store';
 import { api } from '../../lib/api';
 import { ask, stop, clear } from '../../lib/assistant';
+import { addAttachment, isAttachable, ATTACHABLE, type Attachment } from '../../lib/attachments';
 import { useAssistant, setAssistantOpen, emptyChat, type ChatItem } from './assistantStore';
 import '../../styles/ai.css';
 import '../../styles/assistant.css';
@@ -38,6 +39,9 @@ export function AssistantPanel() {
   const listRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const model = useSettings((s) => s.values['assistant.model']) || 'claude-opus-5-5';
+  // Files waiting to go with the next message (a flier to recreate, concept images, a PDF brief).
+  const [pending, setPending] = useState<Attachment[]>([]);
+  const [dropHere, setDropHere] = useState(false);
 
   useEffect(() => {
     if (open && !key) api.assistant.status().then((k) => useAssistant.getState().set({ key: k }));
@@ -50,13 +54,41 @@ export function AssistantPanel() {
     if (open) setTimeout(() => boxRef.current?.focus(), 50);
   }, [open, activeId]);
 
-  const send = () => {
+  const send = (look?: boolean) => {
     const t = input.trim();
-    if (!t || chat.busy) return;
+    if ((!t && !pending.length) || chat.busy) return;
     setInput('');
-    ask(activeId, t);
+    setPending([]);
+    ask(activeId, t, { attachments: pending, ...(look ? { look: true } : {}) });
   };
   const usable = tab && tab.kind !== 'home';
+  const canSend = usable && (!!input.trim() || pending.length > 0);
+
+  const attach = async (files: { name: string; data: Uint8Array | Blob }[]) => {
+    const added: Attachment[] = [];
+    for (const f of files) {
+      if (!isAttachable(f.name)) {
+        toast(`${f.name}: Claude can be given images and PDFs.`, 'error');
+        continue;
+      }
+      try {
+        added.push(await addAttachment(f.name, f.data));
+      } catch (err: any) {
+        toast(err.message || String(err), 'error');
+      }
+    }
+    if (added.length) setPending((p) => [...p, ...added]);
+    boxRef.current?.focus();
+  };
+  const pickFiles = async () => {
+    const files = await api.openDialog({ title: 'Give Claude a file', multi: true, filters: [{ name: 'Images and PDFs', extensions: ATTACHABLE }] });
+    if (files.length) attach(files);
+  };
+  const hasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
+  // While files are dragged over the panel, the window's "Drop to open" cover steps aside.
+  useEffect(() => {
+    document.body.classList.toggle('drop-to-claude', dropHere);
+  }, [dropHere]);
 
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -74,7 +106,29 @@ export function AssistantPanel() {
   };
 
   return (
-    <aside className={`ai-sidebar assistant ${open ? 'open' : ''}`} aria-hidden={!open}>
+    <aside
+      className={`ai-sidebar assistant ${open ? 'open' : ''} ${dropHere ? 'drop-here' : ''}`}
+      aria-hidden={!open}
+      onDragOver={(e) => {
+        if (!hasFiles(e) || !usable) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setDropHere(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropHere(false);
+      }}
+      onDrop={(e) => {
+        if (!hasFiles(e) || !usable) return;
+        // Files dropped here go to Claude instead of opening as tabs (the window's drop handler sees the flag and only
+        // clears its cover).
+        e.preventDefault();
+        (e.nativeEvent as any).keaTaken = true;
+        setDropHere(false);
+        attach(Array.from(e.dataTransfer.files).map((f) => ({ name: f.name, data: f })));
+      }}
+    >
+      {dropHere && <div className="as-drop">Drop to give Claude {usable ? 'these files' : ''}</div>}
       <div className="ai-resize" title="Drag to resize" onPointerDown={startResize} onDoubleClick={() => useSettings.getState().set({ 'ai.sidebarWidth': 380 })} />
       <div className="ai-inner">
         <div className="ai-head">
@@ -137,7 +191,25 @@ export function AssistantPanel() {
                 </span>
               )}
             </div>
+            {pending.length > 0 && (
+              <div className="as-pending">
+                {pending.map((a) => (
+                  <div key={a.id} className="as-file" title={a.name}>
+                    {a.mime.startsWith('image/') ? <img src={a.dataUrl} alt="" /> : <FileText size={16} />}
+                    <span>{a.name}</span>
+                    <button className="icon-btn sm" title="Remove" onClick={() => setPending((p) => p.filter((x) => x.id !== a.id))}>
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="ai-composer">
+              {usable && !chat.busy && (
+                <button className="icon-btn sm" title="Attach an image or PDF: a flier to recreate, concept art, a brief (or paste / drop it here)" onClick={pickFiles}>
+                  <Paperclip size={16} />
+                </button>
+              )}
               <textarea
                 ref={boxRef}
                 rows={1}
@@ -149,6 +221,12 @@ export function AssistantPanel() {
                   e.target.style.height = 'auto';
                   e.target.style.height = `${Math.min(140, e.target.scrollHeight)}px`;
                 }}
+                onPaste={(e) => {
+                  const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf');
+                  if (!files.length) return;
+                  e.preventDefault();
+                  attach(files.map((f, i) => ({ name: f.name && f.name !== 'image.png' ? f.name : `pasted-${Date.now().toString(36)}${i || ''}.${f.type === 'application/pdf' ? 'pdf' : f.type.split('/')[1].replace('jpeg', 'jpg')}`, data: f })));
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -157,7 +235,7 @@ export function AssistantPanel() {
                 }}
               />
               {hooks && !chat.busy && (
-                <button className="icon-btn sm" title="Send with a picture of what you see" disabled={!input.trim()} onClick={() => (ask(activeId, input.trim(), { look: true }), setInput(''))}>
+                <button className="icon-btn sm" title="Send with a picture of what you see" disabled={!canSend} onClick={() => send(true)}>
                   <Eye size={16} />
                 </button>
               )}
@@ -166,7 +244,7 @@ export function AssistantPanel() {
                   <Square size={14} />
                 </button>
               ) : (
-                <button className="ai-send" title="Send (Enter)" disabled={!input.trim() || !usable} onClick={send}>
+                <button className="ai-send" title="Send (Enter)" disabled={!canSend} onClick={() => send()}>
                   <ArrowUp size={17} />
                 </button>
               )}
@@ -187,9 +265,9 @@ function starters(noun: string): string[] {
     case 'spreadsheet':
       return ['Explain what this sheet does', 'Add a totals row', 'Find anything that looks wrong'];
     case 'presentation':
-      return ['Tighten the wording on every slide', 'Add speaker notes', 'Suggest a slide that’s missing'];
+      return ['Tighten the wording on every slide', 'Add speaker notes', 'Redesign this slide so it looks professional'];
     case 'PDF':
-      return ['Summarize this PDF', 'What are the key terms?', 'Comment on anything unclear'];
+      return ['Summarize this PDF', 'Highlight the key terms', 'Comment on anything unclear'];
     case 'image':
       return ['Make it look more vivid', 'Crop it to a square', 'Turn it black and white'];
     case 'video':
@@ -206,7 +284,17 @@ function Item({ it }: { it: ChatItem }) {
     return (
       <div className="ai-msg user">
         {it.image && <img className="as-shot" src={it.image} alt="What Claude was shown" />}
-        <div className="ai-bubble">{it.text}</div>
+        {it.files?.map((f, i) =>
+          f.thumb ? (
+            <img key={i} className="as-shot" src={f.thumb} alt={f.name} title={f.name} />
+          ) : (
+            <div key={i} className="as-file sent" title={f.name}>
+              <FileText size={16} />
+              <span>{f.name}</span>
+            </div>
+          )
+        )}
+        {it.text && <div className="ai-bubble">{it.text}</div>}
       </div>
     );
   if (it.kind === 'assistant')
