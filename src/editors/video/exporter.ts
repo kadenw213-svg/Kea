@@ -7,6 +7,8 @@ import {
   CanvasSource,
   AudioBufferSource,
   CanvasSink,
+  VideoSampleSink,
+  VideoSample,
   Quality,
   canEncodeVideo,
   getFirstEncodableAudioCodec,
@@ -20,7 +22,8 @@ import { mediaOf } from './model';
 import { renderFrame, renderStudio, studioRenderer, visibleLayers, frameTime, Drawable, FrameGetter } from './compositor';
 import { ClipFx } from './effects';
 import { mixdown, mixdownChunks, wavBytes, wavHeader, pcm16, MIX_RATE } from './audio';
-import { imageFor, mediaKey, videoTrackOf } from './media';
+import { imageFor, mediaKey, videoTrackOf, colourOf } from './media';
+import { yuvOf } from './gpuCompositor';
 import { openFileSink } from './host';
 import { preloadLuts } from './lut';
 import { ensureMasks } from './segmentMask';
@@ -86,18 +89,37 @@ export async function encoderSupport(width: number, height: number): Promise<Enc
  * Feeds the compositor exact frames from mediabunny. For each clip it works out every source
  * time it will need up front, so frames are decoded in one forward pass per clip.
  */
+type Plan = {
+  need: Map<number, number>;
+  iter: AsyncGenerator<WrappedCanvas | null> | null;
+  sink: CanvasSink | null;
+  /** HDR / 10-bit footage for the 16-bit renderer: decoded samples instead of canvases. */
+  samples: VideoSampleSink | null;
+  sampleIter: AsyncGenerator<VideoSample | null> | null;
+  last: Drawable | null;
+  monotonic: boolean;
+};
+
+/** Release a frame we made (VideoFrames hold decoder memory). */
+const release = (d: Drawable | null) => {
+  if (d && typeof VideoFrame !== 'undefined' && d instanceof VideoFrame) d.close();
+};
+
 class OfflineFrames {
   private p: Project;
   private times: number[];
   private height: number;
-  private plans = new Map<string, { need: Map<number, number>; iter: AsyncGenerator<WrappedCanvas | null> | null; sink: CanvasSink | null; last: Drawable | null; monotonic: boolean }>();
+  private studio: boolean;
+  private plans = new Map<string, Plan>();
   private current = new Map<string, Drawable | 'offline'>();
   private images = new Map<string, ImageBitmap>();
 
-  constructor(p: Project, times: number[], outHeight: number) {
+  /** studio: frames are for the 16-bit renderer, so HDR and 10-bit footage is decoded at full precision. */
+  constructor(p: Project, times: number[], outHeight: number, studio = false) {
     this.p = p;
     this.times = times;
     this.height = outHeight;
+    this.studio = studio;
   }
 
   async prepare() {
@@ -116,7 +138,7 @@ class OfflineFrames {
           }
           let plan = this.plans.get(clip.id);
           if (!plan) {
-            plan = { need: new Map(), iter: null, sink: null, last: null, monotonic: true };
+            plan = { need: new Map(), iter: null, sink: null, samples: null, sampleIter: null, last: null, monotonic: true };
             this.plans.set(clip.id, plan);
           }
           plan.need.set(i, frameTime(p, clip, t));
@@ -127,11 +149,21 @@ class OfflineFrames {
       const m = mediaOf(p, clip)!;
       const vt = await videoTrackOf(mediaKey(m)).catch(() => null);
       if (!vt) continue;
+      const ts = [...plan.need.values()];
+      plan.monotonic = ts.every((v, k) => k === 0 || v >= ts[k - 1]);
+      const colour = this.studio ? await colourOf(mediaKey(m)).catch(() => null) : null;
+      if (colour && (colour.hdr || colour.bitDepth > 8)) {
+        // Full precision: decode in software where this computer can (frames we can read: the raw 10-bit planes),
+        // else in hardware (HDR signal at 8-bit precision, still tone-mapped by Kea, not the browser).
+        const cfg = await vt.getDecoderConfig().catch(() => null);
+        const soft = cfg ? await VideoDecoder.isConfigSupported({ ...cfg, hardwareAcceleration: 'prefer-software' }).then((r) => !!r.supported).catch(() => false) : false;
+        plan.samples = new VideoSampleSink(vt, { hardwareAcceleration: soft ? 'prefer-software' : 'no-preference' });
+        if (plan.monotonic) plan.sampleIter = plan.samples.samplesAtTimestamps(ts);
+        continue;
+      }
       // Decode at the output size or the source size, whichever is smaller (zoomed-in clips keep detail up to 2×).
       const h = Math.min(m.height || this.height, this.height * 2);
       plan.sink = new CanvasSink(vt, { height: Math.max(2, Math.round(h / 2) * 2) });
-      const ts = [...plan.need.values()];
-      plan.monotonic = ts.every((v, k) => k === 0 || v >= ts[k - 1]);
       if (plan.monotonic) plan.iter = plan.sink.canvasesAtTimestamps(ts);
     }
   }
@@ -142,6 +174,17 @@ class OfflineFrames {
     for (const [id, plan] of this.plans) {
       const ts = plan.need.get(i);
       if (ts === undefined) continue;
+      if (plan.samples) {
+        const s = plan.sampleIter ? ((await plan.sampleIter.next()).value ?? null) : await plan.samples.getSample(ts);
+        if (s) {
+          const next = (await yuvOf(s as any)) ?? s.toVideoFrame();
+          s.close();
+          release(plan.last);
+          plan.last = next;
+        }
+        if (plan.last) this.current.set(id, plan.last);
+        continue;
+      }
       if (!plan.sink) {
         this.current.set(id, 'offline');
         continue;
@@ -169,7 +212,11 @@ class OfflineFrames {
   };
 
   async close() {
-    for (const plan of this.plans.values()) await plan.iter?.return(undefined);
+    for (const plan of this.plans.values()) {
+      await plan.iter?.return(undefined);
+      await plan.sampleIter?.return(undefined);
+      release(plan.last);
+    }
   }
 }
 
@@ -178,10 +225,12 @@ export async function renderStill(p: Project, t: number, width: number, height: 
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(width));
   canvas.height = Math.max(1, Math.round(height));
-  const frames = new OfflineFrames(p, [t], canvas.height);
+  const fx = new ClipFx();
+  // (Same decoding as the export, so HDR and 10-bit footage looks the same in a still.)
+  const frames = new OfflineFrames(p, [t], canvas.height, !!studioRenderer(fx));
   await frames.prepare();
   await frames.load(0);
-  renderFrame(canvas.getContext('2d')!, { project: p, t, scale: canvas.width / p.settings.width, getFrame: frames.getFrame, fx: new ClipFx() });
+  renderFrame(canvas.getContext('2d')!, { project: p, t, scale: canvas.width / p.settings.width, getFrame: frames.getFrame, fx });
   await frames.close();
   return canvas;
 }
@@ -318,7 +367,7 @@ export async function exportProject(p: Project, o: ExportOptions, onProgress: (f
       const total = Math.max(1, Math.round((b - a) * o.fps));
       const times = Array.from({ length: total }, (_, i) => a + i / o.fps);
       onProgress(audioShare, 'Preparing media…');
-      const frames = new OfflineFrames(p, times, H);
+      const frames = new OfflineFrames(p, times, H, !!studio);
       await frames.prepare();
       const scale = W / p.settings.width;
       const started = performance.now();

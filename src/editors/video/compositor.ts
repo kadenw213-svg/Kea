@@ -5,7 +5,7 @@ import { ClipFx, needsFx, cssColourFilter } from './effects';
 import { mediaKey } from './media';
 import { maskAt } from './segmentMask';
 import { getLut, loadLut } from './lut';
-import { GpuCompositor, type GpuHelpers } from './gpuCompositor';
+import { GpuCompositor, isYuv, type GpuHelpers, type YuvFrame } from './gpuCompositor';
 import { setting } from '../../lib/settings';
 
 /*
@@ -15,7 +15,7 @@ import { setting } from '../../lib/settings';
  * <video> elements (preview) or mediabunny decoders (export).
  */
 
-export type Drawable = HTMLVideoElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap | HTMLImageElement;
+export type Drawable = HTMLVideoElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap | HTMLImageElement | VideoFrame | YuvFrame;
 /** A frame to draw, 'offline' if the media is missing, or null if it isn't ready yet. */
 export type FrameGetter = (clip: Clip, srcTime: number) => Drawable | 'offline' | null;
 
@@ -29,9 +29,11 @@ export interface RenderOptions {
 }
 
 export function sizeOf(d: Drawable): [number, number] {
+  if (isYuv(d)) return [d.width, d.height];
+  if (typeof VideoFrame !== 'undefined' && d instanceof VideoFrame) return [d.displayWidth, d.displayHeight];
   if (d instanceof HTMLVideoElement) return [d.videoWidth, d.videoHeight];
   if (d instanceof HTMLImageElement) return [d.naturalWidth, d.naturalHeight];
-  return [d.width, d.height];
+  return [(d as HTMLCanvasElement).width, (d as HTMLCanvasElement).height];
 }
 
 /** Picture clips visible at `t`, bottom track first, each with its transition state. */
@@ -240,6 +242,8 @@ function drawMedia(ctx: CanvasRenderingContext2D, o: RenderOptions, c: Clip, fil
     }
     return;
   }
+  // (Raw 10-bit planes are only ever made for the 16-bit renderer.)
+  if (isYuv(frame)) return;
   const [sw, sh] = sizeOf(frame);
   if (!sw || !sh) return;
   const cr = c.crop;

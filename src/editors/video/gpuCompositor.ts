@@ -3,7 +3,7 @@ import { BLEND_MODES, mediaOf, propAt } from './model';
 import type { LayerMod } from './transitions';
 import { GRADE_GLSL, GRADE_UNIFORMS, setGradeUniforms, hexRgb, NEUTRAL_KEY } from './effects';
 import { NEUTRAL_COLOUR } from './model';
-import { mediaKey } from './media';
+import { mediaKey, knownColour, colourOf } from './media';
 import { maskAt } from './segmentMask';
 import { getLut, loadLut } from './lut';
 
@@ -21,7 +21,36 @@ import { getLut, loadLut } from './lut';
 
 type Target = { tex: WebGLTexture; fb: WebGLFramebuffer; w: number; h: number };
 type Prog = { p: WebGLProgram; u: Record<string, WebGLUniformLocation | null> };
-type Drawable = HTMLVideoElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap | HTMLImageElement;
+type Drawable = HTMLVideoElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap | HTMLImageElement | VideoFrame | YuvFrame;
+
+/** A decoded frame's raw planes at full precision (10/12-bit samples in 16-bit words), for the 16-bit renderer. */
+export interface YuvFrame {
+  yuv: true;
+  width: number;
+  height: number;
+  /** 'I420P10', 'I422P10', 'I444P10', 'I420P12'… */
+  format: string;
+  planes: { data: Uint16Array; stride: number; w: number; h: number }[];
+  colour: VideoColorSpaceInit;
+}
+export const isYuv = (d: unknown): d is YuvFrame => !!d && (d as YuvFrame).yuv === true;
+
+/** Copy a software-decoded high-bit-depth frame's planes out (null if its format isn't one we read). */
+export async function yuvOf(f: { format: string | null; codedWidth: number; codedHeight: number; displayWidth: number; displayHeight: number; colorSpace: { toJSON?(): VideoColorSpaceInit } & VideoColorSpaceInit; allocationSize(): number; copyTo(dst: Uint8Array): Promise<PlaneLayout[]> }): Promise<YuvFrame | null> {
+  const fmt = f.format || '';
+  const m = /^I4(20|22|44)P1[02]$/.exec(fmt);
+  if (!m) return null;
+  const buf = new Uint8Array(f.allocationSize());
+  const layout = await f.copyTo(buf);
+  const W = f.codedWidth;
+  const H = f.codedHeight;
+  const cw = m[1] === '44' ? W : Math.ceil(W / 2);
+  const ch = m[1] === '20' ? Math.ceil(H / 2) : H;
+  const dims = [[W, H], [cw, ch], [cw, ch]];
+  const planes = layout.slice(0, 3).map((l, i) => ({ data: new Uint16Array(buf.buffer, l.offset, (l.stride / 2) * dims[i][1]), stride: l.stride / 2, w: dims[i][0], h: dims[i][1] }));
+  const cs = f.colorSpace.toJSON ? f.colorSpace.toJSON() : f.colorSpace;
+  return { yuv: true, width: f.displayWidth, height: f.displayHeight, format: fmt, planes, colour: cs };
+}
 
 export interface GpuFrameSource {
   project: Project;
@@ -275,6 +304,96 @@ void main() {
   o = vec4((u_linearMix == 1 ? toLinear(co) : co) * ao, ao);
 }`;
 
+// The input stage for HDR and 10-bit footage: whatever the source, out comes linear BT.709 light where 1.0 is SDR
+// white, premultiplied, at the source's own size (the crop region only).
+// u_src 0: an RGB signal texture (the browser's YUV→RGB of a hardware-decoded frame, still in the source's primaries
+//          and transfer, 8-bit precision); 1: the raw Y/U/V planes (10 or 12 bits, from a software decode).
+// Then: transfer → linear (PQ / HLG / SDR), primaries → BT.709, and HDR → SDR tone mapping that keeps hues: reference
+// white (203 nits, BT.2408) lands near SDR white and highlights roll off smoothly up to the source's peak.
+const INPUT_FRAG = `#version 300 es
+precision highp float;
+precision highp usampler2D;
+out vec4 o;
+uniform int u_srcKind;
+uniform sampler2D u_rgb;
+uniform usampler2D u_y, u_u, u_v;
+uniform vec4 u_region;     // x, y (from the top), width, height, in source pixels
+uniform vec2 u_size;       // source frame size
+uniform vec2 u_chromaDiv;  // (2,2) 4:2:0, (2,1) 4:2:2, (1,1) 4:4:4
+uniform float u_maxCode;   // 1023 (10-bit), 4095 (12-bit)
+uniform int u_fullRange;
+uniform vec2 u_krkb;       // the YUV matrix's red and blue luma weights
+uniform int u_transfer;    // 0 SDR, 1 PQ, 2 HLG
+uniform mat3 u_gamut;      // source primaries → BT.709, linear
+uniform float u_refWhite;  // nits that become SDR white before the roll-off (203)
+uniform float u_knee;      // linear level where the highlight roll-off starts
+uniform float u_peak;      // the source's brightest level, in the same units (1000 nits / 203)
+vec3 srgbToLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
+vec3 pqToNits(vec3 e) {
+  const float m1 = 0.1593017578125, m2 = 78.84375, c1 = 0.8359375, c2 = 18.8515625, c3 = 18.6875;
+  vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / m2));
+  return 10000.0 * pow(max(p - c1, 0.0) / (c2 - c3 * p), vec3(1.0 / m1));
+}
+vec3 hlgToNits(vec3 e) {
+  const float a = 0.17883277, b = 0.28466892, c = 0.55991073;
+  e = clamp(e, 0.0, 1.0);
+  vec3 s = mix(e * e / 3.0, (exp((e - c) / a) + b) / 12.0, step(vec3(0.5), e));
+  // HLG's display mapping (OOTF) for a 1000-nit display: system gamma 1.2 on the scene luminance.
+  float ys = dot(s, vec3(0.2627, 0.6780, 0.0593));
+  return 1000.0 * pow(max(ys, 1e-6), 0.2) * s;
+}
+float uyv(usampler2D t, ivec2 p, ivec2 lim) { return float(texelFetch(t, clamp(p, ivec2(0), lim), 0).r); }
+float chroma(usampler2D t, vec2 pos) {
+  // Bilinear chroma upsampling (chroma sited left, centred vertically, as H.264 / HEVC / VP9 4:2:0 are).
+  ivec2 lim = textureSize(t, 0) - 1;
+  vec2 c = vec2(pos.x / u_chromaDiv.x, (pos.y + 0.5) / u_chromaDiv.y - 0.5);
+  vec2 f = fract(c);
+  ivec2 b = ivec2(floor(c));
+  return mix(mix(uyv(t, b, lim), uyv(t, b + ivec2(1, 0), lim), f.x), mix(uyv(t, b + ivec2(0, 1), lim), uyv(t, b + ivec2(1, 1), lim), f.x), f.y);
+}
+void main() {
+  ivec2 op = ivec2(gl_FragCoord.xy);
+  // Source pixel (from the top), for this output pixel (targets run bottom-up).
+  int sx = int(u_region.x) + op.x;
+  int syTop = int(u_region.y) + (int(u_region.w) - 1 - op.y);
+  vec3 sig;
+  if (u_srcKind == 0) {
+    // (Uploaded flipped, like every picture: row 0 is the bottom.)
+    sig = texelFetch(u_rgb, ivec2(sx, int(u_size.y) - 1 - syTop), 0).rgb;
+  } else {
+    float y = uyv(u_y, ivec2(sx, syTop), textureSize(u_y, 0) - 1);
+    vec2 pos = vec2(float(sx), float(syTop));
+    float cb = chroma(u_u, pos), cr = chroma(u_v, pos);
+    float s = (u_maxCode + 1.0) / 256.0;
+    float Y = u_fullRange == 1 ? y / u_maxCode : (y - 16.0 * s) / (219.0 * s);
+    float Cb = u_fullRange == 1 ? (cb - 128.0 * s) / u_maxCode : (cb - 128.0 * s) / (224.0 * s);
+    float Cr = u_fullRange == 1 ? (cr - 128.0 * s) / u_maxCode : (cr - 128.0 * s) / (224.0 * s);
+    float kr = u_krkb.x, kb = u_krkb.y, kg = 1.0 - kr - kb;
+    float R = Y + 2.0 * (1.0 - kr) * Cr;
+    float B = Y + 2.0 * (1.0 - kb) * Cb;
+    float G = (Y - kr * R - kb * B) / kg;
+    sig = vec3(R, G, B);
+  }
+  vec3 lin;
+  if (u_transfer == 1) lin = pqToNits(sig) / u_refWhite;
+  else if (u_transfer == 2) lin = hlgToNits(sig) / u_refWhite;
+  else lin = srgbToLinear(clamp(sig, 0.0, 1.0));
+  lin = max(u_gamut * lin, 0.0);
+  if (u_transfer != 0) {
+    // Hue-preserving roll-off on the largest channel: straight up to the knee, then a shoulder (extended Reinhard)
+    // that reaches SDR white exactly at the source's peak, so highlights keep their separation instead of clipping.
+    float m = max(max(lin.r, lin.g), lin.b);
+    if (m > u_knee) {
+      float k = u_knee;
+      float x = (m - k) / (1.0 - k);
+      float xp = max((u_peak - k) / (1.0 - k), 1.0);
+      float t = k + (1.0 - k) * min(1.0, x * (1.0 + x / (xp * xp)) / (1.0 + x));
+      lin *= t / m;
+    }
+  }
+  o = vec4(lin, 1.0);
+}`;
+
 const FILL_FRAG = `#version 300 es
 precision highp float;
 uniform vec4 u_color;
@@ -309,9 +428,11 @@ const linearOf = (hex: string): [number, number, number] =>
 export class GpuCompositor {
   readonly canvas: HTMLCanvasElement;
   private gl: WebGL2RenderingContext;
-  private progs!: { grade: Prog; resample: Prog; blur: Prog; comp: Prog; fill: Prog; out: Prog };
+  private progs!: { grade: Prog; resample: Prog; blur: Prog; comp: Prog; fill: Prog; out: Prog; input: Prog };
   private targets = new Map<string, Target>();
   private srcTex!: WebGLTexture;
+  private hdrTex!: WebGLTexture;
+  private planeTex!: WebGLTexture[];
   private maskTex!: WebGLTexture;
   private lutTex = new Map<string, WebGLTexture>();
   private raster2d: CanvasRenderingContext2D | null = null;
@@ -383,6 +504,7 @@ export class GpuCompositor {
       blur: prog(QUAD_VERT, BLUR_FRAG, ['u_src', 'u_dir', 'u_sigma', 'u_pad']),
       comp: prog(COMP_VERT, COMP_FRAG, ['u_m', 'u_out', 'u_pad', 'u_layer', 'u_dst', 'u_bicubic', 'u_mode', 'u_alpha', 'u_clip', 'u_iris', 'u_center', 'u_linearMix']),
       fill: prog(QUAD_VERT, FILL_FRAG, ['u_color']),
+      input: prog(QUAD_VERT, INPUT_FRAG, ['u_srcKind', 'u_rgb', 'u_y', 'u_u', 'u_v', 'u_region', 'u_size', 'u_chromaDiv', 'u_maxCode', 'u_fullRange', 'u_krkb', 'u_transfer', 'u_gamut', 'u_refWhite', 'u_knee', 'u_peak']),
       out: prog(QUAD_VERT, OUT_FRAG, ['u_src', 'u_seed', 'u_dither', 'u_linearMix'])
     };
     const buf = gl.createBuffer();
@@ -392,6 +514,13 @@ export class GpuCompositor {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     this.srcTex = this.tex();
     this.maskTex = this.tex();
+    this.hdrTex = this.tex();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 1, 1, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    this.planeTex = [this.intTex(), this.intTex(), this.intTex()];
+    for (const t of this.planeTex) {
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI, 1, 1, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT, new Uint16Array(1));
+    }
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   }
 
@@ -404,6 +533,86 @@ export class GpuCompositor {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return t;
+  }
+
+  private intTex() {
+    const gl = this.gl;
+    const t = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+
+  /**
+   * HDR / 10-bit source → linear BT.709 16-bit layer of the crop region (at the source's size). frame: raw planes, or
+   * a hardware-decoded frame / video element whose HDR signal is uploaded as is (8-bit precision, no browser tone map).
+   */
+  private inputPass(frame: YuvFrame | TexImageSource, sw: number, sh: number, region: [number, number, number, number], colour: { primaries: string; transfer: string; matrix: string; fullRange: boolean }, bitDepth: number): Target {
+    const gl = this.gl;
+    const { p, u } = this.progs.input;
+    const [rx, ry, rw, rh] = region.map((v) => Math.round(v));
+    const out = this.target('input', rw, rh);
+    gl.useProgram(p);
+    gl.disable(gl.BLEND);
+    this.bindTarget(out);
+    // Samplers: u_rgb on 0 (float), the planes on 1-3 (integer). Both kinds stay bound, so neither is ever empty or
+    // shares a unit with the other (WebGL refuses to draw then).
+    gl.uniform1i(u.u_rgb, 0);
+    gl.uniform1i(u.u_y, 1);
+    gl.uniform1i(u.u_u, 2);
+    gl.uniform1i(u.u_v, 3);
+    if (isYuv(frame)) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.hdrTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
+      frame.planes.forEach((pl, i) => {
+        gl.activeTexture(gl.TEXTURE1 + i);
+        gl.bindTexture(gl.TEXTURE_2D, this.planeTex[i]);
+        gl.pixelStorei(gl.UNPACK_ROW_LENGTH, pl.stride);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI, pl.w, pl.h, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT, pl.data);
+      });
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      const sub = /^I4(\d\d)/.exec(frame.format)?.[1];
+      gl.uniform2f(u.u_chromaDiv, sub === '44' ? 1 : 2, sub === '20' ? 2 : 1);
+      gl.uniform1f(u.u_maxCode, /P12$/.test(frame.format) ? 4095 : 1023);
+      gl.uniform1i(u.u_srcKind, 1);
+    } else {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.hdrTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, sw, sh, 0, gl.RGBA, gl.HALF_FLOAT, frame);
+      for (let i = 0; i < 3; i++) {
+        gl.activeTexture(gl.TEXTURE1 + i);
+        gl.bindTexture(gl.TEXTURE_2D, this.planeTex[i]);
+      }
+      gl.uniform1i(u.u_srcKind, 0);
+      gl.uniform1f(u.u_maxCode, bitDepth >= 12 ? 4095 : 1023);
+    }
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform4f(u.u_region, rx, ry, rw, rh);
+    gl.uniform2f(u.u_size, sw, sh);
+    gl.uniform1i(u.u_fullRange, colour.fullRange ? 1 : 0);
+    const krkb: Record<string, [number, number]> = { 'bt2020-ncl': [0.2627, 0.0593], bt709: [0.2126, 0.0722], smpte170m: [0.299, 0.114], bt470bg: [0.299, 0.114], rgb: [0.2126, 0.0722] };
+    const [kr, kb] = krkb[colour.matrix] || krkb.bt709;
+    gl.uniform2f(u.u_krkb, kr, kb);
+    gl.uniform1i(u.u_transfer, colour.transfer === 'pq' ? 1 : colour.transfer === 'hlg' ? 2 : 0);
+    // Source primaries → BT.709 (column-major).
+    const toRec709: Record<string, number[]> = {
+      bt2020: [1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187],
+      smpte432: [1.2249, -0.042, -0.0197, -0.2247, 1.0419, -0.0786, 0, 0, 1.0979]
+    };
+    gl.uniformMatrix3fv(u.u_gamut, false, toRec709[colour.primaries] || [1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    gl.uniform1f(u.u_refWhite, 203);
+    gl.uniform1f(u.u_knee, 0.75);
+    // (Mastering peak isn't in most files' metadata Kea can read: 1000 nits is what HLG assumes and HDR10 is usually graded to.)
+    gl.uniform1f(u.u_peak, 1000 / 203);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    return out;
   }
 
   /** A named 16-bit float render target of this size (reused between frames). */
@@ -454,6 +663,14 @@ export class GpuCompositor {
 
   private bindTarget(t: Target | null, w?: number, h?: number) {
     const gl = this.gl;
+    // Unbind everything from the texture units first: a texture still bound while it's also the render target
+    // is a feedback loop, and WebGL refuses the draw even if the shader never reads it.
+    if (t)
+      for (let i = 0; i < 4; i++) {
+        gl.activeTexture(gl.TEXTURE0 + i);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+      }
+    gl.activeTexture(gl.TEXTURE0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, t ? t.fb : null);
     gl.viewport(0, 0, t ? t.w : w!, t ? t.h : h!);
   }
@@ -760,15 +977,24 @@ export class GpuCompositor {
     const s = (propAt(c, 'scale', t) / 100) * mod.scale;
     if (Math.abs(s) < 1e-6) return;
 
-    // 1. Upload the frame (8-bit display colour).
+    // 1. Upload the frame. 8-bit SDR goes up as is (display colour); HDR and 10-bit footage goes through the input
+    //    stage, which turns it into linear BT.709 light (tone-mapped to SDR) at full precision.
+    const cw0 = sw * (1 - l - r);
+    const ch0 = sh * (1 - tp - b);
+    const colour = (m && (m.colour || knownColour(mediaKey(m)))) || null;
+    // (Projects saved before Kea recorded colour: look the file up now; the next frame uses it.)
+    if (m && m.kind === 'video' && !m.colour && knownColour(mediaKey(m)) === undefined) colourOf(mediaKey(m)).catch(() => {});
+    let input: Target | null = null;
     try {
-      this.upload(this.srcTex, frame as TexImageSource, 0);
+      if (isYuv(frame)) input = this.inputPass(frame, sw, sh, [l * sw, tp * sh, cw0, ch0], frame.colour.transfer ? (frame.colour as any) : colour || { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false }, 10);
+      // (Only a <video> element or a decoded frame still carries the HDR signal; a canvas was already tone-mapped by
+      // the browser when it was drawn, so it's treated as ordinary 8-bit colour.)
+      else if (colour?.hdr && (frame instanceof HTMLVideoElement || (typeof VideoFrame !== 'undefined' && frame instanceof VideoFrame))) input = this.inputPass(frame, sw, sh, [l * sw, tp * sh, cw0, ch0], colour, colour.bitDepth);
+      else this.upload(this.srcTex, frame as TexImageSource, 0);
     } catch {
       return;
     }
     this.mark('frameUpload');
-    const cw0 = sw * (1 - l - r);
-    const ch0 = sh * (1 - tp - b);
     const crop: [number, number, number, number] = [l, b, 1 - r, 1 - tp];
     const mask = c.removeBg?.enabled && m ? maskAt(mediaKey(m), h.frameTime(p, c, t)) : null;
     let lut: { key: string; size: number; data: Uint8Array; amount: number } | null = null;
@@ -785,16 +1011,17 @@ export class GpuCompositor {
     let k = shownW / cw0;
     let layer: Target;
     if (k < 0.9) {
-      const region = { region: [l * sw, b * sh, cw0, ch0] as [number, number, number, number], sw, sh };
+      // (From the input stage the crop is already applied: shrink its whole layer.)
+      const region = input ?? { region: [l * sw, b * sh, cw0, ch0] as [number, number, number, number], sw, sh };
       let shrunk: Target | null = null;
       // (Big shrinks go in quarter steps first, so the filter never needs more than ~50 taps.)
       for (let n = 0; k < 0.125; n++, k *= 4) {
-        const fw = shrunk ? shrunk.w : cw0;
-        const fh = shrunk ? shrunk.h : ch0;
+        const fw = shrunk ? shrunk.w : input ? input.w : cw0;
+        const fh = shrunk ? shrunk.h : input ? input.h : ch0;
         shrunk = this.resample(shrunk ?? region, Math.max(1, Math.round(fw / 4)), Math.max(1, Math.round(fh / 4)), `quarter${n}`);
       }
-      const fw = shrunk ? shrunk.w : cw0;
-      const fh = shrunk ? shrunk.h : ch0;
+      const fw = shrunk ? shrunk.w : input ? input.w : cw0;
+      const fh = shrunk ? shrunk.h : input ? input.h : ch0;
       shrunk = this.resample(shrunk ?? region, Math.max(1, Math.round(fw * k)), Math.max(1, Math.round(fh * k)), 'shrunk');
       this.mark('resample');
       layer = this.target('graded', shrunk.w, shrunk.h);
@@ -802,7 +1029,7 @@ export class GpuCompositor {
     } else {
       const cap = Math.min(1, 4096 / Math.max(cw0, ch0));
       layer = this.target('graded', cw0 * cap, ch0 * cap);
-      this.gradeInto(layer, null, crop, c, mask as TexImageSource | null, lut);
+      this.gradeInto(layer, input, crop, c, mask as TexImageSource | null, lut);
     }
     this.mark('grade');
 

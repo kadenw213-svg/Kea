@@ -38,6 +38,23 @@ export interface MediaItem {
   fps: number;
   hasAudio: boolean;
   hasVideo: boolean;
+  /** The picture's colour (from the file): what the 16-bit renderer needs to show HDR and 10-bit footage right. */
+  colour?: MediaColour;
+}
+
+export interface MediaColour {
+  /** WebCodecs names: 'bt709', 'bt2020', 'smpte432' (P3)… */
+  primaries: string;
+  /** 'bt709', 'srgb', 'pq' (HDR10 / Dolby Vision), 'hlg' (iPhone, broadcast HDR)… */
+  transfer: string;
+  matrix: string;
+  fullRange: boolean;
+  /** PQ or HLG. */
+  hdr: boolean;
+  /** 10 or 12 bits per sample (from the codec), else 8. */
+  bitDepth: number;
+  /** Full codec string, e.g. 'hvc1.2.4.L153.B0'. */
+  codec: string;
 }
 
 export type TrackKind = 'video' | 'audio';

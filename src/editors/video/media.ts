@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { Input, ALL_FORMATS, BlobSource, UrlSource, CanvasSink, AudioBufferSink, InputVideoTrack, InputAudioTrack } from 'mediabunny';
 import { uid } from '../../lib/util';
 import { extOf } from '../../lib/fileTypes';
-import type { MediaItem } from './model';
+import type { MediaItem, MediaColour } from './model';
 import { getBlob, host, IMAGE_EXTS } from './host';
 import { loadImage } from '../../lib/util';
 
@@ -44,6 +44,51 @@ export async function audioTrackOf(key: string): Promise<InputAudioTrack | null>
   return t && (await t.canDecode()) ? t : null;
 }
 
+const colours = new Map<string, Promise<MediaColour | null>>();
+const knownColours = new Map<string, MediaColour | null>();
+
+/** Bits per sample, from a codec string (10-bit HEVC Main10 / VP9 profile 2 / AV1 / H.264 High 10 & 4:2:2). */
+export function bitDepthOf(codec: string) {
+  const c = codec.toLowerCase();
+  if (/^(hev1|hvc1)\.2\./.test(c)) return 10;
+  if (/^(hev1|hvc1)\.4\./.test(c)) return 10; // range extensions (4:2:2 / 4:4:4), usually 10-bit
+  const vp9 = /^vp09\.\d\d\.\d\d\.(\d\d)/.exec(c);
+  if (vp9) return +vp9[1];
+  const av1 = /^av01\.\d\.\d\d[mh]\.(\d\d)/.exec(c);
+  if (av1) return +av1[1];
+  if (/^avc[13]\.(6e|7a|f4)/.test(c)) return 10;
+  return 8;
+}
+
+/** A video file's colour: primaries, transfer (HDR or not), matrix, bit depth. Cached; null for no picture. */
+export function colourOf(key: string): Promise<MediaColour | null> {
+  let p = colours.get(key);
+  if (!p) {
+    p = (async () => {
+      const vt = await videoTrackOf(key).catch(() => null);
+      if (!vt) return null;
+      const cs = await vt.getColorSpace().catch(() => ({}) as VideoColorSpaceInit);
+      const codec = (await vt.getCodecParameterString().catch(() => null)) || '';
+      const transfer = String(cs.transfer || 'bt709');
+      return {
+        primaries: String(cs.primaries || 'bt709'),
+        transfer,
+        matrix: String(cs.matrix || 'bt709'),
+        fullRange: !!cs.fullRange,
+        hdr: transfer === 'pq' || transfer === 'hlg',
+        bitDepth: bitDepthOf(codec),
+        codec
+      };
+    })();
+    colours.set(key, p);
+    p.then((c) => knownColours.set(key, c)).catch(() => {});
+  }
+  return p;
+}
+
+/** The colour of a file already looked at (synchronous; undefined if colourOf hasn't finished for it yet). */
+export const knownColour = (key: string) => knownColours.get(key);
+
 /** Look inside a file: what it is, how long, how big. Throws a plain-English error for files we can't use. */
 export async function probe(path: string, name: string, key = path): Promise<MediaItem> {
   const ext = extOf(name);
@@ -74,7 +119,8 @@ export async function probe(path: string, name: string, key = path): Promise<Med
       /* keep 30 */
     }
   }
-  return { ...base, kind: canV ? 'video' : 'audio', duration, width, height, fps, hasVideo: canV, hasAudio: canA };
+  const colour = canV ? (await colourOf(key).catch(() => null)) || undefined : undefined;
+  return { ...base, kind: canV ? 'video' : 'audio', duration, width, height, fps, hasVideo: canV, hasAudio: canA, ...(colour ? { colour } : {}) };
 }
 
 /* ---------- Thumbnails, film strips and waveforms (kept in memory, shared by every editor) ---------- */
