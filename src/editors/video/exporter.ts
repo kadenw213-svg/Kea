@@ -17,7 +17,7 @@ import {
 } from 'mediabunny';
 import type { Project, Clip } from './model';
 import { mediaOf } from './model';
-import { renderFrame, visibleLayers, frameTime, Drawable, FrameGetter } from './compositor';
+import { renderFrame, renderStudio, studioRenderer, visibleLayers, frameTime, Drawable, FrameGetter } from './compositor';
 import { ClipFx } from './effects';
 import { mixdown, mixdownChunks, wavBytes, wavHeader, pcm16, MIX_RATE } from './audio';
 import { imageFor, mediaKey, videoTrackOf } from './media';
@@ -250,6 +250,9 @@ export async function exportProject(p: Project, o: ExportOptions, onProgress: (f
 
     let video: CanvasSource | null = null;
     let canvas: HTMLCanvasElement | null = null;
+    const fx = new ClipFx();
+    // The 16-bit renderer's own canvas goes straight to the encoder (no copy); the basic one draws into a 2D canvas.
+    const studio = audioOnly ? null : studioRenderer(fx);
     const W = even(o.width);
     const H = even(o.height);
     if (!audioOnly) {
@@ -258,7 +261,7 @@ export async function exportProject(p: Project, o: ExportOptions, onProgress: (f
       if (!fits) throw new Error(`${want.toUpperCase()} can't go in a ${o.format.toUpperCase()} file.`);
       const codec: VideoCodec | null = support[want as 'avc' | 'hevc' | 'av1' | 'vp9'] ? (want as VideoCodec) : null;
       if (!codec) throw new Error(`This computer can't encode ${EXPORT_CODECS.find((c) => c.id === want)!.label.split(' (')[0]} at ${W}×${H}. Try H.264 or a smaller size.`);
-      canvas = document.createElement('canvas');
+      canvas = studio ? studio.canvas : document.createElement('canvas');
       canvas.width = W;
       canvas.height = H;
       const quality = o.bitrate > 0 ? new Quality({ bitrate: o.bitrate * 1000 }) : new Quality(o.quality);
@@ -311,20 +314,21 @@ export async function exportProject(p: Project, o: ExportOptions, onProgress: (f
     }
 
     if (video && canvas) {
-      const ctx = canvas.getContext('2d')!;
+      const ctx = studio ? null : canvas.getContext('2d')!;
       const total = Math.max(1, Math.round((b - a) * o.fps));
       const times = Array.from({ length: total }, (_, i) => a + i / o.fps);
       onProgress(audioShare, 'Preparing media…');
       const frames = new OfflineFrames(p, times, H);
       await frames.prepare();
-      const fx = new ClipFx();
       const scale = W / p.settings.width;
       const started = performance.now();
       try {
         for (let i = 0; i < total; i++) {
           check();
           await frames.load(i);
-          renderFrame(ctx, { project: p, t: times[i], scale, getFrame: frames.getFrame, fx });
+          const ro = { project: p, t: times[i], scale, getFrame: frames.getFrame, fx };
+          if (ctx) renderFrame(ctx, ro);
+          else if (!renderStudio(ro)) throw new Error('The 16-bit renderer stopped during the export. Choose Basic picture quality in Settings → Video editor and export again.');
           await video.add(i / o.fps, 1 / o.fps);
           if (i % 3 === 0 || i === total - 1) {
             const done = (i + 1) / total;

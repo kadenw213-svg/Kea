@@ -1,5 +1,9 @@
 import type { Clip, Colour, ChromaKey } from './model';
-import { NEUTRAL_COLOUR } from './model';
+import { NEUTRAL_COLOUR, DEFAULT_KEY } from './model';
+import type { GpuCompositor } from './gpuCompositor';
+
+/** No chroma key (for layers that aren't keyed). */
+export const NEUTRAL_KEY: ChromaKey = { ...DEFAULT_KEY, enabled: false };
 
 /*
  * Per-clip pixel effects (colour correction, vignette, chroma key) run as one WebGL shader.
@@ -22,9 +26,15 @@ void main() {
   gl_Position = vec4(a_pos, 0.0, 1.0);
 }`;
 
-const FRAG = `
-precision mediump float;
-varying vec2 v_uv;
+/**
+ * The per-clip grade as GLSL shared by both renderers (this WebGL 1 shader and the 16-bit GPU compositor, which
+ * compiles it as GLSL ES 3.00 with texture2D defined as texture, and may supply its own GRADE_SOURCE): chroma key, background mask, colour correction,
+ * vignette and LUT, in display (gamma) space. grade(uv) returns premultiplied RGBA.
+ */
+export const GRADE_GLSL = `
+#ifndef GRADE_SOURCE
+#define GRADE_SOURCE(uv) texture2D(u_tex, uv)
+#endif
 uniform sampler2D u_tex;
 uniform float u_exposure, u_contrast, u_saturation, u_temp, u_tint, u_high, u_shadow, u_vignette;
 uniform float u_keyOn, u_tol, u_soft, u_spill;
@@ -49,8 +59,8 @@ vec3 lut3d(vec3 c) {
 vec2 chroma(vec3 c) {
   return vec2(dot(c, vec3(-0.1146, -0.3854, 0.5)), dot(c, vec3(0.5, -0.4542, -0.0458)));
 }
-void main() {
-  vec4 src = texture2D(u_tex, v_uv);
+vec4 grade(vec2 uv) {
+  vec4 src = GRADE_SOURCE(uv);
   vec3 rgb = src.rgb;
   float a = src.a;
   if (u_keyOn > 0.5) {
@@ -68,7 +78,7 @@ void main() {
     float y = dot(rgb, LUMA);
     rgb = vec3(y + 1.5748 * fixedC.y, y - 0.1873 * fixedC.x - 0.4681 * fixedC.y, y + 1.8556 * fixedC.x);
   }
-  if (u_maskOn > 0.5) a *= texture2D(u_mask, v_uv).r;
+  if (u_maskOn > 0.5) a *= texture2D(u_mask, uv).r;
   rgb *= exp2(u_exposure);
   rgb += vec3(u_temp * 0.08 + u_tint * 0.04, -u_tint * 0.08, -u_temp * 0.08 + u_tint * 0.04);
   float l = dot(rgb, LUMA);
@@ -78,15 +88,42 @@ void main() {
   l = dot(rgb, LUMA);
   rgb = mix(vec3(l), rgb, 1.0 + u_saturation);
   if (u_vignette > 0.0) {
-    float r = length((v_uv - 0.5) * vec2(1.0, 1.0)) * 1.414;
+    float r = length((uv - 0.5) * vec2(1.0, 1.0)) * 1.414;
     rgb *= mix(1.0, smoothstep(1.15, 0.35, r), u_vignette);
   }
   rgb = clamp(rgb, 0.0, 1.0);
   if (u_lutOn > 0.5) rgb = mix(rgb, lut3d(rgb), u_lutAmt);
-  gl_FragColor = vec4(rgb * a, a);
+  return vec4(rgb * a, a);
 }`;
 
-function hexRgb(hex: string): [number, number, number] {
+export const GRADE_UNIFORMS = ['u_tex', 'u_exposure', 'u_contrast', 'u_saturation', 'u_temp', 'u_tint', 'u_high', 'u_shadow', 'u_vignette', 'u_keyOn', 'u_tol', 'u_soft', 'u_spill', 'u_key', 'u_mask', 'u_maskOn', 'u_lut', 'u_lutOn', 'u_lutSize', 'u_lutAmt'];
+
+/** Set the grade's colour and key uniforms (the textures and their on/off flags are bound by the caller). */
+export function setGradeUniforms(gl: WebGLRenderingContext | WebGL2RenderingContext, u: Record<string, WebGLUniformLocation | null>, colour: Colour, key: ChromaKey) {
+  gl.uniform1f(u.u_exposure, colour.exposure);
+  gl.uniform1f(u.u_contrast, colour.contrast / 100);
+  gl.uniform1f(u.u_saturation, colour.saturation / 100);
+  gl.uniform1f(u.u_temp, colour.temperature / 100);
+  gl.uniform1f(u.u_tint, colour.tint / 100);
+  gl.uniform1f(u.u_high, colour.highlights / 100);
+  gl.uniform1f(u.u_shadow, colour.shadows / 100);
+  gl.uniform1f(u.u_vignette, colour.vignette / 100);
+  gl.uniform1f(u.u_keyOn, key.enabled ? 1 : 0);
+  gl.uniform1f(u.u_tol, key.tolerance / 100);
+  gl.uniform1f(u.u_soft, key.softness / 100);
+  gl.uniform1f(u.u_spill, key.spill / 100);
+  gl.uniform3fv(u.u_key, hexRgb(key.color));
+}
+
+const FRAG = `
+precision mediump float;
+varying vec2 v_uv;
+${GRADE_GLSL}
+void main() {
+  gl_FragColor = grade(v_uv);
+}`;
+
+export function hexRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
   const n = parseInt(h.length === 3 ? h.split('').map((x) => x + x).join('') : h.slice(0, 6), 16) || 0;
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
@@ -94,6 +131,8 @@ function hexRgb(hex: string): [number, number, number] {
 
 export class ClipFx {
   canvas: HTMLCanvasElement;
+  /** The 16-bit compositor for this renderer (created on first use; null when unavailable or turned off). */
+  gpu?: GpuCompositor | null;
   private gl: WebGLRenderingContext | null;
   private loc: Record<string, WebGLUniformLocation | null> = {};
   private tex: WebGLTexture | null = null;
@@ -135,7 +174,7 @@ export class ClipFx {
     const pos = gl.getAttribLocation(prog, 'a_pos');
     gl.enableVertexAttribArray(pos);
     gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-    for (const n of ['u_tex', 'u_exposure', 'u_contrast', 'u_saturation', 'u_temp', 'u_tint', 'u_high', 'u_shadow', 'u_vignette', 'u_keyOn', 'u_tol', 'u_soft', 'u_spill', 'u_key', 'u_mask', 'u_maskOn', 'u_lut', 'u_lutOn', 'u_lutSize', 'u_lutAmt']) this.loc[n] = gl.getUniformLocation(prog, n);
+    for (const n of GRADE_UNIFORMS) this.loc[n] = gl.getUniformLocation(prog, n);
     const mkTex = () => {
       const t = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, t);
@@ -206,19 +245,7 @@ export class ClipFx {
       gl.activeTexture(gl.TEXTURE0);
     }
     gl.uniform1f(u.u_lutOn, lutOn);
-    gl.uniform1f(u.u_exposure, colour.exposure);
-    gl.uniform1f(u.u_contrast, colour.contrast / 100);
-    gl.uniform1f(u.u_saturation, colour.saturation / 100);
-    gl.uniform1f(u.u_temp, colour.temperature / 100);
-    gl.uniform1f(u.u_tint, colour.tint / 100);
-    gl.uniform1f(u.u_high, colour.highlights / 100);
-    gl.uniform1f(u.u_shadow, colour.shadows / 100);
-    gl.uniform1f(u.u_vignette, colour.vignette / 100);
-    gl.uniform1f(u.u_keyOn, key.enabled ? 1 : 0);
-    gl.uniform1f(u.u_tol, key.tolerance / 100);
-    gl.uniform1f(u.u_soft, key.softness / 100);
-    gl.uniform1f(u.u_spill, key.spill / 100);
-    gl.uniform3fv(u.u_key, hexRgb(key.color));
+    setGradeUniforms(gl, u, colour, key);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

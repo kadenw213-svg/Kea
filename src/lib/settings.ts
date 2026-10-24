@@ -361,6 +361,32 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'video',
+    label: 'Video editor',
+    icon: 'Clapperboard',
+    fields: [
+      {
+        key: 'video.renderer',
+        label: 'Picture quality',
+        type: 'select',
+        default: 'gpu16',
+        options: [
+          { value: 'gpu16', label: 'Studio: 16-bit on the graphics card (best)' },
+          { value: 'basic', label: 'Basic: 8-bit (older computers)' }
+        ],
+        help: 'Studio grades, resizes, blurs and blends in 16-bit linear light with sharp Lanczos resizing and dithering, so gradients don’t band and edges stay clean. Basic is the simpler 8-bit renderer, for graphics cards that can’t do 16-bit.'
+      },
+      {
+        key: 'video.linearMix',
+        label: 'Mix dissolves and opacity in linear light',
+        type: 'toggle',
+        default: true,
+        advanced: true,
+        help: 'On: dissolves, fades and see-through layers mix the way light does, with no muddy or dark middle (Premiere’s “composite in linear color”). Off: mix in display colour, the way Resolve and older editors do by default. Resizing and blur always use linear light. Studio quality only.'
+      }
+    ]
+  },
+  {
     id: 'pdf',
     label: 'PDFs',
     icon: 'FileType2',

@@ -5,6 +5,8 @@ import { ClipFx, needsFx, cssColourFilter } from './effects';
 import { mediaKey } from './media';
 import { maskAt } from './segmentMask';
 import { getLut, loadLut } from './lut';
+import { GpuCompositor, type GpuHelpers } from './gpuCompositor';
+import { setting } from '../../lib/settings';
 
 /*
  * The compositor draws one frame of the project onto a 2D canvas. The program monitor,
@@ -56,10 +58,78 @@ export function frameTime(p: Project, c: Clip, t: number) {
   return Math.max(0, Math.min(m.duration - 1 / Math.max(1, m.fps), s));
 }
 
+const GPU_HELPERS: GpuHelpers = {
+  layers: visibleLayers,
+  frameTime,
+  sizeOf,
+  raster(ctx, clip, mod) {
+    // (Reaches the 2D path's drawClip through the canvas transform the 2D renderer would use.)
+    rasterClip(ctx, clip, mod);
+  },
+  rasterKey(clip, mod) {
+    // Everything that changes how the clip looks at this moment: unchanged → the GPU reuses last frame's picture.
+    const o = rasterOpts!;
+    const p = o.project;
+    const t = o.t;
+    const rel = t - clip.start;
+    const anim = clip.kind === 'text' && clip.text ? textAnim(clip.text, rel, clipDuration(clip), p.settings.width) : null;
+    const word = clip.text?.karaoke?.words.length ? clip.text.karaoke.words.filter((w) => w <= rel + 1e-3).length : 0;
+    const props = (['x', 'y', 'scale', 'rotation', 'opacity', 'blur'] as const).map((k) => propAt(clip, k, t));
+    return JSON.stringify([clip.id, clip.kind, clip.text, clip.shape, clip.props.flipH, clip.props.flipV, props, mod, anim, word, o.scale, p.settings.width, p.settings.height]);
+  }
+};
+let rasterOpts: RenderOptions | null = null;
+function rasterClip(ctx: CanvasRenderingContext2D, clip: Clip, mod: LayerMod) {
+  const o = rasterOpts!;
+  ctx.save();
+  ctx.setTransform(o.scale, 0, 0, o.scale, 0, 0);
+  drawClip(ctx, o, clip, mod);
+  ctx.restore();
+}
+
+/** The renderer's 16-bit compositor, made on first use (null when turned off or this computer can't run it). */
+export function studioRenderer(fx: ClipFx): GpuCompositor | null {
+  if (setting('video.renderer') === 'basic') return null;
+  if (fx.gpu === undefined) fx.gpu = GpuCompositor.create();
+  return fx.gpu;
+}
+
+/**
+ * Render with the 16-bit compositor and return its canvas (W·scale × H·scale), or null when it's off or failed (then
+ * use renderFrame). The export hands this canvas straight to the encoder: no copy through a 2D canvas.
+ */
+export function renderStudio(o: RenderOptions): HTMLCanvasElement | null {
+  const gpu = studioRenderer(o.fx);
+  if (!gpu) return null;
+  gpu.linearMix = setting('video.linearMix') !== false;
+  try {
+    rasterOpts = o;
+    return gpu.render(o, GPU_HELPERS, Math.max(1, Math.round(o.project.settings.width * o.scale)), Math.max(1, Math.round(o.project.settings.height * o.scale)));
+  } catch (err) {
+    // Never leave a black frame: fall back to the 2D renderer for good.
+    console.warn('16-bit renderer failed, using the basic one', err);
+    o.fx.gpu = null;
+    return null;
+  } finally {
+    rasterOpts = null;
+  }
+}
+
 export function renderFrame(ctx: CanvasRenderingContext2D, o: RenderOptions) {
   const { project: p, t, scale } = o;
   const W = p.settings.width;
   const H = p.settings.height;
+  const out = renderStudio(o);
+  if (out) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.filter = 'none';
+    ctx.drawImage(out, 0, 0);
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   ctx.globalCompositeOperation = 'source-over';

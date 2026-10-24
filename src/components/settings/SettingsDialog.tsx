@@ -1,9 +1,9 @@
 import { Logo } from '../Logo';
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { BookOpen, Circle, Sparkles, Cloud, FileCode2, FileText, FileType2, GraduationCap, Home, Mic, Palette, Plug, Presentation, RefreshCw, Save, Settings, Sheet, Shield, SpellCheck, Wand2 } from 'lucide-react';
+import { BookOpen, Circle, Clapperboard, Sparkles, Cloud, FileCode2, FileText, FileType2, GraduationCap, Home, Mic, Palette, Plug, Presentation, RefreshCw, Save, Settings, Sheet, Shield, SpellCheck, Wand2 } from 'lucide-react';
 
 // Only the icons the sections use (importing the whole icon set put ~1,500 icons into Kea's start-up code).
-const Icons = { BookOpen, Circle, Sparkles, Cloud, FileCode2, FileText, FileType2, GraduationCap, Home, Mic, Palette, Plug, Presentation, RefreshCw, Save, Settings, Sheet, Shield, SpellCheck, Wand2 };
+const Icons = { BookOpen, Circle, Clapperboard, Sparkles, Cloud, FileCode2, FileText, FileType2, GraduationCap, Home, Mic, Palette, Plug, Presentation, RefreshCw, Save, Settings, Sheet, Shield, SpellCheck, Wand2 };
 import { X, Search, RotateCcw, FolderOpen, ExternalLink } from 'lucide-react';
 import { SECTIONS, Field, useSettings, DEFAULTS } from '../../lib/settings';
 import { api } from '../../lib/api';
