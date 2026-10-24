@@ -17,20 +17,29 @@ const dueText = (iso: string | null) => {
   return days < 0 ? `Was due ${when}` : `Due ${when}`;
 };
 
-function Picker({ path, dirty, close }: { path: string; dirty: boolean; close(): void }) {
+/**
+ * The assignment folders to hand a file in to. `only` limits it to one class (by code), for an item whose folder
+ * Kea couldn't pick by itself; `title` says which item that is.
+ */
+export function Picker({ path, dirty, close, only, title }: { path: string; dirty: boolean; close(): void; only?: string; title?: string }) {
   const [targets, setTargets] = useState<Targets | null>(null);
   const [course, setCourse] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   useEffect(() => {
     api.scholar
       .handInTargets()
-      .then((t) => {
+      .then((all) => {
+        // (The one class when asked and it's there; otherwise every class, so the student can still choose.)
+        const t = only && all.some((c) => c.code === only) ? all.filter((c) => c.code === only) : all;
         setTargets(t);
         const first = t.find((c) => c.folders.some((f) => !f.closed));
         setCourse(first?.code || t[0]?.code || null);
       })
-      .catch(() => setTargets([]));
-  }, []);
+      .catch((err) => {
+        toast(String(err?.message || err), 'error');
+        setTargets([]);
+      });
+  }, [only]);
   if (!targets) return <div className="hi-pick hi-wait"><Loader2 size={16} className="spin" /> Looking up your assignment folders…</div>;
   if (!targets.some((c) => c.folders.length))
     return <div className="hi-pick hi-wait">No assignment folders found. Kea needs to be signed in to your class site (Scholar → Add a class → From your school).</div>;
@@ -49,7 +58,7 @@ function Picker({ path, dirty, close }: { path: string; dirty: boolean; close():
   };
   return (
     <div className="hi-pick">
-      <div className="hi-head">Hand in this file</div>
+      <div className="hi-head">{title ? `Which folder is “${title}”?` : 'Hand in this file'}</div>
       {dirty && <div className="hi-note">This file has unsaved changes. The saved copy is what gets handed in, so save first.</div>}
       <div className="hi-classes">
         {targets.map((t) => (

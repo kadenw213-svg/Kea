@@ -6,7 +6,7 @@ import { CheckCircle2, Clock, ExternalLink, FileText, Inbox, Loader2, Mail, PenS
 import { api, MailDraft, MailList, ScholarCourse } from '../../lib/api';
 import { useSetting, useSettings } from '../../lib/settings';
 import { toast } from '../../store';
-import { useScholar } from './scholarStore';
+import { bumpInbox, useScholar } from './scholarStore';
 
 type Box = 'inbox' | 'sent' | 'drafts';
 type Compose = MailDraft & { key: string };
@@ -38,15 +38,26 @@ function Composer({ draft, courses, onClose, onSent }: { draft: Compose; courses
   const area = useRef<HTMLTextAreaElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => area.current?.focus(), []);
-  // Drafts are saved a moment after you stop typing.
-  useEffect(() => {
+  // Drafts are saved a moment after you stop typing, and at once when the composer closes (so closing right after
+  // typing never loses the last words).
+  const pending = useRef<Compose | null>(null);
+  const flush = () => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => api.scholar.mailDraft(d.key, d.body.trim() ? d : null), 600);
-    return () => clearTimeout(timer.current);
+    const p = pending.current;
+    pending.current = null;
+    if (p) api.scholar.mailDraft(p.key, p.body.trim() ? p : null).catch(() => {});
+  };
+  useEffect(() => {
+    pending.current = d;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(flush, 600);
   }, [d]);
+  useEffect(() => flush, []);
   const isReply = !!d.replyTo;
   const send = async () => {
     if (sending || !d.body.trim()) return;
+    // (The draft is saved first: if sending fails it's still there; once sent, the send clears it.)
+    flush();
     setSending(true);
     try {
       const r = await api.scholar.mailSend({ ...d, draftKey: d.key });
@@ -97,6 +108,9 @@ function Composer({ draft, courses, onClose, onSent }: { draft: Compose; courses
         <button
           className="btn sm"
           onClick={() => {
+            // (Nothing waiting to be saved: closing mustn't bring the discarded draft back.)
+            clearTimeout(timer.current);
+            pending.current = null;
             api.scholar.mailDraft(d.key, null);
             onClose();
           }}
@@ -166,7 +180,14 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
   useEffect(() => {
     if (open && box === 'inbox') {
       readFull(open);
-      api.scholar.markInboxRead([open]).catch(() => {});
+      // (Then the unread counts, here and beside Inbox, go down.)
+      api.scholar
+        .markInboxRead([open])
+        .then(() => {
+          bumpInbox();
+          reload();
+        })
+        .catch(() => {});
     }
   }, [open]);
 

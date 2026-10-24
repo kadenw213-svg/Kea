@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarDays,
   GraduationCap,
@@ -44,7 +44,8 @@ import { openPaths } from '../../lib/open';
 import { setPdfTarget } from '../../lib/pdfTarget';
 import { useSettings } from '../../lib/settings';
 import { toast, prompt } from '../../store';
-import { useScholar, reloadScholar, ScholarView } from './scholarStore';
+import { useScholar, reloadScholar, bumpInbox, ScholarView } from './scholarStore';
+import { Picker as HandInPicker } from './HandIn';
 import { MenuButton } from '../Popover';
 import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
@@ -129,7 +130,7 @@ async function openReading(r: ScholarReading) {
 
 // ---------- The screen ----------
 export function ScholarScreen() {
-  const { view, version, set, study } = useScholar();
+  const { view, version, inboxTick, set, study } = useScholar();
   const [profiles, setProfiles] = useState<ProfileList | null>(null);
   const [hasData, setHasData] = useState<boolean | null>(null);
   const [courses, setCourses] = useState<ScholarCourse[]>([]);
@@ -143,11 +144,39 @@ export function ScholarScreen() {
   // A new-message notification clicked: its message, open in Messages.
   useEffect(() => api.scholar.onOpenMail((id) => useScholar.getState().set({ view: { name: 'messages', id } })), []);
   useEffect(() => {
-    const inbox = () => api.scholar.inbox().then((n) => setUnread(n.filter((x) => !x.read).length));
-    api.scholar.runStatus().then((s) => setScanning(!!s.running));
+    const inbox = () =>
+      api.scholar
+        .inbox()
+        .then((n) => setUnread(n.filter((x) => !x.read).length))
+        .catch(() => {});
+    api.scholar
+      .runStatus()
+      .then((s) => setScanning(!!s.running))
+      .catch(() => {});
     inbox();
     const offs = [api.scholar.onRun((r) => setScanning(r.running)), api.scholar.onNews(inbox)];
     return () => offs.forEach((f) => f());
+    // (inboxTick: something was read or deleted in the Inbox or Messages, so the count is read again.)
+  }, [version, inboxTick]);
+  // The open item, read again after a scan or a change, so its date, hand-in state and Missing banner are current.
+  const itemRef = useRef(item);
+  itemRef.current = item;
+  useEffect(() => {
+    const cur = itemRef.current;
+    if (!version || !cur) return;
+    let live = true;
+    // (Its date may have moved: look well around the date it had.)
+    const day = parse(cur.date);
+    api.scholar
+      .items({ from: iso(addDays(day, -120)), to: iso(addDays(day, 120)), courseId: cur.courseId })
+      .then((list) => {
+        const fresh = list.find((x) => x.id === cur.id);
+        if (live && fresh) setItem((now) => (now?.id === fresh.id ? fresh : now));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
   }, [version]);
   useEffect(() => {
     let live = true;
@@ -449,12 +478,40 @@ const opensText = (at: string) => new Date(at).toLocaleString([], { weekday: 'sh
 /** An item's kind in words (a lab report filed as a lab handout reads "Lab report"). */
 const typeLabel = (it: ScholarItem) => (it.type === 'lab_handout' && /\breport\b/i.test(it.title) ? 'Lab report' : TYPE_LABEL[it.type] || it.type);
 
+/**
+ * Today's date ("2026-10-24"), which changes at midnight while the screen stays open (a timer to the next midnight,
+ * and a look when the window comes back, in case the computer slept through it).
+ */
+function useToday() {
+  const [day, setDay] = useState(today);
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout>;
+    const check = () => setDay((d) => (d === today() ? d : today()));
+    const arm = () => {
+      clearTimeout(t);
+      const now = new Date();
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+      t = setTimeout(() => (check(), arm()), Math.min(next.getTime() - now.getTime(), 2 ** 31 - 1));
+    };
+    const onFocus = () => (check(), arm());
+    arm();
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, []);
+  return day;
+}
+
 // ---------- This week ----------
 function WeekView({ ctx }: { ctx: Ctx }) {
-  const from = today();
-  const to = iso(addDays(new Date(), 13));
+  const from = useToday();
+  const to = iso(addDays(parse(from), 13));
   const items = useItems(from, to);
-  const past = useItems(iso(addDays(new Date(), -28)), iso(addDays(new Date(), -1)));
+  const past = useItems(iso(addDays(parse(from), -28)), iso(addDays(parse(from), -1)));
   const [missOpen, setMissOpen] = useState(true);
   const [uncOpen, setUncOpen] = useState(false);
   if (!items || !past) return <Loading />;
@@ -629,11 +686,29 @@ function InboxView({ ctx }: { ctx: Ctx }) {
   const [filter, setFilter] = useState<string>('all');
   const [checking, setChecking] = useState(false);
   const [confirmRead, setConfirmRead] = useState(false);
-  const load = () => api.scholar.inbox().then(setItems);
+  const [loadError, setLoadError] = useState('');
+  const load = () =>
+    api.scholar
+      .inbox()
+      .then((r) => (setItems(r), setLoadError('')))
+      .catch((err) => setLoadError(String(err?.message || err)));
   useEffect(() => {
     load();
     return api.scholar.onNews(() => load());
   }, [version]);
+  if (!items && loadError)
+    return (
+      <div className="sch-page">
+        <h1 className="sch-title">Inbox</h1>
+        <div className="sch-empty">
+          <AlertTriangle size={26} />
+          <div>Kea couldn’t read your Inbox: {loadError}</div>
+          <button className="btn sm" onClick={() => (setLoadError(''), load())}>
+            <RefreshCw size={13} /> Try again
+          </button>
+        </div>
+      </div>
+    );
   if (!items) return <Loading />;
   const codes = [...new Set(items.map((i) => i.course).filter(Boolean))].sort();
   const shown = items.filter((i) => filter === 'all' || (filter === 'unread' ? !i.read : i.course === filter));
@@ -643,14 +718,20 @@ function InboxView({ ctx }: { ctx: Ctx }) {
   };
   const read = (i: ScholarInboxItem) => {
     if (!i.read) {
-      api.scholar.markInboxRead([i.id]);
+      api.scholar
+        .markInboxRead([i.id])
+        .then(bumpInbox)
+        .catch(() => {});
       setItems(items.map((x) => (x.id === i.id ? { ...x, read: true } : x)));
     }
   };
   // Deleted messages stay deleted: Kea remembers them, so the next look at the class site doesn't bring them back.
   const remove = (ids: string[]) => {
     if (!ids.length) return;
-    api.scholar.deleteInbox(ids);
+    api.scholar
+      .deleteInbox(ids)
+      .then(bumpInbox)
+      .catch((err) => toast(String(err?.message || err), 'error'));
     setItems(items.filter((x) => !ids.includes(x.id)));
     if (open && ids.includes(open)) setOpen(null);
   };
@@ -701,7 +782,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
               {(close) => (
                 <>
                   {items.some((i) => !i.read) && (
-                    <button className="menu-item" onClick={() => (api.scholar.markInboxRead(), setItems(items.map((x) => ({ ...x, read: true }))), close())}>
+                    <button className="menu-item" onClick={() => (api.scholar.markInboxRead().then(bumpInbox).catch(() => {}), setItems(items.map((x) => ({ ...x, read: true }))), close())}>
                       <CheckCircle2 size={14} /> Mark all read
                     </button>
                   )}
@@ -1167,25 +1248,52 @@ function WeeksView({ ctx, c }: { ctx: Ctx; c: ScholarCourseDetail }) {
 
 function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; startTab?: 'weeks' }) {
   const version = useScholar((s) => s.version);
-  const [c, setC] = useState<ScholarCourseDetail | null>(null);
+  // undefined while loading; null when there's no such class (removed, or another profile's).
+  const [c, setC] = useState<ScholarCourseDetail | null | undefined>(undefined);
+  const [loadError, setLoadError] = useState('');
   const [tab, setTab] = useState<'week' | 'weeks' | 'calendar' | 'textbook' | 'grades' | 'study'>(startTab || 'week');
   const [grades, setGrades] = useState<ScholarGrades | null>(null);
   useEffect(() => {
     let live = true;
-    api.scholar.course(courseId).then((r) => {
-      if (!live) return;
-      setC(r);
-      if (r) api.scholar.grades(r.id, r.code).then((g) => live && setGrades(g));
-    });
+    api.scholar
+      .course(courseId)
+      .then((r) => {
+        if (!live) return;
+        setC(r);
+        setLoadError('');
+        if (r)
+          api.scholar
+            .grades(r.id, r.code)
+            .then((g) => live && setGrades(g))
+            .catch(() => {});
+      })
+      .catch((err) => {
+        if (!live) return;
+        setLoadError(String(err?.message || err));
+        setC((cur) => (cur === undefined ? null : cur));
+      });
     return () => {
       live = false;
     };
   }, [courseId, version]);
   useEffect(() => setTab(startTab || 'week'), [courseId, startTab]);
-  const items = useItems(iso(addDays(new Date(), -28)), iso(addDays(new Date(), 20)), courseId);
-  if (!c) return <Loading />;
+  const day = useToday();
+  const items = useItems(iso(addDays(parse(day), -28)), iso(addDays(parse(day), 20)), courseId);
+  if (c === undefined) return <Loading />;
+  if (!c)
+    return (
+      <div className="sch-page">
+        <div className="sch-empty">
+          <AlertTriangle size={26} />
+          <div>{loadError ? `Kea couldn’t open this class: ${loadError}` : 'Class not found. It may have been removed, or it belongs to another profile.'}</div>
+          <button className="btn sm" onClick={() => ctx.go({ name: 'week' })}>
+            Back to This week
+          </button>
+        </div>
+      </div>
+    );
   const missing = (items || []).filter((i) => isMissing(i));
-  const upcoming = (items || []).filter((i) => i.date >= today() && i.type !== 'weekly_reading' && !missing.includes(i) && !isUnconfirmed(i));
+  const upcoming = (items || []).filter((i) => i.date >= day &&i.type !== 'weekly_reading' && !missing.includes(i) && !isUnconfirmed(i));
   return (
     <div className="sch-page">
       <div className="cls-head">
@@ -1396,6 +1504,36 @@ function RewriteButton({ code, chapter }: { code: string; chapter: string }) {
   );
 }
 
+/**
+ * The one assignment folder that is this item, or null when there isn't exactly one: the same name first, then the
+ * same words with the same numbers ("Lab 1" is "Lab 1 Report", never "Lab 10 Report" or "Lab 11").
+ */
+function matchFolder<F extends { name: string }>(folders: F[], title: string): F | null {
+  const words = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/([a-z])(\d)/g, '$1 $2')
+      .replace(/(\d)([a-z])/g, '$1 $2')
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean)
+      // ("02" is 2.)
+      .map((x) => (/^\d+$/.test(x) ? String(Number(x)) : x));
+  const norm = (s: string) => words(s).join(' ');
+  const exact = folders.filter((f) => norm(f.name) === norm(title));
+  if (exact.length) return exact.length === 1 ? exact[0] : null;
+  const nums = (w: string[]) => w.filter((x) => /^\d+$/.test(x)).map(Number).join(',');
+  const tw = words(title);
+  const close = folders.filter((f) => {
+    const fw = words(f.name);
+    // Every number the same, in the same order.
+    if (nums(fw) !== nums(tw)) return false;
+    // Every word of the shorter name is a whole word of the longer one (and not only its numbers).
+    const [short, long] = fw.length <= tw.length ? [fw, tw] : [tw, fw];
+    return short.some((x) => !/^\d+$/.test(x)) && short.every((x) => long.includes(x));
+  });
+  return close.length === 1 ? close[0] : null;
+}
+
 // ---------- The item panel ----------
 function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; onClose(): void }) {
   const links = useMemo(() => [...it.links, ...(it.platformLinks || []), ...it.weeklyLinks], [it]);
@@ -1428,14 +1566,20 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
     const files = await api.openDialog({ title: 'Choose the file to hand in', filters: [{ name: 'Documents', extensions: ['pdf', 'docx', 'doc', 'pptx', 'xlsx', 'png', 'jpg', 'jpeg', 'txt'] }] }).catch(() => []);
     const file = files?.[0]?.path;
     if (!file) return;
-    const targets = await api.scholar.handInTargets();
-    const course = targets.find((t) => t.code === it.courseCode);
-    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-    const folder = course?.folders.find((f) => norm(f.name) === norm(it.title)) || course?.folders.find((f) => norm(f.name).includes(norm(it.title)) || norm(it.title).includes(norm(f.name)));
-    if (!course || !folder) return toast('Kea couldn’t match this to an assignment folder. Use Open hand-in page instead, or the Hand in button on the open PDF.', 'error');
-    const r = await api.scholar.handIn(course.ou, folder.id, file);
-    toast(r.attached ? 'Your file is attached on the hand-in page. Check it there, then press Submit.' : 'The hand-in page is open. Add your file there, then press Submit.', 'success');
+    try {
+      const targets = await api.scholar.handInTargets();
+      const course = targets.find((t) => t.code === it.courseCode);
+      const folder = course ? matchFolder(course.folders, it.title) : null;
+      // Not one clear folder: the student picks it, from this class's folders.
+      if (!course || !folder) return setPickFile(file);
+      const r = await api.scholar.handIn(course.ou, folder.id, file);
+      toast(r.attached ? 'Your file is attached on the hand-in page. Check it there, then press Submit.' : 'The hand-in page is open. Add your file there, then press Submit.', 'success');
+    } catch (err: any) {
+      toast(`Kea couldn’t open the hand-in page: ${String(err?.message || err)}`, 'error');
+    }
   };
+  const [pickFile, setPickFile] = useState<string | null>(null);
+  useEffect(() => setPickFile(null), [it.id]);
   return (
     <aside className="sch-panel" style={{ ['--kc' as any]: ctx.colors.item(it) }}>
       <div className="sch-panel-head">
@@ -1541,6 +1685,14 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           </button>
         )}
       </div>
+      {pickFile && (
+        <div className="pn-handin-pick">
+          <HandInPicker path={pickFile} dirty={false} only={it.courseCode} title={it.title} close={() => setPickFile(null)} />
+          <button className="btn sm" onClick={() => setPickFile(null)}>
+            Cancel
+          </button>
+        </div>
+      )}
       {format && <p className="pn-format">{format.replace(/^(exam |test |quiz )?format:\s*/i, 'Format: ')}</p>}
       {it.readings.length > 0 && (
         <section>

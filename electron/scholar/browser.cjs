@@ -15,17 +15,35 @@ const PAGE_TIMEOUT = 45000;
 // ---------- The saved class site and login (per profile) ----------
 const schoolFile = () => path.join(profiles.paths().dir, 'school.bin');
 function readSchool() {
+  let s;
   try {
     const buf = fs.readFileSync(schoolFile());
-    return JSON.parse(safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(buf) : buf.toString('utf8'));
+    s = JSON.parse(safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(buf) : buf.toString('utf8'));
   } catch {
     return {};
   }
+  // Logins are kept per host (the school's sign-in, and any platform the student signed in to in Kea's window), so
+  // signing in to ALEKS never replaces the school's login. A file from before that kept one `login`: it becomes the
+  // school's (it was saved from the class site's sign-in, the only one there was).
+  if (s && s.login && !s.logins) {
+    if (s.login.host) {
+      s.logins = { [s.login.host]: s.login };
+      s.schoolLoginHost = s.login.host;
+    }
+    delete s.login;
+  }
+  if (s && (!s.logins || typeof s.logins !== 'object')) s.logins = {};
+  return s || {};
 }
+/** The saved login for a host, if any. */
+const loginFor = (s, host) => (host && s.logins && Object.prototype.hasOwnProperty.call(s.logins, host) ? s.logins[host] : null);
+/** The host of the school's own sign-in (the class site, or its single-sign-on page). */
+const schoolLoginHost = (s) => (s.schoolLoginHost && loginFor(s, s.schoolLoginHost) ? s.schoolLoginHost : s.home && loginFor(s, hostOf(s.home)) ? hostOf(s.home) : '');
 function writeSchool(s) {
   fs.mkdirSync(path.dirname(schoolFile()), { recursive: true });
   const json = JSON.stringify(s);
   fs.writeFileSync(schoolFile(), safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(json) : Buffer.from(json));
+  schoolCache.at = 0;
 }
 /**
  * Which learning platform the class site is: 'd2l' (Brightspace) or 'canvas'. Chosen at setup; a site saved before
@@ -39,7 +57,9 @@ const guessPlatform = (home) => (/\/d2l\//i.test(home || '') ? 'd2l' : /instruct
 /** What the interface may know: the address, and whether a login is saved (never the login itself). */
 function schoolInfo() {
   const s = readSchool();
-  return { home: s.home || '', host: s.home ? hostOf(s.home) : '', platform: platformOf(s), remembers: !!s.login, loginHost: s.login?.host || '' };
+  const hosts = Object.keys(s.logins || {});
+  const school = schoolLoginHost(s);
+  return { home: s.home || '', host: s.home ? hostOf(s.home) : '', platform: platformOf(s), remembers: hosts.length > 0, loginHost: school || hosts[0] || '', loginHosts: hosts };
 }
 function setHome(home, platform) {
   const s = readSchool();
@@ -51,6 +71,8 @@ function setHome(home, platform) {
 function forgetLogin() {
   const s = readSchool();
   delete s.login;
+  s.logins = {};
+  delete s.schoolLoginHost;
   // Forgetting also means "don't save it again" until the user ticks the box on a new sign-in.
   s.remember = false;
   writeSchool(s);
@@ -115,6 +137,53 @@ function prepareSession(ses) {
   prepared.add(ses);
   ses.setUserAgent(chromeAgent());
   require('./adblock.cjs').enable(ses);
+  // What pages may ask for (camera, microphone, full screen…): nothing by default. School platforms get what their
+  // work needs: the class site, the school's sign-in, its own domain, and known course, publisher and proctoring
+  // platforms (a recorded video assignment, a proctored exam, a full-screen quiz). (Choosing a file to upload and
+  // downloads aren't permissions: they always work.)
+  ses.setPermissionRequestHandler((_wc, permission, callback, details) => callback(permitted(permission, details?.requestingUrl || '')));
+  ses.setPermissionCheckHandler((_wc, permission, origin, details) => permitted(permission, details?.requestingUrl || origin || details?.securityOrigin || ''));
+}
+
+// Course, publisher, video and proctoring platforms a class sends students to (the same family as the MCP's list in
+// mcp.cjs, plus the proctoring and live-class tools that need a camera or the screen).
+const SCHOOL_PLATFORMS = /(^|\.)(aleks\.com|mheducation\.com|mcgraw-hill\.com|pearson\.com|pearsoned\.com|pearsoncmg\.com|mylabmastering\.com|masteringchemistry\.com|cengage\.com|webassign\.net|cengagenow\.com|holscience\.com|scienceinteractive\.com|macmillanlearning\.com|wiley\.com|wileyplus\.com|zybooks\.com|perusall\.com|instructure\.com|brightspace\.com|d2l\.com|desire2learn\.com|openstax\.org|libretexts\.org|simplesyllabus\.com|kaltura\.com|panopto\.com|youtube\.com|youtube-nocookie\.com|vimeo\.com|turnitin\.com|labster\.com|knewton\.com|hawkeslearning\.com|yuja\.com|readspeaker\.com|respondus\.com|proctorio\.com|honorlock\.com|proctoru\.com|examity\.com|meazurelearning\.com|proctortrack\.com|examsoft\.com|bbcollab\.com|blackboard\.com|zoom\.us|webex\.com|teams\.microsoft\.com|flipgrid\.com|flip\.com|voicethread\.com|vidgrid\.com|screencast-o-matic\.com|loom\.com)$/i;
+// Allowed for those: what course work uses. Everything else (location, USB, MIDI, notifications…) is refused.
+const PLATFORM_PERMISSIONS = new Set(['media', 'fullscreen', 'pointerLock', 'keyboardLock', 'display-capture', 'clipboard-read', 'mediaKeySystem', 'openExternal', 'storage-access', 'top-level-storage-access', 'window-management', 'speaker-selection', 'fileSystem', 'persistent-storage', 'idle-detection']);
+// Allowed anywhere: a page copying text the student asked it to copy.
+const ANY_PERMISSIONS = new Set(['clipboard-sanitized-write']);
+// (Permission checks come often: the school's address is read from its encrypted file at most every few seconds.)
+let schoolCache = { at: 0, home: '', sso: '' };
+function trustedHost(host) {
+  if (!host) return false;
+  if (Date.now() - schoolCache.at > 5000) {
+    const s = readSchool();
+    schoolCache = { at: Date.now(), home: s.home ? new URL(s.home).hostname.toLowerCase() : '', sso: String(schoolLoginHost(s) || '').replace(/:\d+$/, '') };
+  }
+  const { home, sso } = schoolCache;
+  const school = home.split('.').slice(-2).join('.');
+  if (home && (host === home || (school.includes('.') && (host === school || host.endsWith(`.${school}`))))) return true;
+  // The school's own sign-in page (single sign-on), and any .edu.
+  if (sso && host === sso) return true;
+  if (/\.edu$/i.test(host)) return true;
+  return SCHOOL_PLATFORMS.test(host);
+}
+function permitted(permission, url) {
+  if (ANY_PERMISSIONS.has(permission)) return true;
+  if (!PLATFORM_PERMISSIONS.has(permission)) return false;
+  let host = '';
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    host = u.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  try {
+    return trustedHost(host);
+  } catch {
+    return false;
+  }
 }
 
 /** Dark mode for class sites, from Kea's settings (Settings → Class sites). */
@@ -183,14 +252,17 @@ function contextMenu(w, params) {
 ipcMain.on('class-site:dark', (e) => (e.returnValue = darkSettings()));
 let themeScript = '';
 ipcMain.on('class-site:theme-script', (e) => (e.returnValue = themeScript || (themeScript = require('fs').readFileSync(path.join(__dirname, 'site-theme.js'), 'utf8'))));
+// Settings changed: every class-site window (the main one and the messages one) and all their frames take them.
 require('../settings.cjs').onChange(() => {
-  if (!win || win.isDestroyed()) return;
+  const open = [win, mailWin].filter((w) => w && !w.isDestroyed());
+  if (!open.length) return;
   const d = darkSettings();
-  for (const f of win.webContents.mainFrame.framesInSubtree) {
-    try {
-      f.send('class-site:dark', d);
-    } catch {}
-  }
+  for (const w of open)
+    for (const f of w.webContents.mainFrame.framesInSubtree) {
+      try {
+        f.send('class-site:dark', d);
+      } catch {}
+    }
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -228,10 +300,13 @@ async function pageHasPassword(w) {
 async function ensureSignedIn(w, waitMs = 5 * 60000) {
   if (onSite(w.webContents.getURL()) && !(await pageHasPassword(w))) return true;
   const s = readSchool();
-  // Kea's own sign-in, with the login the user chose to save (up to three steps: name, password, "stay signed in").
-  if (s.login && hostOf(w.webContents.getURL()) === s.login.host) {
+  // Kea's own sign-in, with the login the user chose to save for the page it's on (up to three steps: name,
+  // password, "stay signed in"; a step can move to another sign-in host, whose own login is then used).
+  if (loginFor(s, hostOf(w.webContents.getURL()))) {
     for (let step = 0; step < 3 && !onSite(w.webContents.getURL()); step++) {
-      const filled = await fillLogin(w, s.login);
+      const login = loginFor(s, hostOf(w.webContents.getURL()));
+      if (!login) break;
+      const filled = await fillLogin(w, login);
       if (!filled) break;
       await new Promise((resolve) => {
         const t = setTimeout(resolve, 15000);
@@ -247,16 +322,33 @@ async function ensureSignedIn(w, waitMs = 5 * 60000) {
   w.focus();
   if (Notification.isSupported()) new Notification({ title: 'Kea needs you to sign in', body: 'Sign in to your class site in the Kea window so Kea can keep your classes up to date.' }).show();
   const until = Date.now() + waitMs;
-  while (Date.now() < until) {
-    await sleep(1000);
-    if (w.isDestroyed()) return false;
-    if (onSite(w.webContents.getURL()) && !(await pageHasPassword(w))) {
-      w.hide();
-      return true;
+  signingIn = { hosts: [] };
+  try {
+    while (Date.now() < until) {
+      await sleep(1000);
+      if (w.isDestroyed()) return false;
+      if (onSite(w.webContents.getURL()) && !(await pageHasPassword(w))) {
+        w.hide();
+        markSchoolLogin(signingIn.hosts);
+        return true;
+      }
     }
+    w.hide();
+    return false;
+  } finally {
+    signingIn = null;
   }
-  w.hide();
-  return false;
+}
+// While the user signs in to the class site: the hosts whose logins they submitted on the way. The one that got them
+// back to the class site (the last) is the school's sign-in, the host Kea treats as the class site's own sign-in page.
+let signingIn = null;
+function markSchoolLogin(hosts) {
+  const host = hosts[hosts.length - 1];
+  if (!host) return;
+  const s = readSchool();
+  if (!loginFor(s, host) || s.schoolLoginHost === host) return;
+  s.schoolLoginHost = host;
+  writeSchool(s);
 }
 
 /** Ask the window's preload to fill in the saved login (over Kea's private channel, out of the page's reach). */
@@ -291,7 +383,8 @@ async function open(url, offset = 0) {
   const signInPage = async () => {
     const cur = w.webContents.getURL();
     if (hostOf(cur) === hostOf(s.home)) return !onSite(cur);
-    if (s.login?.host && hostOf(cur) === s.login.host) return true;
+    const sso = schoolLoginHost(s);
+    if (sso && hostOf(cur) === sso) return true;
     if (hostOf(target) !== hostOf(s.home)) return false;
     const pw = await w.webContents.executeJavaScript('!!document.querySelector("input[type=password]")').catch(() => false);
     return pw && /login|signin|sso|saml|adfs|idp|microsoftonline|okta|auth/i.test(cur);
@@ -422,7 +515,18 @@ async function fetchText(url, offset = 0, raw = false) {
   if (!raw && /json/i.test(type)) body = require('./compact.cjs').compactText(body, readSchool().home);
   // Parts small enough to arrive whole: a bigger answer is set aside in a file Claude then has to search piece by piece.
   const LIMIT = 40000;
-  return { status: res.status, url: res.url, contentType: type, text: body.slice(offset, offset + LIMIT), more: body.length > offset + LIMIT ? `Continues: call again with offset ${offset + LIMIT} (of ${body.length}).` : undefined };
+  // Canvas pages its lists (about 10 to 100 per page) with a Link header: the next page's address, to fetch it too.
+  const link = res.headers.get('link') || '';
+  const next = (/<([^>]+)>\s*;\s*rel="?next"?/i.exec(link) || [])[1] || undefined;
+  return {
+    status: res.status,
+    url: res.url,
+    contentType: type,
+    text: body.slice(offset, offset + LIMIT),
+    more: body.length > offset + LIMIT ? `Continues: call again with offset ${offset + LIMIT} (of ${body.length}).` : undefined,
+    ...(next ? { next, next_note: 'The list continues on another page: fetch `next` for the rest.' } : {}),
+    ...(link && !next ? { link } : {})
+  };
 }
 
 /** Show a class-site page in Kea's own window, already signed in (for links the student opens). */
@@ -957,23 +1061,31 @@ async function signIn(remember) {
 // it, and only from Kea's own class-site window. A two-step login (name, then password) is put back together.
 let rememberNext = false;
 let pendingUser = null;
+// Each login is kept under its own host, so a platform's login (ALEKS, Pearson) never replaces the school's. Only the
+// window's own page counts: a frame inside it (an ad, an embedded tool) can't report a login.
+const fromMainFrame = (e) => !!(win && !win.isDestroyed() && e.sender === win.webContents && e.senderFrame && e.senderFrame === win.webContents.mainFrame);
 function onLoginSubmitted(e, form) {
-  if (!wantsRemember() || !win || win.isDestroyed() || e.sender !== win.webContents || !form) return;
+  if (!wantsRemember() || !fromMainFrame(e) || !form || typeof form !== 'object') return;
   const host = hostOf(form.url);
+  if (!host) return;
   if (!form.pass) {
-    if (form.user) pendingUser = { host, user: String(form.user), userField: form.userField || '' };
+    if (form.user) pendingUser = { host, user: String(form.user), userField: String(form.userField || '') };
     return;
   }
-  const user = form.user ? { user: String(form.user), userField: form.userField || '' } : pendingUser?.host === host ? pendingUser : null;
+  const user = form.user ? { user: String(form.user), userField: String(form.userField || '') } : pendingUser?.host === host ? pendingUser : null;
   if (!user) return;
+  if (signingIn) signingIn.hosts = [...signingIn.hosts.filter((h) => h !== host), host];
   const s = readSchool();
+  const old = loginFor(s, host);
   // The same login reported twice (a click, then the page moving on): nothing new to save.
-  if (s.login && s.login.host === host && s.login.user === user.user && s.login.pass === String(form.pass)) return;
-  s.login = { host, user: user.user, pass: String(form.pass), userField: user.userField, passField: form.passField || '' };
+  if (old && old.user === user.user && old.pass === String(form.pass)) return;
+  s.logins = { ...(s.logins || {}), [host]: { host, user: user.user, pass: String(form.pass), userField: user.userField, passField: String(form.passField || '') } };
+  // The class site's own sign-in page is the school's login.
+  if (s.home && host === hostOf(s.home) && !s.schoolLoginHost) s.schoolLoginHost = host;
   writeSchool(s);
   pendingUser = null;
 }
 
-const remembering = (e) => (e.returnValue = !!(wantsRemember() && win && !win.isDestroyed() && e.sender === win.webContents));
+const remembering = (e) => (e.returnValue = !!(wantsRemember() && fromMainFrame(e)));
 
 module.exports = { open, platformsRead, show, reply, readMessage, readMailbox, sendMessage, handIn, isClassSite, fetchText, getJson, postForm, platformOf, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };

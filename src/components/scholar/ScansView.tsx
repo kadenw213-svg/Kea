@@ -153,7 +153,7 @@ function StatusCard({ run, queue, paused, dev, lastRun }: { run: RunProgress | n
               {where ? ` on ${where}` : ''}.
             </div>
           </div>
-          <button className="btn sm" onClick={() => api.scholar.resume().then(() => toast('Continuing.', 'success'))}>
+          <button className="btn sm" onClick={() => api.scholar.resume().then((ok) => toast(ok ? 'Continuing.' : 'Nothing is waiting to continue.', ok ? 'success' : 'info'))}>
             <Play size={13} /> Continue now
           </button>
         </div>
@@ -481,14 +481,24 @@ export function ScansView() {
   const [news, setNews] = useState<ScholarNews[]>([]);
   const [paused, setPaused] = useState<ScholarPending | null>(null);
   const [dev, setDev] = useState<DevicesStatus | null>(null);
+  // 'loading' until the first answer; 'error' when Kea couldn't read its scans (with Try again), never a blank page.
+  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [error, setError] = useState('');
   const load = async () => {
-    const [st, a, n, p, d] = await Promise.all([api.scholar.runStatus(), api.scholar.activity(), api.scholar.news(), api.scholar.pending(), api.scholar.devices().catch(() => null)]);
-    setRun(st.running);
-    setQueue(st.queued);
-    setActivity(a);
-    setNews(n);
-    setPaused(p);
-    setDev(d);
+    try {
+      const [st, a, n, p, d] = await Promise.all([api.scholar.runStatus(), api.scholar.activity(), api.scholar.news(), api.scholar.pending(), api.scholar.devices().catch(() => null)]);
+      setRun(st.running);
+      setQueue(st.queued);
+      setActivity(a);
+      setNews(n);
+      setPaused(p);
+      setDev(d);
+      setState('ok');
+    } catch (err: any) {
+      setError(String(err?.message || err));
+      // (A later reload failing keeps what's shown.)
+      setState((s) => (s === 'ok' ? s : 'error'));
+    }
   };
   const loadDevices = () => api.scholar.devices().then(setDev).catch(() => {});
   useEffect(() => {
@@ -514,6 +524,25 @@ export function ScansView() {
   }, [run, dev]);
   const shownQueue = run ? queue : dev?.queue || [];
   const shownPaused = dev?.role === 'follower' ? dev.pending || null : paused;
+  if (state === 'loading')
+    return (
+      <div className="center-fill">
+        <div className="spinner" />
+      </div>
+    );
+  if (state === 'error')
+    return (
+      <div className="sch-page scans">
+        <h1 className="sch-title">Scans</h1>
+        <div className="sch-empty">
+          <XCircle size={26} />
+          <div>Kea couldn’t read its scans: {error}</div>
+          <button className="btn sm" onClick={() => (setState('loading'), load())}>
+            <RefreshCw size={13} /> Try again
+          </button>
+        </div>
+      </div>
+    );
   return (
     <div className="sch-page scans">
       <h1 className="sch-title">Scans</h1>

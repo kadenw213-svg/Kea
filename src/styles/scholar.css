@@ -1037,6 +1037,50 @@
 .sch-panel {
   border-top: 3px solid var(--kc, transparent);
 }
+/* Choosing the hand-in folder when Kea couldn't tell which one an item is (the picker from handin.css, in the panel). */
+.pn-handin-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  padding-bottom: 8px;
+}
+.pn-handin-pick .hi-pick {
+  width: 100%;
+  box-sizing: border-box;
+}
+.pn-handin-pick > .btn {
+  margin-left: 10px;
+}
+
+/* A small segmented choice (text buttons). Used by Messages and My resources, so it lives here and not only in
+   study.css (which loads with the study player). */
+.st-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 3px;
+}
+.st-seg button {
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-3);
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.st-seg button.on {
+  background: var(--surface-4);
+  color: var(--text);
+}
 .pn-facts {
   display: flex;
   flex-direction: column;

@@ -180,13 +180,16 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
             disabled={!!busy || !claudeOk}
             onClick={() =>
               act('probe', async () => {
+                // (The run doesn't come back with its id, so this test's run is the probe that started after the click
+                // and has finished, not whatever ran last.)
+                const since = Date.now() - 1000;
                 await api.scholar.run('probe');
-                for (let i = 0; i < 90; i++) {
+                const mine = (a: { task: string; start: string; end: string | null }) => a.task === 'probe' && new Date(a.start).getTime() >= since && !!a.end;
+                let a = null as Awaited<ReturnType<typeof api.scholar.activity>>[number] | null;
+                for (let i = 0; i < 90 && !a; i++) {
                   await new Promise((r) => setTimeout(r, 2000));
-                  const st = await api.scholar.runStatus();
-                  if (!st.running && !st.queued.length) break;
+                  a = (await api.scholar.activity()).find(mine) || null;
                 }
-                const a = (await api.scholar.activity())[0];
                 setProbe(a?.ok ? a.summary : `Failed: ${a?.summary || 'no answer'}`);
               })
             }
@@ -197,9 +200,19 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
             className="btn tonal sm"
             disabled={!!busy || !all}
             onClick={async () => {
-              await api.scholar.run('import');
-              toast('Scanning your classes in the background. You can keep working; Kea shows progress under Scans.', 'success');
-              onDone?.();
+              try {
+                const r = await api.scholar.run('import');
+                toast(
+                  typeof r === 'object' && r.relayed
+                    ? `Asked ${r.relayed} to scan your classes${r.online ? '' : ' (it starts when that device is next on)'}. Progress shows under Scans.`
+                    : 'Scanning your classes in the background. You can keep working; Kea shows progress under Scans.',
+                  'success'
+                );
+                onDone?.();
+              } catch (err: any) {
+                // (An account without a verified email, for one: say so instead of failing silently.)
+                toast(String(err?.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '').split('\n')[0], 'error');
+              }
             }}
           >
             Scan my classes

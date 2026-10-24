@@ -20,25 +20,36 @@ function report(form) {
   if (!pw && !user) return;
   ipcRenderer.send('class-site:login', { url: location.href, user: user ? user.value : '', pass: pw ? pw.value : '', userField: user ? user.name || user.id : '', passField: pw ? pw.name || pw.id : '' });
 }
+// The login parts run only in the window's own page, never in a frame inside it (an ad or an embedded tool): Kea's
+// main process also refuses reports from frames.
+const isMainFrame = (() => {
+  try {
+    return window.top === window.self;
+  } catch {
+    return false;
+  }
+})();
 // Sign-in pages send their form in different ways (a real submit, a button with a script, pressing Enter), so each
 // is noticed, and so is the page moving on with the fields still filled in.
-document.addEventListener('submit', (e) => report(e.target), true);
-document.addEventListener(
-  'click',
-  (e) => {
-    const b = e.target && e.target.closest && e.target.closest('button, input[type=submit], input[type=button], a[role=button], [onclick]');
-    if (b) report(b.form || null);
-  },
-  true
-);
-document.addEventListener(
-  'keydown',
-  (e) => {
-    if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT') report(e.target.form || null);
-  },
-  true
-);
-window.addEventListener('pagehide', () => report(null), true);
+if (isMainFrame) {
+  document.addEventListener('submit', (e) => report(e.target), true);
+  document.addEventListener(
+    'click',
+    (e) => {
+      const b = e.target && e.target.closest && e.target.closest('button, input[type=submit], input[type=button], a[role=button], [onclick]');
+      if (b) report(b.form || null);
+    },
+    true
+  );
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT') report(e.target.form || null);
+    },
+    true
+  );
+  window.addEventListener('pagehide', () => report(null), true);
+}
 
 function setValue(el, v) {
   const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set;
@@ -81,7 +92,7 @@ function fill(login) {
   return false;
 }
 
-ipcRenderer.on('class-site:fill', (_e, login) => ipcRenderer.send('class-site:filled', fill(login)));
+if (isMainFrame) ipcRenderer.on('class-site:fill', (_e, login) => ipcRenderer.send('class-site:filled', fill(login)));
 
 // ---------- Kea's colours (dark mode, the accent) ----------
 // (A sandboxed preload can't load files, so the shared script comes from Kea's main process as text.)

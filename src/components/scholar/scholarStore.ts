@@ -6,10 +6,10 @@ export type ScholarView = { name: 'week' } | { name: 'inbox' } | { name: 'messag
 
 interface ScholarStore {
   view: ScholarView;
-  /** The item open in the side panel. */
-  itemId: string | null;
   /** Bumped when classes change (after a scan or a checkmark), so views reload. */
   version: number;
+  /** Bumped when Inbox items are read or deleted, so the unread count beside Inbox follows. */
+  inboxTick: number;
   /** The practice exam or flashcard deck being taken, if any. */
   study: string | null;
   set(p: Partial<ScholarStore>): void;
@@ -17,8 +17,8 @@ interface ScholarStore {
 
 export const useScholar = create<ScholarStore>((set) => ({
   view: { name: 'week' },
-  itemId: null,
   version: 0,
+  inboxTick: 0,
   study: null,
   set: (p) => set(p)
 }));
@@ -34,9 +34,12 @@ export const reloadScholar = () => {
   }, 400);
 };
 
+/** Inbox items were read or deleted: count the unread ones again (only the count, not every screen). */
+export const bumpInbox = () => useScholar.getState().set({ inboxTick: useScholar.getState().inboxTick + 1 });
+
 /** Open the Scholar tab (one per window) at a view. */
 export function openScholar(view: ScholarView = { name: 'week' }) {
-  useScholar.getState().set({ view, itemId: null });
+  useScholar.getState().set({ view });
   const tabs = useTabs.getState();
   const existing = tabs.tabs.find((t) => t.kind === 'scholar');
   if (existing) tabs.setActive(existing.id);
