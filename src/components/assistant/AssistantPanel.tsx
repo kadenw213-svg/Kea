@@ -340,9 +340,18 @@ function Steps({ items, live, tabId }: { items: ChatItem[]; live?: boolean; tabI
   const activity = useAssistant((s) => s.activity[tabId]);
   const tools = items.filter((i) => i.kind === 'tool');
   const edits = tools.filter((i) => !INTERNAL_STEPS.has(i.name || ''));
-  const failed = edits.filter((i) => i.ok === false).length;
+  // A batch (apply_edits) counts as the edits inside it.
+  const inBatch = (i: ChatItem, what: 'done' | 'failed') => {
+    const r = i.result || '';
+    const all = /All (\d+) done/.exec(r);
+    const part = /(\d+) of (\d+) done, (\d+) failed/.exec(r);
+    if (what === 'done') return all ? +all[1] : part ? +part[1] : i.ok === false ? 0 : 1;
+    return part ? +part[3] : i.ok === false ? 1 : 0;
+  };
+  const changes = edits.reduce((n, i) => n + (i.name === 'apply_edits' ? inBatch(i, 'done') : i.ok === false ? 0 : 1), 0);
+  const failed = edits.reduce((n, i) => n + (i.name === 'apply_edits' ? inBatch(i, 'failed') : i.ok === false ? 1 : 0), 0);
   const shown = items.filter((i) => (i.kind === 'tool' ? !INTERNAL_STEPS.has(i.name || '') : i.kind === 'assistant' || (i.kind === 'thinking' && setting('assistant.showThinking'))));
-  const label = live ? `${activity || 'Thinking…'}${tools.length ? ` · ${tools.length} step${tools.length === 1 ? '' : 's'}` : ''}` : edits.length ? `Made ${edits.length} change${edits.length === 1 ? '' : 's'}` : tools.length ? 'Looked over the file' : 'Thought it through';
+  const label = live ? `${activity || 'Thinking…'}${tools.length ? ` · ${tools.length} step${tools.length === 1 ? '' : 's'}` : ''}` : changes ? `Made ${changes} change${changes === 1 ? '' : 's'}` : edits.length ? 'Tried to make changes' : tools.length ? 'Looked over the file' : 'Thought it through';
   return (
     <div className={`as-steps ${open ? 'open' : ''}`}>
       <button className="as-steps-head" onClick={() => setOpen(!open)} disabled={!shown.length}>

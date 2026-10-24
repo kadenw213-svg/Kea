@@ -9,9 +9,10 @@ import { Logo } from '../../components/Logo';
 import { LEGACY } from '../../lib/legacy';
 
 /** Comments and suggestions made by Kea's AI get the app's logo and a quiet grey look. */
-export const AI_AUTHOR = 'Kea AI';
+export const AI_AUTHOR = 'Claude';
 /** Also the name used before the app was renamed, so older documents keep their look. */
-export const isAiAuthor = (a?: string) => a === AI_AUTHOR || a === LEGACY.aiAuthor;
+// (Older files say "Kea AI".)
+export const isAiAuthor = (a?: string) => a === AI_AUTHOR || a === 'Kea AI' || a === LEGACY.aiAuthor;
 const initial = (name: string) => (name.trim()[0] || '?').toUpperCase();
 const hue = (name: string) => [...name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
 function Avatar({ name }: { name: string }) {
@@ -155,7 +156,7 @@ export function ReviewRail({
             const del = c.kind === 'deletion' ? c : it.pair?.kind === 'deletion' ? it.pair : null;
             const ins = c.kind === 'insertion' ? c : it.pair?.kind === 'insertion' ? it.pair : null;
             return (
-              <div key={key} ref={(el) => (el ? cardRefs.current.set(key, el) : cardRefs.current.delete(key))} className={`rv-card change ${c.author === AI_AUTHOR ? 'ai' : ''} ${isActive ? 'active' : ''}`} style={{ top: tops[key] ?? 0 }} onMouseDown={() => setActive(it.id)}>
+              <div key={key} ref={(el) => (el ? cardRefs.current.set(key, el) : cardRefs.current.delete(key))} className={`rv-card change ${isAiAuthor(c.author) ? 'ai' : ''} ${isActive ? 'active' : ''}`} style={{ top: tops[key] ?? 0 }} onMouseDown={() => setActive(it.id)}>
                 <div className="rv-who">
                   <Avatar name={c.author || 'Someone'} />
                   <div className="rv-meta">

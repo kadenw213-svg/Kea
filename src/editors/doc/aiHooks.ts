@@ -4,6 +4,7 @@ import { markdownToHtml } from '../../lib/markdown';
 import { reviewKey, newCommentId } from './review';
 import type { CommentThread, DocMeta } from './docMeta';
 import { docTools } from './aiTools';
+import { AI_AUTHOR } from './ReviewRail';
 
 const norm = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -91,7 +92,7 @@ export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThre
             const id = newCommentId();
             // Mark the sentence without moving the user's cursor, then add the thread to the comment rail.
             ed.view.dispatch(ed.state.tr.addMark(r.from, r.to, ed.schema.marks.comment.create({ id })));
-            addThread({ id, author: 'Kea AI', text, at: Date.now(), replies: [] });
+            addThread({ id, author: AI_AUTHOR, text, at: Date.now(), replies: [] });
             return true;
           }
         }
@@ -99,11 +100,11 @@ export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThre
     track(fn) {
       const ed = get();
       if (!ed) return fn();
-      // Turn on Suggesting just for these edits, credited to "Kea AI", then put things back.
+      // Turn on Suggesting just for these edits, credited to Claude, then put things back.
       const store = (ed.storage as any).review as { author: () => string };
       const prevAuthor = store.author;
       const was = !!reviewKey.getState(ed.state)?.suggesting;
-      store.author = () => 'Kea AI';
+      store.author = () => AI_AUTHOR;
       ed.commands.setSuggesting(true);
       try {
         return fn();
