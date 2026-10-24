@@ -8,14 +8,18 @@ import type { Project } from './model';
 import { projectDuration, timecode, FPS_CHOICES } from './model';
 import { encoderSupport, exportProject, EncoderSupport, ExportFormat, ExportCodec, EXPORT_CODECS, Canceled } from './exporter';
 import { canStreamWrite } from './host';
+import { timelineXml } from './timelineXml';
+
+type Format = ExportFormat | 'xml';
 
 /* Export: pick format, size, frame rate, quality and range, then render offline with a progress bar. */
 
-const FORMATS: { id: ExportFormat; label: string; ext: string; filter: string }[] = [
+const FORMATS: { id: Format; label: string; ext: string; filter: string }[] = [
   { id: 'mp4', label: 'MP4 video (H.264 + AAC)', ext: 'mp4', filter: 'MP4 video' },
   { id: 'webm', label: 'WebM video (VP9 + Opus)', ext: 'webm', filter: 'WebM video' },
   { id: 'm4a', label: 'Audio only, M4A (AAC)', ext: 'm4a', filter: 'M4A audio' },
-  { id: 'wav', label: 'Audio only, WAV', ext: 'wav', filter: 'WAV audio' }
+  { id: 'wav', label: 'Audio only, WAV', ext: 'wav', filter: 'WAV audio' },
+  { id: 'xml', label: 'Timeline for DaVinci Resolve / Premiere (XML)', ext: 'xml', filter: 'Final Cut Pro 7 XML' }
 ];
 const QUALITIES: { id: QualityLevel; label: string }[] = [
   { id: 'low', label: 'Small file' },
@@ -36,7 +40,7 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
       return {};
     }
   })();
-  const [format, setFormat] = useState<ExportFormat>(saved.format || 'mp4');
+  const [format, setFormat] = useState<Format>(saved.format || 'mp4');
   const [height, setHeight] = useState<number>(H);
   const [fps, setFps] = useState<number>(project.settings.fps);
   const [quality, setQuality] = useState<QualityLevel>(saved.quality || 'high');
@@ -57,7 +61,8 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
   const total = projectDuration(project);
   const a = range === 'inout' ? (project.inPoint ?? 0) : 0;
   const b = range === 'inout' ? (project.outPoint ?? total) : total;
-  const isAudio = format === 'm4a' || format === 'wav';
+  const isXml = format === 'xml';
+  const isAudio = format === 'm4a' || format === 'wav' || isXml;
 
   useEffect(() => {
     let live = true;
@@ -70,6 +75,7 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
 
   const problem = (() => {
     if (b - a < 0.05) return 'There is nothing to export in that range.';
+    if (isXml) return '';
     if (!support) return '';
     if (format === 'mp4' && !support.avc) return "This computer can't encode H.264 at this size. Choose WebM or a smaller size.";
     if (format === 'webm' && !support.vp9) return "This computer can't encode VP9 at this size. Choose MP4 or a smaller size.";
@@ -77,6 +83,7 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
     return '';
   })();
   const note = (() => {
+    if (isXml) return 'Saves the edit itself (cuts, speed, position, sound levels, dissolves) linked to your original files, for finishing in Resolve or Premiere: File → Import → Timeline / XML. Nothing is re-encoded.';
     if (!support || isAudio || !audio) return '';
     if (format === 'mp4' && support.mp4Audio === 'opus') return 'Sound will be Opus inside the MP4 (AAC encoding isn’t available here).';
     if (format === 'mp4' && !support.mp4Audio) return 'Sound can’t be encoded on this computer, so the video will be silent.';
@@ -97,9 +104,25 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
     const ac = new AbortController();
     abort.current = ac;
     setProgress({ f: 0, note: 'Starting…' });
+    if (format === 'xml') {
+      try {
+        const r = timelineXml(project, baseName(name), [a, b]);
+        if (!(await api.writeFile(path, new TextEncoder().encode(r.xml)))) throw new Error('The file couldn’t be written.');
+        const fileName = path.split(/[\\/]/).pop();
+        toast(r.notes.length ? `Saved ${fileName}. ${r.notes.length} thing${r.notes.length === 1 ? '' : 's'} to redo in Resolve / Premiere (see below).` : `Saved ${fileName}`, 'success');
+        setProgress({ f: 1, note: r.notes.length ? `Saved. Redo there: ${r.notes.join(' · ')}` : `Saved ${fileName}` });
+        if (!r.notes.length) setTimeout(onClose, 600);
+      } catch (err: any) {
+        setProgress(null);
+        setError(err?.message || String(err));
+      } finally {
+        abort.current = null;
+      }
+      return;
+    }
     try {
       const useCodec = EXPORT_CODECS.find((c) => c.id === codec)?.formats.includes(format) ? codec : 'auto';
-      await exportProject(project, { format, width, height: Math.round(height / 2) * 2, fps, quality, bitrate, range: [a, b], audio, path, codec: useCodec, hardware }, (fr, n) => setProgress({ f: fr, note: n }), ac.signal);
+      await exportProject(project, { format: format as ExportFormat, width, height: Math.round(height / 2) * 2, fps, quality, bitrate, range: [a, b], audio, path, codec: useCodec, hardware }, (fr, n) => setProgress({ f: fr, note: n }), ac.signal);
       const fileName = path.split(/[\\/]/).pop();
       toast(`Exported ${fileName}`, 'success');
       api.addRecent(path).catch(() => {});
@@ -133,7 +156,7 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
         </div>
         <div className="ve-form">
           <label>Format</label>
-          <select className="select ve-field" value={format} disabled={busy} onChange={(e) => setFormat(e.target.value as ExportFormat)}>
+          <select className="select ve-field" value={format} disabled={busy} onChange={(e) => setFormat(e.target.value as Format)}>
             {FORMATS.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.label}
@@ -244,7 +267,7 @@ export function ExportDialog({ project, name, onClose }: { project: Project; nam
               <button className="btn" onClick={onClose}>
                 Close
               </button>
-              <button className="btn primary" disabled={!!problem || !support} onClick={start}>
+              <button className="btn primary" disabled={!!problem || (!support && !isXml)} onClick={start}>
                 <Download size={16} /> Export…
               </button>
             </>

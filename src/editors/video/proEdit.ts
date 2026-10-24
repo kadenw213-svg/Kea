@@ -22,6 +22,8 @@ import { startJob } from '../../lib/jobs';
 import { uid } from '../../lib/util';
 import { measurePicture } from './scopes';
 import { renderStill } from './exporter';
+import { timelineXml } from './timelineXml';
+import { api } from '../../lib/api';
 
 /* ---------- Lanes: named tracks the plan writes to ---------- */
 
@@ -1236,6 +1238,22 @@ export function proVideoTools(env: AssistantEnv): AssistantTool[] {
         });
         const missing = a.lines.filter((L) => L.best < 0).map((L) => L.index);
         return JSON.stringify({ result: r.summary, lines, ...(missing.length ? { missingLines: missing } : {}) });
+      }
+    },
+    {
+      name: 'export_timeline',
+      description:
+        'Save the edit as a timeline for finishing in DaVinci Resolve or Adobe Premiere (Final Cut Pro 7 XML, which both import): every cut on every track linked to the original files (nothing re-encoded), speed, position / scale / rotation, opacity, crop, sound levels and dissolves. Returns what has no XML equivalent (grades, LUTs, titles, keys…) so it can be redone there. path: absolute .xml path. range: [start, end] seconds (default: the in/out marks, else everything).',
+      input_schema: { type: 'object', properties: { path: { type: 'string' }, range: { type: 'array', items: { type: 'number' } } }, required: ['path'] },
+      async run(i) {
+        const proj = store.getState().project;
+        const path = String(i.path);
+        if (!/\.xml$/i.test(path)) throw new Error('path must end in .xml.');
+        const range: [number, number] | undefined = Array.isArray(i.range) && i.range.length === 2 ? [i.range[0], i.range[1]] : proj.inPoint !== null || proj.outPoint !== null ? [proj.inPoint ?? 0, proj.outPoint ?? projectDuration(proj)] : undefined;
+        const name = path.split(/[\\/]/).pop()!.replace(/\.xml$/i, '');
+        const r = timelineXml(proj, name, range);
+        if (!(await api.writeFile(path, new TextEncoder().encode(r.xml)))) throw new Error(`Couldn't write ${path}.`);
+        return JSON.stringify({ saved: path, importWith: 'Resolve: File → Import → Timeline. Premiere: File → Import.', redoThere: r.notes });
       }
     },
     {
