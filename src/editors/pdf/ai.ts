@@ -381,13 +381,13 @@ export function pdfAi(c: PdfAiCtx): Pick<AiHooks, 'tools'> {
     },
     {
       name: 'add_image',
-      description: 'Place an image on a page (an attached picture, a logo, a signature image). Without a size it is fitted to half the page width; give width or height to size it (the other keeps the proportions).',
+      description: 'Place an image on a page: an attached picture, a logo, a signature image, or vector artwork you write (svg) for backgrounds, bands, badges and illustrations when designing a page. Without a size it is fitted to half the page width; give width or height to size it (the other keeps the proportions).',
       input_schema: {
         type: 'object',
         properties: { page: pageNo, ...imageSource, x: { type: 'number' }, y: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' } }
       },
-      run: async ({ page, attachment, path, x, y, width, height }) => {
-        const img = await resolveImage({ attachment, path });
+      run: async ({ page, attachment, path, svg, x, y, width, height }) => {
+        const img = await resolveImage({ attachment, path, svg });
         const { ref, i } = pageAt(page);
         const z = c.sizeOf(ref);
         const ratio = img.height / img.width;

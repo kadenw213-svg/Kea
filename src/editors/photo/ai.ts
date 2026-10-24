@@ -260,7 +260,7 @@ export function photoAi(e: Engine): AiHooks {
     {
       name: 'place_image',
       description:
-        'Add a picture (an image the student attached, or a file path) as a new layer. Without a size it is fitted inside the canvas and centred; give width or height in pixels to size it (proportions kept unless you give both), and x/y for its top-left corner.',
+        'Add a picture as a new layer: an image the student attached, a file path, or vector artwork you write (svg). Without a size it is fitted inside the canvas and centred; give width or height in pixels to size it (proportions kept unless you give both), and x/y for its top-left corner.',
       input_schema: {
         type: 'object',
         properties: { ...imageSource, x: { type: 'number' }, y: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' }, name: { type: 'string' } }

@@ -5,6 +5,7 @@
 import { api } from './api';
 import { setting } from './settings';
 import { editorRegistry, useTabs, type AiHooks, type AssistantTool, type Tab } from '../store';
+import { designGuideTool } from './design/guide';
 
 const DOC_LIMIT = 400_000; // characters of the file read in one go (about 100k tokens)
 
@@ -81,7 +82,8 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
     input_schema: { type: 'object', properties: {} },
     run: () => 'picture' // handled in runToolHeadless: the result carries the image
   });
-  return [...t, ...(hooks.tools || [])];
+  // Every editor can be designed in, so every editor carries the design knowledge.
+  return [...t, ...(hooks.tools || []), designGuideTool];
 }
 
 /** What the open file looks like: the editor's own picture (photo, video frame), else a screenshot of its area. */

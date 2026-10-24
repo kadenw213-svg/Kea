@@ -59,13 +59,13 @@ export function docTools(get: () => Editor | null, meta?: { get(): DocMeta; set(
     },
     {
       name: 'insert_image',
-      description: 'Put a picture in the document (an attached image or a file path) as its own block. width is a percentage of the text column.',
+      description: 'Put a picture in the document as its own block: an attached image, a file path, or vector artwork you write (svg) such as a banner, divider, badge or illustration. width is a percentage of the text column.',
       input_schema: {
         type: 'object',
         properties: { ...imageSource, width: { type: 'number', description: 'Percent of the column width (default 100, or the picture’s own size if smaller)' }, align: { type: 'string', enum: ['left', 'center', 'right'] }, ...where }
       },
-      run: async ({ attachment: a, path, width, align = 'center', where: w, quote }) => {
-        const img = await resolveImage({ attachment: a, path });
+      run: async ({ attachment: a, path, svg, width, align = 'center', where: w, quote }) => {
+        const img = await resolveImage({ attachment: a, path, svg });
         const e = ed();
         const pct = Math.max(5, Math.min(100, width ?? 100));
         const ok = e

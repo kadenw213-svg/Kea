@@ -159,10 +159,10 @@ export function slidesDesignTools(c: SlidesAiCtx): AssistantTool[] {
     },
     {
       name: 'add_image',
-      description: 'Place an image on a slide (an attached picture, a logo, a photo from a path). fit "contain" (default) keeps the whole picture inside the box; "cover" crops it to fill the box exactly (good for full-bleed backgrounds: x 0, y 0, the slide size, then arrange_element "back").',
+      description: 'Place an image on a slide: an attached picture, a photo from a path, or vector artwork you write (svg): rich backgrounds (mesh gradients, grain, patterns), illustrations, badges, ornaments. Prefer svg art over plain add_shape boxes for anything decorative. fit "contain" (default) keeps the whole picture inside the box; "cover" crops it to fill the box exactly (good for full-bleed backgrounds: x 0, y 0, the slide size, then arrange_element "back").',
       input_schema: { type: 'object', properties: { slide: slideNo, ...imageSource, ...box, fit: { type: 'string', enum: ['contain', 'cover', 'stretch'] } } },
-      run: async ({ slide, attachment, path, x, y, w, h, rotation, fit = 'contain' }) => {
-        const img = await resolveImage({ attachment, path });
+      run: async ({ slide, attachment, path, svg, x, y, w, h, rotation, fit = 'contain' }) => {
+        const img = await resolveImage({ attachment, path, svg });
         const d = c.h.get();
         const i = at(slide);
         const ratio = img.height / img.width;

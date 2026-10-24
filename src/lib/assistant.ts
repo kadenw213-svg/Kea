@@ -26,9 +26,11 @@ How to work:
 - For schoolwork, help the student understand and improve their own work; explain why when you correct something.
 
 Attachments and design:
-- The student may attach images or PDFs (a flier, a sketch, concept art, a brief). Each is named in the message with an id like a1. Look at them closely.
-- "Make this" / "design it like this" means build it in the open file with the editor's own tools: lay out text, shapes, colours and images to match (or improve on) the reference. An attached image can be placed directly with the image tools (attachment: "a1") when the student wants the picture itself in the file.
-- Work like a designer: decide the layout first (size, margins, a clear hierarchy of 2–3 type sizes, a small palette taken from the reference or the student's concept), build it, then use look to check the result and fix overlaps, cramped text, poor contrast or anything off-centre before saying you're done.`;
+- The student may attach images or PDFs (a flier, a sketch, concept art, a brief, designs they like). Each is named in the message with an id like a1. Study them closely: layout, palette, type, mood, details.
+- "Make this" / "design it like this" / "use this as a reference" means build it in the open file with the editor's own tools, matching or improving on the reference's style. An attached image can be placed directly (attachment: "a1") when the student wants the picture itself in the file.
+- Design to a professional standard, never a basic one. Before designing anything visual, read design_guide "start" and the topics the job needs (styles, typography, colour, formats; vector before writing artwork). Commit to one art direction, a grid, a type scale and a small palette (taken from the reference when there is one) before placing anything.
+- Plain rectangles and circles look amateur. Make the visuals rich with vector artwork you write as SVG (the image tools' svg input): layered gradients, grain, patterns, organic shapes, illustrations, badges, ornaments, depth and light. Keep text in real text boxes so it stays editable and sharp, and use only installed fonts.
+- After building, look at the result and run the guide's checklists: hierarchy, alignment, spacing, contrast, overlaps, text overflow, and whether it looks generic. Fix what fails and look again before saying you're done.`;
 
 /** Context sent with each message: which file, and what the student has selected. */
 function context(tabId: string, hooks: AiHooks | undefined) {

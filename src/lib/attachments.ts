@@ -3,6 +3,7 @@
 // ("a1"). Over MCP there's no sidebar, so the same tools also take a file path.
 import { api } from './api';
 import { extOf } from './fileTypes';
+import { renderSvg } from './vectorArt';
 
 export interface Attachment {
   id: string;
@@ -87,7 +88,12 @@ export const describeAttachment = (a: Attachment) =>
 /** The input fields every image-placing tool accepts. */
 export const imageSource = {
   attachment: { type: 'string', description: 'Id of an image the student attached in the chat, like "a1".' },
-  path: { type: 'string', description: 'Or: the full path of an image file on this computer.' }
+  path: { type: 'string', description: 'Or: the full path of an image file on this computer.' },
+  svg: {
+    type: 'string',
+    description:
+      'Or: vector artwork you write as a complete <svg viewBox="0 0 W H">…</svg> (W × H = the box it fills, in the editor’s units): gradient and mesh backgrounds, grain, patterns, illustrations, badges, ornaments, dividers. Self-contained only (no external images or fonts); rendered sharp at 3×. See design_guide topic "vector".'
+  }
 };
 
 export interface PlacedImage {
@@ -99,8 +105,12 @@ export interface PlacedImage {
 }
 
 /** Resolve a tool's `attachment` / `path` into a loaded image. */
-export async function resolveImage(input: { attachment?: string; path?: string }): Promise<PlacedImage> {
+export async function resolveImage(input: { attachment?: string; path?: string; svg?: string }): Promise<PlacedImage> {
   let name: string, dataUrl: string;
+  if (input.svg) {
+    const r = await renderSvg(input.svg);
+    return { name: 'artwork', dataUrl: r.dataUrl, width: r.width, height: r.height, img: r.img };
+  }
   if (input.attachment) {
     const a = store.get(input.attachment);
     if (!a) throw new Error(`There's no attachment “${input.attachment}”.${store.size ? ` Attached: ${[...store.keys()].join(', ')}.` : ' Nothing has been attached.'}`);
@@ -114,7 +124,7 @@ export async function resolveImage(input: { attachment?: string; path?: string }
     if (!f) throw new Error(`Couldn’t read ${input.path}.`);
     name = f.name;
     dataUrl = await toDataUrl(new Blob([f.data as BlobPart], { type: IMAGE_MIME[ext] }));
-  } else throw new Error('Give `attachment` (an id like "a1") or `path`.');
+  } else throw new Error('Give `attachment` (an id like "a1"), `path`, or `svg`.');
   const img = await loadImage(dataUrl);
   // SVGs and other formats the editors can't store directly become PNG.
   if (!/^data:image\/(png|jpeg|gif|webp)/.test(dataUrl)) {
