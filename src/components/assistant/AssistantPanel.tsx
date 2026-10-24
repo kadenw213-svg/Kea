@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, X, Settings2, Trash2, Square, ArrowUp, Eye, Check, AlertCircle, ChevronRight, KeyRound, ExternalLink, Wrench, Paperclip, FileText } from 'lucide-react';
+import { Sparkles, X, Settings2, Trash2, Square, ArrowUp, Eye, Check, AlertCircle, ChevronRight, KeyRound, ExternalLink, Wrench, Paperclip, FileText, Gauge, RefreshCw, LogIn } from 'lucide-react';
 import MarkdownIt from 'markdown-it';
 import { openSettings, setting, useSettings } from '../../lib/settings';
 import { useTabs, editorRegistry, toast } from '../../store';
-import { api } from '../../lib/api';
+import { api, type PlanUsage } from '../../lib/api';
 import { ask, stop, clear } from '../../lib/assistant';
 import { addAttachment, isAttachable, ATTACHABLE, type Attachment } from '../../lib/attachments';
 import { useAssistant, setAssistantOpen, emptyChat, type ChatItem } from './assistantStore';
@@ -39,6 +39,10 @@ export function AssistantPanel() {
   const listRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const model = useSettings((s) => s.values['assistant.model']) || 'claude-opus-5-5';
+  const onPlan = useSettings((s) => s.values['assistant.provider']) !== 'api';
+  const showBars = useSettings((s) => s.values['assistant.usageBars']) !== false;
+  const [plan, setPlan] = useState<{ installed: boolean; loggedIn: boolean; email: string; plan: string } | null>(null);
+  const [usage, setUsage] = useState<PlanUsage | null>(null);
   // Files waiting to go with the next message (a flier to recreate, concept images, a PDF brief).
   const [pending, setPending] = useState<Attachment[]>([]);
   const [dropHere, setDropHere] = useState(false);
@@ -46,6 +50,13 @@ export function AssistantPanel() {
   useEffect(() => {
     if (open && !key) api.assistant.status().then((k) => useAssistant.getState().set({ key: k }));
   }, [open, key]);
+  // On the Claude plan: is Claude Code there and signed in, and the plan's latest usage.
+  useEffect(() => {
+    if (!open || !onPlan) return;
+    api.assistant.planStatus().then(setPlan);
+    api.assistant.planUsage().then((u) => u && setUsage(u));
+    return api.assistant.onPlanUsage(setUsage);
+  }, [open, onPlan]);
   useEffect(() => {
     const el = listRef.current;
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
@@ -135,12 +146,19 @@ export function AssistantPanel() {
           <div className="ai-title">
             <Sparkles size={17} />
             <span>Claude</span>
-            <span className="as-model">{model.replace('claude-', '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-(\d)$/, ' $1')}</span>
+            <span className="as-model" title={onPlan ? `On your Claude plan${plan?.email ? ` (${plan.email})` : ''}` : 'On your API key'}>
+              {model.replace('claude-', '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-(\d)$/, ' $1')} · {onPlan ? 'plan' : 'API'}
+            </span>
           </div>
           <div style={{ display: 'flex' }}>
             {chat.items.length > 0 && (
               <button className="icon-btn sm" title="New conversation" onClick={() => clear(activeId)}>
                 <Trash2 size={15} />
+              </button>
+            )}
+            {onPlan && (
+              <button className={`icon-btn sm ${showBars ? 'on' : ''}`} title={showBars ? 'Hide plan usage' : 'Show your plan’s 5-hour and weekly usage'} onClick={() => useSettings.getState().set({ 'assistant.usageBars': !showBars })}>
+                <Gauge size={15} />
               </button>
             )}
             <button className="icon-btn sm" title="Assistant settings" onClick={() => openSettings('assistant')}>
@@ -152,7 +170,9 @@ export function AssistantPanel() {
           </div>
         </div>
 
-        {key && !key.hasKey ? (
+        {onPlan && plan && (!plan.installed || !plan.loggedIn) ? (
+          <PlanSetup installed={plan.installed} onDone={() => api.assistant.planStatus().then(setPlan)} />
+        ) : !onPlan && key && !key.hasKey ? (
           <KeySetup />
         ) : (
           <>
@@ -162,7 +182,7 @@ export function AssistantPanel() {
                   <Sparkles size={28} />
                   <div>{usable ? `Ask Claude about this ${hooks?.noun || 'file'}, or tell it what to change.` : 'Open a file to work on it with Claude.'}</div>
                   <div className="muted">
-                    Claude reads the {hooks?.noun || 'file'}, makes the changes you ask for with the editor’s own tools, and tells you what it did. Each change is one Ctrl+Z. It uses your own Claude API key{key?.hint ? ` (${key.hint})` : ''}.
+                    Claude reads the {hooks?.noun || 'file'}, makes the changes you ask for with the editor’s own tools, and tells you what it did. Each change is one Ctrl+Z. {onPlan ? 'It runs on your own Claude plan.' : `It uses your own Claude API key${key?.hint ? ` (${key.hint})` : ''}.`}
                   </div>
                   {usable && hooks && (
                     <div className="as-starters">
@@ -184,6 +204,7 @@ export function AssistantPanel() {
                 </div>
               )}
             </div>
+            {onPlan && showBars && <UsageBars usage={usage} onRefresh={async () => setUsage(await api.assistant.planUsageRefresh())} />}
             <div className="as-foot">
               {chat.usage.input + chat.usage.output > 0 && setting('assistant.showUsage') !== false && (
                 <span className="as-usage" title="Tokens this conversation used (cached input costs a tenth)">
@@ -337,6 +358,98 @@ function Item({ it }: { it: ChatItem }) {
   );
 }
 
+/** The plan's usage windows as bars: the rolling 5-hour window and the week, with when each resets. */
+function UsageBars({ usage, onRefresh }: { usage: PlanUsage | null; onRefresh: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 60000);
+    return () => clearInterval(t);
+  }, []);
+  const when = (ms: number | null) => {
+    if (!ms) return '';
+    const left = ms - Date.now();
+    if (left <= 0) return 'reset';
+    if (left < 36e5) return `resets in ${Math.max(1, Math.round(left / 6e4))} min`;
+    if (left < 864e5) return `resets in ${Math.floor(left / 36e5)} h ${Math.round((left % 36e5) / 6e4)} min`;
+    return `resets ${new Date(ms).toLocaleDateString(undefined, { weekday: 'short' })} ${new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+  };
+  const row = (label: string, w: PlanUsage['fiveHour']) => {
+    // A window that has reset since the last reading starts again from zero.
+    const past = !!w?.resetsAt && w.resetsAt < Date.now();
+    const pct = w && !past ? Math.round(w.used * 100) : 0;
+    return (
+      <div className="as-bar" title={w ? `${pct}% of your plan’s ${label.toLowerCase()} limit used` : 'Not known yet: send a message or refresh'}>
+        <div className="as-bar-top">
+          <span>{label}</span>
+          <span>{w ? `${pct}%${past ? '' : ` · ${when(w.resetsAt)}`}` : '—'}</span>
+        </div>
+        <div className="as-bar-track">
+          <div className={`as-bar-fill ${pct >= 90 ? 'hot' : pct >= 70 ? 'warm' : ''}`} style={{ width: `${Math.min(100, pct)}%` }} />
+        </div>
+      </div>
+    );
+  };
+  return (
+    <div className="as-usage-bars">
+      <div className="as-bars">
+        {row('5-hour window', usage?.fiveHour || null)}
+        {row('Weekly', usage?.week || null)}
+      </div>
+      <button
+        className="icon-btn sm"
+        title={`Refresh (sends a tiny message to check)${usage ? `. Last checked ${new Date(usage.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : ''}`}
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          await onRefresh().finally(() => setBusy(false));
+        }}
+      >
+        <RefreshCw size={13} className={busy ? 'spin' : ''} />
+      </button>
+    </div>
+  );
+}
+
+/** First run on the plan: install Claude Code if needed and sign in with the student's Claude account. */
+function PlanSetup({ installed, onDone }: { installed: boolean; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  return (
+    <div className="as-setup">
+      <LogIn size={28} />
+      <div className="as-setup-title">Use your Claude plan</div>
+      <div className="muted">
+        Kea runs Claude through Claude Code, Anthropic’s official app, signed in with your Claude account, so it uses your Pro or Max plan instead of an API key. {installed ? '' : 'Kea installs it for you first (into your own user folder). '}A sign-in window opens in your browser; come back here when it says you’re signed in.
+      </div>
+      {err && <div className="as-err">{err}</div>}
+      <div className="as-setup-actions">
+        <button
+          className="btn primary sm"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setErr('');
+            try {
+              const r = await api.assistant.planSignIn();
+              if (!r.loggedIn) setErr('Sign-in didn’t finish. Try again.');
+            } catch (e: any) {
+              setErr(e?.message || String(e));
+            }
+            setBusy(false);
+            onDone();
+          }}
+        >
+          {busy ? (installed ? 'Waiting for sign-in…' : 'Installing and signing in…') : 'Sign in to Claude'}
+        </button>
+        <button className="btn sm text" onClick={() => useSettings.getState().set({ 'assistant.provider': 'api' })}>
+          Use an API key instead
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** First run: the student pastes their Claude API key; Kea checks it before keeping it. */
 function KeySetup() {
   const [k, setK] = useState('');
@@ -368,6 +481,9 @@ function KeySetup() {
         <a className="btn sm text" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
           Get a key <ExternalLink size={13} />
         </a>
+        <button className="btn sm text" onClick={() => useSettings.getState().set({ 'assistant.provider': 'plan' })}>
+          Use my Claude plan
+        </button>
       </div>
     </div>
   );

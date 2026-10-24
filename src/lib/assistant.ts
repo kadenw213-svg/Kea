@@ -73,11 +73,12 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean; a
   for (const a of files) content.push(await contentBlock(a));
   const named = files.map(describeAttachment).join('\n');
   content.push({ type: 'text', text: `${context(tabId, hooks)}${named ? `\n${named}` : ''}\n\n${text || 'Here are the files.'}` });
-  patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content }], busy: true }));
   addItem(tabId, { kind: 'user', text, image: shown, files: files.map((a) => ({ name: a.name, thumb: a.mime.startsWith('image/') ? a.dataUrl : undefined })) });
   stopped.delete(tabId);
   const gen = generation.get(tabId) || 0;
   const live = () => (generation.get(tabId) || 0) === gen;
+  if (setting('assistant.provider') !== 'api') return askPlan(tabId, content, live);
+  patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content }], busy: true, via: 'api' }));
 
   const defs = tools.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
   let retries = 0;
@@ -143,6 +144,87 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean; a
   }
 }
 
+/**
+ * The same conversation on the student's Claude plan: Claude Code runs the turn (calling this file's tools over Kea's
+ * private MCP connection) and we show what it streams: text and reasoning as they arrive, each tool step with its
+ * result. Follow-up messages continue the same Claude Code session.
+ */
+async function askPlan(tabId: string, content: any[], live: () => boolean) {
+  const reqId = uid();
+  patchChat(tabId, { busy: true, reqId, via: 'plan' });
+  const steps = new Map<string, string>(); // tool_use id -> panel item id
+  const streamedMsgs = new Set<string>();
+  let msgId = '';
+  let textItem = '';
+  let thinkItem = '';
+  const showThinking = setting('assistant.showThinking') !== false;
+  const resultText = (c: any): { text: string; image?: string } => {
+    if (typeof c === 'string') return { text: c };
+    const parts = Array.isArray(c) ? c : [];
+    const img = parts.find((p: any) => p.type === 'image' && p.source?.data);
+    return { text: parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('\n'), image: img ? `data:${img.source.media_type || 'image/png'};base64,${img.source.data}` : undefined };
+  };
+  const off = api.assistant.onPlanEvent(({ id, ev }) => {
+    if (id !== reqId || !live()) return;
+    if (ev.type === 'stream_event') {
+      const e = ev.event;
+      if (e.type === 'message_start') {
+        msgId = e.message?.id || '';
+        textItem = thinkItem = '';
+      } else if (e.type === 'content_block_start') textItem = thinkItem = '';
+      else if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') {
+        streamedMsgs.add(msgId);
+        if (!textItem) textItem = addItem(tabId, { kind: 'assistant', text: '' });
+        patchItem(tabId, textItem, (i) => ({ text: i.text + e.delta.text }));
+      } else if (e.type === 'content_block_delta' && e.delta?.type === 'thinking_delta' && showThinking) {
+        streamedMsgs.add(msgId);
+        if (!thinkItem) thinkItem = addItem(tabId, { kind: 'thinking', text: '' });
+        patchItem(tabId, thinkItem, (i) => ({ text: i.text + e.delta.thinking }));
+      }
+    } else if (ev.type === 'assistant') {
+      const m = ev.message || {};
+      for (const b of m.content || []) {
+        if (b.type === 'tool_use') {
+          if (!steps.has(b.id)) steps.set(b.id, addItem(tabId, { kind: 'tool', name: String(b.name).replace(/^mcp__kea__/, ''), text: summary(b.input) }));
+        } else if (!streamedMsgs.has(m.id)) {
+          // Not streamed (older Claude Code): show the finished blocks.
+          if (b.type === 'text' && b.text) addItem(tabId, { kind: 'assistant', text: b.text });
+          else if (b.type === 'thinking' && b.thinking && showThinking) addItem(tabId, { kind: 'thinking', text: b.thinking });
+        }
+      }
+    } else if (ev.type === 'user') {
+      for (const b of ev.message?.content || []) {
+        if (b.type !== 'tool_result') continue;
+        const item = steps.get(b.tool_use_id);
+        if (!item) continue;
+        const r = resultText(b.content);
+        patchItem(tabId, item, { ok: !b.is_error, result: r.text.length > 300 ? `${r.text.slice(0, 300)}…` : r.text, ...(r.image ? { image: r.image } : {}) });
+      }
+    } else if (ev.type === 'result' && ev.usage) {
+      const u = ev.usage;
+      patchChat(tabId, (c) => ({ usage: { input: c.usage.input + (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0), output: c.usage.output + (u.output_tokens || 0), cached: c.usage.cached + (u.cache_read_input_tokens || 0) } }));
+    }
+  });
+  try {
+    const r = await api.assistant.planSend(reqId, {
+      tabId,
+      content,
+      session: chatOf(tabId).planSession,
+      model: setting('assistant.model') || 'claude-opus-5-5',
+      effort: setting('assistant.effort') || 'medium',
+      system: SYSTEM
+    });
+    if (!live()) return;
+    if (r.session) patchChat(tabId, { planSession: r.session });
+    // Steps that never got a result (stopped mid-way) aren't left spinning.
+    for (const item of steps.values()) patchItem(tabId, item, (i) => (i.ok === undefined ? { ok: false, result: 'Not finished.' } : {}));
+    if (r.error) addItem(tabId, { kind: 'error', text: r.error });
+  } finally {
+    off();
+    if (live()) patchChat(tabId, { busy: false, reqId: undefined });
+  }
+}
+
 /** Run one tool for the sidebar: show the step in the panel, then shape the result as an Anthropic tool_result. */
 async function runTool(tabId: string, tools: AssistantTool[], use: { id: string; name: string; input: any }) {
   const item = addItem(tabId, { kind: 'tool', name: use.name, text: summary(use.input) });
@@ -165,12 +247,15 @@ async function runTool(tabId: string, tools: AssistantTool[], use: { id: string;
 
 export function stop(tabId: string) {
   stopped.add(tabId);
-  const id = chatOf(tabId).reqId;
-  if (id) api.assistant.stop(id);
+  const { reqId: id, via } = chatOf(tabId);
+  if (id) via === 'plan' ? api.assistant.planStop(id) : api.assistant.stop(id);
 }
 
 export function clear(tabId: string) {
   stop(tabId);
   generation.set(tabId, (generation.get(tabId) || 0) + 1);
-  patchChat(tabId, { messages: [], items: [], busy: false, usage: { input: 0, output: 0, cached: 0 } });
+  patchChat(tabId, { messages: [], items: [], busy: false, usage: { input: 0, output: 0, cached: 0 }, planSession: undefined });
 }
+
+// For Kea's own end-to-end tests (driven over the DevTools protocol), like window.__kea in store.ts.
+(window as any).__keaAssistant = { ask, stop, clear, chatOf, setting };

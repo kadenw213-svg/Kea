@@ -42,7 +42,8 @@ async function handle(msg, ctx) {
         return ok({});
       case 'tools/list': {
         const { tools } = await ctx.renderer('tools_list', {});
-        return ok({ tools: (tools || []).map((t) => ({ ...t, annotations: { readOnlyHint: READ_ONLY.has(t.name), destructiveHint: !READ_ONLY.has(t.name), openWorldHint: false } })) });
+        // MCP names the schema inputSchema (the editors use the Anthropic API's input_schema); clients drop tools without it.
+        return ok({ tools: (tools || []).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema || t.input_schema || { type: 'object', properties: {} }, annotations: { readOnlyHint: READ_ONLY.has(t.name), destructiveHint: !READ_ONLY.has(t.name), openWorldHint: false } })) });
       }
       case 'tools/call': {
         const out = await ctx.renderer('tools_call', { name: msg.params && msg.params.name, input: (msg.params && msg.params.arguments) || {} });

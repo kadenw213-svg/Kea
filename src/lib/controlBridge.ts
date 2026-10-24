@@ -81,8 +81,13 @@ async function readResource(uri: string): Promise<{ text?: string; blob?: string
   throw new Error(`Unknown resource "${uri}".`);
 }
 
-/** Run a workspace-level global tool, or the active editor's tool. */
-async function callTool(name: string, input: any): Promise<{ ok: boolean; text: string; image?: { dataUrl: string } }> {
+/** Run a workspace-level global tool, or the active editor's tool (or, for a Claude-tab run, its own tab's). */
+async function callTool(name: string, input: any, pinned?: string): Promise<{ ok: boolean; text: string; image?: { dataUrl: string } }> {
+  if (pinned) {
+    const hooks = editorRegistry.get(pinned)?.ai;
+    if (!hooks) return { ok: false, text: 'That file was closed.' };
+    return runToolHeadless(pinned, toolsFor(hooks), { name, input });
+  }
   if (name === 'kea_list_tabs') return { ok: true, text: JSON.stringify(listTabs(), null, 1) };
   if (name === 'kea_focus_tab') {
     const tab = useTabs.getState().tabs.find((t) => t.id === input?.tab);
@@ -133,11 +138,12 @@ export function startControlBridge() {
     try {
       switch (req.kind) {
         case 'tools_list': {
-          const tools = [...GLOBAL_TOOLS, ...toolsFor(editorRegistry.get(activeTabId())?.ai).map(stripRun)];
+          // A Claude-tab run sees only its own file's tools; outside apps also get the workspace tools.
+          const tools = req.tabId ? toolsFor(editorRegistry.get(req.tabId)?.ai).map(stripRun) : [...GLOBAL_TOOLS, ...toolsFor(editorRegistry.get(activeTabId())?.ai).map(stripRun)];
           return done({ tools });
         }
         case 'tools_call':
-          return done(await callTool(req.name, req.input || {}));
+          return done(await callTool(req.name, req.input || {}, req.tabId));
         case 'list_tabs':
           return done({ tabs: listTabs() });
         case 'resources_list':

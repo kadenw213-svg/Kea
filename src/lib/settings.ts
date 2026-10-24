@@ -659,9 +659,21 @@ export const SECTIONS: Section[] = [
     id: 'assistant',
     label: 'Claude Assistant',
     icon: 'Sparkles',
-    blurb: 'Press Ctrl+Shift+J in any file (document, PDF, spreadsheet, slides, code, photo or video) to talk to Claude about it. Claude reads the file and makes the changes you ask for with the editor’s own tools; each change is one Ctrl+Z. It uses your own Anthropic API key, kept encrypted on this computer and sent only to Claude. The Encyclopedia stays Wikipedia only.',
+    blurb: 'Press Ctrl+Shift+J in any file (document, PDF, spreadsheet, slides, code, photo or video) to talk to Claude about it. Claude reads the file and makes the changes you ask for with the editor’s own tools; each change is one Ctrl+Z. It runs on your own Claude plan (through Claude Code) or your own Anthropic API key, kept encrypted on this computer. The Encyclopedia stays Wikipedia only.',
     fields: [
       { key: 'assistant.enabled', label: 'Show the Claude button in editors', type: 'toggle', default: true },
+      {
+        key: 'assistant.provider',
+        label: 'Run Claude on',
+        type: 'select',
+        default: 'plan',
+        options: [
+          { value: 'plan', label: 'My Claude plan (Pro / Max, through Claude Code)' },
+          { value: 'api', label: 'An Anthropic API key (pay per use)' }
+        ],
+        help: 'Your plan: uses your Claude subscription’s limits (shown as usage bars in the Claude tab); needs Claude Code, which Kea can install and sign in for you. API key: billed per token by Anthropic.'
+      },
+      { key: 'assistant.usageBars', label: 'Show my plan’s 5-hour and weekly usage in the Claude tab', type: 'toggle', default: true },
       {
         key: 'assistant.model',
         label: 'Model',

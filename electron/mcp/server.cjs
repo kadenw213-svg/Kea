@@ -17,6 +17,9 @@ let server = null;
 let url = null;
 let state = { enabled: false, clients: [] }; // clients: { id, name, token, createdAt, lastUsed }
 const pending = new Map(); // callId -> { resolve, reject, timer }
+// Private connections for the Claude tab running on the user's Claude plan (Claude Code): never saved, each pinned to
+// the tab it was opened for, so its tools act on that file even if the user switches tabs meanwhile.
+const internal = new Map(); // token -> { id, name, tabId }
 
 const stateFile = () => path.join(app.getPath('userData'), 'control-clients.bin');
 const endpointFile = () => path.join(app.getPath('userData'), 'mcp-endpoint.json');
@@ -69,7 +72,7 @@ function activity(clientName, kind, name, ok) {
 function clientForToken(auth) {
   const m = /^Bearer\s+(.+)$/.exec(auth || '');
   if (!m) return null;
-  return state.clients.find((c) => c.token === m[1]) || null;
+  return internal.get(m[1]) || (state.enabled ? state.clients.find((c) => c.token === m[1]) : null) || null;
 }
 
 function httpHandler(req, res) {
@@ -96,13 +99,15 @@ function httpHandler(req, res) {
     // "Last used" is only shown to the minute in Settings: persist it at most once a minute, not per request (each
     // save is a synchronous encrypt + write on the main thread).
     const now = Date.now();
-    const prev = client.lastUsed ? Date.parse(client.lastUsed) : 0;
-    client.lastUsed = new Date(now).toISOString();
-    if (now - prev > 60000) saveState();
+    if (!client.tabId) {
+      const prev = client.lastUsed ? Date.parse(client.lastUsed) : 0;
+      client.lastUsed = new Date(now).toISOString();
+      if (now - prev > 60000) saveState();
+    }
     const ctx = {
       renderer: async (kind, payload) => {
-        const out = await invokeRenderer(kind, payload);
-        if (kind === 'tools_call') activity(client.name, 'tools/call', payload && payload.name, out && out.ok);
+        const out = await invokeRenderer(kind, client.tabId ? { ...payload, tabId: client.tabId } : payload);
+        if (kind === 'tools_call' && !client.tabId) activity(client.name, 'tools/call', payload && payload.name, out && out.ok);
         return out;
       }
     };
@@ -168,6 +173,15 @@ function mintClient(name) {
   return { id: client.id, name: client.name, token: client.token, config: configFor(client.token), configStdio: configStdioFor(client.token) };
 }
 
+/** Open a private connection for one Claude-tab run on the user's plan; returns its URL and token, and a closer. */
+async function openInternal(tabId) {
+  const u = await startServer();
+  if (!u) throw new Error('Kea couldn’t open its local connection for Claude.');
+  const token = crypto.randomBytes(24).toString('hex');
+  internal.set(token, { id: `internal-${token.slice(0, 8)}`, name: 'Claude', tabId });
+  return { url: u, token, close: () => internal.delete(token) };
+}
+
 function register(opts) {
   getWindow = (opts && opts.getWindow) || (() => null);
   loadState();
@@ -191,7 +205,7 @@ function register(opts) {
     state.enabled = !!on;
     saveState();
     if (state.enabled) await startServer();
-    else stopServer();
+    else if (!internal.size) stopServer(); // (a Claude-tab run still needs it; outside apps are refused either way)
     return { enabled: state.enabled, url: server ? url : null };
   });
   ipcMain.handle('control:add-client', async (_e, name) => {
@@ -215,4 +229,4 @@ function register(opts) {
   app.on('before-quit', stopServer);
 }
 
-module.exports = { register, stop: stopServer, _test: { startServer, stopServer, mintClient, url: () => url } };
+module.exports = { register, stop: stopServer, openInternal, _test: { startServer, stopServer, mintClient, url: () => url } };

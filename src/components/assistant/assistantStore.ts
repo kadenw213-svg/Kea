@@ -23,6 +23,9 @@ export interface Chat {
   busy: boolean;
   reqId?: string;
   usage: { input: number; output: number; cached: number };
+  /** On the Claude plan: the Claude Code session this conversation continues, and the route the running turn took. */
+  planSession?: string;
+  via?: 'plan' | 'api';
 }
 
 interface AssistantStore {

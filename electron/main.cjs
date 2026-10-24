@@ -308,6 +308,7 @@ app.whenReady().then(() => {
   require('./cite.cjs').register({ log });
   require('./wiki.cjs').register();
   require('./assistant.cjs').register();
+  require('./assistantPlan.cjs').register({ getWindow: () => mainWindow });
   require('./media.cjs').register();
   require('./mcp/server.cjs').register({ getWindow: () => mainWindow });
   require('./account.cjs').register();

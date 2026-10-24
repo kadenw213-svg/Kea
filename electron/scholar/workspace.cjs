@@ -152,4 +152,4 @@ function engineEnv(uv) {
   };
 }
 
-module.exports = { prepare, check, findUv, findClaude, installUv, installClaude, signInClaude, setupEngine, engineEnv, runHidden };
+module.exports = { prepare, check, findUv, findClaude, claudeAccount, installUv, installClaude, signInClaude, setupEngine, engineEnv, runHidden };

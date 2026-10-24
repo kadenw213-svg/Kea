@@ -244,6 +244,23 @@ contextBridge.exposeInMainWorld('api', {
       const h = (_e, ev) => cb(ev);
       ipcRenderer.on('assistant:event', h);
       return () => ipcRenderer.removeListener('assistant:event', h);
+    },
+    // On the student's Claude plan (Claude Code) instead of an API key.
+    planStatus: () => ipcRenderer.invoke('assistant:plan-status'),
+    planSignIn: () => ipcRenderer.invoke('assistant:plan-signin'),
+    planSend: (id, req) => ipcRenderer.invoke('assistant:plan-send', id, req),
+    planStop: (id) => ipcRenderer.invoke('assistant:plan-stop', id),
+    planUsage: () => ipcRenderer.invoke('assistant:plan-usage-get'),
+    planUsageRefresh: () => ipcRenderer.invoke('assistant:plan-usage-refresh'),
+    onPlanEvent: (cb) => {
+      const h = (_e, ev) => cb(ev);
+      ipcRenderer.on('assistant:plan-event', h);
+      return () => ipcRenderer.removeListener('assistant:plan-event', h);
+    },
+    onPlanUsage: (cb) => {
+      const h = (_e, u) => cb(u);
+      ipcRenderer.on('assistant:plan-usage', h);
+      return () => ipcRenderer.removeListener('assistant:plan-usage', h);
     }
   },
   google: {

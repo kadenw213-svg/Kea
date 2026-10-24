@@ -1,3 +1,10 @@
+/** The Claude plan's usage windows (from Claude Code): used is 0–1, resetsAt a timestamp in ms. */
+export interface PlanUsage {
+  fiveHour: { used: number; resetsAt: number | null; status: string } | null;
+  week: { used: number; resetsAt: number | null; status: string } | null;
+  status: string;
+  at: number;
+}
 export interface FileEntry {
   path: string;
   name: string;
@@ -280,6 +287,14 @@ export interface KeaApi {
     stop(id: string): Promise<boolean>;
     capture(rect: { x: number; y: number; width: number; height: number }): Promise<{ dataUrl: string; width: number; height: number }>;
     onEvent(cb: (ev: { id: string; type: 'text' | 'thinking' | 'tool'; text?: string; name?: string }) => void): () => void;
+    planStatus(): Promise<{ installed: boolean; loggedIn: boolean; email: string; plan: string; method: string }>;
+    planSignIn(): Promise<{ loggedIn: boolean; email?: string }>;
+    planSend(id: string, req: { tabId: string; content: unknown[]; session?: string; model?: string; effort?: string; system: string }): Promise<{ session?: string; error?: string; stopped?: boolean; usage?: any; turns?: number }>;
+    planStop(id: string): Promise<boolean>;
+    planUsage(): Promise<PlanUsage | null>;
+    planUsageRefresh(): Promise<PlanUsage | null>;
+    onPlanEvent(cb: (e: { id: string; ev: any }) => void): () => void;
+    onPlanUsage(cb: (u: PlanUsage) => void): () => void;
   };
   google: {
     status(): Promise<{ configured: boolean; signedIn: boolean; email: string | null; name: string | null }>;
