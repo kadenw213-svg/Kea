@@ -88,7 +88,7 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
   all.push({
     name: 'apply_edits',
     description:
-      'Run several of this editor’s tools in one step, in order: e.g. place a whole layout (background, text boxes, shapes, artwork) at once, or apply a list of fixes. Much faster and cheaper than one call per edit, so use it whenever you have more than one edit ready. Stops at the first failure and reports each step. `look` and `design_guide` can’t be batched.',
+      'Run several of this editor’s tools in one step, in order: e.g. place a whole layout (background, text boxes, shapes, artwork) at once, add a set of comments, or apply a list of fixes. Much faster and cheaper than one call per edit, so use it whenever you have more than one edit ready. Every edit is tried; the result lists any that failed and why, so redo only those. `look` and `design_guide` can’t be batched.',
     input_schema: {
       type: 'object',
       properties: { edits: { type: 'array', items: { type: 'object', properties: { tool: { type: 'string' }, input: { type: 'object' } }, required: ['tool'] }, description: '[{tool: "add_text_box", input: {…}}, …]' } },
@@ -97,19 +97,29 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
     async run({ edits }) {
       if (!Array.isArray(edits) || !edits.length) throw new Error('Give a list of edits.');
       const lines: string[] = [];
+      let failed = 0;
       for (let i = 0; i < edits.length; i++) {
         const e = edits[i] || {};
         const tool = all.find((x) => x.name === e.tool);
-        if (!tool || ['look', 'apply_edits', 'design_guide'].includes(e.tool)) throw new Error(`${lines.join('\n')}${lines.length ? '\n' : ''}${i + 1}. ${e.tool}: not a tool that can be batched here. Nothing after it ran.`);
+        const fail = (why: string) => (failed++, lines.push(`${i + 1}. ${e.tool} FAILED: ${why.replace(/\.+$/, '')}.`));
+        if (!tool || ['look', 'apply_edits', 'design_guide'].includes(e.tool)) {
+          fail('not a tool that can be batched here');
+          continue;
+        }
         const bad = invalid(tool, e.input || {});
-        if (bad) throw new Error(`${lines.join('\n')}${lines.length ? '\n' : ''}${i + 1}. ${e.tool}: ${bad} Nothing after it ran.`);
+        if (bad) {
+          fail(bad);
+          continue;
+        }
         try {
           lines.push(`${i + 1}. ${e.tool}: ${String((await tool.run(e.input || {})) ?? 'Done.')}`);
         } catch (err: any) {
-          throw new Error(`${lines.join('\n')}${lines.length ? '\n' : ''}${i + 1}. ${e.tool} FAILED: ${err?.message || err}. Nothing after it ran.`);
+          fail(String(err?.message || err));
         }
       }
-      return lines.join('\n');
+      const report = `${failed ? `${edits.length - failed} of ${edits.length} done, ${failed} failed (redo only those):` : `All ${edits.length} done:`}\n${lines.join('\n')}`;
+      if (failed === edits.length) throw new Error(report);
+      return report;
     }
   });
   return all;
