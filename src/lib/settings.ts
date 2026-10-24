@@ -675,6 +675,22 @@ export const SECTIONS: Section[] = [
       },
       { key: 'assistant.usageBars', label: 'Show my plan’s 5-hour and weekly usage in the Claude tab', type: 'toggle', default: true },
       {
+        key: 'design.style',
+        group: 'Design',
+        label: 'Your house style (optional)',
+        type: 'text',
+        default: '',
+        help: 'A line Claude follows in every design, e.g. “clean editorial, navy and warm orange, Bahnschrift headlines, lots of white space”. Overrides Kea’s defaults; leave empty for Kea’s own high standard.'
+      },
+      {
+        key: 'design.guidelinesFolder',
+        group: 'Design',
+        label: 'Your own design guidelines',
+        type: 'folder',
+        default: '',
+        help: 'A folder of Markdown or text files (brand rules, style guides, research). Claude reads them before designing and they take priority over Kea’s built-in guide.'
+      },
+      {
         key: 'assistant.model',
         label: 'Model',
         type: 'select',

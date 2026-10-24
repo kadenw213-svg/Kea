@@ -27,6 +27,8 @@ import {
 import { splitAt, deleteClips, trimStart, trimEnd, rippleTrim, setTransition, defaultTransition, clipsForMedia, overwrite, insert, textClip, shapeClip, addTrack, withLinked, clearRange, isStill } from './ops';
 import { renderStill } from './exporter';
 import { uid } from '../../lib/util';
+import { resolveImage } from '../../lib/attachments';
+import { api } from '../../lib/api';
 
 /* Claude's view of the video project (text + a frame) and the actions it may take. */
 
@@ -244,12 +246,15 @@ export function videoTools(env: AssistantEnv): AssistantTool[] {
   return [
     {
       name: 'add_media_to_timeline',
-      description: 'Put a piece of media (from the media bin by media_id, or a file by absolute path, which is imported first) on the timeline. Video with sound adds a linked picture clip and audio clip.',
+      description:
+        'Put a piece of media on the timeline: from the media bin (media_id), a file (absolute path, imported first), an image the student attached in the chat (attachment), or a graphic you draw as SVG (svg: title cards, lower-third plates, backgrounds, diagrams, overlays with transparency; draw it at the project’s frame size, read design_guide "video" and the vector topics first). Video with sound adds a linked picture clip and audio clip.',
       input_schema: {
         type: 'object',
         properties: {
           media_id: { type: 'string', description: 'Id of an item in the media bin.' },
           path: { type: 'string', description: 'Absolute path of a video, audio or image file to import and add.' },
+          attachment: { type: 'string', description: 'Id of an image the student attached in the chat, like "a1".' },
+          svg: { type: 'string', description: 'A graphic you write as a complete <svg viewBox="0 0 W H">…</svg>, W × H = the frame size (e.g. 1920 × 1080). Transparent areas stay transparent over the clips below.' },
           start: { type: 'number', description: 'Timeline time in seconds. Default: the playhead (or the end of the timeline with append).' },
           append: { type: 'boolean', description: 'Place it at the end of the timeline.' },
           in: { type: 'number', description: 'Source in point (seconds into the file). Default 0.' },
@@ -260,9 +265,27 @@ export function videoTools(env: AssistantEnv): AssistantTool[] {
       },
       async run(i) {
         let m: MediaItem | undefined;
-        if (i.path) m = (await env.importPaths([String(i.path)]))[0];
+        if (i.svg || i.attachment) {
+          // Graphics and attached pictures become real image files (Documents/Kea Graphics) so the project keeps them.
+          const img = await resolveImage({ svg: i.svg, attachment: i.attachment });
+          const docs = (await api.knownFolders()).find((f) => f.id === 'documents')?.path;
+          if (!docs) throw new Error('Kea couldn’t find your Documents folder to keep the graphic in.');
+          const file = `${docs}${docs.includes('\\') ? '\\' : '/'}Kea Graphics${docs.includes('\\') ? '\\' : '/'}${(i.svg ? 'graphic' : img.name.replace(/\.[^.]+$/, '')).replace(/[^\w -]+/g, '').slice(0, 40) || 'image'}-${Date.now().toString(36)}.png`;
+          const b64 = img.dataUrl.startsWith('data:image/png') ? img.dataUrl : await (async () => {
+            const c = document.createElement('canvas');
+            c.width = img.img.naturalWidth || img.width;
+            c.height = img.img.naturalHeight || img.height;
+            c.getContext('2d')!.drawImage(img.img, 0, 0);
+            return c.toDataURL('image/png');
+          })();
+          const bin = atob(b64.slice(b64.indexOf(',') + 1));
+          const bytes = new Uint8Array(bin.length);
+          for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+          if (!(await api.writeFile(file, bytes))) throw new Error('The graphic couldn’t be saved.');
+          m = (await env.importPaths([file]))[0];
+        } else if (i.path) m = (await env.importPaths([String(i.path)]))[0];
         else if (i.media_id) m = store.getState().project.media.find((x) => x.id === i.media_id);
-        if (!m) throw new Error(i.media_id ? `There's no media with id ${i.media_id}.` : 'Give a media_id or a path.');
+        if (!m) throw new Error(i.media_id ? `There's no media with id ${i.media_id}.` : 'Give media_id, path, attachment or svg.');
         const media = m;
         return edit(store, 'Add to timeline', (p) => {
           const at = snap(i.start !== undefined ? num(i.start, 'start') : i.append ? projectDuration(p) : store.getState().playhead);

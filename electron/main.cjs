@@ -465,6 +465,7 @@ ipcMain.handle('file:write', (_e, p, data) => {
   // Write to a temp file first so a crash mid-save never corrupts the original.
   const tmp = p + '.kea-tmp';
   const buf = Buffer.from(data);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(tmp, buf);
   // OneDrive and antivirus scanners can hold files briefly; retry before giving up.
   for (let attempt = 0; attempt < 5; attempt++) {
