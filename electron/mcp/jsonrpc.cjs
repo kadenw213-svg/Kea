@@ -10,7 +10,7 @@ const READ_ONLY = new Set(['read_document', 'show_in_document', 'look', 'kea_lis
 
 // What a connecting app's model is told about working in Kea (the in-app sidebar gets the same guidance).
 const INSTRUCTIONS = `Kea is an office suite; its tools act on the file open in the active tab (kea_list_tabs, kea_focus_tab, kea_open_file to choose). Read before editing (read_document; look to see it). Each tool call is one undo step for the user.
-When designing or restyling anything visual (flier, poster, slide, title page, handout, social post), work to a professional standard: read design_guide "start" and the topics the job needs first, commit to one art direction, grid, type scale and palette, make visuals rich with SVG artwork through the image tools' svg input rather than plain shapes, keep text in real text boxes with installed fonts, then look at the result and fix what the checklists flag before finishing. Reference images can be placed with an image tool's path input.`;
+When designing or restyling anything visual (flier, poster, slide, title page, handout, social post, or graphics and edits on a video timeline: read design_guide "video" too), work to a professional standard: read design_guide "start" and the topics the job needs first, commit to one art direction, grid, type scale and palette, make visuals rich with SVG artwork through the image tools' svg input rather than plain shapes, keep text in real text boxes with installed fonts, then look at the result and fix what the checklists flag before finishing. Reference images can be placed with an image tool's path input.`;
 
 /** Map the renderer's provider-neutral tool outcome ({ ok, text, image? }) to an MCP tools/call result. */
 function toolResult(out) {
