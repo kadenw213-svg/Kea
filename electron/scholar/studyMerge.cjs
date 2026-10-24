@@ -2,11 +2,11 @@
 // study folder's progress files, used by Kea on the PC (another computer's or the phone's progress coming in) and by
 // Kea on the phone (the PC's copy coming in under what was done on the phone).
 //
-//   attempts.json   { setId: [{ at, score, total, n, items }] }   every attempt kept
+//   attempts.json   { setId: [{ at, score, total, n, items }] }   every attempt kept (spaced review's under `review`)
 //   cards.json      { setId: { known, at } }                       the newer one
 //   stars.json      { key: true }                                  rebuilt from stars-log.json, newest change winning
 //   stars-log.json  { key: { on, at } }
-//   learn.json      { setId: { cardIndex: level } }                the higher level per card
+//   learn.json      { setId: { cardKey: level, _at } }             the newer one (no `_at` yet: the higher level per card)
 //   match.json      { setId: ms }                                  the faster time
 //   review.json     { key: { box, due, last, lapses, first } }     the one reviewed last
 
@@ -54,11 +54,29 @@ function mergeProgress(base, other) {
   out['stars-log.json'] = log;
   out['stars.json'] = Object.fromEntries(Object.entries(log).filter(([, e]) => e.on).map(([k]) => [k, true]));
 
+  // Learn: the copy saved last wins, so a reset or a miss on one device isn't undone by the other's older levels. A copy
+  // from before Learn kept its time (no `_at`) is merged the old way, the higher level per card.
   const learn = { ...b('learn.json') };
   for (const [id, levels] of Object.entries(o('learn.json'))) {
-    const cur = { ...(learn[id] || {}) };
-    for (const [i, lv] of Object.entries(levels || {}))
-      if (!(Number(cur[i]) >= Number(lv))) {
+    if (!levels || typeof levels !== 'object') continue;
+    const had = learn[id] && typeof learn[id] === 'object' ? learn[id] : null;
+    if (had && had._at && levels._at) {
+      if (String(levels._at) > String(had._at)) {
+        if (JSON.stringify(levels) !== JSON.stringify(had)) changed = true;
+        learn[id] = levels;
+      }
+      continue;
+    }
+    if (!had && levels._at) {
+      learn[id] = levels;
+      changed = true;
+      continue;
+    }
+    const cur = { ...(had || {}) };
+    for (const [i, lv] of Object.entries(levels))
+      if (i === '_at') {
+        if (String(lv) > String(cur._at || '')) cur._at = lv;
+      } else if (!(Number(cur[i]) >= Number(lv))) {
         cur[i] = lv;
         changed = true;
       }

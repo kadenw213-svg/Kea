@@ -184,7 +184,7 @@ export interface KeaApi {
     studyDelete(id: string): Promise<boolean>;
     /** items: how each question went, [key, right] (right null for an unmarked written answer). */
     studyAttempt(id: string, a: { score: number; total: number; n: number; items?: [string, boolean | null][] }): Promise<boolean>;
-    studyKnown(id: string, known: number[]): Promise<boolean>;
+    studyKnown(id: string, known: string[]): Promise<boolean>;
     stop(): Promise<boolean>;
     runStatus(): Promise<{ running: ScholarRun | null; queued: QueuedRun[] }>;
     activity(): Promise<ScholarRun[]>;
@@ -770,7 +770,7 @@ export interface StudyCard {
 export type StudySetFull = Omit<StudySet, 'known' | 'attempts' | 'best' | 'last'> & {
   questions?: StudyQuestion[];
   cards?: StudyCard[];
-  known: number[];
+  known: string[];
   history?: Record<string, StudyHistory>;
   /** Keys of starred items. */
   starred?: string[];

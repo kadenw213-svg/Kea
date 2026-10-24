@@ -6,7 +6,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pause, Play, Settings2, SkipBack, SkipForward, Square } from 'lucide-react';
 import type { StudyCard, StudySetFull } from '../../lib/api';
 import { useSetting, useSettings } from '../../lib/settings';
-import { MathText } from './MathText';
+import { LATEX, MathText } from './MathText';
+import { knownOf, shuffle as shuffled } from './Study';
 
 type Item = { id: string; text: string; pause: number };
 type Progress = { id: string; state: 'playing' | 'paused' | 'stopped' | 'done' | 'error' };
@@ -117,26 +118,11 @@ export function Listen({ set }: { set: StudySetFull }) {
 
   // The cards to read, in order.
   const deck = useMemo(() => {
-    const known = new Set(set.known || []);
+    const known = new Set(knownOf(set));
     const stars = new Set(set.starred || []);
     // (Choices in a fresh order, as in a practice exam: the saved order puts the answer first most of the time.)
-    const mixed = (a: string[]) => {
-      const b = [...a];
-      for (let j = b.length - 1; j > 0; j--) {
-        const r = Math.floor(Math.random() * (j + 1));
-        [b[j], b[r]] = [b[r], b[j]];
-      }
-      return b;
-    };
-    let list = cards.map((c, i) => ({ c: c.choices?.length ? { ...c, choices: mixed(c.choices) } : c, i })).filter(({ c, i }) => (which === 'learning' ? !known.has(i) : which === 'starred' ? !!c.k && stars.has(c.k) : true));
-    if (shuffle) {
-      list = [...list];
-      for (let j = list.length - 1; j > 0; j--) {
-        const r = Math.floor(Math.random() * (j + 1));
-        [list[j], list[r]] = [list[r], list[j]];
-      }
-    }
-    return list;
+    const list = cards.map((c, i) => ({ c: c.choices?.length ? { ...c, choices: shuffled(c.choices) } : c, i })).filter(({ c }) => (which === 'learning' ? !(c.k && known.has(c.k)) : which === 'starred' ? !!c.k && stars.has(c.k) : true));
+    return shuffle ? shuffled(list) : list;
   }, [cards, which, shuffle, seed]);
 
   // Each card as what's said and the pauses after.
@@ -310,20 +296,36 @@ function Toggle({ on, set, label }: { on: boolean; set(v: boolean): void; label:
   );
 }
 
-/** A card's text as it should be said: formulas' markup out, symbols as words. */
-function plain(s: string) {
-  return String(s || '')
-    .replace(/\$+/g, '')
-    .replace(/\\(frac)\{([^}]*)\}\{([^}]*)\}/g, '$2 over $3')
-    .replace(/\^\(([^)]*)\)|\^\{([^}]*)\}|\^(-?\w+)/g, (_m, a, b, c) => ` to the ${a || b || c}`)
-    .replace(/_\(([^)]*)\)|_\{([^}]*)\}|_(\w)/g, (_m, a, b, c) => ` ${a || b || c}`)
-    .replace(/\\[a-z]+/gi, '')
-    .replace(/→/g, ' gives ')
-    .replace(/×/g, ' times ')
-    .replace(/[{}]/g, '')
-    .replace(/_{2,}/g, ' blank ')
-    .replace(/\s+/g, ' ')
-    .trim();
+// Symbols (typed, or from a LaTeX name through MathText's LATEX map) as words.
+const SPOKEN: Record<string, string> = {
+  '×': 'times', '·': 'times', '÷': 'divided by', '±': 'plus or minus', '∓': 'minus or plus', '≤': 'less than or equal to',
+  '≥': 'greater than or equal to', '≠': 'not equal to', '≈': 'approximately', '→': 'gives', '←': 'comes from',
+  '⇌': 'is in equilibrium with', '∞': 'infinity', '°': 'degrees', '√': 'the square root of', 'Δ': 'delta', 'δ': 'delta',
+  'α': 'alpha', 'β': 'beta', 'γ': 'gamma', 'λ': 'lambda', 'μ': 'mu', 'π': 'pi', 'θ': 'theta', 'σ': 'sigma', 'Σ': 'sigma',
+  'ω': 'omega', 'Ω': 'omega', 'ρ': 'rho', 'ε': 'epsilon', 'ν': 'nu'
+};
+const SYMBOLS = new RegExp(`[${Object.keys(SPOKEN).join('')}]`, 'g');
+
+/** A card's text as it should be said: blanks as "blank", formulas' markup out, symbols and LaTeX names as words. */
+export function plain(s: string) {
+  return (
+    String(s || '')
+      // (Blanks first: the subscript rule below would read "____" as "_ _".)
+      .replace(/_{2,}/g, ' blank ')
+      .replace(/\$+/g, '')
+      .replace(/\\[()[\]]/g, '')
+      .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '$1 over $2')
+      .replace(/\\sqrt\{([^}]*)\}/g, ' the square root of $1 ')
+      .replace(/\\(?:text|mathrm)\{([^}]*)\}/g, '$1')
+      .replace(/\^\(([^)]*)\)|\^\{([^}]*)\}|\^(-?\w+)/g, (_m, a, b, c) => ` to the ${a || b || c}`)
+      .replace(/_\(([^)]*)\)|_\{([^}]*)\}|_(\w)/g, (_m, a, b, c) => ` ${a || b || c}`)
+      // A LaTeX name: its symbol (said below), or the name itself when MathText doesn't know it.
+      .replace(/\\([A-Za-z]+)/g, (_m, name) => ` ${LATEX[name] ?? name} `)
+      .replace(SYMBOLS, (c) => ` ${SPOKEN[c]} `)
+      .replace(/[{}]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 export type { StudyCard };

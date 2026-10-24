@@ -663,7 +663,6 @@ export function Review({ courseId, chapters = [], sections = [] }: { courseId: s
   );
 }
 
-/** The review summary on My resources: what's due per class, and a button to start. */
 /**
  * Pick a class and its chapters, then review exactly those (spaced review, no daily limit) or study them (topics and
  * which questions are chosen on the Study page).
@@ -720,59 +719,6 @@ export function StudyPicker({ classes, start }: { classes: { id: string; code: s
         </button>
       </div>
     </div>
-  );
-}
-
-export function ReviewBanner({ courseId = '' }: { courseId?: string }) {
-  const version = useScholar((s) => s.version);
-  const [q, setQ] = useState<ReviewQueue | null>(null);
-  const [pickOpen, setPickOpen] = useState(false);
-  useEffect(() => {
-    api.scholar.studyReview({ courseId, limit: 1000 }).then(setQ).catch(() => {});
-  }, [version, courseId]);
-  if (!q) return null;
-  const counts = Object.entries(q.counts).filter(([id, c]) => (!courseId || id === courseId) && c.total);
-  const due = counts.reduce((n, [, c]) => n + c.due, 0);
-  const fresh = Math.min(q.newToday, counts.reduce((n, [, c]) => n + c.fresh, 0));
-  if (!counts.length) return null;
-  const start = (id: string) => useScholar.getState().set({ study: `review:${id}` });
-  const [picking, setPicking] = [pickOpen, setPickOpen];
-  // Each class: what's due, how much is mastered, and its next test; the soonest test first.
-  const rows = counts.sort(([, a], [, b]) => (a.test?.date || '9999').localeCompare(b.test?.date || '9999'));
-  return (
-    <section className="sm-banner">
-      <div className="sm-banner-top">
-        <div>
-          <b>{due ? `${due} to review` : 'Review'}</b>
-          {fresh > 0 && <span className="muted"> · {fresh} new today</span>}
-          <div className="muted sm-banner-sub">Spaced so every question comes back before its test, shared between your classes.</div>
-        </div>
-        <button className="btn sm" onClick={() => setPicking(!picking)}>
-          Choose what to study
-        </button>
-        <button className="btn primary sm" disabled={!due && !fresh} onClick={() => start(courseId || 'all')}>
-          {due || fresh ? 'Review all' : 'All caught up'}
-        </button>
-      </div>
-      {picking && <StudyPicker classes={rows.map(([id, c]) => ({ id, code: c.code })).filter((c) => c.code)} />}
-      <div className="sm-classes">
-        {rows.map(([id, c]) => {
-          const days = c.test ? Math.round((Date.parse(`${c.test.date}T12:00`) - Date.now()) / 864e5) : null;
-          return (
-            <button key={id} className="sm-class" onClick={() => start(id)} title={`Review ${c.code || 'your own sets'} only`}>
-              <b>{c.code || 'Mine'}</b>
-              <span className="sm-class-bar">
-                <i style={{ width: `${((c.mastered || 0) / c.total) * 100}%` }} />
-              </span>
-              <span className="muted">
-                {c.due ? `${c.due} due` : 'caught up'}
-                {days != null && days >= 0 && days <= 14 ? ` · test ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days}d`}` : ''}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 

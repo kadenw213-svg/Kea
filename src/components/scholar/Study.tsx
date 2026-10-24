@@ -10,7 +10,7 @@ import { Bar, progressOf, span, useLiveRun, useNow } from './ScansView';
 import { ReadingButton, ReadingContext, ReadingPane, ReadingTarget, useMissReading } from './ReadingPane';
 import { judgeBlank } from '../../lib/blank';
 import { Listen } from './Listen';
-import { CardTest, Learn, Match, Review, ReviewBanner, SetEditor, SpeakButton, StarButton } from './StudyModes';
+import { CardTest, Learn, Match, Review, SetEditor, SpeakButton, StarButton } from './StudyModes';
 import { openStudyHub, parseScope, StudyHub } from './StudyHub';
 import '../../styles/study.css';
 import { MathText } from './MathText';
@@ -375,14 +375,49 @@ export interface Shown {
 }
 export type Answer = number | number[] | boolean | string | null;
 
-function parseNumber(s: string): number | null {
-  const t = s
+const SUPERSCRIPT: Record<string, string> = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁻': '-', '⁺': '+' };
+
+/**
+ * The number a typed answer starts with, its unit or words after it ignored: "−5.0" (any minus sign), "1,250.5",
+ * "6.02×10^23", "6.02 x 10^(23)", "6.02×10²³", "1.2e-3", "1.2E3", "1/2", "2.45 mole", "12 seconds", "$8,000",
+ * "x = 4". Null when it doesn't start with a number.
+ */
+export function parseNumber(s: string): number | null {
+  let t = String(s ?? '')
     .trim()
-    .replace(/,/g, '')
-    .replace(/\s*[x×*]\s*10\s*\^\s*/i, 'e')
-    .replace(/[^\d.eE+\-]/g, '');
-  if (!t) return null;
-  const n = Number(t);
+    .replace(/[−‒–—﹣－]/g, '-')
+    .replace(/[   ]/g, ' ')
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+/g, (m) => `^${[...m].map((c) => SUPERSCRIPT[c]).join('')}`)
+    // (What can come before the number: "x = ", "≈", a currency sign.)
+    .replace(/^[A-Za-z][\w]*\s*=\s*/, '')
+    .replace(/^[~≈]\s*/, '');
+  let sign = 1;
+  const signed = /^([+-])\s*/.exec(t);
+  if (signed) (sign = signed[1] === '-' ? -1 : 1), (t = t.slice(signed[0].length));
+  t = t.replace(/^[$€£¥]\s*/, '');
+  // Thousands commas only in groups of three ("1,250.5"); otherwise a comma ends the number.
+  const m = /^(\d{1,3}(?:,\d{3})+(?:\.\d*)?|\d+(?:\.\d*)?|\.\d+)/.exec(t);
+  if (!m) return null;
+  let n = Number(m[1].replace(/,/g, ''));
+  let rest = t.slice(m[0].length);
+  // A comma that isn't thousands grouping ("1,5"): too unclear to read as a number.
+  if (/^,\d/.test(rest)) return null;
+  let x: RegExpExecArray | null;
+  if ((x = /^[eE]([+-]?\d+)/.exec(rest))) {
+    n *= 10 ** Number(x[1]);
+    rest = rest.slice(x[0].length);
+  } else if ((x = /^\s*(?:[x×*·]|\\times|\\cdot)\s*10\s*(?:\^|\*\*)\s*(?:\(\s*([+-]?\d+)\s*\)|\{\s*([+-]?\d+)\s*\}|([+-]?\d+))/i.exec(rest))) {
+    n *= 10 ** Number(x[1] ?? x[2] ?? x[3]);
+    rest = rest.slice(x[0].length);
+  } else if ((x = /^\s*(?:\^|\*\*)\s*(?:\(\s*([+-]?\d+(?:\.\d+)?)\s*\)|([+-]?\d+(?:\.\d+)?))/.exec(rest))) {
+    n **= Number(x[1] ?? x[2]);
+    rest = rest.slice(x[0].length);
+  } else if ((x = /^\s*\/\s*(\d+(?:\.\d+)?|\.\d+)(?![\d,])/.exec(rest))) {
+    const d = Number(x[1]);
+    if (!d) return null;
+    n /= d;
+  }
+  n *= sign;
   return Number.isFinite(n) ? n : null;
 }
 
@@ -443,6 +478,8 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
   const [saved, setSaved] = useState(false);
 
   const start = () => {
+    // (The exam before this one, if it wasn't saved yet.)
+    persist();
     opened.current = new Set();
     const picked = choose(all, n, set.history || {});
     setRun(picked.map((q) => ({ q, order: 'choices' in q ? shuffle(q.choices.map((_, i) => i)) : [] })));
@@ -492,13 +529,35 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
     const miss = results.findIndex((r, i) => r === false && checked[i] && !opened.current.has(i));
     if (miss >= 0) target(miss);
   }, [results, submitted, checked]);
-  // Save the attempt once everything is marked (short answers need the student's own mark).
+  // Save the attempt once, with what's marked: as soon as everything is marked after Finish, or otherwise when the exam
+  // closes, a new one starts, or the window goes (an unmarked written answer, or an unanswered question of an exam not
+  // finished, counts neither way). A miss on a question whose stored answer may be wrong isn't recorded as a miss.
+  const latest = useRef({ id: set.id, run, answers, results, submitted, saved });
+  latest.current = { id: set.id, run, answers, results, submitted, saved };
+  const persist = () => {
+    const { id, run: r, answers: ans, results: res, submitted: done, saved: was } = latest.current;
+    if (!r || was) return;
+    const given = (a: Answer) => a !== null && a !== '' && !(Array.isArray(a) && !a.length);
+    const items: [string, boolean | null][] = [];
+    r.forEach((s, i) => {
+      if (!s.q.k || (!done && !given(ans[i]))) return;
+      const ok = res[i] === false && s.q.answerDisputed ? null : res[i];
+      items.push([s.q.k, ok ?? null]);
+    });
+    if (!items.length || (!done && !items.some(([, ok]) => ok != null))) return;
+    latest.current.saved = true;
+    setSaved(true);
+    const marked = items.filter(([, ok]) => ok != null);
+    api.scholar.studyAttempt(id, { score: marked.filter(([, ok]) => ok).length, total: marked.length, n: r.length, items });
+  };
   useEffect(() => {
-    if (submitted && !saved && run && unmarked === 0) {
-      setSaved(true);
-      api.scholar.studyAttempt(set.id, { score, total: run.length, n: run.length, items: run.map((s, i) => [s.q.k || '', results[i]] as [string, boolean | null]).filter(([k]) => k) });
-    }
+    if (submitted && !saved && run && unmarked === 0) persist();
   }, [submitted, unmarked, saved]);
+  useEffect(() => {
+    const gone = () => persist();
+    window.addEventListener('beforeunload', gone);
+    return () => (window.removeEventListener('beforeunload', gone), persist());
+  }, []);
 
   if (!run) {
     const counts = [10, 25, 50, all.length].filter((x, i, a) => x <= all.length && a.indexOf(x) === i);
@@ -587,7 +646,6 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
   );
 }
 
-/** A question's right answer in words (what the book should say). */
 /**
  * A question set as flashcards: the question on the front, the right answer on the back (and for a calculation, the
  * answer with its unit). So every set can be studied in Flashcards and Learn, as on Quizlet, before any cards are
@@ -654,6 +712,7 @@ export function WorkedSteps({ q, open: startOpen }: { q: StudyQuestion; open: bo
   );
 }
 
+/** A question's right answer in words (what the book should say). */
 const answerText = (q: StudyQuestion) =>
   q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join(' ') : q.type === 'tf' ? '' : q.type === 'num' ? q.unit || '' : q.answer;
 
@@ -668,7 +727,7 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
           <MathText text={q.q} />
           <StudyImage src={q.image} credit={q.image_credit} />
         </div>
-        <ReadingButton id={q.k} chapter={q.chapter} section={q.section} topic={q.topic} query={`${q.q} ${answerText(q)}`} steps={q.steps} />
+        <ReadingButton id={q.k} chapter={q.chapter} section={q.section} topic={q.topic} query={`${q.q} ${answerText(q)}`} steps={reveal ? q.steps : undefined} />
       </div>
       {(q.type === 'mc' || q.type === 'multi') && (
         <div className="st-choices">
@@ -773,9 +832,22 @@ function WhyNot({ q, s, answer }: { q: StudyQuestion & { choices: string[] }; s:
   );
 }
 
+/** A set's known cards as keys (an older copy may list card positions). */
+export function knownOf(set: StudySetFull): string[] {
+  const cards = set.cards || [];
+  return ((set.known || []) as (number | string)[]).map((x) => (typeof x === 'number' ? cards[x]?.k : x)).filter((k): k is string => !!k);
+}
+
 function Cards({ set }: { set: StudySetFull }) {
   const cards = set.cards || [];
-  const [known, setKnown] = useState<number[]>(set.known || []);
+  // (Known cards are kept by key, so deleting or adding a card doesn't move the marks.)
+  const [knownKeys, setKnownKeys] = useState<string[]>(() => knownOf(set));
+  const known = useMemo(() => cards.map((c, i) => (c.k && knownKeys.includes(c.k) ? i : -1)).filter((i) => i >= 0), [cards, knownKeys]);
+  const setKnown = (idx: number[]) => {
+    const keys = [...new Set(idx.map((i) => cards[i]?.k).filter((k): k is string => !!k))];
+    setKnownKeys(keys);
+    api.scholar.studyKnown(set.id, keys);
+  };
   const [onlyLearning, setOnlyLearning] = useState(false);
   const [starred, setStarred] = useState<string[]>(set.starred || []);
   const [onlyStarred, setOnlyStarred] = useState(false);
@@ -794,7 +866,6 @@ function Cards({ set }: { set: StudySetFull }) {
     if (!isKnown && card) missReading({ chapter: card.chapter, section: card.section, topic: card.topic, query: `${card.front} ${card.back}`, key: card.k });
     const next = isKnown ? [...new Set([...known, idx])] : known.filter((x) => x !== idx);
     setKnown(next);
-    api.scholar.studyKnown(set.id, next);
     setFlipped(false);
     if (!onlyLearning || !isKnown) setPos((p) => Math.min(deck.length - 1, p + 1));
   };
@@ -862,7 +933,7 @@ function Cards({ set }: { set: StudySetFull }) {
       ) : (
         <div className="sch-empty">
           You know every card in this deck.
-          <button className="btn sm" onClick={() => (setKnown([]), api.scholar.studyKnown(set.id, []), setOnlyLearning(false))}>
+          <button className="btn sm" onClick={() => (setKnown([]), setOnlyLearning(false))}>
             Start over
           </button>
         </div>

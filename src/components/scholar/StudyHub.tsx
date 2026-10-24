@@ -8,7 +8,7 @@ import { api, PoolItem, ReviewQueue } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
 import { useScholar } from './scholarStore';
-import { MakeMenu, SetRow, useCanMake, useStudySets } from './Study';
+import { MakeMenu, SetRow, shuffle, useCanMake, useStudySets } from './Study';
 
 export interface StudyScope {
   courseId: string;
@@ -29,8 +29,23 @@ export const parseScope = (id: string): StudyScope | null => {
   }
 };
 
+/** A short hash of a string (FNV-1a, 32 bits, base 36). */
+const shortHash = (s: string) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
+};
+/**
+ * A study set's fixed id for something studied again and again (letters, digits and hyphens only, as study.cjs
+ * accepts). An id that fits in 60 characters is the same as before; a longer one is cut and ends in a hash of the
+ * whole scope, so "Ch 1–6" and "Ch 1–7" never share one.
+ */
+export function stableStudyId(prefix: string, parts: string[]) {
+  const id = `${prefix}${parts.join('').toLowerCase().replace(/[^a-z0-9]+/g, '')}`;
+  return id.length <= 60 ? id : `${id.slice(0, 56)}-${shortHash(JSON.stringify([prefix, ...parts]))}`;
+}
 // The same scope always opens the same practice exam and deck, so their scores and Learn progress build up.
-const stableId = (kind: string, s: StudyScope) => `${kind}-hub${(s.courseId + (s.itemId || '') + s.chapters.join('')).toLowerCase().replace(/[^a-z0-9]+/g, '')}`.slice(0, 60);
+const stableId = (kind: string, s: StudyScope) => stableStudyId(`${kind}-hub`, [s.courseId, s.itemId || '', ...s.chapters]);
 const SIZES = [10, 25, 50];
 type Which = 'all' | 'new' | 'missed' | 'starred';
 const WHICH: [Which, string][] = [
@@ -40,14 +55,6 @@ const WHICH: [Which, string][] = [
   ['starred', 'Starred']
 ];
 const isMissed = (p: PoolItem) => p.lastRight === false || (p.seen > 0 && p.right < p.seen && p.lastRight !== true);
-const shuffled = <T,>(a: T[]) => {
-  const b = [...a];
-  for (let i = b.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [b[i], b[j]] = [b[j], b[i]];
-  }
-  return b;
-};
 
 export function StudyHub({ scope }: { scope: StudyScope }) {
   const sets = useStudySets();
@@ -110,7 +117,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
     try {
       // A practice exam of exactly what's picked (missed ones first when there are more than asked for).
       if (kind === 'exam' && narrowed) {
-        const keys = [...shuffled(picked.filter(isMissed)), ...shuffled(picked.filter((p) => !isMissed(p)))].slice(0, count).map((p) => p.k);
+        const keys = [...shuffle(picked.filter(isMissed)), ...shuffle(picked.filter((p) => !isMissed(p)))].slice(0, count).map((p) => p.k);
         const id = await api.scholar.studyMake({ id: stableId('exam-pick', scope), kind: 'exam', courseId: scope.courseId, ...target, mode: 'saved', count: keys.length, pick: keys });
         useScholar.getState().set({ study: id + go });
         return;

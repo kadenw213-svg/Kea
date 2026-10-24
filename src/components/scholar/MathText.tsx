@@ -4,7 +4,7 @@
 // left as they are.
 import { Fragment, ReactNode } from 'react';
 
-const LATEX: Record<string, string> = {
+export const LATEX: Record<string, string> = {
   times: '×', cdot: '·', div: '÷', pm: '±', mp: '∓', le: '≤', leq: '≤', ge: '≥', geq: '≥', ne: '≠', neq: '≠', approx: '≈',
   to: '→', rightarrow: '→', leftarrow: '←', rightleftharpoons: '⇌', infty: '∞', circ: '°', degree: '°',
   Delta: 'Δ', delta: 'δ', alpha: 'α', beta: 'β', gamma: 'γ', lambda: 'λ', mu: 'μ', pi: 'π', theta: 'θ', sigma: 'σ', Sigma: 'Σ',

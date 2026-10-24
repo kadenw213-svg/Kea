@@ -4,7 +4,7 @@ import { api } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
 import { openScholar, useScholar } from './scholarStore';
-import { openStudyHub } from './StudyHub';
+import { openStudyHub, stableStudyId } from './StudyHub';
 
 /**
  * Quiz yourself on a chapter: its saved questions (the chapter's question bank and every set made on it), as one quiz
@@ -20,7 +20,7 @@ export async function quizChapter(courseId: string, chapter: string, code = '') 
     const writing = await api.scholar.studyBanks().catch(() => false);
     return toast(writing ? `${chapter}'s questions are being written. They'll be ready in a few minutes (follow it under Scans).` : `${chapter} has no saved questions yet, and Claude isn't connected to write them.`, writing ? 'success' : 'error');
   }
-  const id = `exam-quiz${(courseId + chapter).toLowerCase().replace(/[^a-z0-9]+/g, '')}`.slice(0, 60);
+  const id = stableStudyId('exam-quiz', [courseId, chapter]);
   try {
     await api.scholar.studyMake({ id, kind: 'exam', courseId, chapters: [chapter], mode: 'saved', count });
     openScholar(useScholar.getState().view);

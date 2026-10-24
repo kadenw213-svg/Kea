@@ -15,10 +15,11 @@
 //                        item also has `k`, its key: the same question in two sets has the same key)
 //   attempts.json       { [id]: [{ at, score, total, n, items: [[k, right]] }] }   (practice exams; `items` says how
 //                        each question went, which is each question's history across every set)
-//   cards.json          { [id]: { known: [card index] } }            (flashcards)
+//                        (spaced review's answers are kept under the id `review`, one attempt per answer)
+//   cards.json          { [id]: { known: [card key], at } }          (flashcards; older copies hold card indices)
 //   stars.json          { [k]: true }                                (starred cards and questions)
 //   review.json         { [k]: { box, due, last, lapses } }          (spaced review, see review())
-//   learn.json          { [id]: { [k]: 0 | 1 | 2 } }                 (Learn: new, familiar, mastered)
+//   learn.json          { [id]: { [k]: 0 | 1 | 2, _at } }            (Learn: new, familiar, mastered; _at: when saved)
 //   match.json          { [id]: best time in ms }                     (Match)
 // Sets the student makes or imports themselves are ordinary card sets with source 'mine' (courseId may be '').
 const fs = require('fs');
@@ -89,7 +90,7 @@ function list() {
         attempts: a.length,
         best: a.length ? Math.max(...a.map((x) => (x.total ? x.score / x.total : 0))) : null,
         last: a[a.length - 1] || null,
-        known: cards[e.id]?.known?.length || 0
+        known: new Set(cards[e.id]?.known || []).size
       };
     })
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -101,6 +102,8 @@ function history() {
   for (const list of Object.values(readJson(file('attempts.json'), {})))
     for (const a of list || [])
       for (const [k, ok] of a.items || []) {
+        // (An answer left unmarked, or not graded, counts neither way.)
+        if (ok == null) continue;
         const h = (out[k] = out[k] || { seen: 0, right: 0, last: '', lastRight: null });
         h.seen++;
         if (ok) h.right++;
@@ -115,7 +118,9 @@ function get(id) {
   if (!e) return null;
   // (A set made from saved questions on a device that isn't the primary waits in `local/` until the primary's copy comes.)
   const s = readJson(file('sets', `${id}.json`), null) || readJson(file('mine', `${id}.json`), null) || readJson(file('local', `${id}.json`), {});
-  const out = { ...e, known: readJson(file('cards.json'), {})[id]?.known || [] };
+  // (Known cards are kept by key; an older copy by position, read here against the cards as they are now.)
+  const asCards = s.cards ? keyed(s.cards) : keyed(s.questions).filter((q) => q.type !== 'short');
+  const out = { ...e, known: knownKeys(readJson(file('cards.json'), {})[id]?.known, asCards) };
   if (s.questions) {
     out.questions = keyed(s.questions);
     const h = history();
@@ -129,8 +134,19 @@ function get(id) {
   return out;
 }
 
+// A set's id: its kind, then letters, digits and hyphens ("exam-pick-hub…-1a2b3c4d" from the Study page, too).
+const SET_ID = /^(exam|cards)-[a-z0-9-]+$/;
+const validId = (id) => typeof id === 'string' && id.length <= 120 && SET_ID.test(id);
+
+/** Known cards as keys: an older copy listed positions in the set (`cards` as the player shows them). */
+function knownKeys(known, cards) {
+  if (!Array.isArray(known)) return [];
+  return [...new Set(known.map((x) => (typeof x === 'number' ? cards[x]?.k : x)).filter((x) => typeof x === 'string' && x))];
+}
+
 function remove(id) {
-  if (!/^[a-z]+-[a-z0-9]+$/i.test(String(id))) return false;
+  // (Plus the older rule, so any set listed before can still be deleted.)
+  if (!validId(String(id)) && !/^[a-z]+-[a-z0-9]+$/i.test(String(id))) return false;
   saveIndex(index().filter((x) => x.id !== id));
   fs.rmSync(file('sets', `${id}.json`), { force: true });
   fs.rmSync(file('local', `${id}.json`), { force: true });
@@ -138,7 +154,7 @@ function remove(id) {
   const attempts = readJson(file('attempts.json'), {});
   delete attempts[id];
   writeJson(file('attempts.json'), attempts);
-  learnSet(id, null);
+  learnDrop(id);
   return true;
 }
 
@@ -148,12 +164,33 @@ function saveAttempt(id, a) {
   const items = Array.isArray(a.items) ? a.items.filter((x) => Array.isArray(x) && typeof x[0] === 'string').map(([k, ok]) => [k, ok == null ? null : !!ok]) : undefined;
   (attempts[id] = attempts[id] || []).push({ at: new Date().toISOString(), score: a.score, total: a.total, n: a.n, ...(items ? { items } : {}) });
   writeJson(file('attempts.json'), attempts);
+  // Every miss comes back in spaced review: box 0, due today. Ones got right keep their place (no demotion).
+  const missed = (items || []).filter(([k, ok]) => ok === false && REAL_KEY.test(k)).map(([k]) => k);
+  if (missed.length) {
+    const state = readJson(file('review.json'), {});
+    const today = dayStr(new Date());
+    const now = new Date().toISOString();
+    for (const k of new Set(missed)) {
+      const was = state[k];
+      state[k] = { box: 0, due: today, last: now, lapses: (was?.lapses || 0) + (was ? 1 : 0), first: was?.first || today };
+    }
+    writeJson(file('review.json'), state);
+  }
   return true;
 }
+// A saved item's own key (a deck's Test makes questions keyed "<card key>-c" and the like, which aren't reviewed).
+const REAL_KEY = /^[0-9a-f]{12}$/;
 
+/** Which cards are known, by key (positions, from an older Kea, are turned into keys with the set's cards). */
 function setKnown(id, known) {
   const cards = readJson(file('cards.json'), {});
-  cards[id] = { known: [...new Set(known)].sort((a, b) => a - b), at: new Date().toISOString() };
+  const list = Array.isArray(known) ? known : [];
+  let keys = list.filter((x) => typeof x === 'string' && x);
+  if (list.some((x) => typeof x === 'number')) {
+    const s = readJson(file('sets', `${id}.json`), null) || readJson(file('mine', `${id}.json`), null) || readJson(file('local', `${id}.json`), {});
+    keys = knownKeys(list, s.cards ? keyed(s.cards) : keyed(s.questions).filter((q) => q.type !== 'short'));
+  }
+  cards[id] = { known: [...new Set(keys)], at: new Date().toISOString() };
   writeJson(file('cards.json'), cards);
   return true;
 }
@@ -264,7 +301,7 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
   if (!src) throw new Error('Kea couldn’t find that class.');
   if (!src.chapters.length && !src.item) throw new Error('Pick at least one chapter.');
   // (Asked for on another computer: it named the set, so both list the same one.)
-  const id = typeof given === 'string' && /^(exam|cards)-[a-z0-9]+$/.test(given) ? given : `${kind}-${Date.now().toString(36)}`;
+  const id = validId(given) ? given : `${kind}-${Date.now().toString(36)}`;
   const labels = src.chapters.map((c) => c.label);
   const all = catalog(kind, src.course.id, labels);
   const n = mode === 'saved' ? Math.max(1, Math.min(Number(count) || all.length, all.length)) : clamp(kind, count);
@@ -318,10 +355,6 @@ const BANK_LOW = 5;
 const BANK_MORE = 20;
 
 /**
- * The next chapter whose bank needs questions, as a request for request(), or null. `size` is the bank's target;
- * `chapters` lists { courseId, label } for every chapter with a textbook. Nothing while a bank is being made.
- */
-/**
  * The next chapter (soonest test first) that tests identification and has few picture questions yet, as a request for
  * a picture set (25, saved with the chapter's bank), or null. Nothing while a set is being made, and a chapter whose
  * picture set failed waits a day.
@@ -340,6 +373,10 @@ function pictureNeed(chapters, identifying) {
   return null;
 }
 
+/**
+ * The next chapter whose bank needs questions, as a request for request(), or null. `size` is the bank's target;
+ * `chapters` lists { courseId, label } for every chapter with a textbook. Nothing while a bank is being made.
+ */
 function bankNeed(chapters, size = 50) {
   const all = index();
   if (all.some((e) => e.bank && e.status === 'making')) return null;
@@ -895,15 +932,25 @@ function star(k, on) {
 const starred = () => readJson(file('stars.json'), {});
 
 // ---------- Learn and Match progress ----------
+// Each set's levels carry `_at`, when they were saved, so the newer copy wins between devices (studyMerge.cjs); a reset
+// is kept as an empty set with its time, so it isn't undone by the other device's older progress.
 function learnGet(id) {
-  return readJson(file('learn.json'), {})[id] || {};
+  const { _at, ...levels } = readJson(file('learn.json'), {})[id] || {};
+  return levels;
 }
+/** Save a set's Learn levels ({} or null: start over). */
 function learnSet(id, levels) {
   const all = readJson(file('learn.json'), {});
-  if (levels && Object.keys(levels).length) all[id] = levels;
-  else delete all[id];
+  const clean = Object.fromEntries(Object.entries(levels && typeof levels === 'object' ? levels : {}).filter(([k, v]) => k !== '_at' && [0, 1, 2].includes(v)));
+  all[id] = { ...clean, _at: new Date().toISOString() };
   writeJson(file('learn.json'), all);
   return true;
+}
+/** A deleted set's Learn progress, gone. */
+function learnDrop(id) {
+  const all = readJson(file('learn.json'), {});
+  delete all[id];
+  writeJson(file('learn.json'), all);
 }
 function matchBest(id, ms) {
   const all = readJson(file('match.json'), {});
@@ -947,14 +994,15 @@ function reviewableAll() {
     .join('|');
   if (reviewCache.sig === sig && reviewCache.items) return reviewCache.items;
   const out = new Map();
-  const courseId = '';
   for (const e of index()) {
-    if (e.status !== 'ready' || (courseId && e.courseId !== courseId)) continue;
+    if (e.status !== 'ready') continue;
     const s = readJson(file('sets', `${e.id}.json`), null) || readJson(file('mine', `${e.id}.json`), null) || readJson(file('local', `${e.id}.json`), {});
     const one = (it, kind) => {
       if (out.has(it.k)) return;
       // Written answers need the student to mark them: they stay in practice exams, not in quick review.
       if (kind === 'question' && it.type === 'short') return;
+      // A question whose stored answer a review found may be wrong isn't drilled (it's still shown in practice exams).
+      if (it.answerDisputed) return;
       out.set(it.k, { k: it.k, kind, item: it, setId: e.id, courseId: e.courseId, courseCode: e.courseCode, chapter: it.chapter || (e.chapters || [])[0] || null });
     };
     for (const c of keyed(s.cards)) one(c, 'card');
@@ -1025,8 +1073,14 @@ async function reviewMark(k, grade, { courseId = '', chapter = null } = {}) {
       if (due >= t.date) due = eve > today ? eve : addDays(Math.min(1, BOX_DAYS[box]));
     }
   }
-  state[k] = { box, due, last: new Date().toISOString(), lapses: was.lapses + (grade === 'again' ? 1 : 0), first: was.first || today };
+  const at = new Date().toISOString();
+  state[k] = { box, due, last: at, lapses: (was.lapses || 0) + (grade === 'again' ? 1 : 0), first: was.first || today };
   writeJson(file('review.json'), state);
+  // The answer joins the question's history too, so mastery and which questions a practice exam favours reflect it.
+  const attempts = readJson(file('attempts.json'), {});
+  const right = grade !== 'again';
+  (attempts.review = Array.isArray(attempts.review) ? attempts.review : []).push({ at, score: right ? 1 : 0, total: 1, n: 1, items: [[k, right]] });
+  writeJson(file('attempts.json'), attempts);
   return state[k];
 }
 
