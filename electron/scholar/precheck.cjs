@@ -85,6 +85,35 @@ async function fetchArea(area, v, ou) {
   return r;
 }
 
+// A real disconnection (not one failed request): the check stops rather than work from half the data.
+const OFFLINE = /ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_ADDRESS_UNREACHABLE|ERR_NETWORK_IO_SUSPENDED|ENOTFOUND/i;
+// A failed request is asked again (after these waits) before it counts as "couldn't check", which starts a Claude run.
+const RETRY_MS = [1500, 5000];
+// Answers worth asking again: none at all, a timeout, too many requests, a server error.
+const retryable = (status) => !status || status === 408 || status === 429 || status >= 500;
+
+/**
+ * fetchArea, asked again when a request fails in passing (a 500, a dropped connection). What still fails after the
+ * retries is returned (or thrown) exactly as before, so it stays a reason for the check.
+ */
+async function fetchAreaRetry(area, v, ou, { fetch = fetchArea, wait = RETRY_MS } = {}) {
+  for (let i = 0; ; i++) {
+    let r = null;
+    let err = null;
+    try {
+      r = await fetch(area, v, ou);
+    } catch (e) {
+      err = e;
+    }
+    const again = err ? !OFFLINE.test(String(err.message || err)) : !r?.data && r?.status !== 403 && r?.status !== 404 && retryable(r?.status);
+    if (!again || i >= wait.length) {
+      if (err) throw err;
+      return r;
+    }
+    await new Promise((res) => setTimeout(res, wait[i]));
+  }
+}
+
 /** The signed-in student's own address (a request that makes Kea sign in when the session has expired). */
 const whoamiRel = (v) => (isCanvas() ? '/api/v1/users/self' : `/d2l/api/lp/${v.lp}/users/whoami`);
 
@@ -434,10 +463,10 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     for (const [area, a] of Object.entries(AREAS)) {
       let r;
       try {
-        r = await fetchArea(area, v, c.ou);
+        r = await fetchAreaRetry(area, v, c.ou);
       } catch (err) {
         // (Only a real disconnection, not a single failed request: the check already reached the class site.)
-        if (/ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_ADDRESS_UNREACHABLE|ERR_NETWORK_IO_SUSPENDED|ENOTFOUND/i.test(String(err.message || err))) offline = offline || String(err.message || err).slice(0, 60);
+        if (OFFLINE.test(String(err.message || err))) offline = offline || String(err.message || err).slice(0, 60);
         reasons.push(`couldn't check ${area} (${String(err.message || err).slice(0, 80)})`);
         continue;
       }
@@ -708,13 +737,45 @@ async function refreshSubmissions(dir, v, list) {
 
 // ---------- The Inbox: announcements, straight from D2L (no Claude) ----------
 const inboxFile = () => path.join(profiles.paths().dir, 'inbox.json');
-const readInbox = () => {
+
+/**
+ * Write a JSON file whole or not at all (a temporary file, then renamed over it), plus a `.bak` copy of what was
+ * written, for readSafe to fall back on if the file is ever cut short or damaged.
+ */
+function writeSafe(file, value) {
+  const data = JSON.stringify(value);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const put = (f) => {
+    fs.writeFileSync(`${f}.tmp`, data);
+    try {
+      fs.renameSync(`${f}.tmp`, f);
+    } catch (err) {
+      // (Windows can refuse the rename while another program has the file open: then a plain write.)
+      fs.writeFileSync(f, data);
+      fs.rmSync(`${f}.tmp`, { force: true });
+    }
+  };
+  put(file);
   try {
-    return JSON.parse(fs.readFileSync(inboxFile(), 'utf8'));
-  } catch {
-    return { items: [], seeded: false };
+    put(`${file}.bak`);
+  } catch {}
+}
+/** A JSON file; its `.bak` when the file is there but damaged; `fallback` when there's none yet. */
+function readSafe(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (err) {
+    if (err?.code === 'ENOENT') return fallback;
   }
-};
+  try {
+    return JSON.parse(fs.readFileSync(`${file}.bak`, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+// (A damaged inbox read as empty would bring every announcement back unseen and forget what the student deleted.)
+const readInbox = () => readSafe(inboxFile(), { items: [], seeded: false });
+const writeInbox = (box) => writeSafe(inboxFile(), box);
 const plain = (html) =>
   String(html || '')
     .replace(/<(br|\/p|\/div|\/li|\/h\d)[^>]*>/gi, '\n')
@@ -772,7 +833,7 @@ function updateInbox(dir, ous = {}) {
     }
   }
   const items = [...known.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 500);
-  fs.writeFileSync(inboxFile(), JSON.stringify({ ...box, items, seeded: true }));
+  writeInbox({ ...box, items, seeded: true });
   if (box.seeded && fresh.length) {
     const { Notification, BrowserWindow } = require('electron');
     for (const n of fresh.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.body.slice(0, 200) }).show();
@@ -876,7 +937,7 @@ async function updateAlerts(list) {
   const gone = new Set(now.deleted || []);
   const add = fresh.filter((n) => !gone.has(n.id) && !now.items.some((i) => i.id === n.id));
   now.items = [...add, ...now.items].sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 500);
-  fs.writeFileSync(inboxFile(), JSON.stringify({ ...now, seeded: true }));
+  writeInbox({ ...now, seeded: true });
   if (box.seeded) {
     const { Notification } = require('electron');
     for (const n of fresh.slice(0, 5)) {
@@ -976,7 +1037,7 @@ function updateGrades(dir, ous) {
     add.push({ ...item, course: code, at: g.at || new Date().toISOString(), url: byCourse[code].url, links: byCourse[code].url ? [{ label: 'Open grades', url: byCourse[code].url }] : [], read: false });
   }
   box.items.unshift(...add);
-  fs.writeFileSync(inboxFile(), JSON.stringify({ ...box, items: box.items.slice(0, 500) }));
+  writeInbox({ ...box, items: box.items.slice(0, 500) });
   const { Notification } = require('electron');
   for (const n of add.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.kind === 'grade' ? `${n.score}${n.percent != null ? ` (${n.percent}%)` : ''}` : n.body.slice(0, 200) }).show();
 }
@@ -986,7 +1047,7 @@ function inboxNote(n) {
   const box = readInbox();
   if ((box.deleted || []).includes(n.id) || box.items.some((i) => i.id === n.id)) return;
   box.items.unshift({ at: new Date().toISOString(), read: false, links: [], ...n });
-  fs.writeFileSync(inboxFile(), JSON.stringify({ ...box, items: box.items.slice(0, 500) }));
+  writeInbox({ ...box, items: box.items.slice(0, 500) });
   const { Notification } = require('electron');
   if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: String(n.body || '').slice(0, 200) }).show();
 }
@@ -994,7 +1055,7 @@ function inboxNote(n) {
 function markInboxRead(ids) {
   const box = readInbox();
   for (const i of box.items) if (!ids || ids.includes(i.id)) i.read = true;
-  fs.writeFileSync(inboxFile(), JSON.stringify(box));
+  writeInbox(box);
 }
 
 /** What identifies the same message on the PC and the phone (whose own checks give it a different id). */
@@ -1012,7 +1073,7 @@ function deleteInbox(ids = [], keys = []) {
   box.items = box.items.filter((i) => !gone.includes(i));
   box.deleted = [...new Set([...(box.deleted || []), ...ids, ...gone.map((i) => i.id)])].slice(-3000);
   box.deletedKeys = [...new Set([...(box.deletedKeys || []), ...keys, ...gone.map(inboxKey)])].slice(-3000);
-  fs.writeFileSync(inboxFile(), JSON.stringify(box));
+  writeInbox(box);
   return gone.map(inboxKey);
 }
 
@@ -1097,7 +1158,7 @@ async function syncCheck(code, ou) {
   for (const [area, a] of Object.entries(SYNC_AREAS)) {
     let got;
     try {
-      got = await fetchArea(area, v, ou);
+      got = await fetchAreaRetry(area, v, ou);
     } catch (err) {
       reasons.push(`couldn't check ${area} (${String(err.message || err).slice(0, 80)})`);
       continue;
@@ -1128,4 +1189,49 @@ async function syncCheck(code, ou) {
   };
 }
 
-module.exports = { classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck, _test: { AREAS, refreshSubmissions, saveD2lPlaces, classPlatforms, updateGrades, updateInbox, hiddenWork } };
+// ---------- Old check folders and run logs (kept two weeks) ----------
+const KEEP_DAYS = 14;
+let prunedOn = null;
+/**
+ * Removes what's older than two weeks: the pre-check's and weekly check's day folders, saved enrollment lists and the
+ * run logs. At most once a day, and the newest three day folders always stay (the engine reads the newest folder that
+ * has a class's files, however old). `workspaceDir` is the scan folder; `now` for tests.
+ */
+function prune(workspaceDir, now = new Date()) {
+  const today = day(now);
+  if (prunedOn === today) return 0;
+  prunedOn = today;
+  const cutoff = day(new Date(now.getTime() - KEEP_DAYS * 864e5));
+  const data = path.join(workspaceDir, 'data');
+  let removed = 0;
+  const gone = (f) => {
+    try {
+      fs.rmSync(f, { recursive: true, force: true });
+      removed++;
+    } catch {}
+  };
+  const list = (dir) => {
+    try {
+      return fs.readdirSync(dir);
+    } catch {
+      return [];
+    }
+  };
+  for (const kind of ['kea-precheck', 'kea-sync']) {
+    const base = path.join(data, 'digests', kind);
+    const days = list(base).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+    for (const d of days.slice(0, Math.max(0, days.length - 3))) if (d < cutoff) gone(path.join(base, d));
+  }
+  for (const f of list(path.join(data, 'digests'))) {
+    const m = /^enrollments-(\d{4}-\d{2}-\d{2})\.json$/.exec(f);
+    if (m && m[1] < cutoff) gone(path.join(data, 'digests', f));
+  }
+  // (Kea's stream-json logs, one per task a day: kea-<task>-<date>.log.)
+  for (const f of list(path.join(data, 'logs'))) {
+    const m = /^kea-.+-(\d{4}-\d{2}-\d{2})\.log$/.exec(f);
+    if (m && m[1] < cutoff) gone(path.join(data, 'logs', f));
+  }
+  return removed;
+}
+
+module.exports = { prune, classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck, _test: { fetchAreaRetry, writeSafe, readSafe, prune, resetPrune: () => (prunedOn = null), AREAS, refreshSubmissions, saveD2lPlaces, classPlatforms, updateGrades, updateInbox, hiddenWork } };

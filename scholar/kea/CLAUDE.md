@@ -289,8 +289,11 @@ start over:
 
 1. Run `uv run academic-sync status` and `uv run academic-sync completeness`, and read each class's
    `data/downloads/<CODE>/raw_notes.md`, to see what's already there.
-2. A class that already has items recorded as synced to Kea (`calendar-id kea`) is **done** for this run. Leave it,
-   and its leftover gaps, to the next `/academic-sync`.
+2. In an `/academic-import … resume`, a class that already has items recorded as synced to Kea (`calendar-id kea`) is
+   **done** for this run. Leave it, and its leftover gaps, to the next `/academic-sync`. In an `/academic-sync … resume`
+   or `/daily-overview … resume`, synced items don't mean done: redo each reason from Kea's pre-check that the
+   database doesn't show handled yet (today's `data/digests/kea-precheck/<day>/summary.json` for the daily check,
+   `data/digests/kea-sync/<day>/<CODE>-brief.json` and the `.min.json` files beside it for the weekly update).
 3. For a half-done class, keep what's saved and continue from the first missing step: extract, link, banners,
    chapters, then record the sync. Re-open a page only when a missing piece needs it, not the areas listed as
    Inspected.
