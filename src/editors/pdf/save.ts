@@ -16,7 +16,8 @@ import {
   PDFOptionList
 } from 'pdf-lib';
 import type { Annotation, PageRef, TextAnn, ShapeAnn } from './types';
-import { hexToRgb01, BASELINE_EM, LINE_HEIGHT } from './geometry';
+import { hexToRgb01, baselineEm, LINE_HEIGHT } from './geometry';
+import { api } from '../../lib/api';
 import { dataUrlToBytes } from '../../lib/util';
 import { loadPdf } from './pdfjs';
 import { setting } from '../../lib/settings';
@@ -85,7 +86,8 @@ class FontCache {
   private fonts = new Map<string, PDFFont>();
   private ok = new Map<string, Set<string>>();
   constructor(private doc: PDFDocument) {}
-  async get(a: TextAnn) {
+  async get(a: TextAnn): Promise<PDFFont> {
+    if (!FONT_MAP[a.font]) return this.installed(a);
     const std = FONT_MAP[a.font][(a.bold ? 1 : 0) + (a.italic ? 2 : 0)];
     let f = this.fonts.get(std);
     if (!f) {
@@ -95,6 +97,45 @@ class FontCache {
     }
     return f;
   }
+  /** An installed family, embedded (only the letters used). Missing on this computer: Helvetica stands in. */
+  private async installed(a: TextAnn): Promise<PDFFont> {
+    const key = `${a.font}|${a.bold ? 'b' : ''}${a.italic ? 'i' : ''}`;
+    const have = this.fonts.get(key);
+    if (have) return have;
+    let f: PDFFont | null = null;
+    try {
+      const file = await api.fontFile(a.font, a.bold, a.italic);
+      if (file) {
+        const fontkit: any = (await import('@pdf-lib/fontkit')).default;
+        const parsed = fontkit.create(file.data);
+        // A collection (.ttc) holds several fonts: pick the family and style asked for.
+        let ps: string | undefined;
+        if (parsed.fonts) {
+          const want = (x: any) => String(x.familyName).toLowerCase() === a.font.toLowerCase();
+          const style = (x: any) => (/bold/i.test(x.subfamilyName) === a.bold ? 0 : 2) + (/italic|oblique/i.test(x.subfamilyName) === a.italic ? 0 : 1);
+          const pick = parsed.fonts.filter(want).sort((x: any, y: any) => style(x) - style(y))[0] || parsed.fonts[0];
+          ps = pick.postscriptName;
+        }
+        const fileIsBold = /bold|black|heavy/i.test(file.name);
+        this.doc.registerFontkit({
+          create: (d: Uint8Array) => {
+            let font = ps ? fontkit.create(d, ps) : fontkit.create(d);
+            // A variable font with no separate bold file: take its bold instance from the weight axis.
+            if (a.bold && !fileIsBold && font.variationAxes?.wght) font = font.getVariation({ wght: Math.min(700, font.variationAxes.wght.max) });
+            return font;
+          }
+        } as any);
+        f = await this.doc.embedFont(file.data, { subset: true });
+      }
+    } catch {
+      f = null;
+    }
+    if (!f) f = await this.get({ ...a, font: 'Helvetica' });
+    this.fonts.set(key, f);
+    this.ok.set(f.name, this.ok.get(f.name) || new Set());
+    return f;
+  }
+
   /** Standard PDF fonts only cover WinAnsi; swap anything else for a close match or '?'. */
   sanitize(font: PDFFont, text: string) {
     const okSet = this.ok.get(font.name) || new Set<string>();
@@ -268,7 +309,7 @@ async function drawAnnotation(doc: PDFDocument, page: PDFPage, a: Annotation, ma
         if (!line) return;
         const lw = font.widthOfTextAtSize(line, size);
         const offX = a.align === 'center' ? (a.w - lw) / 2 : a.align === 'right' ? a.w - lw : 0;
-        const [px, py] = map(a.x + offX, a.y + i * lh + size * BASELINE_EM[a.font]);
+        const [px, py] = map(a.x + offX, a.y + i * lh + size * baselineEm(a.font));
         page.drawText(line, { x: px, y: py, size, font, color: color(a.color), rotate: degrees(rot) });
       });
       break;

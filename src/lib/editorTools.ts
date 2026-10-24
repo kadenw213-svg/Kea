@@ -83,7 +83,7 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
     run: () => 'picture' // handled in runToolHeadless: the result carries the image
   });
   // Every editor can be designed in, so every editor carries the design knowledge.
-  const all = [...t, ...(hooks.tools || []), designGuideTool];
+  const all = [...t, ...(hooks.tools || []), designGuideTool, findAssignmentTool];
   // Several edits in one step: each step re-sends the whole conversation, so batching is the biggest saving.
   all.push({
     name: 'apply_edits',
@@ -114,6 +114,40 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
   });
   return all;
 }
+
+/** The student's assignments from Kea Scholar (their class site), with instructions and the rubric when the site has one. */
+const findAssignmentTool: AssistantTool = {
+  name: 'find_assignment',
+  description:
+    'Look up the student’s assignments from their class site (Kea Scholar): the instructions, points and rubric for the work this file is for. Use it when they ask for feedback “against the rubric” or “for my class” without attaching one. Search by words from the title or topic; leave the query empty to list recent and upcoming graded work.',
+  input_schema: { type: 'object', properties: { query: { type: 'string' }, course: { type: 'string', description: 'Course code to narrow it, e.g. "ENG1010"' } } },
+  async run({ query, course }) {
+    const day = (d: number) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
+    let items: Awaited<ReturnType<typeof api.scholar.items>> = [];
+    try {
+      items = await api.scholar.items({ from: day(-60), to: day(90) });
+    } catch {
+      throw new Error('Kea Scholar isn’t set up on this computer, so there are no class assignments to look up. Ask the student to attach or paste the rubric.');
+    }
+    const words = String(query || '').toLowerCase().split(/\W+/).filter((w) => w.length > 2);
+    const graded = items.filter((i) => !['reading', 'weekly_reading', 'lecture', 'recitation', 'seminar', 'office_hours', 'break', 'no_class', 'administrative_deadline'].includes(i.type) && (!course || i.courseCode.toLowerCase().includes(String(course).toLowerCase())));
+    const scored = graded
+      .map((i) => ({ i, score: words.reduce((n, w) => n + (`${i.title} ${i.courseCode} ${i.module || ''}`.toLowerCase().includes(w) ? 2 : (i.description || '').toLowerCase().includes(w) ? 1 : 0), 0) }))
+      .filter((x) => !words.length || x.score > 0)
+      .sort((a, b) => b.score - a.score || Math.abs(Date.parse(a.i.due || a.i.date) - Date.now()) - Math.abs(Date.parse(b.i.due || b.i.date) - Date.now()));
+    if (!scored.length) return `No matching assignments. Recent and upcoming graded work: ${graded.slice(0, 12).map((i) => `${i.courseCode} “${i.title}” (due ${(i.due || i.date).slice(0, 10)})`).join('; ') || 'none'}.`;
+    const [best, ...rest] = scored;
+    const b = best.i;
+    return [
+      `${b.courseCode} — ${b.title}${b.points ? ` (${b.points} points)` : ''}, due ${(b.due || b.date).slice(0, 16).replace('T', ' ')}`,
+      b.description ? `Instructions and rubric from the class site:\n${b.description.slice(0, 12000)}` : 'The class site gives no instructions or rubric for it.',
+      b.links?.length ? `Linked files: ${b.links.map((l) => l.label).join(', ')}` : '',
+      rest.length ? `Other matches: ${rest.slice(0, 5).map((x) => `${x.i.courseCode} “${x.i.title}”`).join('; ')}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+  }
+};
 
 /** What the open file looks like: the editor's own picture (photo, video frame), else a screenshot of its area. */
 export async function picture(tabId: string) {

@@ -282,11 +282,11 @@ const fmt = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? 
 function starters(noun: string): string[] {
   switch (noun) {
     case 'document':
-      return ['Proofread this and fix mistakes', 'Summarize it in five bullet points', 'Make the introduction stronger'];
+      return ['Review this against my assignment’s rubric', 'Proofread this and fix mistakes', 'Make the introduction stronger'];
     case 'spreadsheet':
-      return ['Explain what this sheet does', 'Add a totals row', 'Find anything that looks wrong'];
+      return ['Finish this sheet and make it look polished', 'Explain what this sheet does', 'Find anything that looks wrong'];
     case 'presentation':
-      return ['Tighten the wording on every slide', 'Add speaker notes', 'Redesign this slide so it looks professional'];
+      return ['Turn my notes into a finished, well-designed deck', 'Redesign this slide so it looks professional', 'Add speaker notes'];
     case 'PDF':
       return ['Summarize this PDF', 'Highlight the key terms', 'Comment on anything unclear'];
     case 'image':

@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { pdfjsLib, PDFDocumentProxy } from './pdfjs';
 import type { Annotation, Box, PageRef, TextAnn, Tool } from './types';
-import { annBox, normBox, resizeAnn, translateAnn, FONT_CSS, LINE_HEIGHT } from './geometry';
+import { annBox, normBox, resizeAnn, translateAnn, fontCss, LINE_HEIGHT } from './geometry';
 import { uid } from '../../lib/util';
 import { MessageSquare } from 'lucide-react';
 import { scheduleRender, distanceFromView } from './renderQueue';
@@ -48,7 +48,7 @@ type Handle = (typeof HANDLES)[number] | 'p1' | 'p2';
 
 const measureCtx = document.createElement('canvas').getContext('2d')!;
 export function measureTextAnn(a: Pick<TextAnn, 'text' | 'fontSize' | 'font' | 'bold' | 'italic'>) {
-  measureCtx.font = `${a.italic ? 'italic ' : ''}${a.bold ? 'bold ' : ''}${a.fontSize}px ${FONT_CSS[a.font]}`;
+  measureCtx.font = `${a.italic ? 'italic ' : ''}${a.bold ? 'bold ' : ''}${a.fontSize}px ${fontCss(a.font)}`;
   const lines = a.text.split('\n');
   return {
     width: Math.max(...lines.map((l) => measureCtx.measureText(l || ' ').width)),
@@ -640,7 +640,7 @@ function HtmlAnn({
     top: t.y,
     width: t.w,
     minHeight: t.h,
-    fontFamily: FONT_CSS[t.font],
+    fontFamily: fontCss(t.font),
     fontSize: t.fontSize,
     fontWeight: t.bold ? 700 : 400,
     fontStyle: t.italic ? 'italic' : 'normal',

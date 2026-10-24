@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   saveDialog: (opts) => ipcRenderer.invoke('dialog:save', opts),
   readFile: (p) => ipcRenderer.invoke('file:read', p),
   writeFile: (p, data) => ipcRenderer.invoke('file:write', p, data),
+  fontFile: (family, bold, italic) => ipcRenderer.invoke('fonts:file', family, bold, italic),
   fileExists: (p) => ipcRenderer.invoke('file:exists', p),
   renameFile: (from, to) => ipcRenderer.invoke('file:rename', from, to),
   showInFolder: (p) => ipcRenderer.invoke('shell:show-in-folder', p),

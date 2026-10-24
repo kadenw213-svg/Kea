@@ -6,7 +6,7 @@ import type { AiHooks, AssistantTool } from '../../store';
 import { uid } from '../../lib/util';
 import { imageSource, resolveImage } from '../../lib/attachments';
 import { measureTextAnn } from './PageView';
-import { BASELINE_EM } from './geometry';
+import { baselineEm } from './geometry';
 import type { Annotation, Box, DocState, FontFamily, PageRef, TextAnn } from './types';
 import { DEFAULTS } from './types';
 import type { TextItemRect } from './pdfjs';
@@ -154,7 +154,6 @@ export function wrapText(t: Pick<TextAnn, 'fontSize' | 'font' | 'bold' | 'italic
   return out.join('\n');
 }
 
-const FONTS: FontFamily[] = ['Helvetica', 'Times', 'Courier'];
 const fontOf = (family: TextItemRect['family']): FontFamily => (family === 'serif' ? 'Times' : family === 'monospace' ? 'Courier' : 'Helvetica');
 const hex = { type: 'string', description: 'CSS hex colour like "#1a73e8"' };
 const pageNo = { type: 'integer', description: 'Page number, from 1' };
@@ -314,7 +313,7 @@ export function pdfAi(c: PdfAiCtx): Pick<AiHooks, 'tools'> {
         const covers: Annotation[] = lines.map((b) => ({ id: uid(), pageId: h.pageId, type: 'whiteout', x: b.x - 1, y: b.y - 1, w: b.w + 2, h: b.h + 2, stroke: null, fill: colors.bg, strokeWidth: 0, opacity: 1 }));
         const words = h.rest ? `${replacement}${/^[\s.,;:!?)]/.test(h.rest) ? '' : ' '}${h.rest}` : replacement;
         const multi = h.lines.length > 1;
-        const t: TextAnn = { id: uid(), pageId: h.pageId, type: 'text', x: multi ? left : h.lines[0].x, y: h.baseY - size * BASELINE_EM[font], w: 10, h: 10, text: words, fontSize: size, font, bold: false, italic: false, color: colors.fg, align: 'left', auto: !multi };
+        const t: TextAnn = { id: uid(), pageId: h.pageId, type: 'text', x: multi ? left : h.lines[0].x, y: h.baseY - size * baselineEm(font), w: 10, h: 10, text: words, fontSize: size, font, bold: false, italic: false, color: colors.fg, align: 'left', auto: !multi };
         if (multi) (t.text = wrapText(t, words, Math.max(right, h.lineEnd) - left)), (t.unwrapped = words);
         const m = measureTextAnn(t);
         t.w = multi ? Math.max(right, h.lineEnd) - left : m.width + 2;
@@ -354,7 +353,7 @@ export function pdfAi(c: PdfAiCtx): Pick<AiHooks, 'tools'> {
     {
       name: 'add_text',
       description:
-        'Put text on a page: labels, answers in a worksheet, a heading, or the type of a page you are designing. Fonts: Helvetica (sans), Times (serif), Courier (mono). With `width`, long text wraps to that width. Measure positions from describe_pages (page size) and check with look.',
+        'Put text on a page: labels, answers in a worksheet, a heading, or the type of a page you are designing, in any installed font (embedded when the PDF is saved). With `width`, long text wraps to that width. Measure positions from describe_pages (page size) and check with check_design and look.',
       input_schema: {
         type: 'object',
         properties: {
@@ -363,7 +362,7 @@ export function pdfAi(c: PdfAiCtx): Pick<AiHooks, 'tools'> {
           y: { type: 'number', description: 'Top of the text box' },
           text: { type: 'string', description: 'Line breaks with \\n' },
           size: { type: 'number', description: 'Font size in points (default 14)' },
-          font: { type: 'string', enum: FONTS },
+          font: { type: 'string', description: 'Any installed font family (see design_guide "start"), e.g. "Bahnschrift", "Georgia", "Segoe UI Black"; it is embedded in the PDF. Default Helvetica.' },
           bold: { type: 'boolean' },
           italic: { type: 'boolean' },
           color: hex,
@@ -461,7 +460,7 @@ export function pdfAi(c: PdfAiCtx): Pick<AiHooks, 'tools'> {
           fill: hex,
           stroke: hex,
           size: { type: 'number', description: 'Font size (text)' },
-          font: { type: 'string', enum: FONTS },
+          font: { type: 'string', description: 'Any installed font family' },
           bold: { type: 'boolean' },
           italic: { type: 'boolean' },
           align: { type: 'string', enum: ['left', 'center', 'right'] },

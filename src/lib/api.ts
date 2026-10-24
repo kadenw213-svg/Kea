@@ -314,6 +314,8 @@ export interface KeaApi {
   saveDialog(opts?: { title?: string; defaultPath?: string; filters?: FileFilter[] }): Promise<string | null>;
   readFile(p: string): Promise<FileEntry>;
   writeFile(p: string, data: Uint8Array): Promise<boolean>;
+  /** An installed font's file, for embedding in a PDF (null if the family isn't installed). */
+  fontFile(family: string, bold: boolean, italic: boolean): Promise<{ file: string; name: string; data: Uint8Array } | null>;
   fileExists(p: string): Promise<boolean>;
   /** Rename a file in place; fails if the new name is taken. */
   renameFile(from: string, to: string): Promise<boolean>;

@@ -64,7 +64,7 @@ import { decryptPdf, encryptPdf, compressPdf, ocrPdf, pdfToDocHtml, Protection }
 import { PasswordDialog } from './PasswordDialog';
 import { Lock, Minimize2, ScanText, FileType } from 'lucide-react';
 import { formatBytes } from '../../lib/util';
-import { annBox, rotateAnn, translateAnn, BASELINE_EM } from './geometry';
+import { annBox, rotateAnn, translateAnn, baselineEm } from './geometry';
 import { uid, clamp, bytesToDataUrl, modKey, escapeHtml } from '../../lib/util';
 import { saveTabFile, exportFile, isSilentSave } from '../../lib/save';
 import { api } from '../../lib/api';
@@ -556,7 +556,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
       pageId,
       type: 'text',
       x: minX,
-      y: hit.horizontal ? hit.baseY - fontSize * BASELINE_EM[font] : minY,
+      y: hit.horizontal ? hit.baseY - fontSize * baselineEm(font) : minY,
       w: maxX - minX + 2,
       h: fontSize * 1.2,
       text,

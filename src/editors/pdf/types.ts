@@ -20,7 +20,8 @@ export type Tool =
   | 'redact'
   | 'note';
 
-export type FontFamily = 'Helvetica' | 'Times' | 'Courier';
+/** The three standard PDF fonts, or any installed font family (embedded in the PDF when it's saved). */
+export type FontFamily = 'Helvetica' | 'Times' | 'Courier' | (string & {});
 
 export interface Box {
   x: number;

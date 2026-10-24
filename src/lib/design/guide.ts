@@ -79,7 +79,7 @@ export function availableFonts(): string[] {
 }
 function installedFonts() {
   const have = availableFonts();
-  return `## Fonts installed on this computer\nUse only these for text boxes and SVG text (anything else falls back to a default and ruins the design): ${have.join(', ')}.\nPDF text boxes only have Helvetica, Times and Courier: for display type on a PDF page, set it as SVG artwork (add_image with svg and <text font-family="…">) using an installed font.`;
+  return `## Fonts installed on this computer\nUse only these for text boxes and SVG text (anything else falls back to a default and ruins the design): ${have.join(', ')}.\nIn PDFs, text boxes can use any of these too (they're embedded when the PDF is saved).`;
 }
 
 // ---------- The user's own guidelines (Settings → Claude Assistant → Design): they come first and win ----------

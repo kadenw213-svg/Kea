@@ -143,3 +143,23 @@ export const BASELINE_EM: Record<string, number> = {
 };
 
 export const LINE_HEIGHT = 1.2;
+
+/** CSS for a text box's font: the standard trio's stand-ins, or an installed family by name. */
+export const fontCss = (font: string) => FONT_CSS[font] || `"${String(font).replace(/"/g, '')}", Arial, sans-serif`;
+
+const baselines = new Map<string, number>();
+/** Where the first baseline sits (in em) for any font at line-height 1.2: measured once for installed families. */
+export function baselineEm(font: string): number {
+  if (BASELINE_EM[font] !== undefined) return BASELINE_EM[font];
+  let v = baselines.get(font);
+  if (v === undefined) {
+    const g = document.createElement('canvas').getContext('2d')!;
+    g.font = `100px ${fontCss(font)}`;
+    const m = g.measureText('Hxgjpq');
+    const asc = (m.fontBoundingBoxAscent ?? 90) / 100;
+    const desc = (m.fontBoundingBoxDescent ?? 22) / 100;
+    v = (LINE_HEIGHT - (asc + desc)) / 2 + asc;
+    baselines.set(font, v);
+  }
+  return v;
+}
