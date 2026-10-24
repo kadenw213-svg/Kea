@@ -11,6 +11,7 @@ import type { Annotation, Box, DocState, FontFamily, PageRef, TextAnn } from './
 import { DEFAULTS } from './types';
 import type { TextItemRect } from './pdfjs';
 import type { FormFieldInfo, FormValues } from './save';
+import { contrast, formatIssues, parseColour, sampleImage, type Issue } from '../../lib/design/check';
 
 export interface PdfAiCtx {
   history: { get(): DocState; commit(s: DocState): void };
@@ -226,6 +227,51 @@ export function pdfAi(c: PdfAiCtx): Pick<AiHooks, 'tools'> {
       description: 'List the pages (size in points, rotation), every mark already added (text boxes, highlights, shapes, images, notes, with ids for edit_mark / delete_mark) and the form fields. read_document gives the text itself.',
       input_schema: { type: 'object', properties: {} },
       run: describe
+    },
+    {
+      name: 'check_design',
+      description:
+        'Measure a page and list objective problems with what you added: text running off the page, added text overlapping other added text or sitting on the PDF’s own text without a cover, unreadable contrast (against the box, shapes, images or the page behind), text too small to read. Run it after a pass of edits and before you finish.',
+      input_schema: { type: 'object', properties: { page: pageNo } },
+      run: async ({ page }) => {
+        const { ref, i } = pageAt(page);
+        const z = c.sizeOf(ref);
+        const s = c.history.get();
+        const mine = s.annots.filter((a) => a.pageId === ref.id);
+        const texts = mine.filter((a): a is TextAnn => a.type === 'text' && !!a.text.trim());
+        const issues: Issue[] = [];
+        const r1 = (v: number) => Math.round(v);
+        const name = (t: TextAnn) => `${t.id} (“${t.text.slice(0, 28).replace(/\n/g, ' ')}”)`;
+        const hit = (a: Box, b: Box, min = 2) => {
+          const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+          const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+          return ox > min && oy > min ? ox * oy : 0;
+        };
+        const covers = mine.filter((a) => (a.type === 'whiteout' || a.type === 'redact' || ((a.type === 'rect' || a.type === 'ellipse') && a.fill)) && 'w' in a) as (Annotation & Box)[];
+        const own = await c.textRectsFor(ref);
+        for (const t of texts) {
+          if (t.x < -1 || t.y < -1 || t.x + t.w > z.width + 1 || t.y + t.h > z.height + 1) issues.push({ severity: 'fix', text: `${name(t)} runs off the page (${r1(z.width)} × ${r1(z.height)} pt).` });
+          if (t.fontSize < 7) issues.push({ severity: 'fix', text: `${name(t)} is ${t.fontSize} pt: too small to read in print (keep ≥ 8).` });
+          // On top of the PDF's own words, with nothing covering them.
+          const under = own.filter((r) => r.str.trim() && hit(t, r) > 0.3 * Math.min(r.w * r.h, t.w * t.h) && !covers.some((cv) => mine.indexOf(cv) < mine.indexOf(t) && hit(cv, r) > 0.8 * Math.min(r.w * r.h, hit(t, r) || 1)));
+          if (under.length && !t.bg) issues.push({ severity: 'fix', text: `${name(t)} sits on the PDF’s own text (“${under.slice(0, 3).map((u) => u.str.trim()).join(' ').slice(0, 40)}”). Move it into empty space, or cover what’s underneath (whiteout or a background colour).` });
+          // Contrast: the text's own background, else the topmost filled shape or image under it, else the page.
+          let bg = t.bg ? parseColour(t.bg) : null;
+          if (!bg)
+            for (let k = mine.indexOf(t) - 1; k >= 0 && !bg; k--) {
+              const u = mine[k] as any;
+              if (!('w' in u) || !hit(t, u)) continue;
+              if (u.type === 'image') bg = await sampleImage(u.dataUrl, { x: (t.x - u.x) / u.w, y: (t.y - u.y) / u.h, w: t.w / u.w, h: t.h / u.h });
+              else if (u.fill) bg = parseColour(u.fill);
+            }
+          bg ||= parseColour(c.sampleColors(ref.id, t).bg) || [255, 255, 255];
+          const fg = parseColour(t.color);
+          const need = t.fontSize >= 18 || (t.bold && t.fontSize >= 14) ? 3 : 4.5;
+          if (fg && contrast(fg, bg) < need) issues.push({ severity: 'fix', text: `${name(t)}: contrast ${contrast(fg, bg).toFixed(1)}:1 against what’s behind it (needs ${need}:1).` });
+        }
+        for (let a = 0; a < texts.length; a++) for (let b = a + 1; b < texts.length; b++) if (hit(texts[a], texts[b], 2) > 0.12 * Math.min(texts[a].w * texts[a].h, texts[b].w * texts[b].h)) issues.push({ severity: 'fix', text: `${name(texts[a])} and ${name(texts[b])} overlap.` });
+        return formatIssues(issues, `page ${i + 1}`);
+      }
     },
     {
       name: 'mark_text',

@@ -6,6 +6,7 @@ import { Overlays } from './components/Overlays';
 import { UpdateDialog, initUpdates } from './components/Updates';
 import { LookupPanel } from './components/lookup/LookupPanel';
 import { AssistantPanel } from './components/assistant/AssistantPanel';
+import { ClaudeWorking } from './components/assistant/ClaudeWorking';
 import { toggleAssistant } from './components/assistant/assistantStore';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { VersionHistoryDialog, openHistory } from './components/settings/VersionHistory';
@@ -233,6 +234,7 @@ export function App() {
             style={paneStyle(t.id)}
             onPointerDownCapture={() => split && t.id !== activeId && useTabs.getState().setActive(t.id)}
           >
+            <ClaudeWorking tabId={t.id} />
             {t.kind === 'home' ? (
               <HomeScreen visible={t.id === activeId || !!(split && (t.id === split.left || t.id === split.right))} />
             ) : t.kind === 'scholar' ? (

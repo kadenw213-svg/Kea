@@ -718,7 +718,8 @@ export const SECTIONS: Section[] = [
       },
       { key: 'assistant.autoLook', label: 'Show Claude a picture of photos, slides and video frames with each message', type: 'toggle', default: true, help: 'Off: Claude looks only when it decides to (or when you press the eye button). Each picture costs about 1,600 tokens.' },
       { key: 'assistant.track', label: 'Make Claude’s document edits as suggestions', type: 'toggle', default: false, help: 'Edits show as tracked changes you accept or reject, instead of changing the text directly.' },
-      { key: 'assistant.showThinking', label: 'Show Claude’s reasoning (folded)', type: 'toggle', default: true, advanced: true },
+      { key: 'assistant.showThinking', label: 'Show Claude’s reasoning (folded)', type: 'toggle', default: false, advanced: true },
+      { key: 'assistant.showSteps', label: 'List every step Claude takes', type: 'toggle', default: false, advanced: true, help: 'Off: the steps fold into one line you can open. On: each step is listed as it happens.' },
       { key: 'assistant.showUsage', label: 'Show tokens used under the conversation', type: 'toggle', default: true, advanced: true }
     ]
   },

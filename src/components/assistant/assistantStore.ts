@@ -31,6 +31,8 @@ export interface Chat {
 interface AssistantStore {
   open: boolean;
   chats: Record<string, Chat>;
+  /** What Claude is doing in each tab right now ("Adding a text box"), for the overlay on the file. */
+  activity: Record<string, string | undefined>;
   key: { hasKey: boolean; hint: string } | null;
   set(p: Partial<AssistantStore>): void;
 }
@@ -45,6 +47,7 @@ export const useAssistant = create<AssistantStore>((set) => ({
     }
   })(),
   chats: {},
+  activity: {},
   key: null,
   set: (p) => set(p)
 }));
@@ -55,6 +58,35 @@ export function patchChat(tabId: string, p: Partial<Chat> | ((c: Chat) => Partia
   const s = useAssistant.getState();
   const cur = s.chats[tabId] || emptyChat();
   s.set({ chats: { ...s.chats, [tabId]: { ...cur, ...(typeof p === 'function' ? p(cur) : p) } } });
+}
+
+export const setActivity = (tabId: string, text: string | undefined) => {
+  const s = useAssistant.getState();
+  if (s.activity[tabId] !== text) s.set({ activity: { ...s.activity, [tabId]: text } });
+};
+
+/** Steps Claude takes to look and plan, not edits: never listed in the chat. */
+export const INTERNAL_STEPS = new Set(['design_guide', 'describe_slide', 'describe_pages', 'look', 'read_document', 'check_design', 'read_range', 'measure_picture', 'go_to_slide', 'go_to_page', 'show_in_document', 'measure_loudness', 'kea_list_tabs']);
+
+const VERBS: Record<string, string> = { add: 'Adding', set: 'Setting', update: 'Updating', delete: 'Removing', remove: 'Removing', arrange: 'Arranging', replace: 'Rewriting', mark: 'Marking', insert: 'Inserting', format: 'Formatting', place: 'Placing', move: 'Moving', apply: 'Applying', fill: 'Filling', redact: 'Redacting', rotate: 'Rotating', duplicate: 'Duplicating', edit: 'Editing', split: 'Cutting', trim: 'Trimming', select: 'Selecting', crop: 'Cropping', resize: 'Resizing', export: 'Exporting', page: 'Setting up' };
+const DOING: Record<string, string> = {
+  design_guide: 'Planning the design',
+  look: 'Checking how it looks',
+  read_document: 'Reading the file',
+  describe_slide: 'Reading the slide',
+  describe_pages: 'Reading the pages',
+  check_design: 'Checking the design',
+  add_image: 'Placing artwork',
+  place_image: 'Placing artwork',
+  insert_image: 'Placing artwork',
+  add_comment: 'Leaving a comment',
+  apply_edits: 'Building'
+};
+/** "add_text_box" → "Adding text box" (what the overlay says while a step runs). */
+export function doing(name = '') {
+  if (DOING[name]) return DOING[name];
+  const [verb, ...rest] = name.split('_');
+  return VERBS[verb] ? `${VERBS[verb]} ${rest.join(' ')}`.trim() : name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 }
 
 /** The Assistant and the Encyclopedia share the right side of the window: opening one closes the other. */

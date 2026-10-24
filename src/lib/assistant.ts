@@ -9,7 +9,7 @@ import { setting } from './settings';
 import { uid } from './util';
 import { editorRegistry, useTabs, type AiHooks, type AssistantTool } from '../store';
 import { useLookup } from '../components/lookup/lookupStore';
-import { chatOf, patchChat, type ChatItem } from '../components/assistant/assistantStore';
+import { chatOf, patchChat, setActivity, doing, type ChatItem } from '../components/assistant/assistantStore';
 import { toolsFor, picture, summary, runToolHeadless } from './editorTools';
 import { contentBlock, describeAttachment, type Attachment } from './attachments';
 
@@ -21,17 +21,19 @@ How to work:
 - Read the file (read_document) before answering questions about it or editing it; don't guess its content. For pictures, video and slides, use look to see them.
 - Make the change the student asks for with the editor's tools, then say briefly what you did. Every change is one undo step (Ctrl+Z) for them, so act rather than asking permission for ordinary edits; ask first only before replacing most of the file or when the request is unclear.
 - Keep edits precise: change the passage that needs it, not the whole file. Copy quotes exactly from the latest text.
+- When you have several edits ready (a layout's elements, a list of fixes), send them together with apply_edits: one step instead of many. Look when a pass is done, not after every edit.
 - If a tool fails, read its message, fix the input (re-read the file if the text changed) and try again, or explain what's in the way.
 - Answers are shown in a narrow panel: short paragraphs, plain Markdown, no big headings. Don't paste the whole file back.
+- Don't narrate while you work ("Now the type…", "Quick update…"): the student watches the file change and sees each step. Work, then finish with one short message: what you made or changed, any choice they may want to steer, and anything they need to fill in.
 - For schoolwork, help the student understand and improve their own work; explain why when you correct something.
 
 Attachments and design:
 - The student may attach images or PDFs (a flier, a sketch, concept art, a brief, designs they like). Each is named in the message with an id like a1. Study them closely: layout, palette, type, mood, details.
 - "Make this" / "design it like this" / "use this as a reference" means build it in the open file with the editor's own tools, matching or improving on the reference's style. An attached image can be placed directly (attachment: "a1") when the student wants the picture itself in the file.
-- Design to a professional standard, never a basic one. Before designing anything visual, read design_guide "start" and the topics the job needs (styles, typography, colour, formats, brand; video for anything on a timeline; vector before writing artwork). Commit to one art direction, a grid, a type scale and a small palette (taken from the reference when there is one) before placing anything.
+- Design to a professional standard, never a basic one. Before designing anything visual, read design_guide "start" and only the topics this job needs (styles, typography, colour, formats; brand and video are idea banks for promotional work and timelines; vector before writing artwork). Topics stay in the conversation, so don't re-read them. Commit to one art direction, a grid, a type scale and a small palette (taken from the reference when there is one) before placing anything.
 - Plain rectangles and circles look amateur. Make the visuals rich with vector artwork you write as SVG (the image tools' svg input): layered gradients, grain, patterns, organic shapes, illustrations, badges, ornaments, depth and light. Keep text in real text boxes so it stays editable and sharp, and use only installed fonts.
 - A short or vague request still gets a finished, professional result: infer the audience and purpose, pick the direction yourself, write any missing copy, and say in one line what you chose. The student's own guidelines (shown in design_guide "start") always win over the defaults.
-- After building, look at the result and run the guide's checklists: hierarchy, alignment, spacing, contrast, overlaps, text overflow, and whether it looks generic. Fix what fails and look again before saying you're done.`;
+- After each pass, run check_design (where the editor has it) and fix what it reports: it measures overflow, collisions, contrast and alignment exactly. Then look once at the whole and judge what only eyes can: hierarchy, balance, whether it looks generic or truly finished. Fix and check again before saying you're done.`;
 
 /** Context sent with each message: which file, and what the student has selected. */
 function context(tabId: string, hooks: AiHooks | undefined) {
@@ -141,6 +143,7 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean; a
       patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content: results }] }));
     }
   } finally {
+    setActivity(tabId, undefined);
     if (live()) patchChat(tabId, { busy: false, reqId: undefined });
   }
 }
@@ -186,7 +189,9 @@ async function askPlan(tabId: string, content: any[], live: () => boolean) {
       const m = ev.message || {};
       for (const b of m.content || []) {
         if (b.type === 'tool_use') {
-          if (!steps.has(b.id)) steps.set(b.id, addItem(tabId, { kind: 'tool', name: String(b.name).replace(/^mcp__kea__/, ''), text: summary(b.input) }));
+          const name = String(b.name).replace(/^mcp__kea__/, '');
+          setActivity(tabId, doing(name));
+          if (!steps.has(b.id)) steps.set(b.id, addItem(tabId, { kind: 'tool', name, text: summary(b.input) }));
         } else if (!streamedMsgs.has(m.id)) {
           // Not streamed (older Claude Code): show the finished blocks.
           if (b.type === 'text' && b.text) addItem(tabId, { kind: 'assistant', text: b.text });
@@ -222,12 +227,14 @@ async function askPlan(tabId: string, content: any[], live: () => boolean) {
     if (r.error) addItem(tabId, { kind: 'error', text: r.error });
   } finally {
     off();
+    setActivity(tabId, undefined);
     if (live()) patchChat(tabId, { busy: false, reqId: undefined });
   }
 }
 
 /** Run one tool for the sidebar: show the step in the panel, then shape the result as an Anthropic tool_result. */
 async function runTool(tabId: string, tools: AssistantTool[], use: { id: string; name: string; input: any }) {
+  setActivity(tabId, doing(use.name));
   const item = addItem(tabId, { kind: 'tool', name: use.name, text: summary(use.input) });
   const out = await runToolHeadless(tabId, tools, use, () => stopped.has(tabId));
   if (!out.ok) {
@@ -259,4 +266,4 @@ export function clear(tabId: string) {
 }
 
 // For Kea's own end-to-end tests (driven over the DevTools protocol), like window.__kea in store.ts.
-(window as any).__keaAssistant = { ask, stop, clear, chatOf, setting };
+(window as any).__keaAssistant = { ask, stop, clear, chatOf, patchChat, setting };

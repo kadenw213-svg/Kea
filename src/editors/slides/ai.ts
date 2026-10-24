@@ -6,6 +6,7 @@ import { uid, escapeHtml } from '../../lib/util';
 import { imageSource, resolveImage } from '../../lib/attachments';
 import { safeFormatHtml } from '../../lib/safeHtml';
 import type { Deck, El, ShapeKind } from './model';
+import { contrast, formatIssues, missingFonts, parseColour, sampleImage, type Issue } from '../../lib/design/check';
 
 export interface SlidesAiCtx {
   h: { get(): Deck; commit(d: Deck): void };
@@ -94,6 +95,114 @@ export function slidesDesignTools(c: SlidesAiCtx): AssistantTool[] {
   };
 
   return [
+    {
+      name: 'check_design',
+      description:
+        'Measure the slide as it is actually rendered and list objective problems: text overflowing its box, text overlapping other text, things partly off the page, text contrast against what is really behind it (artwork pixels included), near-miss alignment, fonts that aren’t installed, too many type sizes, text too small to read. Run it after each pass and before you finish; it is cheaper and more exact than look for these.',
+      input_schema: { type: 'object', properties: { slide: slideNo } },
+      run: async ({ slide }) => {
+        const i = at(slide);
+        c.setIdx(i);
+        await new Promise((r) => setTimeout(r, 250));
+        const d = c.h.get();
+        const sl = d.slides[i];
+        const W = d.w,
+          H = d.h;
+        const issues: Issue[] = [];
+        const r1 = (v: number) => Math.round(v);
+        const name = (e: El) => `${e.id} (${e.type === 'text' || e.html ? `“${plain(e.html || '').slice(0, 28).replace(/\n/g, ' ')}”` : e.type === 'image' ? 'image' : e.shape})`;
+        const dom = (e: El) => document.querySelector(`[data-el="${CSS.escape(e.id)}"]`) as HTMLElement | null;
+        const view = [...document.querySelectorAll<HTMLElement>('.slide-view')].filter((v) => v.querySelector('[data-el]')).sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
+        const scale = view ? view.getBoundingClientRect().width / W : 1;
+        const texts: { e: El; box: { x: number; y: number; w: number; h: number }; size: number; bold: boolean; colours: Set<string>; fonts: Set<string>; sizes: number[] }[] = [];
+        for (const e of sl.els) {
+          if (e.locked) continue;
+          const node = dom(e);
+          const isText = e.html !== undefined && plain(e.html).trim().length > 0;
+          const past = { l: -e.x, t: -e.y, r: e.x + e.w - W, b: e.y + e.h - H };
+          const worst = Math.max(past.l, past.t, past.r, past.b);
+          if (isText && worst > 1) issues.push({ severity: 'fix', text: `${name(e)} runs ${r1(worst)} pt off the page.` });
+          else if (!isText && worst > 0.5 && worst < 8 && Math.min(e.w / W, e.h / H) < 0.9) issues.push({ severity: 'consider', text: `${name(e)} pokes ${worst.toFixed(1)} pt past the edge: either keep it inside or bleed it clearly (8+ pt).` });
+          if (!isText || !node) continue;
+          const inner = node.querySelector('.sv-text-inner') as HTMLElement | null;
+          if (!inner) continue;
+          const nb = node.getBoundingClientRect();
+          const ib = inner.getBoundingClientRect();
+          // Layout sizes (scrollHeight etc.) are in slide points; on-screen rects are zoomed, so divide those by scale.
+          const need = Math.max(ib.height / scale, inner.scrollHeight) + 7.2;
+          if (need > e.h + 2) issues.push({ severity: 'fix', text: `${name(e)}: the text needs about ${r1(need)} pt of height but the box is ${r1(e.h)} pt, so it spills out. Make the box taller, the text smaller, or the copy shorter.` });
+          if (inner.scrollWidth > inner.clientWidth + 2) issues.push({ severity: 'fix', text: `${name(e)}: a word is wider than the box (${r1(inner.scrollWidth)} pt vs ${r1(inner.clientWidth)} pt).` });
+          const colours = new Set<string>(),
+            fonts = new Set<string>(),
+            sizes: number[] = [];
+          let bold = false;
+          const walk = (n: Element) => {
+            const hasText = [...n.childNodes].some((x) => x.nodeType === 3 && (x.textContent || '').trim());
+            if (hasText) {
+              const cs = getComputedStyle(n);
+              colours.add(cs.color);
+              fonts.add(cs.fontFamily);
+              sizes.push(parseFloat(cs.fontSize));
+              if (Number(cs.fontWeight) >= 600) bold = true;
+            }
+            for (const ch of n.children) walk(ch);
+          };
+          walk(inner);
+          texts.push({ e, box: { x: e.x + (ib.left - nb.left) / scale, y: e.y + (ib.top - nb.top) / scale, w: ib.width / scale, h: Math.max(ib.height / scale, inner.scrollHeight) }, size: Math.min(...(sizes.length ? sizes : [e.size || 18])), bold, colours, fonts, sizes });
+        }
+        // Text on text.
+        for (let a = 0; a < texts.length; a++)
+          for (let b = a + 1; b < texts.length; b++) {
+            const A = texts[a].box,
+              B = texts[b].box;
+            const ox = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x);
+            const oy = Math.min(A.y + A.h, B.y + B.h) - Math.max(A.y, B.y);
+            if (ox > 2 && oy > 2 && ox * oy > 0.12 * Math.min(A.w * A.h, B.w * B.h)) issues.push({ severity: 'fix', text: `The text of ${name(texts[a].e)} and ${name(texts[b].e)} overlap (${r1(ox)} × ${r1(oy)} pt).` });
+          }
+        // Contrast against what is really behind each text block.
+        for (const t of texts) {
+          const cx = t.box.x + t.box.w / 2,
+            cy = t.box.y + t.box.h / 2;
+          let bg: [number, number, number] | null = t.e.fill ? parseColour(t.e.fill) : null;
+          if (!bg) {
+            const idx = sl.els.indexOf(t.e);
+            for (let k = idx - 1; k >= 0 && !bg; k--) {
+              const u = sl.els[k];
+              if (cx < u.x || cx > u.x + u.w || cy < u.y || cy > u.y + u.h) continue;
+              if (u.type === 'image' && u.src) bg = await sampleImage(u.src, { x: (t.box.x - u.x) / u.w, y: (t.box.y - u.y) / u.h, w: t.box.w / u.w, h: t.box.h / u.h });
+              else if (u.fill && u.shape !== 'line' && u.shape !== 'arrow') bg = parseColour(u.fill);
+            }
+          }
+          bg ||= parseColour(sl.bg) || [255, 255, 255];
+          const need = t.size >= 18 || (t.bold && t.size >= 14) ? 3 : 4.5;
+          for (const col of t.colours) {
+            const fg = parseColour(col);
+            if (!fg) continue;
+            const ratio = contrast(fg, bg);
+            if (ratio < need) issues.push({ severity: 'fix', text: `${name(t.e)}: contrast ${ratio.toFixed(1)}:1 against what’s behind it (needs ${need}:1 at ${r1(t.size)} pt). Darken/lighten the text or add a panel or scrim behind it.` });
+          }
+        }
+        // Readability, sizes, fonts.
+        const minSize = W >= 900 ? 14 : W >= 700 ? 11 : 7.5;
+        for (const t of texts) if (t.size < minSize - 0.1) issues.push({ severity: 'fix', text: `${name(t.e)} is ${t.size.toFixed(1)} pt, too small to read on this format (keep text ≥ ${minSize} pt).` });
+        const sizes = new Set(texts.flatMap((t) => t.sizes.map((x) => Math.round(x))));
+        if (sizes.size > 5) issues.push({ severity: 'consider', text: `${sizes.size} different type sizes (${[...sizes].sort((a, b) => b - a).join(', ')} pt): 3–4 reads as more deliberate.` });
+        const missing = missingFonts([...new Set(texts.flatMap((t) => [...t.fonts]))]);
+        if (missing.length) issues.push({ severity: 'fix', text: `Not installed here, so it falls back to a default: ${missing.join(', ')}. Use an installed font (design_guide "start").` });
+        // Near-miss alignment of left edges.
+        const lefts = sl.els.filter((e) => !e.locked && e.x > 1 && e.w < W * 0.95);
+        let near = 0;
+        for (let a = 0; a < lefts.length && near < 4; a++)
+          for (let b = a + 1; b < lefts.length && near < 4; b++) {
+            const dx = Math.abs(lefts[a].x - lefts[b].x);
+            if (dx > 0.6 && dx < 6) {
+              near++;
+              issues.push({ severity: 'consider', text: `${name(lefts[a])} and ${name(lefts[b])} almost line up (left edges ${lefts[a].x.toFixed(1)} vs ${lefts[b].x.toFixed(1)} pt): align them exactly or offset them clearly.` });
+            }
+          }
+        return formatIssues(issues, `slide ${i + 1}`);
+      }
+    },
     {
       name: 'describe_slide',
       description: 'See a slide as data: its size, background and every element back to front, with ids, positions (points), sizes, colours, fonts and text. Use it before rearranging or restyling, together with look.',

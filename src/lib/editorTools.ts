@@ -83,7 +83,36 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
     run: () => 'picture' // handled in runToolHeadless: the result carries the image
   });
   // Every editor can be designed in, so every editor carries the design knowledge.
-  return [...t, ...(hooks.tools || []), designGuideTool];
+  const all = [...t, ...(hooks.tools || []), designGuideTool];
+  // Several edits in one step: each step re-sends the whole conversation, so batching is the biggest saving.
+  all.push({
+    name: 'apply_edits',
+    description:
+      'Run several of this editor’s tools in one step, in order: e.g. place a whole layout (background, text boxes, shapes, artwork) at once, or apply a list of fixes. Much faster and cheaper than one call per edit, so use it whenever you have more than one edit ready. Stops at the first failure and reports each step. `look` and `design_guide` can’t be batched.',
+    input_schema: {
+      type: 'object',
+      properties: { edits: { type: 'array', items: { type: 'object', properties: { tool: { type: 'string' }, input: { type: 'object' } }, required: ['tool'] }, description: '[{tool: "add_text_box", input: {…}}, …]' } },
+      required: ['edits']
+    },
+    async run({ edits }) {
+      if (!Array.isArray(edits) || !edits.length) throw new Error('Give a list of edits.');
+      const lines: string[] = [];
+      for (let i = 0; i < edits.length; i++) {
+        const e = edits[i] || {};
+        const tool = all.find((x) => x.name === e.tool);
+        if (!tool || ['look', 'apply_edits', 'design_guide'].includes(e.tool)) throw new Error(`${lines.join('\n')}${lines.length ? '\n' : ''}${i + 1}. ${e.tool}: not a tool that can be batched here. Nothing after it ran.`);
+        const bad = invalid(tool, e.input || {});
+        if (bad) throw new Error(`${lines.join('\n')}${lines.length ? '\n' : ''}${i + 1}. ${e.tool}: ${bad} Nothing after it ran.`);
+        try {
+          lines.push(`${i + 1}. ${e.tool}: ${String((await tool.run(e.input || {})) ?? 'Done.')}`);
+        } catch (err: any) {
+          throw new Error(`${lines.join('\n')}${lines.length ? '\n' : ''}${i + 1}. ${e.tool} FAILED: ${err?.message || err}. Nothing after it ran.`);
+        }
+      }
+      return lines.join('\n');
+    }
+  });
+  return all;
 }
 
 /** What the open file looks like: the editor's own picture (photo, video frame), else a screenshot of its area. */
@@ -92,9 +121,14 @@ export async function picture(tabId: string) {
   if (own) return own;
   const pane = document.querySelector(`.pane[data-tab="${CSS.escape(tabId)}"]`) as HTMLElement | null;
   if (!pane || pane.hidden) return null;
-  const r = pane.getBoundingClientRect();
+  // A slide being designed: just the slide (more detail for fewer tokens than the whole editor).
+  const slide = [...pane.querySelectorAll<HTMLElement>('.slide-view')].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 200).sort((a, b) => b.width - a.width)[0];
+  const r = slide || pane.getBoundingClientRect();
+  document.body.classList.add('kea-capturing'); // (the "Claude is working" overlay stays out of the picture)
+  await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
   const shot = await api.assistant.capture({ x: r.x, y: r.y, width: r.width, height: r.height }).catch(() => null);
-  return shot && { ...shot, note: 'A screenshot of the editor as it looks now.' };
+  document.body.classList.remove('kea-capturing');
+  return shot && { ...shot, note: slide ? 'The slide as it looks now.' : 'A screenshot of the editor as it looks now.' };
 }
 
 /** Checks a tool's input against its schema's top level: required fields there, and the right basic types. */

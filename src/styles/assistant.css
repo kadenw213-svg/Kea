@@ -277,3 +277,102 @@ body.drop-to-claude .drop-overlay {
 .ai-head .icon-btn.on {
   color: var(--accent);
 }
+
+/* Over the file while Claude works on it */
+.claude-working {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent), inset 0 0 28px color-mix(in srgb, var(--accent) 16%, transparent);
+  animation: cw-glow 2.4s ease-in-out infinite;
+}
+.cw-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-3) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  font-size: 12.5px;
+  color: var(--text);
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
+}
+.cw-spark {
+  color: var(--accent);
+  animation: cw-spin 3s linear infinite;
+}
+.cw-stop {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  display: grid;
+  place-items: center;
+  background: var(--surface-4);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.cw-stop:hover {
+  color: var(--danger);
+}
+@keyframes cw-glow {
+  50% {
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 30%, transparent), inset 0 0 18px color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+}
+@keyframes cw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+body.kea-capturing .claude-working {
+  display: none;
+}
+
+/* The steps of one answer, folded into one line */
+.as-steps {
+  margin: 2px 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+.as-steps-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+  text-align: left;
+}
+.as-steps-head .chev {
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.as-steps.open .as-steps-head .chev {
+  transform: rotate(90deg);
+}
+.as-steps-head .bad {
+  color: var(--danger);
+  margin-left: auto;
+}
+.as-steps-body {
+  padding: 0 8px 8px;
+}
+.as-note {
+  color: var(--text-3);
+  padding: 2px 4px 4px 22px;
+  font-style: italic;
+}

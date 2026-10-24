@@ -6,7 +6,7 @@ import { useTabs, editorRegistry, toast } from '../../store';
 import { api, type PlanUsage } from '../../lib/api';
 import { ask, stop, clear } from '../../lib/assistant';
 import { addAttachment, isAttachable, ATTACHABLE, type Attachment } from '../../lib/attachments';
-import { useAssistant, setAssistantOpen, emptyChat, type ChatItem } from './assistantStore';
+import { useAssistant, setAssistantOpen, emptyChat, INTERNAL_STEPS, type ChatItem } from './assistantStore';
 import '../../styles/ai.css';
 import '../../styles/assistant.css';
 
@@ -195,10 +195,10 @@ export function AssistantPanel() {
                   )}
                 </div>
               )}
-              {chat.items.map((it) => (
-                <Item key={it.id} it={it} />
-              ))}
-              {chat.busy && (
+              {setting('assistant.showSteps')
+                ? chat.items.map((it) => <Item key={it.id} it={it} />)
+                : group(chat.items, chat.busy).map((g) => (g.steps ? <Steps key={g.key} items={g.steps} live={g.live} tabId={activeId} /> : <Item key={g.key} it={g.it!} />))}
+              {chat.busy && setting('assistant.showSteps') && (
                 <div className="ai-status">
                   <span className="dot-pulse" /> Working…
                 </div>
@@ -296,6 +296,64 @@ function starters(noun: string): string[] {
     default:
       return ['Explain this file', 'Find bugs or mistakes', 'Clean it up'];
   }
+}
+
+/**
+ * What the chat shows of each answer: the student's message, one folded line for all the work in between (steps,
+ * reasoning, progress notes), then Claude's final message and any error. The file itself shows the work happening.
+ */
+function group(items: ChatItem[], busy: boolean): { key: string; it?: ChatItem; steps?: ChatItem[]; live?: boolean }[] {
+  const out: { key: string; it?: ChatItem; steps?: ChatItem[]; live?: boolean }[] = [];
+  const turns: ChatItem[][] = [];
+  for (const it of items) {
+    if (it.kind === 'user' || !turns.length) turns.push([]);
+    turns[turns.length - 1].push(it);
+  }
+  turns.forEach((turn, ti) => {
+    const last = ti === turns.length - 1;
+    const live = last && busy;
+    let final = -1;
+    if (!live) for (let i = turn.length - 1; i >= 0; i--) if (turn[i].kind === 'assistant') {
+      final = i;
+      break;
+    }
+    const work: ChatItem[] = [];
+    const after: ChatItem[] = [];
+    turn.forEach((it, i) => {
+      if (it.kind === 'user') out.push({ key: it.id, it });
+      else if (it.kind === 'error') after.push(it);
+      else if (i === final) after.unshift(it);
+      else work.push(it);
+    });
+    if (work.length || live) out.push({ key: `steps-${turn[0].id}`, steps: work, live });
+    for (const it of after) out.push({ key: it.id, it });
+  });
+  return out;
+}
+
+function Steps({ items, live, tabId }: { items: ChatItem[]; live?: boolean; tabId: string }) {
+  const [open, setOpen] = useState(false);
+  const activity = useAssistant((s) => s.activity[tabId]);
+  const tools = items.filter((i) => i.kind === 'tool');
+  const edits = tools.filter((i) => !INTERNAL_STEPS.has(i.name || ''));
+  const failed = edits.filter((i) => i.ok === false).length;
+  const shown = items.filter((i) => (i.kind === 'tool' ? !INTERNAL_STEPS.has(i.name || '') : i.kind === 'assistant' || (i.kind === 'thinking' && setting('assistant.showThinking'))));
+  const label = live ? `${activity || 'Thinking…'}${tools.length ? ` · ${tools.length} step${tools.length === 1 ? '' : 's'}` : ''}` : edits.length ? `Made ${edits.length} change${edits.length === 1 ? '' : 's'}` : tools.length ? 'Looked over the file' : 'Thought it through';
+  return (
+    <div className={`as-steps ${open ? 'open' : ''}`}>
+      <button className="as-steps-head" onClick={() => setOpen(!open)} disabled={!shown.length}>
+        {live ? <span className="dot-pulse" /> : <Check size={13} />}
+        <span>{label}</span>
+        {failed > 0 && !live && <span className="bad">{failed} didn’t work</span>}
+        {shown.length > 0 && <ChevronRight size={13} className="chev" />}
+      </button>
+      {open && (
+        <div className="as-steps-body">
+          {shown.map((it) => (it.kind === 'assistant' ? <div key={it.id} className="as-note">{it.text}</div> : <Item key={it.id} it={it} />))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Item({ it }: { it: ChatItem }) {

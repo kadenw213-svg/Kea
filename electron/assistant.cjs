@@ -116,7 +116,7 @@ function register() {
     const r = { x: Math.round(rect.x * z), y: Math.round(rect.y * z), width: Math.max(1, Math.round(rect.width * z)), height: Math.max(1, Math.round(rect.height * z)) };
     let img = await e.sender.capturePage(r);
     const { width, height } = img.getSize();
-    const k = Math.min(1, 1568 / Math.max(width, height));
+    const k = Math.min(1, 1280 / Math.max(width, height)); // enough to judge a layout; fewer tokens per look
     if (k < 1) img = img.resize({ width: Math.round(width * k), height: Math.round(height * k), quality: 'good' });
     return { dataUrl: img.toDataURL(), width: img.getSize().width, height: img.getSize().height };
   });

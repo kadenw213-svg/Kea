@@ -27,6 +27,16 @@ const V = sections(vector);
 const B = sections(brand);
 const pick = (src: Map<number, string>, ns: number[]) => ns.map((n) => src.get(n)).filter(Boolean).join('\n\n');
 
+// Design follows the job, not one house look: an essay isn't an ad, and an ad is allowed to be one.
+const PURPOSE = `## Design for the purpose
+Decide first what the piece is for, then let that set the tone. The topics are a library to learn from, not a style to copy everywhere.
+- School work (essays, reports, lab write-ups, study guides, title pages): clean, academic, readable. Follow the format the class asks for (APA/MLA, margins, fonts) before anything else; restrained colour, clear headings, no decoration that competes with the content.
+- Work and information (handouts, proposals, data, slides that teach): calm and competent. Grid, one accent, real charts and diagrams, generous space; one idea per slide.
+- Events and causes (fliers, posters, invitations): warm and inviting; one strong visual idea, the key facts findable in three seconds, real character in the artwork.
+- Kids, community, celebrations: playful but still organised: friendlier shapes and colour, still a grid and one focal point.
+- Ads, social posts, thumbnails, promo video: here hooks, attention and conversion matter most. Read the brand and video topics, which collect what is well received.
+Whatever the purpose: original and specific to this subject, never a generic template look.`;
+
 const WHEN_GUIDES_DIFFER = `## When advice differs between topics
 The user's own guidelines win. Otherwise follow the art direction you chose (styles topic) for its signature devices, and default to restraint: one focal point, one accent, specific content over decoration. Effects listed as clichés in the video topic (glowing orbs, lens flares, glass panels, sparkles) are only for a direction that genuinely calls for them.`;
 
@@ -35,16 +45,16 @@ const VAGUE = `## When the request is short or vague
 Don't ask for details you can infer, and never fall back to a plain or placeholder layout. Infer the audience, purpose and setting from the words and the open file, choose the art direction that fits best (styles topic), and deliver a finished, polished piece: real hierarchy, a deliberate palette, rich artwork (vector topics), every detail considered. Write any missing copy yourself, short and specific (a strong headline, the key facts, a clear next step), and mark only facts you can't know, like a date or room, as [placeholders] the user can fill in. Then say in one line what direction you chose, so they can steer.`;
 
 export const DESIGN_TOPICS: Record<string, { about: string; text: () => string | Promise<string> }> = {
-  start: { about: 'the user’s own guidelines (if any), the working method, defaults for vague requests, the fonts installed here, and the self-critique checklists (read first, every design)', text: async () => [await myGuidelines(false), VAGUE, pick(B, [5]), WHEN_GUIDES_DIFFER, pick(C, [0]), installedFonts(), pick(C, [7]), pick(P, [11])].filter(Boolean).join('\n\n') },
+  start: { about: 'the user’s own guidelines (if any), the working method, defaults for vague requests, the fonts installed here, and the self-critique checklists (read first, every design)', text: async () => [await myGuidelines(false), PURPOSE, VAGUE, WHEN_GUIDES_DIFFER, pick(C, [0]), installedFonts(), pick(C, [7])].filter(Boolean).join('\n\n') },
   mine: { about: 'the user’s own design guidelines and house style in full (they override the rest)', text: async () => (await myGuidelines(true)) || 'The user hasn’t set any guidelines of their own (Settings → Claude Assistant → Design). Use Kea’s guide.' },
   video: { about: 'video quality: hooks and pacing, b-roll choice, motion graphics and kinetic type, captions, grade, transitions, explaining visually, platform specs and safe zones, making generated visuals look designed', text: () => video },
-  brand: { about: 'logos and visual identity, thumbnails and covers, keeping a set of slides/posts consistent (design tokens), social media sizes', text: () => pick(B, [1, 2, 3, 4]) },
+  brand: { about: 'ideas from well-received promotional design: logos and visual identity, thumbnails and covers, keeping a set of slides/posts consistent (design tokens), social media sizes, a default direction for promotional work', text: () => pick(B, [1, 2, 3, 4, 5]) },
   layout: { about: 'grids, margins, spacing scale, alignment, focal point, scanning patterns, Gestalt spacing', text: () => [pick(C, [1]), pick(P, [2, 3])].join('\n\n') },
   typography: { about: 'type scales, sizes per format, font pairings, tracking, leading, line length, pro details', text: () => pick(C, [2]) },
   colour: { about: 'palettes, contrast, harmonies, palette from a reference image, gradients, mood, colour psychology', text: () => [pick(C, [3]), pick(P, [7])].join('\n\n') },
   styles: { about: '19 art directions (Swiss, editorial, gradient, brutalism, luxury, retro, riso, Bauhaus, duotone, collage, neon…) with recipes, plus pro detailing', text: () => pick(C, [4, 5]) },
   formats: { about: 'templates with coordinates for fliers, A4, posters, slides, social, title pages, handouts, infographics; legibility at distance; what event fliers must say; slides that teach', text: () => [pick(C, [6]), pick(P, [5, 6, 8, 10])].join('\n\n') },
-  psychology: { about: 'what people notice first, contrast and isolation, cognitive load, trust and memorability', text: () => pick(P, [1, 4, 5, 9]) },
+  psychology: { about: 'what people notice first, contrast and isolation, cognitive load, trust and memorability, and an attention audit to run on a render', text: () => pick(P, [1, 4, 5, 9, 11]) },
   vector: { about: 'how to write SVG artwork that renders well here: ground rules, composing art layers behind text, common mistakes (read before any vector-* topic)', text: () => pick(V, [0, 1, 7, 8]) },
   'vector-backgrounds': { about: 'SVG recipes: mesh gradients, blobs, aurora, grain, paper, halftone, patterns, contours, waves, sunburst, confetti, bokeh', text: () => pick(V, [2]) },
   'vector-shapes': { about: 'SVG recipes: organic blobs, dividers, torn paper, seals and badges, ribbons, arrows, brush strokes; shadows, glow, glass, isometric, landscapes', text: () => pick(V, [3, 4]) },
