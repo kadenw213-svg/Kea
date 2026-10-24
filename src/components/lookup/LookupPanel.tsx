@@ -14,6 +14,9 @@ import '../../styles/lookup.css';
 export function LookupPanel() {
   const lk = useLookup();
   const activeId = useTabs((s) => s.activeId);
+  // The Encyclopedia belongs to reading and writing (school, documents), not the photo and video editors.
+  const media = useTabs((s) => ['image', 'video'].includes(s.tabs.find((t) => t.id === s.activeId)?.kind || ''));
+  const open = lk.open && !media;
   const hooks = editorRegistry.get(activeId)?.ai;
   const selection = lk.selections[activeId] || '';
   const [query, setQuery] = useState('');
@@ -27,8 +30,8 @@ export function LookupPanel() {
     setQuery(selection.length > 1500 ? selection.slice(0, 1500) : selection);
   }, [selection]);
   useEffect(() => {
-    if (lk.open) warmUp();
-  }, [lk.open]);
+    if (open) warmUp();
+  }, [open]);
   useEffect(() => {
     const on = () => setOnline(navigator.onLine);
     window.addEventListener('online', on);
@@ -94,7 +97,7 @@ export function LookupPanel() {
 
   // Alt+1 Explain, Alt+2 Dictionary.
   useEffect(() => {
-    if (!lk.open) return;
+    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (!e.altKey || e.ctrlKey || !['1', '2'].includes(e.key)) return;
       e.preventDefault();
@@ -132,7 +135,7 @@ export function LookupPanel() {
   const insert = (md: string) => (hooks?.insertText?.(md) ? toast('Inserted. Ctrl+Z to undo.', 'success') : toast('Click in your document where it should go first.'));
 
   return (
-    <aside className={`ai-sidebar lookup ${lk.open ? 'open' : ''}`} aria-hidden={!lk.open}>
+    <aside className={`ai-sidebar lookup ${open ? 'open' : ''}`} aria-hidden={!open}>
       <div className="ai-resize" title="Drag to resize" onPointerDown={startResize} onDoubleClick={() => useSettings.getState().set({ 'ai.sidebarWidth': 380 })} />
       <div className="ai-inner">
         <div className="ai-head">

@@ -139,8 +139,8 @@ export function App() {
         e.preventDefault();
         requestCloseTab(activeId);
       } else if (k === 'j' && !e.shiftKey) {
-        // (In the image editor Ctrl+J is Photoshop's Duplicate layer; the Encyclopedia is on its button there.)
-        if (tabs.find((t) => t.id === activeId)?.kind === 'image') return;
+        // The Encyclopedia isn't in the photo and video editors (in the photo editor Ctrl+J is Duplicate layer).
+        if (['image', 'video'].includes(tabs.find((t) => t.id === activeId)?.kind || '')) return;
         e.preventDefault();
         toggleLookup();
       } else if (k === 'j' && e.shiftKey) {

@@ -22,7 +22,6 @@ import * as T from './tools';
 import { canvasToBytes } from './canvas';
 import { selectionArea } from './selection';
 import './photo.css';
-import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 
 /**
@@ -353,7 +352,6 @@ function Workspace({ tab, active, e }: { tab: Tab; active: boolean; e: Engine })
           <Maximize size={18} />
         </button>
         <div className="tb-spacer" />
-        <LookupButton />
         <AssistantButton />
         <button className="btn primary sm" onClick={cmd.save} disabled={!e.dirty && !!tab.path} title="Save (Ctrl+S)">
           <Save size={16} /> Save

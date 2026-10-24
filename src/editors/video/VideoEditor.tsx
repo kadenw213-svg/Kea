@@ -56,7 +56,6 @@ import { missingMasks, ensureMasks } from './segmentMask';
 import { startJob } from '../../lib/jobs';
 import * as act from './actions';
 import './video.css';
-import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 
 /* Video editor: media bin, source/program monitors, inspector and a multi-track timeline. */
@@ -541,7 +540,6 @@ function Shell({ tab, active, store, player }: { tab: Tab; active: boolean; stor
         >
           {() => <Shortcuts />}
         </MenuButton>
-        <LookupButton />
         <AssistantButton />
         <button className="btn tonal sm" title="Export (Ctrl+E)" onClick={() => setExporting(true)}>
           <Download size={16} /> Export

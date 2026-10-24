@@ -81,7 +81,10 @@ export function CommandPalette() {
       { id: 'open', group: 'Files', label: 'Open a file…', hint: 'Ctrl+O', icon: <FolderOpen size={16} />, run: act(() => openWithDialog()) },
       { id: 'home', group: 'Files', label: 'Go to Home', icon: <Home size={16} />, run: act(() => useTabs.getState().setActive('home')) },
       { id: 'history', group: 'Files', label: 'Version history of this file', hint: 'Ctrl+Shift+H', icon: <History size={16} />, run: act(() => openHistory()) },
-      { id: 'lookup', group: 'Tools', label: 'Encyclopedia: explain or define a word', hint: 'Ctrl+J', icon: <BookOpen size={16} />, run: act(() => toggleLookup()) },
+      // (Not offered in the photo and video editors.)
+      ...(['image', 'video'].includes(tabs.find((t) => t.id === useTabs.getState().activeId)?.kind || '')
+        ? []
+        : [{ id: 'lookup', group: 'Tools', label: 'Encyclopedia: explain or define a word', hint: 'Ctrl+J', icon: <BookOpen size={16} />, run: act(() => toggleLookup()) }]),
       useTabs.getState().split
         ? { id: 'split-close', group: 'Tools', label: 'Close split view', hint: 'Ctrl+\\', icon: <Columns2 size={16} />, run: act(() => useTabs.getState().closeSplit()) }
         : { id: 'split', group: 'Tools', label: 'Split view: two tabs side by side', hint: 'Ctrl+\\', icon: <Columns2 size={16} />, run: act(() => useTabs.getState().openSplit()) },
