@@ -21,6 +21,8 @@ export interface Look {
   follow: boolean;
   /** How the sentence being read is marked on the page. */
   highlight: 'fill' | 'underline' | 'off';
+  /** Scanned pages take the page colour too (off: scans stay as they were photographed, on white paper). */
+  darkScans?: boolean;
   /** Documents and books (Word, EPUB…): text size, font and line spacing. */
   docScale: number;
   docFont: 'sans' | 'serif' | 'mono';
@@ -94,6 +96,10 @@ export function pageOf(l: Look) {
   const t = THEMES[l.theme];
   return l.theme === 'black' ? PAGES.black : t.dark ? PAGES.dark : l.theme === 'sepia' ? PAGES.sepia : PAGES.white;
 }
+/** A scan from Kea's scanner (kept in its scans folder). */
+export const isScan = (file: string) => /[\/]scans[\/]/.test(file);
+/** The page colour for one file: a scan keeps its own paper unless the student turned on dark scans. */
+export const pageFor = (l: Look, file: string) => (isScan(file) && !l.darkScans ? PAGES.white : pageOf(l));
 
 export function applyLook(l: Look = getLook()) {
   const t = THEMES[l.theme] || THEMES.dark;

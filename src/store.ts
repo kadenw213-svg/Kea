@@ -37,7 +37,8 @@ export interface DocSection {
 export interface AiHooks {
   /** Short noun for the UI: "document", "PDF", "sheet", "presentation", "file". */
   noun: string;
-  getDocument(): Promise<{ full: string; sections: DocSection[] }>;
+  /** `annotated`: the text as Claude should read it (structure and formatting noted), when it differs from the sections. */
+  getDocument(): Promise<{ full: string; sections: DocSection[]; annotated?: string }>;
   /** Replace the current selection; false if this editor can't. */
   replaceSelection?(text: string): boolean;
   /** Insert after the selection / at the cursor (or as a comment for PDFs). */
@@ -50,6 +51,8 @@ export interface AiHooks {
   track?<T>(fn: () => T): T;
   /** Leave a reviewer comment (from "Kea AI") on a quote; false if the quote can't be found. */
   addComment?(quote: string, text: string): boolean;
+  /** Called before each of Claude's tool calls, so each is its own undo step. */
+  beginStep?(): void;
   insertLabel?: string;
   /** What the editor looks like right now, for Claude to see (an image, a slide, a video frame). */
   getImage?(): Promise<{ dataUrl: string; width: number; height: number; note?: string } | null>;
@@ -92,7 +95,8 @@ export function proxyAi(ref: { current: AiHooks }): AiHooks {
     ...(c.reveal ? { reveal: (q: string) => ref.current.reveal?.(q) ?? false } : {}),
     ...(c.replaceQuote ? { replaceQuote: (q: string, r: string) => ref.current.replaceQuote?.(q, r) ?? false } : {}),
     ...(c.addComment ? { addComment: (q: string, t: string) => ref.current.addComment?.(q, t) ?? false } : {}),
-    ...(c.track ? { track: <T,>(fn: () => T) => (ref.current.track ? ref.current.track(fn) : fn()) } : {})
+    ...(c.track ? { track: <T,>(fn: () => T) => (ref.current.track ? ref.current.track(fn) : fn()) } : {}),
+    ...(c.beginStep ? { beginStep: () => ref.current.beginStep?.() } : {})
   };
 }
 

@@ -20,7 +20,7 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
     input_schema: { type: 'object', properties: {} },
     async run() {
       const d = await hooks.getDocument();
-      const text = d.sections.length > 1 ? d.sections.map((s) => `### ${s.label}\n${s.text}`).join('\n\n') : d.full;
+      const text = d.annotated ?? (d.sections.length > 1 ? d.sections.map((s) => `### ${s.label}\n${s.text}`).join('\n\n') : d.full);
       return text.length > DOC_LIMIT ? `${text.slice(0, DOC_LIMIT)}\n\n[The rest (${text.length - DOC_LIMIT} more characters) was cut off.]` : text || `(The ${hooks.noun} is empty.)`;
     }
   });
@@ -82,8 +82,10 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
     input_schema: { type: 'object', properties: {} },
     run: () => 'picture' // handled in runToolHeadless: the result carries the image
   });
-  // Every editor can be designed in, so every editor carries the design knowledge.
-  const all = [...t, ...(hooks.tools || []), designGuideTool, findAssignmentTool];
+  // Every editor can be designed in, so every editor carries the design knowledge. An editor's own tool replaces the
+  // general one of the same name (the document's add_comment has the review format).
+  const own = hooks.tools || [];
+  const all = [...t.filter((g) => !own.some((o) => o.name === g.name)), ...own, designGuideTool, findAssignmentTool];
   // Several edits in one step: each step re-sends the whole conversation, so batching is the biggest saving.
   all.push({
     name: 'apply_edits',
@@ -112,6 +114,7 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
           continue;
         }
         try {
+          hooks.beginStep?.();
           lines.push(`${i + 1}. ${e.tool}: ${String((await tool.run(e.input || {})) ?? 'Done.')}`);
         } catch (err: any) {
           fail(String(err?.message || err));
@@ -226,6 +229,7 @@ export async function runToolHeadless(tabId: string, tools: AssistantTool[], use
       }
       return { ok: true, text: img.note || `${img.width} × ${img.height} px`, image: img };
     }
+    if (use.name !== 'undo') editorRegistry.get(tabId)?.ai?.beginStep?.();
     const out = String((await tool.run(use.input)) ?? 'Done.');
     return { ok: true, text: out };
   } catch (err: any) {

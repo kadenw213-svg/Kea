@@ -3,9 +3,9 @@
 // books, pictures…), and keep them here to read, rename, share or save. With classes connected, a file can go straight
 // to an assignment's hand-in page.
 import { useEffect, useState } from 'react';
-import { BookOpen, Camera, ChevronRight, Download, File as FileIcon, FileSpreadsheet, FileText, FolderOpen, Image, Loader2, MoreVertical, Music, Pencil, Presentation, ScanLine, Share2, Trash2, Upload, Video, X } from 'lucide-react';
+import { BookOpen, Camera, ChevronRight, Download, File as FileIcon, FileSpreadsheet, FileText, FolderOpen, Image, Loader2, MoreVertical, Music, Pencil, Plus, Presentation, ScanLine, Share2, Trash2, Upload, Video, X } from 'lucide-react';
 import { kindOf } from './Viewer';
-import { Kea, KeaData, PhoneFile, folders, handInUrl, pagesOf, setPages } from './kea';
+import { Kea, KeaData, PhoneFile, appendScan, folders, handInUrl, pagesOf, setPages } from './kea';
 import { size, toast, when } from './ui';
 
 const stamp = () => `Scan ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
@@ -115,6 +115,23 @@ function FileSheet({ file, data, fresh, onClose, onChanged, read }: { file: Phon
   const [path, setPath] = useState(file.path);
   const [handIn, setHandIn] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [adding, setAdding] = useState(false);
+  /** Scan more pages onto the end of this scan or PDF (a page forgotten, the back of a sheet). */
+  const addPages = async () => {
+    setAdding(true);
+    try {
+      const p = await commit();
+      const s = await Kea.scan({ name: 'pages', temp: true });
+      const n = await appendScan(p, s.path);
+      setPages(p, n);
+      onChanged();
+      toast(`Added ${s.pages} page${s.pages === 1 ? '' : 's'}: ${n} in all.`);
+    } catch (e: any) {
+      if (!/No scan/.test(String(e?.message))) toast(e);
+    } finally {
+      setAdding(false);
+    }
+  };
   // Renamed when the name is changed and left (the file keeps its place).
   const commit = async () => {
     const n = name.trim();
@@ -159,6 +176,11 @@ function FileSheet({ file, data, fresh, onClose, onChanged, read }: { file: Phon
           <button className="btn" onClick={async () => Kea.openWith({ path: await commit() }).catch(toast)}>
             <FolderOpen size={16} /> Open in another app
           </button>
+          {/\.pdf$/i.test(path) && (
+            <button className="btn" disabled={adding} onClick={addPages}>
+              {adding ? <Loader2 size={16} className="spin" /> : <Plus size={16} />} Scan more pages
+            </button>
+          )}
           {data && (
             <button className="btn" onClick={() => setHandIn(!handIn)}>
               <Upload size={16} /> Hand in

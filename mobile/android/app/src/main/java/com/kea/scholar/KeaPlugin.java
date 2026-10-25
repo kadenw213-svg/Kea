@@ -885,6 +885,38 @@ public class KeaPlugin extends Plugin {
         call.resolve(r);
     }
 
+    /** Write over one of Kea's own scans or PDFs (pages added to it): written beside it first, then swapped in. */
+    @PluginMethod
+    public void replaceFile(PluginCall call) {
+        File f = ownFile(call.getString("path"));
+        String data = call.getString("data", "");
+        if (f == null || !f.isFile() || data.isEmpty()) {
+            call.reject("That file can't be changed.");
+            return;
+        }
+        new Thread(() -> {
+            File part = new File(f.getPath() + ".part");
+            try {
+                byte[] bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT);
+                try (OutputStream os = new FileOutputStream(part)) {
+                    os.write(bytes);
+                    os.flush();
+                }
+                if (!part.renameTo(f)) {
+                    // (Some file systems won't rename over a file.)
+                    if (!f.delete() || !part.renameTo(f)) throw new java.io.IOException("Kea couldn't save the pages.");
+                }
+                JSObject r = new JSObject();
+                r.put("path", f.getAbsolutePath());
+                r.put("size", f.length());
+                call.resolve(r);
+            } catch (Exception e) {
+                part.delete();
+                call.reject(e.getMessage());
+            }
+        }).start();
+    }
+
     /** Delete one of Kea's files (only Kea's own scans and PDFs). */
     @PluginMethod
     public void deleteFile(PluginCall call) {
@@ -1110,10 +1142,16 @@ public class KeaPlugin extends Plugin {
             return;
         }
         try {
-            // Keep a copy Kea owns (the scanner's own file can go away), shared through Kea's file provider.
+            // Keep a copy Kea owns (the scanner's own file can go away), shared through Kea's file provider. Pages to add
+            // to another scan go to a scratch folder instead (emptied each time), not into Files.
             String name = call.getString("name", "Scan");
-            File dir = scansDir();
+            boolean temp = call.getBoolean("temp", false);
+            File dir = temp ? new File(getContext().getCacheDir(), "scan-pages") : scansDir();
             dir.mkdirs();
+            if (temp) {
+                File[] old = dir.listFiles();
+                if (old != null) for (File f : old) f.delete();
+            }
             File out = freeName(dir, name.replaceAll("[^A-Za-z0-9 ._()#-]", "").trim() + ".pdf");
             try (InputStream in = getContext().getContentResolver().openInputStream(r.getPdf().getUri()); OutputStream os = new FileOutputStream(out)) {
                 byte[] buf = new byte[65536];

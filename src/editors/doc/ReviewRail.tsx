@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 import { Check, X, MoreVertical, CheckCheck, Undo2 } from 'lucide-react';
-import type { CommentThread, DocMeta } from './docMeta';
-import { commentAnchors, listChanges, resolveChanges, Change } from './review';
+import { COMMENT_KINDS, type CommentKind, type CommentThread, type DocMeta } from './docMeta';
+import { applyRewrite, commentAnchors, listChanges, resolveChanges, Change } from './review';
 import { MenuButton } from '../../components/Popover';
 import { uid, timeAgo } from '../../lib/util';
 import { Logo } from '../../components/Logo';
@@ -307,7 +307,33 @@ export function ReviewRail({
                       </div>
                     </>
                   ) : (
-                    <div className="rv-text">{t.text}</div>
+                    <>
+                      {(t.kind || t.tag) && (
+                        <div className={`rv-tag k-${t.kind || 'note'}`}>
+                          {t.kind && <b>{COMMENT_KINDS[t.kind as CommentKind] || t.kind}</b>}
+                          {t.tag && <span>{t.tag}</span>}
+                        </div>
+                      )}
+                      <div className="rv-text">{t.text}</div>
+                      {t.rewrite && (
+                        <div className="rv-rewrite">
+                          <span className="rv-rewrite-label">Suggested wording</span>
+                          <div>{t.rewrite}</div>
+                          {!t.resolved && (
+                            <button
+                              className="btn sm tonal"
+                              title="Put this wording in place of the highlighted text"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (applyRewrite(editor, t.id, t.rewrite!)) setThreads((l) => l.map((x) => (x.id === t.id ? { ...x, resolved: true } : x)));
+                              }}
+                            >
+                              <Check size={14} /> Apply
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                   {t.replies.map((r) => (
                     <div key={r.id} className="rv-reply">

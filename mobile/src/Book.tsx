@@ -7,7 +7,7 @@ import { ChevronLeft, Gauge, Headphones, Moon, Pause, Play, Settings2, SkipBack,
 import { api } from '../../src/lib/api';
 import { loadPdf, PDFDocumentProxy } from '../../src/editors/pdf/pdfjs';
 import { Kea, PhoneVoice, cachedData } from './kea';
-import { PAGES, PageId, pageOf, setLook, useLook } from './theme';
+import { PAGES, PageId, isScan, pageFor, setLook, useLook } from './theme';
 import { toast } from './ui';
 
 export type BookTarget = { file: string; chapter: string; title: string; autoplay?: boolean };
@@ -198,7 +198,7 @@ const GAP = 10;
 
 export function Book({ target, onClose, onOpen }: { target: BookTarget; onClose(): void; onOpen?(t: BookTarget): void }) {
   const look = useLook();
-  const page = pageOf(look);
+  const page = pageFor(look, target.file);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [ratio, setRatio] = useState(1.3);
   const [error, setError] = useState('');
@@ -426,7 +426,7 @@ export function Book({ target, onClose, onOpen }: { target: BookTarget; onClose(
           </div>
         </div>
       )}
-      {sheet === 'look' && <LookSheet zoom={zoom} setZoom={setZoom} onClose={() => setSheet('')} />}
+      {sheet === 'look' && <LookSheet zoom={zoom} setZoom={setZoom} scan={isScan(target.file)} onClose={() => setSheet('')} />}
       {sheet === 'voice' && <VoiceSheet onClose={() => setSheet('')} />}
       {sheet === 'sleep' && (
         <div className="bk-sheet">
@@ -450,7 +450,7 @@ export function Book({ target, onClose, onOpen }: { target: BookTarget; onClose(
 }
 
 /** The page: its colour, its size, and following along while it's read. */
-function LookSheet({ zoom, setZoom, onClose }: { zoom: number; setZoom(z: number): void; onClose(): void }) {
+function LookSheet({ zoom, setZoom, scan, onClose }: { zoom: number; setZoom(z: number): void; scan: boolean; onClose(): void }) {
   const look = useLook();
   return (
     <div className="bk-sheet">
@@ -460,6 +460,11 @@ function LookSheet({ zoom, setZoom, onClose }: { zoom: number; setZoom(z: number
           <X size={18} />
         </button>
       </div>
+      {scan && (
+        <label className="toggle">
+          <input type="checkbox" checked={!!look.darkScans} onChange={(e) => setLook({ darkScans: e.target.checked })} /> Colour scans too (dark pages for scans)
+        </label>
+      )}
       <span className="muted small">Colour</span>
       <div className="bk-opts">
         {(Object.keys(PAGES) as PageId[]).map((id) => (

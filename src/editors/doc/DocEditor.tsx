@@ -609,7 +609,11 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     // Kea AI's comments are grey in the text, so they stand apart from people's (yellow) comments.
     meta.comments
       .filter((t) => !t.resolved && isAiAuthor(t.author) && t.id !== activeComment)
-      .map((t) => `.doc-content [data-comment="${t.id}"] { background: var(--cmt-ai) !important; border-bottom-color: var(--cmt-ai-line) !important; }`)
+      // (A review comment's highlight takes its kind's colour, like its card: needs work, suggestion, strength, question.)
+      .map((t) => {
+        const k = t.kind && ['fix', 'consider', 'strength', 'question'].includes(t.kind) ? t.kind : 'ai';
+        return `.doc-content [data-comment="${t.id}"] { background: var(--cmt-${k}) !important; border-bottom-color: var(--cmt-${k}-line) !important; }`;
+      })
       .join('');
   const insertFootnote = () => {
     const pos = editor.state.selection.to;
@@ -1373,9 +1377,29 @@ function printableHtml(editor: Editor, title: string, forPrint: boolean, meta: D
   const D = meta.defaults;
   const name = baseName(title);
   const serializer = DOMSerializer.fromSchema(editor.schema);
-  const nodeHtml = (i: number) => {
+  const doc = editor.state.doc;
+  /** One page's content: whole blocks, or the part of a paragraph split across pages that falls on this page. */
+  const rangeHtml = (from: number, to: number) => {
     const wrap = document.createElement('div');
-    wrap.appendChild(serializer.serializeNode(editor.state.doc.child(i)));
+    wrap.appendChild(serializer.serializeFragment(doc.slice(from, to).content));
+    const $from = doc.resolve(from);
+    if ($from.depth > 0) {
+      // Carried over from the page before: no first-line indent or space above, and a numbered list keeps counting.
+      const first = wrap.querySelector('p, pre, blockquote > p, li > p') as HTMLElement | null;
+      if (first) first.style.textIndent = '0';
+      const top = wrap.firstElementChild as HTMLElement | null;
+      if (top) top.style.marginTop = '0';
+      const list = $from.node(1);
+      if (list.type.name === 'orderedList' && top?.tagName === 'OL') top.setAttribute('start', String((list.attrs.start || 1) + $from.index(1)));
+    }
+    if (doc.resolve(to).depth > 0) {
+      // Continued on the next page: a justified paragraph stays justified to its last line here.
+      const ps = wrap.querySelectorAll('p, pre');
+      const last = ps[ps.length - 1] as HTMLElement | undefined;
+      if (last && /justify/.test(last.getAttribute('style') || '')) last.style.textAlignLast = 'justify';
+      const top = wrap.lastElementChild as HTMLElement | null;
+      if (top) top.style.marginBottom = '0';
+    }
     return inlineMathSvgs(wrap.innerHTML);
   };
   const esc = (s: string) => escapeHtml(s);
@@ -1392,7 +1416,7 @@ function printableHtml(editor: Editor, title: string, forPrint: boolean, meta: D
       .map((g, i) => {
         const head = hfHtml(hfFor(meta, 'header', i), i + start, total, input);
         const foot = hfHtml(hfFor(meta, 'footer', i), i + start, total, input);
-        return `<section class="page">${head ? `<div class="hf head">${head}</div>` : ''}<div class="content">${g.nodes.map(nodeHtml).join('')}</div>${notesBlock(g.notes)}${foot ? `<div class="hf foot">${foot}</div>` : ''}</section>`;
+        return `<section class="page">${head ? `<div class="hf head">${head}</div>` : ''}<div class="content">${rangeHtml(g.from, g.to)}</div>${notesBlock(g.notes)}${foot ? `<div class="hf foot">${foot}</div>` : ''}</section>`;
       })
       .join('');
   } else {

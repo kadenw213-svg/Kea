@@ -10,8 +10,10 @@ import { DocMeta, pageBox, hfFor, expandFields, HeaderFooter } from './docMeta';
  * (footnotes + footer) of one page, the grey space between pages, and the top margin (header) of the
  * next. The same page breaks drive printing and PDF export, so what you see is what prints.
  *
- * Blocks are never split across pages (a paragraph taller than the space left moves to the next page),
- * which keeps editing simple and predictable.
+ * A paragraph (or list, quote, code block) that doesn't fit at the bottom of a page is split at a line, like Word and
+ * Google Docs do: the page gap is drawn inside it, between two lines, and the rest carries on at the top of the next
+ * page. At least two lines stay on each side (widow and orphan control). Headings, tables, pictures and other blocks
+ * that can't be split move to the next page whole, and a heading never ends a page.
  */
 
 export const GAP = 18; // px of grey between pages
@@ -31,6 +33,11 @@ export interface PageBreak {
   fnH: number;
   /** Footnotes that belong to the previous page. */
   notes: { n: number; text: string }[];
+  /**
+   * For a break inside a paragraph: how far (px) the paragraph's text sits in from the page's text column on the left
+   * and right, so the gap drawn inside it still spans the whole page.
+   */
+  inset?: [number, number];
 }
 
 interface PagState {
@@ -197,11 +204,11 @@ function buildDecos(state: EditorState, s: Omit<PagState, 'decos' | 'stamp'>, in
     el.appendChild(hf);
     return el;
   };
-  const pageEnd = (pageIndex: number, fill: number, fnH: number, notes: PageBreak['notes'], withNext: boolean) => {
+  const pageEnd = (pageIndex: number, fill: number, fnH: number, notes: PageBreak['notes'], withNext: boolean, inset: [number, number] = [0, 0]) => {
     const wrap = document.createElement('div');
-    wrap.className = 'pg-break';
+    wrap.className = inset[0] || inset[1] ? 'pg-break inner' : 'pg-break';
     wrap.contentEditable = 'false';
-    wrap.style.margin = `0 -${b.mr}px 0 -${b.ml}px`;
+    wrap.style.margin = `0 -${b.mr + inset[1]}px 0 -${b.ml + inset[0]}px`;
     const filler = document.createElement('div');
     filler.style.height = `${Math.max(0, fill)}px`;
     wrap.appendChild(filler);
@@ -223,8 +230,9 @@ function buildDecos(state: EditorState, s: Omit<PagState, 'decos' | 'stamp'>, in
     return wrap;
   };
   s.breaks.forEach((br, i) => {
-    const key = `pb${i}:${br.fill}:${br.fnH}:${total}:${JSON.stringify(br.notes)}:${hfStamp(meta)}`;
-    decos.push(Decoration.widget(br.pos, () => pageEnd(i, br.fill, br.fnH, br.notes, true), { side: -1, key, ignoreSelection: true, stopEvent: () => true }));
+    const key = `pb${i}:${br.fill}:${br.fnH}:${total}:${JSON.stringify(br.notes)}:${br.inset || ''}:${hfStamp(meta)}`;
+    // (marks: [] keeps a gap inside a paragraph out of the bold, link or comment around it.)
+    decos.push(Decoration.widget(br.pos, () => pageEnd(i, br.fill, br.fnH, br.notes, true, br.inset), { side: -1, key, marks: [], ignoreSelection: true, stopEvent: () => true }));
   });
   const endKey = `pend:${s.lastFill}:${s.lastFnH}:${total}:${JSON.stringify(s.lastNotes)}:${hfStamp(meta)}`;
   decos.push(Decoration.widget(state.doc.content.size, () => pageEnd(s.breaks.length, s.lastFill, s.lastFnH, s.lastNotes, false), { side: 1, key: endKey, ignoreSelection: true, stopEvent: () => true }));
@@ -236,45 +244,164 @@ const hfStamp = (m: DocMeta) => JSON.stringify([m.header, m.footer, m.firstHeade
 /** Height of a widget in the editor flow (so natural block positions can be recovered). */
 const widgetHeight = (br: { fill: number; fnH: number }, b: ReturnType<typeof pageBox>, withNext: boolean) => Math.max(0, br.fill) + br.fnH + b.mb + (withNext ? GAP + b.mt : 0);
 
+/** Blocks that are never split across pages: they move to the next page whole. */
+const UNSPLITTABLE = new Set(['heading', 'table', 'image', 'horizontalRule', 'pageBreak', 'bibliography', 'toc', 'mathBlock']);
+
+/** Inline positions inside `node` (at `offset`) where a page could start: each character and inline object. */
+function inlinePositions(node: PMNode, offset: number) {
+  const out: number[] = [];
+  const add = (n: PMNode, base: number) => {
+    n.forEach((child, off) => {
+      const at = base + off;
+      if (child.isText) for (let i = 0; i < child.text!.length; i++) out.push(at + i);
+      else if (child.isInline) out.push(at);
+      else add(child, at + 1);
+    });
+  };
+  add(node, offset + 1);
+  return out;
+}
+
 function measure(view: EditorView, input: LayoutInput): Omit<PagState, 'decos' | 'stamp'> | null {
   const { meta } = input;
   const b = pageBox(meta);
   const doc = view.state.doc;
   const notes = footnotesOf(doc);
   const cur = paginationKey.getState(view.state);
-  const known = new Map<number, number>();
-  cur?.breaks.forEach((br) => known.set(br.pos, widgetHeight(br, b, true)));
+  // The gaps drawn now push the text down; subtract them to get where everything sits without any gaps.
+  const known = (cur?.breaks || []).map((br) => ({ pos: br.pos, h: widgetHeight(br, b, true) }));
+  const shiftAt = (p: number) => known.reduce((s, k) => (k.pos <= p ? s + k.h : s), 0);
+  const root = view.dom as HTMLElement;
+  const rr = root.getBoundingClientRect();
+  // (The page may be zoomed: measurements come back zoomed, the layout works in page pixels.)
+  const scale = root.offsetHeight ? rr.height / root.offsetHeight : 1;
+  if (!scale || !Number.isFinite(scale)) return null;
+  const y = (clientY: number) => (clientY - rr.top) / scale;
+  const charBox = (p: number) => {
+    const c = view.coordsAtPos(p, 1);
+    const s = shiftAt(p);
+    return { top: y(c.top) - s, bottom: y(c.bottom) - s };
+  };
+  /** How far the paragraph holding `pos` sits in from the text column, so a gap drawn inside it spans the page. */
+  const insetAt = (pos: number): [number, number] => {
+    const $p = doc.resolve(pos);
+    const el = $p.depth >= 1 ? (view.nodeDOM($p.before($p.depth)) as HTMLElement | null) : null;
+    if (!el || !(el instanceof HTMLElement)) return [0, 0];
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const l = (r.left - rr.left) / scale + parseFloat(cs.paddingLeft || '0') + parseFloat(cs.borderLeftWidth || '0');
+    const rt = (rr.right - r.right) / scale + parseFloat(cs.paddingRight || '0') + parseFloat(cs.borderRightWidth || '0');
+    return [Math.max(0, Math.round(l)), Math.max(0, Math.round(rt))];
+  };
+
+  /**
+   * Where to split a block that runs past `limit` (the bottom of the page's text area): the start of the first line
+   * that doesn't fit, after `from`. With `keep` (the block doesn't start the page), at least two lines stay on this page
+   * and at least two go to the next; otherwise anything goes, so a block taller than a page still breaks somewhere.
+   */
+  const splitAt = (node: PMNode, offset: number, from: number, limit: number, partTop: number, blockBottom: number, keep: boolean) => {
+    if (node.isAtom || UNSPLITTABLE.has(node.type.name)) return null;
+    const all = inlinePositions(node, offset);
+    const ps = all.filter((p) => p > from && p !== all[0]);
+    if (!ps.length) return null;
+    // The first position whose character runs past the page (binary search: positions run down the page in order).
+    let lo = 0;
+    let hi = ps.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (charBox(ps[mid]).bottom > limit + 0.5) hi = mid;
+      else lo = mid + 1;
+    }
+    if (lo >= ps.length) return null;
+    /** Back to the first character on the line of ps[i]. */
+    const lineStart = (i: number) => {
+      const t = charBox(ps[i]).top;
+      while (i > 0 && charBox(ps[i - 1]).bottom - t > 2) i--;
+      return i;
+    };
+    let i = lineStart(lo);
+    if (i <= 0 && from === offset) return null;
+    let box = charBox(ps[i]);
+    const lineH = Math.max(1, box.bottom - box.top);
+    if (keep) {
+      // Orphan: a single line left alone at the bottom of the page.
+      if (box.top - partTop < lineH * 1.5) return null;
+      // Widow: a single line carried over alone; carry the line before it too, if that still leaves two.
+      if (blockBottom - box.top < lineH * 1.5 && i > 0) {
+        const j = lineStart(i - 1);
+        const jb = charBox(ps[j]);
+        if (j > 0 && jb.top - partTop >= lineH * 1.5) {
+          i = j;
+          box = jb;
+        }
+      }
+    }
+    if (i <= 0) return null;
+    return { pos: ps[i], top: box.top, prevBottom: charBox(ps[i - 1]).bottom, inset: insetAt(ps[i]) };
+  };
 
   const breaks: PageBreak[] = [];
   let pageStart = 0; // natural y where the current page's content starts
-  let shift = 0;
   let pageNotes: { n: number; text: string }[] = [];
   let forceBreak = false;
   let lastBottom = 0;
+  let lastNode: { node: PMNode; offset: number; top: number; before: number } | null = null;
   let ok = true;
+  const room = (extra: { n: number; text: string }[]) => b.contentH - notesHeight([...pageNotes, ...extra], meta, b.contentW);
+  const newPage = (pos: number, nextStart: number, inset?: [number, number]) => {
+    const fnH = notesHeight(pageNotes, meta, b.contentW);
+    breaks.push({ pos, fill: Math.round(Math.max(0, b.contentH - fnH - (lastBottom - pageStart))), fnH, notes: pageNotes, ...(inset && (inset[0] || inset[1]) ? { inset } : {}) });
+    pageStart = nextStart;
+    pageNotes = [];
+  };
 
   doc.forEach((node, offset) => {
     if (!ok) return;
     const dom = view.nodeDOM(offset) as HTMLElement | null;
     if (!dom || !(dom instanceof HTMLElement)) return;
-    shift += known.get(offset) || 0;
-    const top = dom.offsetTop - shift;
-    const bottom = top + dom.offsetHeight;
-    if (!Number.isFinite(top)) {
+    const end = offset + node.nodeSize;
+    const r = dom.getBoundingClientRect();
+    const top = y(r.top) - shiftAt(offset);
+    const bottom = y(r.bottom) - shiftAt(end - 1);
+    if (!Number.isFinite(top) || !Number.isFinite(bottom)) {
       ok = false;
       return;
     }
-    const mine = notes.filter((n) => n.pos >= offset && n.pos < offset + node.nodeSize).map(({ n, text }) => ({ n, text }));
-    const fits = () => bottom - pageStart + notesHeight([...pageNotes, ...mine], meta, b.contentW) <= b.contentH + 0.5;
-    const first = top - pageStart < 1;
-    if (forceBreak || (!first && !fits())) {
-      const fnH = notesHeight(pageNotes, meta, b.contentW);
-      breaks.push({ pos: offset, fill: Math.round(Math.max(0, b.contentH - fnH - (lastBottom - pageStart))), fnH, notes: pageNotes });
-      pageStart = top;
-      pageNotes = [];
+    let rest = notes.filter((n) => n.pos >= offset && n.pos < end).map(({ n, text, pos }) => ({ n, text, pos }));
+    const plain = (l: typeof rest) => l.map(({ n, text }) => ({ n, text }));
+    if (forceBreak) {
+      newPage(offset, top);
       forceBreak = false;
     }
-    pageNotes.push(...mine);
+    let from = offset; // where the part of this block still to place starts
+    let partTop = top;
+    for (let guard = 0; guard < 200; guard++) {
+      if (bottom - pageStart <= room(plain(rest)) + 0.5) break;
+      const first = partTop - pageStart < 1;
+      const sp = splitAt(node, offset, from, pageStart + room(plain(rest)), partTop, bottom, !first);
+      if (sp) {
+        pageNotes.push(...plain(rest.filter((n) => n.pos < sp.pos)));
+        rest = rest.filter((n) => n.pos >= sp.pos);
+        lastBottom = sp.prevBottom;
+        newPage(sp.pos, sp.top, sp.inset);
+        from = sp.pos;
+        partTop = sp.top;
+        continue;
+      }
+      if (first || from !== offset) break; // taller than a page and can't be split: it runs over
+      // A heading left at the bottom of the page goes over with the block after it.
+      if (lastNode && lastNode.node.type.name === 'heading' && lastNode.top - pageStart >= 1 && !breaks.some((x) => x.pos === lastNode!.offset)) {
+        const h = lastNode;
+        lastBottom = h.before;
+        newPage(h.offset, h.top);
+        partTop = top;
+        continue;
+      }
+      newPage(offset, top);
+      partTop = top;
+    }
+    pageNotes.push(...plain(rest));
+    lastNode = { node, offset, top, before: lastBottom };
     lastBottom = bottom;
     if (node.type.name === 'pageBreak') forceBreak = true;
   });
@@ -342,7 +469,7 @@ export const Pagination = Extension.create<{}, { input: () => LayoutInput; onHF:
             }
             const layout = measure(view, input);
             if (!layout) return;
-            const stamp = JSON.stringify([layout.breaks.map((x) => [x.pos, x.fill, x.fnH, x.notes]), layout.lastFill, layout.lastFnH, layout.lastNotes, hfStamp(input.meta), input.title]);
+            const stamp = JSON.stringify([layout.breaks.map((x) => [x.pos, x.fill, x.fnH, x.notes, x.inset]), layout.lastFill, layout.lastFnH, layout.lastNotes, hfStamp(input.meta), input.title]);
             const cur = paginationKey.getState(view.state);
             if (cur && cur.stamp === stamp) {
               rounds = 0;
@@ -380,18 +507,18 @@ export const Pagination = Extension.create<{}, { input: () => LayoutInput; onHF:
   }
 });
 
-/** Pages as groups of top-level node indexes, for printing and PDF export. */
+/**
+ * Pages as document ranges, for printing and PDF export. A page that starts or ends inside a paragraph (a paragraph
+ * split across pages) has a `from` or `to` inside that paragraph.
+ */
 export function pageGroups(state: EditorState) {
   const st = paginationKey.getState(state);
-  const starts = new Set((st?.breaks || []).map((b) => b.pos));
-  const groups: { nodes: number[]; notes: { n: number; text: string }[] }[] = [{ nodes: [], notes: [] }];
-  let i = 0;
-  state.doc.forEach((_node, offset) => {
-    if (starts.has(offset) && groups[groups.length - 1].nodes.length) groups.push({ nodes: [], notes: [] });
-    groups[groups.length - 1].nodes.push(i++);
-  });
-  (st?.breaks || []).forEach((b, k) => groups[k] && (groups[k].notes = b.notes));
-  if (st) groups[groups.length - 1].notes = st.lastNotes;
+  const size = state.doc.content.size;
+  const cuts = [...new Set((st?.breaks || []).map((b) => b.pos).filter((p) => p > 0 && p < size))].sort((a, b) => a - b);
+  const bounds = [0, ...cuts, size];
+  const groups: { from: number; to: number; notes: { n: number; text: string }[] }[] = [];
+  for (let k = 0; k < bounds.length - 1; k++) groups.push({ from: bounds[k], to: bounds[k + 1], notes: st?.breaks[k]?.notes || [] });
+  if (st && groups.length) groups[groups.length - 1].notes = st.lastNotes;
   return groups;
 }
 

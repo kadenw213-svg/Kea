@@ -1,10 +1,12 @@
 import type { Editor } from '@tiptap/react';
+import { closeHistory } from '@tiptap/pm/history';
 import type { AiHooks, DocSection } from '../../store';
 import { markdownToHtml } from '../../lib/markdown';
 import { reviewKey, newCommentId } from './review';
 import type { CommentThread, DocMeta } from './docMeta';
 import { docTools } from './aiTools';
 import { AI_AUTHOR } from './ReviewRail';
+import { annotatedText, docReviewTools, leafText } from './aiReview';
 
 const norm = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -22,7 +24,8 @@ export function findQuote(editor: Editor, quote: string): { from: number; to: nu
       let text = '';
       const map: number[] = [];
       node.forEach((child, offset) => {
-        const raw = child.isText ? child.text! : ' ';
+        // (Citations and footnotes read as their text, as read_document shows them.)
+        const raw = child.isText ? child.text! : leafText(child);
         for (let i = 0; i < raw.length; i++) {
           const ch = raw[i];
           const n = /\s/.test(ch) ? ' ' : ch.replace(/[‘’]/, "'").replace(/[“”]/, '"').toLowerCase();
@@ -47,8 +50,13 @@ export function findQuote(editor: Editor, quote: string): { from: number; to: nu
 export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThread) => void, meta?: { get(): DocMeta; set(m: DocMeta): void }): AiHooks {
   return {
     noun: 'document',
-    tools: docTools(get, meta),
+    tools: [...docTools(get, meta), ...docReviewTools(get, meta)],
     insertLabel: 'Insert below',
+    beginStep() {
+      // Edits made moments apart would otherwise merge into one Ctrl+Z step.
+      const ed = get();
+      if (ed && !ed.isDestroyed) ed.view.dispatch(closeHistory(ed.state.tr).setMeta('addToHistory', false));
+    },
     async getDocument() {
       const ed = get();
       if (!ed) return { full: '', sections: [] };
@@ -57,7 +65,7 @@ export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThre
         const text = node.textBetween(0, node.content.size, '\n', ' ').trim();
         if (text) sections.push({ id: `b${i}`, label: node.type.name === 'heading' ? text.slice(0, 60) : `Paragraph ${i + 1}`, text });
       });
-      return { full: sections.map((s) => s.text).join('\n\n'), sections };
+      return { full: sections.map((s) => s.text).join('\n\n'), sections, annotated: annotatedText(ed.state.doc, meta?.get()) };
     },
     replaceSelection(text) {
       const ed = get();
@@ -91,7 +99,7 @@ export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThre
             if (!r) return false;
             const id = newCommentId();
             // Mark the sentence without moving the user's cursor, then add the thread to the comment rail.
-            ed.view.dispatch(ed.state.tr.addMark(r.from, r.to, ed.schema.marks.comment.create({ id })));
+            ed.view.dispatch(ed.state.tr.addMark(r.from, r.to, ed.schema.marks.comment.create({ id })).setMeta('addToHistory', false));
             addThread({ id, author: AI_AUTHOR, text, at: Date.now(), replies: [] });
             return true;
           }

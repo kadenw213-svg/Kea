@@ -39,6 +39,10 @@ export interface CommentReply {
   text: string;
   at: number;
 }
+/** Kinds of review comment, with the label each card shows. */
+export const COMMENT_KINDS = { fix: 'Needs work', consider: 'Suggestion', strength: 'Strength', question: 'Question' } as const;
+export type CommentKind = keyof typeof COMMENT_KINDS;
+
 export interface CommentThread {
   id: string;
   author: string;
@@ -46,6 +50,12 @@ export interface CommentThread {
   at: number;
   resolved?: boolean;
   replies: CommentReply[];
+  /** Review comments (Claude's): the rubric criterion or guideline it's about. */
+  tag?: string;
+  /** fix, consider, strength or question (aiReview.ts COMMENT_KINDS). */
+  kind?: string;
+  /** Suggested wording for exactly the passage, applied with one click. */
+  rewrite?: string;
 }
 
 export interface DocMeta {

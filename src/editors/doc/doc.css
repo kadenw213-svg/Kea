@@ -875,8 +875,9 @@
 }
 .rv-rail {
   position: relative;
-  width: 290px;
-  flex: 0 0 290px;
+  /* Narrower when space is short (the Claude panel open), so the cards stay on screen instead of off to the right. */
+  flex: 0 1 290px;
+  min-width: 210px;
   align-self: stretch;
 }
 .rv-head {
@@ -1201,8 +1202,16 @@
 /* ---------- Kea AI comments and suggestions: dark grey, with the app logo ---------- */
 .doc-content,
 .rv-cards {
-  --cmt-ai: rgba(154, 160, 166, 0.22);
-  --cmt-ai-line: #80868b;
+  --cmt-ai: rgba(154, 160, 166, 0.24);
+  --cmt-ai-line: #9aa0a6;
+  --cmt-fix: rgba(242, 139, 130, 0.2);
+  --cmt-fix-line: #f28b82;
+  --cmt-consider: rgba(138, 180, 248, 0.2);
+  --cmt-consider-line: #8ab4f8;
+  --cmt-strength: rgba(129, 201, 149, 0.2);
+  --cmt-strength-line: #81c995;
+  --cmt-question: rgba(197, 138, 249, 0.2);
+  --cmt-question-line: #c58af9;
 }
 .rv-card.ai {
   background: #26292e;
@@ -1214,4 +1223,80 @@
 .rv-avatar.ai {
   border-radius: 8px;
   overflow: hidden;
+}
+
+/* ---------- Review comments: criterion and kind, then the comment, then any suggested wording ---------- */
+.rv-tag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 -2px 34px;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+.rv-tag b {
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--kind-bg, var(--surface-3));
+  color: var(--kind, var(--text-2));
+}
+.rv-tag span {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.rv-tag.k-fix {
+  --kind: #f6aea9;
+  --kind-bg: rgba(242, 139, 130, 0.16);
+}
+.rv-tag.k-consider {
+  --kind: #a8c7fa;
+  --kind-bg: rgba(138, 180, 248, 0.16);
+}
+.rv-tag.k-strength {
+  --kind: #a8dab5;
+  --kind-bg: rgba(129, 201, 149, 0.16);
+}
+.rv-tag.k-question {
+  --kind: #d7aefb;
+  --kind-bg: rgba(197, 138, 249, 0.16);
+}
+.rv-text {
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+.rv-rewrite {
+  margin: 8px 0 0 34px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: var(--surface-3);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.4;
+}
+.rv-rewrite-label {
+  font-size: 11px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rv-rewrite .btn {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+/* On white paper the review highlights need more colour to show. */
+.paper-light .doc-content {
+  --cmt-ai: rgba(95, 99, 104, 0.16);
+  --cmt-ai-line: #5f6368;
+  --cmt-fix: rgba(217, 48, 37, 0.12);
+  --cmt-fix-line: #d93025;
+  --cmt-consider: rgba(26, 115, 232, 0.12);
+  --cmt-consider-line: #1a73e8;
+  --cmt-strength: rgba(24, 128, 56, 0.13);
+  --cmt-strength-line: #188038;
+  --cmt-question: rgba(161, 66, 244, 0.12);
+  --cmt-question-line: #a142f4;
 }

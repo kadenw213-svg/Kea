@@ -1,7 +1,8 @@
 // The Claude tab on the student's own Claude plan (Pro / Max) instead of an API key: each message runs Claude Code
 // (the official app, signed in with their Claude account) in the background. Claude Code runs the conversation; the
 // open file's tools reach it over a private MCP connection pinned to that tab (electron/mcp/server.cjs openInternal),
-// so it uses exactly the tools the API route does. Built-in tools are off (no shell, no file access): only Kea's.
+// so it uses exactly the tools the API route does. Built-in tools are off (no shell, no file access): only Kea's, plus
+// web search and fetch when the student allows them (to find and check sources).
 // Claude Code reports the plan's 5-hour and weekly usage with every reply; the latest is kept for the usage bars.
 const { app, ipcMain } = require('electron');
 const { spawn } = require('child_process');
@@ -99,8 +100,8 @@ function register({ getWindow }) {
       return { error: String(err.message || err) };
     }
     const mcp = JSON.stringify({ mcpServers: { kea: { type: 'http', url: conn.url, headers: { Authorization: `Bearer ${conn.token}` } } } });
-    // Only Kea's tools; none of the student's own Claude Code setup (hooks, settings) from their home folder.
-    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--mcp-config', mcp, '--strict-mcp-config', '--tools', '', '--allowedTools', 'mcp__kea', '--permission-mode', 'dontAsk', '--setting-sources', 'project', '--system-prompt', String(req.system || '')];
+    // Only Kea's tools (and the web, when allowed); none of the student's own Claude Code setup (hooks, settings).
+    const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--mcp-config', mcp, '--strict-mcp-config', '--tools', req.web ? 'WebSearch,WebFetch' : '', '--allowedTools', req.web ? 'mcp__kea,WebSearch,WebFetch' : 'mcp__kea', '--permission-mode', 'dontAsk', '--setting-sources', 'project', '--system-prompt', String(req.system || '')];
     if (req.model) args.push('--model', String(req.model));
     if (req.effort) args.push('--effort', String(req.effort));
     if (req.session) args.push('--resume', String(req.session));

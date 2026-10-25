@@ -37,7 +37,10 @@ interface KeaNative {
   writeFile(o: { path: string; text: string }): Promise<void>;
   readFile(o: { path?: string }): Promise<{ text: string; modified: number }>;
   openFile(o: { path: string }): Promise<void>;
-  scan(o?: { name?: string }): Promise<{ file: string; path: string; pages: number; name: string }>;
+  /** `temp`: scanned to a scratch file (pages to add to another scan) instead of a new scan in Files. */
+  scan(o?: { name?: string; temp?: boolean }): Promise<{ file: string; path: string; pages: number; name: string }>;
+  /** Write over one of Kea's own files (a scan with pages added), given as base64. */
+  replaceFile(o: { path: string; data: string }): Promise<{ path: string; size: number }>;
   /** `file`: a content address, or a path to one of Kea's own files. */
   share(o: { file: string; name?: string }): Promise<void>;
   saveCopy(o: { file: string; name: string }): Promise<{ name: string }>;
@@ -290,4 +293,27 @@ export function doneOf(it: { id: string; done: string | null }, pcLog: DoneLog |
   const pc = pcLog?.[it.id];
   if (p && (!pc || p.at > pc.at)) return p.on ? p.at : null;
   return it.done;
+}
+
+/**
+ * Add the pages of a fresh scan (`extra`, a scratch file) to the end of an existing scan or PDF, and save it in place.
+ * Returns the new page count.
+ */
+export async function appendScan(path: string, extra: string): Promise<number> {
+  const { Capacitor } = await import('@capacitor/core');
+  const { PDFDocument } = await import('pdf-lib');
+  const bytes = async (p: string) => {
+    const r = await fetch(Capacitor.convertFileSrc(p));
+    if (!r.ok) throw new Error('Kea couldn’t read the scan.');
+    return new Uint8Array(await r.arrayBuffer());
+  };
+  const [a, b] = await Promise.all([bytes(path), bytes(extra)]);
+  const doc = await PDFDocument.load(a, { ignoreEncryption: true });
+  const more = await PDFDocument.load(b);
+  for (const p of await doc.copyPages(more, more.getPageIndices())) doc.addPage(p);
+  const out = await doc.save();
+  let bin = '';
+  for (let i = 0; i < out.length; i += 0x8000) bin += String.fromCharCode(...out.subarray(i, i + 0x8000));
+  await Kea.replaceFile({ path, data: btoa(bin) });
+  return doc.getPageCount();
 }

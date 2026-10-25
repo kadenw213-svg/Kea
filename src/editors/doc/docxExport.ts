@@ -34,7 +34,7 @@ import {
 } from 'docx';
 import JSZip from 'jszip';
 import { dataUrlToBytes } from '../../lib/util';
-import { DocMeta, defaultMeta, HeaderFooter, metaExtras, expandFields } from './docMeta';
+import { COMMENT_KINDS, DocMeta, defaultMeta, HeaderFooter, metaExtras, expandFields } from './docMeta';
 import { texToPng } from './math';
 
 /** Default look when a document has no settings of its own. */
@@ -489,7 +489,11 @@ export async function jsonToDocx(json: JSONNode, metaIn?: DocMeta | null, title 
         .slice(0, 3)
         .toUpperCase(),
       date: new Date(t.at || Date.now()),
-      children: [new Paragraph(t.text), ...t.replies.map((r) => new Paragraph(`${r.author}: ${r.text}`))]
+      children: [
+        new Paragraph([t.kind ? COMMENT_KINDS[t.kind as keyof typeof COMMENT_KINDS] : '', t.tag || ''].filter(Boolean).join(' · ') ? `[${[t.kind ? COMMENT_KINDS[t.kind as keyof typeof COMMENT_KINDS] : '', t.tag || ''].filter(Boolean).join(' · ')}] ${t.text}` : t.text),
+        ...(t.rewrite ? [new Paragraph(`Suggested wording: ${t.rewrite}`)] : []),
+        ...t.replies.map((r) => new Paragraph(`${r.author}: ${r.text}`))
+      ]
     }));
   const bulletChars = ['●', '○', '■'];
   const numberFormats = [LevelFormat.DECIMAL, LevelFormat.LOWER_LETTER, LevelFormat.LOWER_ROMAN];

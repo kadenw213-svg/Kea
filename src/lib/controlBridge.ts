@@ -35,7 +35,7 @@ async function documentText(tabId: string): Promise<string> {
   const hooks = hooksForTab(tabId);
   if (!hooks) throw new Error('That view has no readable document.');
   const d = await hooks.getDocument();
-  const text = d.sections.length > 1 ? d.sections.map((s) => `### ${s.label}\n${s.text}`).join('\n\n') : d.full;
+  const text = d.annotated ?? (d.sections.length > 1 ? d.sections.map((s) => `### ${s.label}\n${s.text}`).join('\n\n') : d.full);
   return text.length > DOC_LIMIT ? `${text.slice(0, DOC_LIMIT)}\n\n[cut off: ${text.length - DOC_LIMIT} more characters]` : text;
 }
 

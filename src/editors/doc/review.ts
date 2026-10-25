@@ -272,4 +272,28 @@ export function commentAnchors(state: EditorState) {
   return map;
 }
 
+/** The span of text a comment covers (first to last position), or null when its text is gone. */
+export function commentRange(state: EditorState, id: string) {
+  let from = -1;
+  let to = -1;
+  state.doc.descendants((node, pos) => {
+    if (!node.isInline) return true;
+    if (node.marks.some((m) => m.type.name === 'comment' && m.attrs.id === id)) {
+      if (from < 0) from = pos;
+      to = pos + node.nodeSize;
+    }
+    return false;
+  });
+  return from < 0 ? null : { from, to };
+}
+
+/** Apply a comment's suggested wording to its passage; the comment stays on the new text. */
+export function applyRewrite(editor: Editor, id: string, text: string) {
+  const r = commentRange(editor.state, id);
+  if (!r) return false;
+  const marks = editor.state.doc.resolve(r.from + 1).marks();
+  editor.view.dispatch(editor.state.tr.replaceWith(r.from, r.to, editor.schema.text(text, marks)));
+  return true;
+}
+
 export const newCommentId = () => 'c' + uid();

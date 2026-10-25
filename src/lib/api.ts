@@ -289,7 +289,7 @@ export interface KeaApi {
     onEvent(cb: (ev: { id: string; type: 'text' | 'thinking' | 'tool'; text?: string; name?: string }) => void): () => void;
     planStatus(): Promise<{ installed: boolean; loggedIn: boolean; email: string; plan: string; method: string }>;
     planSignIn(): Promise<{ loggedIn: boolean; email?: string }>;
-    planSend(id: string, req: { tabId: string; content: unknown[]; session?: string; model?: string; effort?: string; system: string }): Promise<{ session?: string; error?: string; stopped?: boolean; usage?: any; turns?: number }>;
+    planSend(id: string, req: { tabId: string; content: unknown[]; session?: string; model?: string; effort?: string; system: string; web?: boolean }): Promise<{ session?: string; error?: string; stopped?: boolean; usage?: any; turns?: number }>;
     planStop(id: string): Promise<boolean>;
     planUsage(): Promise<PlanUsage | null>;
     planUsageRefresh(): Promise<PlanUsage | null>;
