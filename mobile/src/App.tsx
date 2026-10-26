@@ -790,41 +790,33 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
           <span />
         )}
       </div>
-      <details className="why choose">
-        <summary>Review only some chapters</summary>
-        <StudyPicker classes={[{ id: c.id, code: c.code }]} />
-      </details>
+      {c.chapters.length > 0 && (
+        <>
+          <h2>Chapters</h2>
+          <div className="wk-reads">
+            {c.chapters.map((ch: ScholarChapter) => (
+              <div key={ch.label} className="wk-read">
+                <button className="wk-read-main" disabled={!ch.pdf} onClick={() => ch.pdf && ctx.read({ file: ch.pdf.file, chapter: ch.label, title: ch.title || ch.label })}>
+                  <span className="wk-read-title">
+                    <b>{ch.label.replace(/^Chapter /, 'Ch ')}</b> {ch.title || ''}
+                    {!ch.pdf && <span className="muted small"> · being written</span>}
+                  </span>
+                  {ch.pdf && <BookOpen size={16} className="wk-read-go" />}
+                </button>
+                <button className="wk-read-study" aria-label="Study" onClick={() => openStudyHub({ courseId: c.id, code: c.code, title: ch.title ? `${ch.label}: ${ch.title}` : ch.label, chapters: [ch.label] })}>
+                  <ClipboardCheck size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="muted small">Tap a chapter to read it; the clipboard opens its questions and flashcards.</p>
+        </>
+      )}
       {upcoming.length > 0 && (
         <>
           <h2>Coming up</h2>
           {upcoming.map((i) => (
             <Row key={i.id} ctx={ctx} it={i} date />
-          ))}
-        </>
-      )}
-      {c.chapters.length > 0 && (
-        <>
-          <h2>Chapters</h2>
-          {c.chapters.map((ch: ScholarChapter) => (
-            <div key={ch.label} className="card st-m-ch">
-              <div className="ch-text">
-                <b>{ch.label}</b>
-                {ch.title ? `: ${ch.title}` : ''}
-                {ch.summary && <div className="muted small clamp2">{ch.summary}</div>}
-              </div>
-              <div className="grid2">
-                <button className="btn" onClick={() => openStudyHub({ courseId: c.id, code: c.code, title: ch.title ? `${ch.label}: ${ch.title}` : ch.label, chapters: [ch.label] })}>
-                  <ClipboardCheck size={16} /> Study
-                </button>
-                {ch.pdf ? (
-                  <button className="btn" onClick={() => ctx.read({ file: ch.pdf!.file, chapter: ch.label, title: ch.title || ch.label })}>
-                    <BookOpen size={16} /> Read
-                  </button>
-                ) : (
-                  <span className="muted small ch-wait">Being written</span>
-                )}
-              </div>
-            </div>
           ))}
         </>
       )}
@@ -994,23 +986,25 @@ function Readings({ ctx, onBack }: { ctx: Ctx; onBack(): void }) {
             <h2>
               {d.code} <span className="muted small">· {d.name}</span>
             </h2>
-            {chs.map((ch) => {
-              const p = done[ch.pdf!.file];
-              const finished = !!p?.pages && p.page + 1 >= p.pages * 0.95;
-              return (
-                <button key={ch.label} className="card reading-row" onClick={() => ctx.read({ file: ch.pdf!.file, chapter: ch.label, title: ch.title || ch.label })}>
-                  <span className="class-main">
-                    <b>{ch.label}</b>
-                    {ch.title && <span className="muted small block">{ch.title}</span>}
-                  </span>
-                  {finished && (
-                    <span className="read-pct done" title="Finished">
-                      <CheckCircle2 size={16} />
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            <div className="wk-reads">
+              {chs.map((ch) => {
+                const p = done[ch.pdf!.file];
+                const finished = !!p?.pages && p.page + 1 >= p.pages * 0.95;
+                return (
+                  <div key={ch.label} className="wk-read">
+                    <button className="wk-read-main" onClick={() => ctx.read({ file: ch.pdf!.file, chapter: ch.label, title: ch.title || ch.label })}>
+                      <span className="wk-read-title">
+                        <b>{ch.label.replace(/^Chapter /, 'Ch ')}</b> {ch.title || ''}
+                      </span>
+                      {finished ? <CheckCircle2 size={16} className="wk-read-done" aria-label="Finished" /> : <BookOpen size={16} className="wk-read-go" />}
+                    </button>
+                    <button className="wk-read-study" aria-label="Study" onClick={() => openStudyHub({ courseId: d.id, code: d.code, title: ch.title ? `${ch.label}: ${ch.title}` : ch.label, chapters: [ch.label] })}>
+                      <ClipboardCheck size={16} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </section>
         );
       })}

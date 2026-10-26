@@ -1299,3 +1299,7 @@ input.range {
 .wk-read-study:active {
   background: var(--hover);
 }
+.wk-read-done {
+  color: var(--success);
+  flex-shrink: 0;
+}
