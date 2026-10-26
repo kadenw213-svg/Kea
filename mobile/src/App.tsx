@@ -485,19 +485,74 @@ function TodayTop({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
 
 function InboxView({ items, readIds, markRead, remove }: { items: ScholarInboxItem[]; readIds: string[]; markRead(ids: string[]): void; remove(items: ScholarInboxItem[]): void }) {
   const [open, setOpen] = useState<string | null>(null);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState(() => localStorage.getItem('kea.inboxClass') || 'all');
+  const [kind, setKind] = useState<'all' | 'messages' | 'announcements' | 'grades'>('all');
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [query, setQuery] = useState('');
+  const [oldest, setOldest] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [replying, setReplying] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
   const codes = [...new Set(items.map((i) => i.course).filter(Boolean))].sort();
-  const shown = items.filter((i) => filter === 'all' || i.course === filter);
+  const kindOfItem = (i: ScholarInboxItem) => (i.kind === 'grade' || i.kind === 'feedback' ? 'grades' : i.kind === 'announcement' ? 'announcements' : 'messages');
+  const q = query.trim().toLowerCase();
+  const shown = items
+    .filter((i) => filter === 'all' || i.course === filter)
+    .filter((i) => kind === 'all' || kindOfItem(i) === kind)
+    .filter((i) => !unreadOnly || (!i.read && !readIds.includes(i.id)))
+    .filter((i) => !q || `${i.course} ${i.title} ${i.body} ${(i as any).from || ''}`.toLowerCase().includes(q));
+  if (oldest) shown.reverse();
   const readShown = shown.filter((i) => i.read || readIds.includes(i.id));
+  const pickClass = (c: string) => {
+    setFilter(c);
+    try {
+      localStorage.setItem('kea.inboxClass', c);
+    } catch {}
+  };
+  const send = async (i: ScholarInboxItem) => {
+    setSending(true);
+    try {
+      await Kea.reply({ conv: (i as any).conv, text: draft });
+      toast('Reply sent.');
+      setDraft('');
+      setReplying(null);
+    } catch (e) {
+      toast(e);
+    } finally {
+      setSending(false);
+    }
+  };
   return (
     <div className="page">
+      <div className="inbox-filters">
+        <input className="inbox-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search messages" />
+        <select className="class-pick" value={codes.includes(filter) ? filter : 'all'} onChange={(e) => pickClass(e.target.value)} aria-label="Class">
+          <option value="all">All classes</option>
+          {codes.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="chips wrap">
-        {['all', ...codes].map((c) => (
-          <button key={c} className={filter === c ? 'on' : ''} onClick={() => setFilter(c)}>
-            {c === 'all' ? 'All' : c}
+        {(
+          [
+            ['all', 'Everything'],
+            ['messages', 'Messages'],
+            ['announcements', 'Announcements'],
+            ['grades', 'Grades']
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>
+            {label}
           </button>
         ))}
+        <button className={unreadOnly ? 'on' : ''} onClick={() => setUnreadOnly(!unreadOnly)}>
+          Unread
+        </button>
+        <button onClick={() => setOldest(!oldest)}>{oldest ? 'Oldest first' : 'Newest first'}</button>
       </div>
       <div className="inbox-acts">
         <button onClick={() => markRead(items.map((i) => i.id))}>Mark all read</button>
@@ -510,7 +565,7 @@ function InboxView({ items, readIds, markRead, remove }: { items: ScholarInboxIt
             <button onClick={() => setConfirm(true)}>Delete read</button>
           ))}
       </div>
-      {!shown.length && <div className="empty">Nothing yet. New announcements, grades and messages land here, with a notification.</div>}
+      {!shown.length && <div className="empty">{items.length ? 'Nothing matches these filters.' : 'Nothing yet. New announcements, grades and messages land here, with a notification.'}</div>}
       {shown.map((i) => {
         const unread = !i.read && !readIds.includes(i.id);
         const k = kindOf(i);
@@ -521,6 +576,7 @@ function InboxView({ items, readIds, markRead, remove }: { items: ScholarInboxIt
               {i.kind === 'announcement' ? <Megaphone size={15} /> : i.kind === 'grade' || i.kind === 'feedback' ? <Award size={15} /> : i.kind === 'needs_you' || i.kind === 'attention' || i.kind === 'missed' ? <AlertTriangle size={15} /> : <Mail size={15} />}
               <span className="msg-kind">{k.label}</span>
               {i.course && <b>{i.course}</b>}
+              {(i as any).from && <span className="msg-from">{(i as any).from}</span>}
               <span className="muted small msg-at">{i.at ? ago(i.at) : ''}</span>
             </div>
             <div className="msg-title">
@@ -544,8 +600,33 @@ function InboxView({ items, readIds, markRead, remove }: { items: ScholarInboxIt
                 ))}
               </div>
             )}
-            {open === i.id && (
+            {open === i.id && replying === i.id && (
+              <div className="msg-reply" onClick={(e) => e.stopPropagation()}>
+                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} placeholder={`Reply${(i as any).from ? ` to ${(i as any).from}` : ''}`} autoFocus />
+                <div className="actions">
+                  <button className="btn primary" disabled={!draft.trim() || sending} onClick={() => send(i)}>
+                    {sending ? <Loader2 size={14} className="spin" /> : <Mail size={14} />} Send
+                  </button>
+                  <button className="btn" onClick={() => setReplying(null)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+            {open === i.id && replying !== i.id && (
               <div className="msg-actions">
+                {kindOfItem(i) === 'messages' && ((i as any).conv || i.url) && (
+                  <button
+                    className="btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if ((i as any).conv) setReplying(i.id);
+                      else Kea.open({ url: i.url! });
+                    }}
+                  >
+                    <Mail size={14} /> {(i as any).conv ? 'Reply' : 'Reply on the class site'}
+                  </button>
+                )}
                 <button
                   className="btn"
                   onClick={(e) => {

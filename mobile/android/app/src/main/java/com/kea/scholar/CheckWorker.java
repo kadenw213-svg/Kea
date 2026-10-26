@@ -41,11 +41,33 @@ public class CheckWorker extends Worker {
         super(ctx, params);
     }
 
+    /** The student's notification choices (Settings → Notifications), saved by KeaPlugin.setNotify. */
+    static JSONObject prefs(Context ctx) {
+        try {
+            return new JSONObject(Store.plain(ctx).getString("notify", "{}"));
+        } catch (Exception e) {
+            return new JSONObject();
+        }
+    }
+
+    /** Checks every `every` minutes (15 at the least, Android's limit; 0: only when Kea is opened or refreshed). */
     static void schedule(Context ctx) {
-        PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(CheckWorker.class, 15, TimeUnit.MINUTES)
+        int every = prefs(ctx).optInt("every", 15);
+        SharedPreferences sp = Store.plain(ctx);
+        WorkManager wm = WorkManager.getInstance(ctx);
+        if (every <= 0) {
+            wm.cancelUniqueWork("kea-check");
+            sp.edit().putInt("everyScheduled", 0).apply();
+            return;
+        }
+        every = Math.max(15, every);
+        PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(CheckWorker.class, every, TimeUnit.MINUTES)
             .setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .build();
-        WorkManager.getInstance(ctx).enqueueUniquePeriodicWork("kea-check", ExistingPeriodicWorkPolicy.KEEP, req);
+        // (A new interval replaces the old schedule; the same one keeps it, so it isn't pushed back on every start.)
+        boolean changed = sp.getInt("everyScheduled", -1) != every;
+        wm.enqueueUniquePeriodicWork("kea-check", changed ? ExistingPeriodicWorkPolicy.REPLACE : ExistingPeriodicWorkPolicy.KEEP, req);
+        sp.edit().putInt("everyScheduled", every).apply();
     }
 
     @NonNull
@@ -221,8 +243,31 @@ public class CheckWorker extends Worker {
                     String spaced = code.replaceAll("([A-Za-z]+)(\\d+)", "$1 $2");
                     if (!code.isEmpty() && (context.contains(code) || context.contains(spaced))) course = code;
                 }
-                fresh.add(item("news", course, cv.optString("subject", "Message"), cv.optString("last_message", ""), cv.optString("last_message_at", ""),
-                    base.buildUpon().encodedPath("/conversations/" + cv.optString("id")).clearQuery().build().toString()));
+                // The whole message and its sender (the list only has the start of the last message).
+                String body = cv.optString("last_message", "");
+                String from = "";
+                try {
+                    ClassSite.Answer full = ClassSite.get(ctx, base.buildUpon().encodedPath("/api/v1/conversations/" + cv.optString("id")).clearQuery().build().toString());
+                    if (full.status == 200 && full.body.trim().startsWith("{")) {
+                        JSONObject conv = new JSONObject(full.body);
+                        JSONArray msgs = conv.optJSONArray("messages");
+                        JSONArray people = conv.optJSONArray("participants");
+                        if (msgs != null && msgs.length() > 0) {
+                            JSONObject last = msgs.getJSONObject(0);
+                            if (!last.optString("body", "").trim().isEmpty()) body = last.optString("body").trim();
+                            if (people != null) for (int p = 0; p < people.length(); p++) {
+                                JSONObject who = people.getJSONObject(p);
+                                if (who.optString("id").equals(last.optString("author_id"))) from = who.optString("name", "");
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+                JSONObject it = item("news", course, cv.optString("subject", "Message"), body, cv.optString("last_message_at", ""),
+                    base.buildUpon().encodedPath("/conversations/" + cv.optString("id")).clearQuery().build().toString());
+                it.put("from", from);
+                it.put("conv", cv.optString("id"));
+                fresh.add(it);
             }
         }
     }
@@ -241,7 +286,15 @@ public class CheckWorker extends Worker {
             e.putString("phoneInbox", merged.toString());
         }
         e.apply();
-        if (seeded && notify) for (JSONObject f : fresh.subList(0, Math.min(6, fresh.size()))) post(ctx, f);
+        if (seeded && notify) {
+            int n = 0;
+            for (JSONObject f : fresh) {
+                if (n >= 6) break;
+                if (!wanted(ctx, f)) continue;
+                post(ctx, f);
+                n++;
+            }
+        }
         return seeded ? fresh : new ArrayList<>();
     }
 
@@ -262,20 +315,75 @@ public class CheckWorker extends Worker {
         return o;
     }
 
-    static void post(Context ctx, JSONObject f) {
+    /** What kind of notification an item is: messages, announcements or grades (each can be turned off). */
+    static String kindOf(JSONObject f) {
+        String k = f.optString("kind");
+        return k.equals("grade") ? "grades" : k.equals("announcement") ? "announcements" : "messages";
+    }
+
+    /** Whether the student wants this one notified: its kind and its class turned on (it's in the Inbox either way). */
+    static boolean wanted(Context ctx, JSONObject f) {
+        JSONObject p = prefs(ctx);
+        if (p.has(kindOf(f)) && !p.optBoolean(kindOf(f), true)) return false;
+        JSONObject off = p.optJSONObject("classesOff");
+        return off == null || f.optString("course").isEmpty() || !off.optBoolean(f.optString("course"), false);
+    }
+
+    /** Inside the quiet hours ("22:00" to "07:00"): notified without a sound or buzz. */
+    static boolean quiet(Context ctx) {
+        JSONObject p = prefs(ctx);
+        String from = p.optString("quietFrom", ""), to = p.optString("quietTo", "");
+        if (!from.matches("\\d{1,2}:\\d{2}") || !to.matches("\\d{1,2}:\\d{2}")) return false;
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        int now = c.get(java.util.Calendar.HOUR_OF_DAY) * 60 + c.get(java.util.Calendar.MINUTE);
+        int a = Integer.parseInt(from.split(":")[0]) * 60 + Integer.parseInt(from.split(":")[1]);
+        int b = Integer.parseInt(to.split(":")[0]) * 60 + Integer.parseInt(to.split(":")[1]);
+        return a <= b ? now >= a && now < b : now >= a || now < b;
+    }
+
+    static String channel(Context ctx, String kind) {
         NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
-            nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Your classes", NotificationManager.IMPORTANCE_DEFAULT));
+        String id = kind.equals("grades") ? "kea_grades" : kind.equals("announcements") ? "kea_announcements" : "kea_messages";
+        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(id) == null) {
+            String name = kind.equals("grades") ? "Grades" : kind.equals("announcements") ? "Announcements" : "Messages";
+            nm.createNotificationChannel(new NotificationChannel(id, name, kind.equals("messages") ? NotificationManager.IMPORTANCE_HIGH : NotificationManager.IMPORTANCE_DEFAULT));
         }
+        return id;
+    }
+
+    static void post(Context ctx, JSONObject f) {
+        String kind = kindOf(f);
         Intent open = new Intent(ctx, MainActivity.class).putExtra("open", "inbox").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent pi = PendingIntent.getActivity(ctx, f.optString("id").hashCode(), open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, CHANNEL)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(f.optString("course") + ": " + f.optString("title"))
-            .setContentText(f.optString("body"))
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(f.optString("body")))
+        int nid = f.optString("id").hashCode();
+        PendingIntent pi = PendingIntent.getActivity(ctx, nid, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        String course = f.optString("course"), from = f.optString("from"), title = f.optString("title"), body = f.optString("body");
+        // A message: who sent it and the class, then the whole message (its subject first). Others: the class and title.
+        boolean msg = kind.equals("messages");
+        String head = msg && !from.isEmpty() ? from + (course.isEmpty() ? "" : " · " + course) : (course.isEmpty() ? "" : course + ": ") + title;
+        String text = msg && !from.isEmpty() ? (title.isEmpty() || body.startsWith(title) ? body : title + "\n\n" + body) : body;
+        NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, channel(ctx, kind))
+            .setSmallIcon(R.drawable.ic_stat_kea)
+            .setColor(0xFF8AB4F8)
+            .setContentTitle(head)
+            .setContentText(text)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
             .setAutoCancel(true)
+            .setSilent(quiet(ctx))
             .setContentIntent(pi);
+        if (msg) {
+            if (!f.optString("conv").isEmpty() && Build.VERSION.SDK_INT >= 24) {
+                // Reply right here: the answer goes to the conversation on the class site (ReplyReceiver).
+                androidx.core.app.RemoteInput in = new androidx.core.app.RemoteInput.Builder(ReplyReceiver.KEY).setLabel("Reply to " + (from.isEmpty() ? "the message" : from)).build();
+                Intent r = new Intent(ctx, ReplyReceiver.class).putExtra("conv", f.optString("conv")).putExtra("url", f.optString("url")).putExtra("nid", nid).putExtra("head", head);
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
+                PendingIntent rp = PendingIntent.getBroadcast(ctx, nid, r, flags);
+                b.addAction(new NotificationCompat.Action.Builder(R.drawable.ic_stat_kea, "Reply", rp).addRemoteInput(in).setAllowGeneratedReplies(false).build());
+            } else if (!f.optString("url").isEmpty()) {
+                // (No way to send it from here: Reply opens the message on the class site, in Kea.)
+                Intent site = new Intent(ctx, SiteActivity.class).putExtra("mode", "open").putExtra("url", f.optString("url")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                b.addAction(R.drawable.ic_stat_kea, "Reply", PendingIntent.getActivity(ctx, nid + 1, site, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+            }
+        }
         try {
             NotificationManagerCompat.from(ctx).notify(f.optString("id").hashCode(), b.build());
         } catch (SecurityException ignored) {

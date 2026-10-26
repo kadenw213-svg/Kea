@@ -30,6 +30,10 @@ interface KeaNative {
   handIn(o: { url: string; file: string }): Promise<void>;
   watch(o: { le?: string; lp?: string; platform?: string; courses: { code: string; ou: string }[] }): Promise<void>;
   allowNotifications(): Promise<void>;
+  /** Which notifications, quiet hours, and how often to check (minutes; 0 = only when Kea is opened). */
+  setNotify(o: NotifyPrefs): Promise<void>;
+  /** A reply to a conversation on the class site (Canvas), sent with the phone's signed-in session. */
+  reply(o: { conv: string; text: string }): Promise<void>;
   checkNow(): Promise<{ count: number }>;
   phoneInbox(): Promise<{ items: ScholarInboxItem[] }>;
   /** A folder holding Kea's files (or one above them: Kea, Kea → School). Not every drive app allows folders. */
@@ -328,3 +332,34 @@ export async function appendScan(path: string, extra: string): Promise<number> {
 onThemeChange((l) => {
   if (l.themeAt && l.themeAt > new Date(Date.now() - 60000).toISOString()) syncOut();
 });
+
+/** The student's notification choices (Settings → Notifications). Every message stays in the Inbox either way. */
+export interface NotifyPrefs {
+  messages: boolean;
+  announcements: boolean;
+  grades: boolean;
+  /** Classes whose notifications are off, by code. */
+  classesOff: Record<string, boolean>;
+  /** Quiet hours ("22:00" to "07:00"; empty for none): notified without a sound. */
+  quietFrom: string;
+  quietTo: string;
+  /** How often Kea checks the class site, in minutes (15 at the least; 0 = only when Kea is opened or refreshed). */
+  every: number;
+}
+const NOTIFY = 'kea.notify';
+const NOTIFY_DEFAULT: NotifyPrefs = { messages: true, announcements: true, grades: true, classesOff: {}, quietFrom: '', quietTo: '', every: 15 };
+export function getNotify(): NotifyPrefs {
+  try {
+    return { ...NOTIFY_DEFAULT, ...JSON.parse(localStorage.getItem(NOTIFY) || '{}') };
+  } catch {
+    return NOTIFY_DEFAULT;
+  }
+}
+export function setNotifyPrefs(patch: Partial<NotifyPrefs>) {
+  const p = { ...getNotify(), ...patch };
+  try {
+    localStorage.setItem(NOTIFY, JSON.stringify(p));
+  } catch {}
+  Kea.setNotify(p).catch(() => {});
+  return p;
+}

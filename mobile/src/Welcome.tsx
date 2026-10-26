@@ -3,7 +3,7 @@
 // settings page holds all of it afterwards.
 import { useEffect, useState } from 'react';
 import { BookOpen, Bell, Brain, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, Circle, Cloud, ExternalLink, FileText, FolderOpen, GraduationCap, Inbox, Laptop, Loader2, RefreshCw, ScanLine, School, Smartphone, Upload } from 'lucide-react';
-import { Kea } from './kea';
+import { Kea, getNotify, setNotifyPrefs, NotifyPrefs, cachedData } from './kea';
 import type { DriveFrom } from './kea';
 import { AUTO, checkForUpdate, installUpdate, useUpdate } from './update';
 import { toast } from './ui';
@@ -456,12 +456,7 @@ export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onC
           </section>
         )}
         <Appearance />
-        <section className="set">
-          <h2>Notifications</h2>
-          <button className="btn" onClick={() => Kea.allowNotifications()}>
-            <Bell size={16} /> {state?.notifications ? 'On' : 'Allow notifications'}
-          </button>
-        </section>
+        <Notifications on={!!state?.notifications} />
         <section className="set">
           <h2>Updates</h2>
           <div className="set-row">
@@ -607,5 +602,75 @@ function Appearance() {
       </section>
       {voices && <VoiceSheet onClose={() => setVoices(false)} />}
     </>
+  );
+}
+
+/** Which notifications Kea sends, when it stays quiet, and how often it checks your class site. */
+function Notifications({ on }: { on: boolean }) {
+  const [p, setP] = useState(getNotify);
+  const save = (patch: Partial<NotifyPrefs>) => setP(setNotifyPrefs(patch));
+  const codes = (cachedData()?.courses || []).map((c) => c.code).filter(Boolean);
+  return (
+    <section className="set">
+      <h2>Notifications</h2>
+      {!on && (
+        <button className="btn" onClick={() => Kea.allowNotifications()}>
+          <Bell size={16} /> Allow notifications
+        </button>
+      )}
+      <p className="muted small">Everything still arrives in the Inbox; these only choose what makes your phone notify you.</p>
+      {(
+        [
+          ['messages', 'Messages (with who sent them and a Reply button)'],
+          ['announcements', 'Announcements'],
+          ['grades', 'New grades and feedback']
+        ] as const
+      ).map(([k, label]) => (
+        <label key={k} className="toggle">
+          <input type="checkbox" checked={p[k]} onChange={(e) => save({ [k]: e.target.checked })} />
+          <span>{label}</span>
+        </label>
+      ))}
+      {codes.length > 0 && (
+        <>
+          <span className="muted small">Classes</span>
+          <div className="chips wrap">
+            {codes.map((c) => (
+              <button key={c} className={p.classesOff[c] ? '' : 'on'} onClick={() => save({ classesOff: { ...p.classesOff, [c]: !p.classesOff[c] } })}>
+                {c}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      <span className="muted small">Check for new messages</span>
+      <div className="bk-opts">
+        {(
+          [
+            [15, 'Every 15 min'],
+            [30, '30 min'],
+            [60, 'Hourly'],
+            [180, 'Every 3 h'],
+            [0, 'Only when I open Kea']
+          ] as const
+        ).map(([v, label]) => (
+          <button key={v} className={`bk-chip ${p.every === v ? 'on' : ''}`} onClick={() => save({ every: v })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="muted small">Android decides the exact moment, so a check can come a few minutes late. 15 minutes is the most often Android allows.</p>
+      <label className="toggle">
+        <input type="checkbox" checked={!!p.quietFrom} onChange={(e) => save(e.target.checked ? { quietFrom: '22:00', quietTo: '07:00' } : { quietFrom: '', quietTo: '' })} />
+        <span>Quiet hours (no sound or buzz)</span>
+      </label>
+      {!!p.quietFrom && (
+        <div className="quiet-row">
+          <input type="time" value={p.quietFrom} onChange={(e) => save({ quietFrom: e.target.value })} aria-label="Quiet from" />
+          <span className="muted">to</span>
+          <input type="time" value={p.quietTo} onChange={(e) => save({ quietTo: e.target.value })} aria-label="Quiet until" />
+        </div>
+      )}
+    </section>
   );
 }

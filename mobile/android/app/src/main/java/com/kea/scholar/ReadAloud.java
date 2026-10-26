@@ -393,7 +393,7 @@ public class ReadAloud extends Service {
             at = Math.min(index + 1, total);
         }
         NotificationCompat.Builder b = new NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_kea)
             .setContentTitle(title)
             .setContentText(playing ? "Reading aloud" : "Paused")
             .setContentIntent(tap)

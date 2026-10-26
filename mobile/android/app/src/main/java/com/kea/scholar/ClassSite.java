@@ -122,6 +122,31 @@ final class ClassSite {
         return a;
     }
 
+    /** A form POST with the signed-in session (Canvas: its CSRF token, from the session's cookie, goes along). */
+    static Answer postForm(String url, String form) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setInstanceFollowRedirects(false);
+        c.setConnectTimeout(20000);
+        c.setReadTimeout(30000);
+        c.setRequestMethod("POST");
+        c.setDoOutput(true);
+        String cookies = CookieManager.getInstance().getCookie(url);
+        if (cookies != null) {
+            c.setRequestProperty("Cookie", cookies);
+            for (String part : cookies.split(";")) {
+                String[] kv = part.trim().split("=", 2);
+                if (kv.length == 2 && kv[0].equals("_csrf_token")) c.setRequestProperty("X-CSRF-Token", java.net.URLDecoder.decode(kv[1], "UTF-8"));
+            }
+        }
+        c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+        c.setRequestProperty("Accept", "application/json, text/plain, */*");
+        c.getOutputStream().write(form.getBytes("UTF-8"));
+        Answer a = new Answer();
+        a.status = c.getResponseCode();
+        c.disconnect();
+        return a;
+    }
+
     static boolean needsSignIn(Answer a) {
         return a.status == 401 || a.status == 403 || (a.status >= 300 && a.status < 400);
     }

@@ -279,6 +279,37 @@ public class KeaPlugin extends Plugin {
         call.resolve();
     }
 
+    /** Which notifications the student wants, quiet hours, and how often Kea checks (CheckWorker.prefs). */
+    @PluginMethod
+    public void setNotify(PluginCall call) {
+        Store.plain(getContext()).edit().putString("notify", call.getData().toString()).apply();
+        CheckWorker.schedule(getContext());
+        call.resolve();
+    }
+
+    /** A reply to a Canvas conversation, from Kea's Inbox. */
+    @PluginMethod
+    public void reply(PluginCall call) {
+        String conv = call.getString("conv", ""), text = call.getString("text", "");
+        if (conv.isEmpty() || text.trim().isEmpty()) {
+            call.reject("Nothing to send.");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                android.net.Uri base = android.net.Uri.parse(Store.home(getContext()));
+                String post = base.buildUpon().encodedPath("/api/v1/conversations/" + conv + "/add_message").clearQuery().build().toString();
+                String form = "body=" + java.net.URLEncoder.encode(text.trim(), "UTF-8");
+                ClassSite.Answer a = ClassSite.postForm(post, form);
+                if (ClassSite.needsSignIn(a) && ClassSite.signInBlocking(getContext(), 60)) a = ClassSite.postForm(post, form);
+                if (a.status >= 200 && a.status < 300) call.resolve();
+                else call.reject("The class site didn't take the reply (" + a.status + "). Try it on the class site.");
+            } catch (Exception e) {
+                call.reject(e.getMessage());
+            }
+        }).start();
+    }
+
     @PluginMethod
     public void allowNotifications(PluginCall call) {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {

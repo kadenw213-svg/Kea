@@ -1181,3 +1181,56 @@ input.range {
 .review-classes {
   flex-wrap: wrap;
 }
+
+/* Inbox filters and replies */
+.inbox-filters {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.inbox-filters .class-pick {
+  margin: 0;
+  width: auto;
+}
+.inbox-search {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.msg-from {
+  font-weight: 500;
+  color: var(--text-2);
+}
+.msg-reply {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+.msg-reply textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong, var(--border));
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.quiet-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.quiet-row input {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
