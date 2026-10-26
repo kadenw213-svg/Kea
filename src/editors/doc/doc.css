@@ -926,7 +926,7 @@
   opacity: 0.65;
 }
 .rv-card.change {
-  border-left: 3px solid #81c995;
+  border-left: 3px solid var(--success);
 }
 .rv-who {
   display: flex;
@@ -970,12 +970,12 @@
   word-break: break-word;
 }
 .rv-change ins {
-  color: #81c995;
+  color: var(--success);
   text-decoration: none;
   font-weight: 500;
 }
 .rv-change del {
-  color: #f28b82;
+  color: var(--danger);
 }
 .rv-reply {
   margin-top: 10px;
@@ -1031,7 +1031,7 @@
   background: var(--surface-3);
 }
 .mode-btn.suggest {
-  color: #81c995;
+  color: var(--success);
   border-color: rgba(129, 201, 149, 0.6);
   background: rgba(129, 201, 149, 0.1);
 }
@@ -1214,11 +1214,11 @@
   --cmt-question-line: #c58af9;
 }
 .rv-card.ai {
-  background: #26292e;
-  border-left: 3px solid #5f6368;
+  background: var(--surface-2);
+  border-left: 3px solid var(--border-strong);
 }
 .rv-card.change.ai {
-  border-left: 3px solid #5f6368;
+  border-left: 3px solid var(--border-strong);
 }
 .rv-avatar.ai {
   border-radius: 8px;

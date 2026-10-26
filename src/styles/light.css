@@ -48,3 +48,22 @@
 :root[data-theme='light'] .pv-badge {
   color: #fff;
 }
+:root[data-theme='light'] .sheet-editor {
+  --grid-bg: var(--surface);
+  --grid-line: #e1e3e6;
+  --head-bg: var(--surface-2);
+  --head-text: var(--text-3);
+}
+:root[data-theme='light'] .col-head.on,
+:root[data-theme='light'] .row-head.on {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+:root[data-theme='light'] .cell-editor input {
+  background: var(--surface);
+}
+:root[data-theme='light'] .freeze-line {
+  background: var(--border-strong);
+}
+:root[data-theme='light'] .slide-stage {
+  background: var(--surface-3);
+}
