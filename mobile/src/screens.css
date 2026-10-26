@@ -1461,3 +1461,51 @@ input.range {
 .mix-row b {
   text-align: right;
 }
+
+/* A class's reading this week: a banner under Study and Readings */
+.class-week {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 10px 0 4px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--k, var(--accent)) 45%, var(--border));
+  background: color-mix(in srgb, var(--k, var(--accent)) 11%, var(--surface));
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.class-week:active {
+  background: color-mix(in srgb, var(--k, var(--accent)) 20%, var(--surface));
+}
+.class-week > svg {
+  color: var(--k, var(--accent));
+  flex-shrink: 0;
+}
+.class-week > span:not(.class-week-go) {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.class-week-k {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.class-week b {
+  font-size: 14.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.class-week-go {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--k, var(--accent));
+}

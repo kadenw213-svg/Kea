@@ -621,8 +621,8 @@ function HomeAndStudy() {
   const set = (k: string, v: any) => useSettings.getState().set({ [k]: v });
   const cols = String(useSetting<string>('scholar.homeColumns') || '2');
   const pictures = useSetting<boolean>('scholar.homePictures') !== false;
-  const week = useSetting<boolean>('scholar.homeWeek') !== false;
   const grades = useSetting<boolean>('scholar.homeGrades') !== false;
+  const weekStart = String(useSetting<string>('scholar.weekStart') ?? '0');
   const values = useSettings((st) => st.values);
   const [more, setMore] = useState(false);
   return (
@@ -646,14 +646,23 @@ function HomeAndStudy() {
           <span>Class pictures from the class site</span>
         </label>
         <label className="toggle">
-          <input type="checkbox" checked={week} onChange={(e) => set('scholar.homeWeek', e.target.checked)} />
-          <span>This week’s reading on each class</span>
-        </label>
-        <label className="toggle">
           <input type="checkbox" checked={grades} onChange={(e) => set('scholar.homeGrades', e.target.checked)} />
           <span>Grade on each class</span>
         </label>
         <p className="muted small">Class colours come from Kea on your computer (This week → Colours, by class).</p>
+      </section>
+      <section className="set">
+        <h2>Calendar</h2>
+        <label className="mix-row">
+          <span>Weeks start on</span>
+          <select className="class-pick" value={weekStart} onChange={(e) => set('scholar.weekStart', e.target.value)}>
+            {[['0', 'Sunday'], ['1', 'Monday'], ['2', 'Tuesday'], ['3', 'Wednesday'], ['4', 'Thursday'], ['5', 'Friday'], ['6', 'Saturday']].map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
       <section className="set">
         <h2>Practice exams</h2>

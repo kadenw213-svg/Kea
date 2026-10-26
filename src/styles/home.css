@@ -1412,3 +1412,44 @@ button.fcard-desc.add:hover {
   opacity: 0.5;
   cursor: default;
 }
+
+/* Home: missing work above the classes */
+.home-miss {
+  border: 1px solid color-mix(in srgb, var(--danger, #f28b82) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger, #f28b82) 8%, var(--surface));
+  border-radius: 14px;
+  padding: 10px 8px 6px;
+  margin-bottom: 14px;
+}
+.home-miss-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 6px;
+  font-weight: 600;
+  color: var(--danger, #f28b82);
+}
+.home-miss-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.home-miss-row:hover {
+  background: var(--hover);
+}
+.home-miss-row span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

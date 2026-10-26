@@ -435,26 +435,10 @@ function Row({ ctx, it, date }: { ctx: Ctx; it: ScholarItem; date?: boolean }) {
   );
 }
 
-/** The top of Home: the next class or event today, and missing work. */
+/** The top of Home: missing work, when there is any (the calendar has what's next). */
 function TodayTop({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
-  const t = today();
-  const now = new Date().getHours() * 60 + new Date().getMinutes();
-  const next = ctx.items.find((i) => i.type !== 'weekly_reading' && i.date === t && i.start && Number(i.start.slice(0, 2)) * 60 + Number(i.start.slice(3, 5)) > now);
   return (
     <>
-      {next && (
-        <div className="next" style={{ borderColor: typeColor(next.type) }} onClick={() => ctx.open(next)}>
-          <div className="next-k">Next</div>
-          <div className="next-t">
-            {next.courseCode} {LABEL[next.type] || ''} at {clock(next.start)}
-          </div>
-          {room(next.location) && (
-            <div className="next-r">
-              <MapPin size={13} /> {next.location}
-            </div>
-          )}
-        </div>
-      )}
       {missing.length > 0 && (
         <section className="miss">
           <h2>
@@ -469,25 +453,26 @@ function TodayTop({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
   );
 }
 
-/** This week's reading for a class: its chapters as buttons side by side (tap to read). */
+/** This week's reading for a class. */
 function weekReadings(ctx: Ctx, courseId: string) {
   const t = today();
   return ctx.items.find((b) => b.type === 'weekly_reading' && b.courseId === courseId && b.date <= t && (b.dateEnd || b.date) >= t)?.readings || [];
 }
-function ReadChips({ ctx, reads }: { ctx: Ctx; reads: ScholarItem['readings'] }) {
+/** A class's reading this week, as banners under Study and Readings, one per chapter (tap to read). */
+function WeekBanner({ ctx, reads }: { ctx: Ctx; reads: ScholarItem['readings'] }) {
   return (
     <>
       {reads.map((r) => (
-        <button
-          key={r.chapter}
-          className="mcard-read"
-          disabled={!r.pdf}
-          onClick={(e) => {
-            e.stopPropagation();
-            r.pdf && ctx.read({ file: r.pdf.file, chapter: r.chapter, title: r.title || r.chapter });
-          }}
-        >
-          <BookOpen size={13} /> {r.chapter.replace(/^Chapter /, 'Ch ')}
+        <button key={r.chapter} className="class-week" disabled={!r.pdf} onClick={() => r.pdf && ctx.read({ file: r.pdf.file, chapter: r.chapter, title: r.title || r.chapter })}>
+          <BookOpen size={20} />
+          <span>
+            <span className="class-week-k">This week</span>
+            <b>
+              {r.chapter.replace(/^Chapter /, 'Ch ')}
+              {r.title ? `: ${r.title}` : ''}
+            </b>
+          </span>
+          <span className="class-week-go">{r.pdf ? 'Read' : 'Being written'}</span>
         </button>
       ))}
     </>
@@ -657,7 +642,10 @@ function InboxView({ items, readIds, markRead, remove }: { items: ScholarInboxIt
 }
 
 function Agenda({ ctx }: { ctx: Ctx }) {
-  const [start, setStart] = useState(() => addDays(new Date(), -((new Date().getDay() + 6) % 7)));
+  // (Weeks start on the day chosen in Settings, Sunday unless changed.)
+  const first = Number(useSetting<string>('scholar.weekStart') ?? 0) || 0;
+  const [start, setStart] = useState(() => addDays(new Date(), -((new Date().getDay() - first + 7) % 7)));
+  useEffect(() => setStart(addDays(new Date(), -((new Date().getDay() - first + 7) % 7))), [first]);
   const days = Array.from({ length: 7 }, (_, k) => iso(addDays(start, k)));
   const [day, setDay] = useState(today());
   const list = ctx.items.filter((i) => i.date === day && i.type !== 'weekly_reading');
@@ -716,19 +704,17 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
   useBack(readings, () => setReadings(false));
   const columns = Number(useSetting<string>('scholar.homeColumns') || 2);
   const pictures = useSetting<boolean>('scholar.homePictures') !== false;
-  const showWeek = useSetting<boolean>('scholar.homeWeek') !== false;
   const showGrades = useSetting<boolean>('scholar.homeGrades') !== false;
   if (c && readings) return <Readings ctx={ctx} course={c} onBack={() => setReadings(false)} />;
   if (!c)
     return (
       <div className="page">
         <TodayTop ctx={ctx} missing={missing} />
-        <h2>Your classes</h2>
+        {missing.length > 0 && <h2>Your classes</h2>}
         <div className="mcards" style={{ ['--cols' as any]: Math.min(2, Math.max(1, columns || 2)) }}>
           {ctx.data.courses.map((d) => {
             const g = ctx.data.grades[d.code]?.final;
             const k = classColor(ctx.data, d.id);
-            const reads = showWeek ? weekReadings(ctx, d.id) : [];
             return (
               <div key={d.id} className="mcard" style={{ ['--k' as any]: k }} onClick={() => setCode(d.code)} role="button">
                 <div className={`mcard-pic ${pictures && d.image ? '' : 'plain'}`}>
@@ -743,11 +729,6 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
                   <b className="mcard-code">{d.code}</b>
                   <span className="mcard-name">{d.name}</span>
                 </div>
-                {reads.length > 0 && (
-                  <div className="mcard-reads">
-                    <ReadChips ctx={ctx} reads={reads} />
-                  </div>
-                )}
               </div>
             );
           })}
@@ -786,14 +767,7 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
           <span>{c.chapters.filter((ch) => ch.pdf).length} chapters</span>
         </button>
       </div>
-      {reads.length > 0 && (
-        <>
-          <h2>This week</h2>
-          <div className="mcard-reads wide">
-            <ReadChips ctx={ctx} reads={reads} />
-          </div>
-        </>
-      )}
+      {reads.length > 0 && <WeekBanner ctx={ctx} reads={reads} />}
       {upcoming.length > 0 && (
         <>
           <h2>Coming up</h2>

@@ -42,7 +42,7 @@ import { inboxParts, kindOf } from './inboxFormat';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
 import { openPaths } from '../../lib/open';
 import { setPdfTarget } from '../../lib/pdfTarget';
-import { useSettings, useThemeDark } from '../../lib/settings';
+import { useSetting, useSettings, useThemeDark } from '../../lib/settings';
 import { gradeColor } from '../../lib/themes';
 import { toast, prompt } from '../../store';
 import { useScholar, reloadScholar, bumpInbox, ScholarView } from './scholarStore';
@@ -927,9 +927,12 @@ function CalendarView({ ctx, courseId }: { ctx: Ctx; courseId?: string }) {
     } catch {}
   }, [mode]);
   const month = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const weekStart = addDays(anchor, -((anchor.getDay() + 6) % 7));
-  // Month: six school weeks (Monday to Sunday) from the Monday on or before the 1st. Week: Monday to Sunday.
-  const start = mode === 'week' ? weekStart : addDays(month, -((month.getDay() + 6) % 7));
+  // Weeks start on the day chosen in Settings (Sunday unless changed). Month: six weeks from the first week day on or
+  // before the 1st.
+  const first = Number(useSetting<string>('scholar.weekStart') ?? 0) || 0;
+  const back = (d: Date) => (d.getDay() - first + 7) % 7;
+  const weekStart = addDays(anchor, -back(anchor));
+  const start = mode === 'week' ? weekStart : addDays(month, -back(month));
   const end = mode === 'week' ? addDays(weekStart, 6) : addDays(start, 41);
   const items = useItems(iso(start), iso(end), courseId);
   const shift = (n: number) => setAnchor(mode === 'week' ? addDays(anchor, 7 * n) : new Date(anchor.getFullYear(), anchor.getMonth() + n, 1));
@@ -1116,7 +1119,7 @@ function MonthGrid({ ctx, items, start, month, showCourse }: { ctx: Ctx; items: 
   return (
     <div className="cal-grid">
       <div className="cal-weekdays">
-        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+        {Array.from({ length: 7 }, (_, d) => addDays(start, d).toLocaleDateString(undefined, { weekday: 'short' })).map((d) => (
           <div key={d} className="cal-dow">
             {d}
           </div>
@@ -1346,6 +1349,11 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
           </span>
         </button>
       </div>
+      {(items || [])
+        .filter((i) => i.type === 'weekly_reading' && i.date <= day && (i.dateEnd || i.date) >= day)
+        .map((b) => (
+          <ReadingCard key={b.id} ctx={ctx} b={b} showCourse={false} />
+        ))}
       <ClassRules code={c.code} />
       <SyllabusMap code={c.code} />
       <div className="cls-tabs">
@@ -1381,8 +1389,8 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
               </section>
             )}
             {items
-              .filter((i) => i.type === 'weekly_reading' && (i.dateEnd || i.date) >= today())
-              .slice(0, 2)
+              .filter((i) => i.type === 'weekly_reading' && i.date > day)
+              .slice(0, 1)
               .map((b) => (
                 <ReadingCard key={b.id} ctx={ctx} b={b} showCourse={false} />
               ))}
