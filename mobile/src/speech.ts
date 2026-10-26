@@ -29,6 +29,8 @@ export function spoken(t: string) {
     .replace(/\u2029/g, ' ')
     // Letter-spaced headings ("C H E 1 0 1 1", "C  E  L  L  S") as words, section numbers as numbers ("1. 1" → "1.1").
     .replace(/\b(?:[A-Za-z0-9] {1,3}){2,}[A-Za-z0-9]\b/g, (m) => m.replace(/ +/g, ''))
+    // (A word run into its number by that, "CHAPTER3", gets its space back; a course code like CHE1011 keeps none.)
+    .replace(/\b([A-Za-z]{4,})(\d+)\b/g, '$1 $2')
     .replace(/(\d)\. (\d)/g, '$1.$2')
     .replace(/\s*→\s*/g, ' gives ')
     .replace(/\s*⇌\s*/g, ' is in equilibrium with ')
