@@ -142,9 +142,11 @@ async function whole(text: string): Promise<boolean> {
     return false;
   }
 }
+// The copy read this session: used even when the phone's storage is too full to keep it for next time.
+let fresh: string | null = null;
 export function cachedData(): KeaData | null {
   try {
-    return JSON.parse(localStorage.getItem(CACHE) || 'null');
+    return JSON.parse(fresh || localStorage.getItem(CACHE) || 'null');
   } catch {
     return null;
   }
@@ -159,9 +161,16 @@ export async function loadData(ms = 45000): Promise<{ data: KeaData | null; erro
     const r = await Promise.race([Kea.readFile({ path: 'kea-data.json' }), new Promise<never>((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
     if (!(await whole(r.text))) throw new Error('Unexpected end: the file failed its check');
     const d = JSON.parse(r.text) as KeaData;
+    fresh = r.text;
     try {
       localStorage.setItem(CACHE, r.text);
-    } catch {}
+    } catch {
+      // (Storage full: an old copy kept for offline would be read instead of this one, so it goes.)
+      try {
+        localStorage.removeItem(CACHE);
+        localStorage.setItem(CACHE, r.text);
+      } catch {}
+    }
     // The theme picked on the PC, when it's newer than the phone's.
     const look = (d as any).look as { theme?: string; at?: string } | undefined;
     if (look?.theme && look.theme in THEMES && look.at && look.at > (getLook().themeAt || '') && look.theme !== getLook().theme) setLook({ theme: look.theme as any, themeAt: look.at });
@@ -270,6 +279,7 @@ export const phoneDeleted = () => load<string[]>(DELETED, []);
 export const inboxKey = (i: { course: string; title: string; body: string }) => `${i.course}|${i.title}|${String(i.body || '').slice(0, 60)}`;
 
 let timer: any = null;
+let retry: any = null;
 /** Write phone.json for Kea on the PC (a moment after the last change, so a burst of taps is one write). */
 export function syncOut() {
   clearTimeout(timer);
@@ -279,7 +289,11 @@ export function syncOut() {
       study = studyOut();
     } catch {}
     const l = getLook();
-    Kea.writeFile({ path: 'phone.json', text: JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000), deleted: phoneDeleted().slice(-1000), study, requests: phoneRequests(), look: { theme: l.theme, at: l.themeAt || '' } }) }).catch(() => {});
+    // (If the drive can't be written now, it's tried again in a minute: the phone's changes aren't left behind.)
+    Kea.writeFile({ path: 'phone.json', text: JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000), deleted: phoneDeleted().slice(-1000), study, requests: phoneRequests(), look: { theme: l.theme, at: l.themeAt || '' } }) }).catch(() => {
+      clearTimeout(retry);
+      retry = setTimeout(syncOut, 60000);
+    });
   }, 1500);
 }
 export function setPhoneDeleted(keys: string[]) {

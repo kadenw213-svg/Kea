@@ -324,6 +324,8 @@ function readLibrary(file, want) {
 
 let timer = null;
 let running = false;
+// A sync asked for while one was running: run again after it, so a change made meanwhile isn't left out.
+let again = null;
 /** Sync soon (several changes in a row become one sync). */
 function schedule(build, delay = 20000) {
   clearTimeout(timer);
@@ -333,7 +335,11 @@ function schedule(build, delay = 20000) {
 /** Write the data file (if it changed) and mirror the textbooks. `build()` returns the snapshot object. */
 async function sync(build) {
   const dir = target();
-  if (!dir || running) return null;
+  if (!dir) return null;
+  if (running) {
+    again = build;
+    return null;
+  }
   running = true;
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -372,6 +378,11 @@ async function sync(build) {
     return { dir, hash: sha(body) };
   } finally {
     running = false;
+    if (again) {
+      const b = again;
+      again = null;
+      schedule(b, 5000);
+    }
   }
 }
 

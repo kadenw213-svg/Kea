@@ -9,8 +9,9 @@
 //   learn.json      { setId: { cardKey: level, _at } }             the newer one (no `_at` yet: the higher level per card)
 //   match.json      { setId: ms }                                  the faster time
 //   review.json     { key: { box, due, last, lapses, first } }     the one reviewed last
+//   deleted.json    { setId: at }                                  sets deleted on any device: their progress goes too
 
-const PROGRESS = ['attempts.json', 'cards.json', 'stars.json', 'stars-log.json', 'learn.json', 'match.json', 'review.json'];
+const PROGRESS = ['attempts.json', 'cards.json', 'stars.json', 'stars-log.json', 'learn.json', 'match.json', 'review.json', 'deleted.json'];
 
 /** Merge `other` into `base` (both { file: contents }), returning the merged files and whether `base` changed. */
 function mergeProgress(base, other) {
@@ -99,6 +100,22 @@ function mergeProgress(base, other) {
       changed = true;
     }
   out['review.json'] = review;
+
+  // Deleted sets, on either device: kept as a list, and their attempts, cards, Learn levels and best time dropped, so
+  // the other device's older copy can't bring them back.
+  const deleted = { ...b('deleted.json') };
+  for (const [id, at] of Object.entries(o('deleted.json')))
+    if (typeof at === 'string' && !(String(deleted[id] || '') >= at)) {
+      deleted[id] = at;
+      changed = true;
+    }
+  out['deleted.json'] = deleted;
+  for (const id of Object.keys(deleted))
+    for (const f of ['attempts.json', 'cards.json', 'learn.json', 'match.json'])
+      if (out[f][id] !== undefined) {
+        delete out[f][id];
+        changed = true;
+      }
 
   return { files: out, changed };
 }

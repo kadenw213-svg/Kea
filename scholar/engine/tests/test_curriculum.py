@@ -147,7 +147,14 @@ def test_explanations_must_teach():
     assert any("symbols" in p for p in _explain_problems(bare, "d = m/V = 31.5 g / 25.0 mL = 1.26 g/mL, three significant figures kept throughout."))
     good = "Density is mass per volume: d = m/V, where d is the density in g/mL, m the mass in grams and V the volume in mL. 31.5 g / 25.0 mL = 1.26 g/mL."
     worked = {**bare, "steps": ["Find the density d.", "Formula: d = m/V.", "d = 31.5 / 25.0 = 1.26 g/mL."]}
-    assert _explain_problems(worked, good) == []
+    # Plain-line steps on a calculation now ask for the walkthrough form.
+    assert any("walkthrough" in p for p in _explain_problems(worked, good))
+    walk = {**bare, "asks": "Find the density of the sample.", "final": {"math": "1.26\ \text{g/mL}"}, "steps": [
+        {"title": "Understand the formula", "math": "d = \frac{m}{V}", "terms": [{"sym": "d", "means": "density"}, {"sym": "m", "means": "mass", "value": "31.5 g"}]},
+        {"title": "Substitute", "math": "d = 31.5 / 25.0"}, {"title": "Answer", "text": "1.26 g/mL"}]}
+    assert _explain_problems(walk, good) == []
+    assert any("asks" in p for p in _explain_problems({**walk, "asks": ""}, good))
+    assert any("terms" in p for p in _explain_problems({**walk, "steps": [{"title": "F", "math": "d = m/V"}, {"text": "a"}, {"text": "b"}]}, good))
     assert any("steps" in p for p in _explain_problems(bare, good))
     assert any("thin" in p for p in _explain_problems(bare, "31.5 / 25.0 = 1.26 g/mL."))
     # Solving for x is algebra, not a formula with symbols to define.

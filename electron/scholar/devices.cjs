@@ -26,7 +26,7 @@ const precheck = require('./precheck.cjs');
 // What the primary shares, relative to the profile folder. (kea.json and study progress are merged, not copied.)
 const FILES = ['inbox.json', 'news.json', 'grades.json', 'submissions.json', 'precheck.json', 'sync-state.json', 'activity.json'];
 const DIRS = [path.join('scholar', 'data', 'digests', 'kea-inbox'), path.join('study', 'sets'), path.join('study', 'images')];
-const MERGED = ['kea.json', path.join('study', 'index.json'), path.join('study', 'attempts.json'), path.join('study', 'cards.json')];
+const MERGED = ['kea.json', path.join('study', 'index.json'), ...require('./studyMerge.cjs').PROGRESS.map((f) => path.join('study', f))];
 const HEARTBEAT = 5 * 60000;
 // A device not heard from in this long shows as off.
 const ONLINE = 3 * HEARTBEAT;
@@ -40,8 +40,14 @@ function configure(h) {
 function readJson(f, fallback) {
   try {
     return JSON.parse(fs.readFileSync(f, 'utf8'));
-  } catch {
-    return fallback;
+  } catch (err) {
+    // (A study file damaged by a crash: its last good copy, kept by study.cjs.)
+    if (err.code === 'ENOENT') return fallback;
+    try {
+      return JSON.parse(fs.readFileSync(f + '.bak', 'utf8'));
+    } catch {
+      return fallback;
+    }
   }
 }
 function writeJson(f, v) {
@@ -347,10 +353,17 @@ function mergeStudy(other) {
   const { files, changed } = mergeProgress(base, theirs);
   if (changed) for (const f of PROGRESS) writeJson(path.join(study, f), files[f]);
   let any = changed;
-  const index = readJson(path.join(study, 'index.json'), []);
+  let index = readJson(path.join(study, 'index.json'), []);
+  // Sets deleted on the other device go here too.
+  const gone = files['deleted.json'] || {};
+  if (index.some((x) => gone[x.id])) {
+    for (const x of index.filter((e) => gone[e.id])) for (const d of ['sets', 'local', 'mine']) fs.rmSync(path.join(study, d, `${x.id}.json`), { force: true });
+    index = index.filter((e) => !gone[e.id]);
+    any = true;
+  }
   for (const m of Array.isArray(other.made) ? other.made : []) {
     const e = m?.entry;
-    if (!e || typeof e.id !== 'string' || !/^(exam|cards)-[a-z0-9-]+$/.test(e.id) || index.some((x) => x.id === e.id)) continue;
+    if (!e || typeof e.id !== 'string' || !/^(exam|cards)-[a-z0-9-]+$/.test(e.id) || index.some((x) => x.id === e.id) || gone[e.id]) continue;
     if (!m.set || typeof m.set !== 'object') continue;
     writeJson(path.join(study, 'sets', `${e.id}.json`), m.set);
     index.push({ ...e, status: 'ready', source: 'saved' });
@@ -514,7 +527,8 @@ async function follow(dir) {
       }
     }
   }
-  if (mergeStudy({ attempts: readJson(path.join(dir, 'shared', 'study', 'attempts.json'), {}), cards: readJson(path.join(dir, 'shared', 'study', 'cards.json'), {}) })) any = true;
+  const { PROGRESS } = require('./studyMerge.cjs');
+  if (mergeStudy(Object.fromEntries(PROGRESS.map((f) => [f, readJson(path.join(dir, 'shared', 'study', f), {})])))) any = true;
   // Checkmarks: newest change wins; when checks last ran comes from the primary (so a new primary doesn't rescan today).
   const theirState = readJson(path.join(dir, 'shared', 'kea.json'), null);
   if (theirState) {

@@ -50,8 +50,9 @@ function persist() {
     try {
       localStorage.setItem(OVERLAY, JSON.stringify(overlay));
     } catch {
-      // Full: the phone's own sets go first (the PC keeps a copy of each once it has them).
-      for (const k of Object.keys(overlay)) if (k.startsWith('sets/') || k.startsWith('local/')) delete overlay[k];
+      // Full: the phone's own sets the PC already has a copy of go first; ones the PC hasn't received are kept.
+      const pc = new Set(baseIndex.map((e) => e.id));
+      for (const k of Object.keys(overlay)) if ((k.startsWith('sets/') || k.startsWith('local/')) && pc.has(k.replace(/^.*\//, '').replace(/\.json$/, ''))) delete overlay[k];
       try {
         localStorage.setItem(OVERLAY, JSON.stringify(overlay));
       } catch {}
@@ -86,8 +87,9 @@ export function loadStudy(d: KeaData) {
       files[f] = JSON.stringify(merged[f]);
       overlay[f] = files[f];
     }
-    // Sets made here: kept until the PC's copy has them.
-    baseIndex = parse(base['index.json'], []);
+    // Sets made here: kept until the PC's copy has them. A set deleted here stays deleted until the PC has caught up.
+    const gone = merged['deleted.json'] || {};
+    baseIndex = (parse(base['index.json'], []) as any[]).filter((e) => e && !gone[e.id]);
     const have = new Set(baseIndex.map((e) => e.id));
     const mine = (parse(overlay['index.json'], []) as any[]).filter((e) => e && !have.has(e.id));
     files['index.json'] = JSON.stringify([...baseIndex, ...mine]);

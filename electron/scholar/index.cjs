@@ -61,8 +61,10 @@ function mergePhone() {
     return false;
   }
   if (!phone || typeof phone !== 'object') return false;
+  // (Marked as seen only once its changes are in: if bringing them in fails, it's tried again next time.)
+  const changed = applyMarks({ ...phone, read: freshPhoneReads(phone.read) });
   phoneSeen = st.mtimeMs;
-  return applyMarks({ ...phone, read: freshPhoneReads(phone.read) });
+  return changed;
 }
 
 /**

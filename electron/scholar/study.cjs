@@ -31,16 +31,28 @@ const db = require('./db.cjs');
 const dir = () => path.join(profiles.paths().dir, 'study');
 const file = (...p) => path.join(dir(), ...p);
 
+/** A study file, or its last good copy when it was damaged (a crash mid-save); `fallback` only when it isn't there. */
 function readJson(f, fallback) {
   try {
     return JSON.parse(fs.readFileSync(f, 'utf8'));
-  } catch {
-    return fallback;
+  } catch (err) {
+    if (err.code === 'ENOENT') return fallback;
+    try {
+      return JSON.parse(fs.readFileSync(f + '.bak', 'utf8'));
+    } catch {
+      return fallback;
+    }
   }
 }
+/** Written beside the file and swapped in, keeping the last good copy, so a crash mid-save can't wipe progress. */
 function writeJson(f, v) {
   fs.mkdirSync(path.dirname(f), { recursive: true });
-  fs.writeFileSync(f, JSON.stringify(v, null, 1));
+  fs.writeFileSync(f + '.tmp', JSON.stringify(v, null, 1));
+  try {
+    JSON.parse(fs.readFileSync(f, 'utf8'));
+    fs.copyFileSync(f, f + '.bak');
+  } catch {}
+  fs.renameSync(f + '.tmp', f);
 }
 
 const index = () => readJson(file('index.json'), []);
@@ -155,6 +167,8 @@ function remove(id) {
   delete attempts[id];
   writeJson(file('attempts.json'), attempts);
   learnDrop(id);
+  // (Remembered, so the phone or another computer deletes it too instead of sending it back.)
+  writeJson(file('deleted.json'), { ...readJson(file('deleted.json'), {}), [id]: new Date().toISOString() });
   return true;
 }
 
