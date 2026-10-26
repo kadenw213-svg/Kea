@@ -464,8 +464,24 @@ async function docText(uv, cwd, file) {
   return at < 0 ? null : JSON.parse(r.out.slice(at));
 }
 
+// One run at a time for anything that reads the class site or changes classes and textbooks (`current`); writing
+// questions and walkthroughs, which only read Kea's own briefs and write their own files, runs several at once
+// (`side`, up to Settings → Scholar → "Question sets written at once", 3 unless changed).
 let current = null;
+const side = new Set();
 const queue = [];
+const PARALLEL = new Set(['practice', 'steps']);
+const parallelMax = () => Math.max(1, Math.min(20, Math.round(Number(settings().get('scholar.parallelRuns', 3))) || 3));
+const slots = () => [current, ...side].filter(Boolean);
+/**
+ * Tell the screens how runs are going: the first one running (with how many more run beside it), or the one that just
+ * ended once nothing is left running. Parallel runs report through this one stream so the screens show one bar.
+ */
+function emit(ended) {
+  const all = slots();
+  if (all.length) send('scholar:run', { ...all[0].entry, running: true, others: all.length - 1 });
+  else if (ended) send('scholar:run', { ...ended, running: false });
+}
 
 const send = (channel, payload) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send(channel, payload));
 
@@ -678,6 +694,17 @@ function resetTime(msg, now = new Date()) {
 const resumeFile = () => path.join(profiles.paths().dir, 'resume.json');
 // The run Claude is working on right now, kept on disk: if Kea closes in the middle of it, the next start knows.
 const inflightFile = () => path.join(profiles.paths().dir, 'inflight.json');
+/** Where a run records itself while Claude works: inflight.json, or (a run beside it) inflight-<id>.json. */
+const inflightOf = (slot) => (slot && side.has(slot) ? path.join(profiles.paths().dir, `inflight-${slot.entry.id}.json`) : inflightFile());
+/** Every run Kea was in the middle of (the one-at-a-time run's record, and each parallel run's). */
+const inflightFiles = () => {
+  const dir = profiles.paths().dir;
+  let names = [];
+  try {
+    names = fs.readdirSync(dir).filter((n) => /^inflight(-[\w-]+)?\.json$/.test(n));
+  } catch {}
+  return names.map((n) => path.join(dir, n));
+};
 
 /**
  * The runs waiting to continue, if any: { until, reason ('limit' | 'error' | 'closed'), runs: [{ task, arg, label,
@@ -738,7 +765,7 @@ function setAside(job, p) {
 }
 
 /** Whether a run of this task is queued or running now (its argument by `match`, `resume` aside). */
-const queuedOrRunning = (task, match) => [current?.job, ...queue].some((j) => j && j.task === task && match(String(j.arg || '').replace(/\s*\bresume\b/, '').trim()));
+const queuedOrRunning = (task, match) => [...slots().map((x) => x.job), ...queue].some((j) => j && j.task === task && match(String(j.arg || '').replace(/\s*\bresume\b/, '').trim()));
 /** Whether a run counts as tried: Claude started on it, or it was set aside to continue later (not stopped or dropped). */
 const tried = (r) => Boolean(r && (r.paused || r.claude));
 
@@ -766,14 +793,17 @@ function resumeLast(task) {
  * ready; a run that stopped at a usage limit before Kea could pause runs (v0.21) is picked up the same way.
  */
 function adoptStopped() {
-  const f = readJson(inflightFile(), null);
-  if (f && TASKS[f.task]) {
-    fs.rmSync(inflightFile(), { force: true });
+  let adopted = false;
+  for (const file of inflightFiles()) {
+    const f = readJson(file, null);
+    fs.rmSync(file, { force: true });
+    if (!f || !TASKS[f.task]) continue;
     const now = new Date();
-    saveActivity({ id: `${Date.now()}`, task: f.task, label: TASKS[f.task].label, arg: f.arg || '', why: f.why || '', start: f.start || now.toISOString(), end: now.toISOString(), ok: false, paused: now.toISOString(), claude: true, session: f.session || null, summary: 'Interrupted: Kea closed (or the computer shut down) during this run. Everything it saved is kept, and it continues where it stopped.', steps: [] });
+    saveActivity({ id: `${Date.now()}${adopted ? Math.random().toString(36).slice(2, 5) : ''}`, task: f.task, label: TASKS[f.task].label, arg: f.arg || '', why: f.why || '', start: f.start || now.toISOString(), end: now.toISOString(), ok: false, paused: now.toISOString(), claude: true, session: f.session || null, summary: 'Interrupted: Kea closed (or the computer shut down) during this run. Everything it saved is kept, and it continues where it stopped.', steps: [] });
     pause(now, 'closed', { task: f.task, arg: f.arg || '', label: TASKS[f.task].label, session: f.session || null, started: true, tries: f.tries || 0 });
-    return;
+    adopted = true;
   }
+  if (adopted) return;
   if (pending()) return;
   const last = readJson(activityFile(), [])[0];
   if (!last || last.ok || last.paused || !LIMIT.test(last.summary || '')) return;
@@ -792,7 +822,7 @@ function shutdown() {
   quitting = true;
   const waiting = queue.splice(0).filter((j) => j.profile === profiles.active());
   // (A run still in Kea's own pre-check has no inflight.json yet: it waits with the others, first.)
-  if (current && !current.entry.claude && current.job.profile === profiles.active()) waiting.unshift(current.job);
+  for (const x of slots().reverse()) if (!x.entry.claude && x.job.profile === profiles.active()) waiting.unshift(x.job);
   if (waiting.length) {
     try {
       // Runs already waiting keep their time and reason (a usage limit still holds); else they go at the next start.
@@ -802,9 +832,10 @@ function shutdown() {
       console.error('Saving the waiting runs', err);
     }
   }
-  try {
-    current?.child?.kill();
-  } catch {}
+  for (const x of slots())
+    try {
+      x.child?.kill();
+    } catch {}
 }
 let quitting = false;
 
@@ -877,12 +908,14 @@ function stayAwake(on) {
 
 async function next() {
   if (quitting) return;
-  if (current || !queue.length) {
-    if (!current && !queue.length) stayAwake(false);
+  const max = parallelMax();
+  const at = queue.findIndex((j) => (PARALLEL.has(j.task) ? side.size < max : !current));
+  if (at < 0) {
+    if (!slots().length && !queue.length) stayAwake(false);
     return;
   }
   stayAwake(true);
-  const job = queue.shift();
+  const [job] = queue.splice(at, 1);
   // A run belongs to the profile it was queued for (profiles can't be switched while one runs).
   if (job.profile !== profiles.active()) {
     job.resolve(null);
@@ -900,19 +933,23 @@ async function next() {
   const b = job.batch && batches.get(job.batch);
   // phase: 'check' while Kea looks by itself, 'claude' once Claude is reading. turns: Claude's steps so far.
   const entry = { id: `${Date.now()}`, task: job.task, label: t.label, arg: job.arg, why: job.why, start: new Date().toISOString(), end: null, ok: null, summary: '', steps: [], phase: 'check', claudeStart: null, expectedMs: est.ms, expectedTurns: est.turns, turns: 0, percent: null, claude: false, batch: b ? { id: job.batch, done: b.done, total: b.total } : null };
-  current = { entry, child: null, server: null, job };
+  const slot = { entry, child: null, server: null, job };
+  if (PARALLEL.has(job.task)) side.add(slot);
+  else current = slot;
+  // (More can start beside it.)
+  setImmediate(next);
   const step = (message, percent) => {
     entry.steps.push({ at: new Date().toISOString(), message });
     if (entry.steps.length > 200) entry.steps.shift();
     if (Number.isFinite(percent)) entry.percent = Math.max(0, Math.min(100, percent));
-    send('scholar:run', { ...entry, running: true });
+    emit();
   };
   // (Once per run: a Claude Code that fails to start reports both 'error' and 'close'.)
   let finished = false;
   const finish = (ok, summary) => {
     if (finished || quitting) return;
     finished = true;
-    fs.rmSync(inflightFile(), { force: true });
+    fs.rmSync(inflightOf(slot), { force: true });
     entry.end = new Date().toISOString();
     entry.ok = ok;
     entry.summary = summary;
@@ -921,13 +958,12 @@ async function next() {
       if (b.done >= b.total) batches.delete(job.batch);
     }
     saveActivity(entry);
-    send('scholar:run', { ...entry, running: false });
-    send('scholar:changed');
     // (Only this run's own: never another run's connection or slot.)
-    if (current && current.job === job) {
-      current.server?.close();
-      current = null;
-    }
+    slot.server?.close();
+    if (current === slot) current = null;
+    side.delete(slot);
+    emit(entry);
+    send('scholar:changed');
     job.resolve(entry);
     next();
   };
@@ -975,7 +1011,7 @@ async function next() {
     // Testing Kea's own checks: say what Claude would be asked, without starting it.
     if (process.env.KEA_DRY_RUN) return finish(true, `Dry run, Claude not started. Prompt: ${prompt}`);
     const server = await mcp.start({ progress: step, notify: (n) => addNews(n), docText: (file) => docText(uv, cwd, file) });
-    current.server = server;
+    slot.server = server;
     // One connection file per run: a finished run's cleanup must never delete the next run's file.
     const cfg = path.join(cwd, 'data', `kea-mcp-${entry.id}.json`);
     fs.writeFileSync(cfg, JSON.stringify({ mcpServers: { kea: { type: 'http', url: server.url, headers: { Authorization: `Bearer ${server.token}` } } } }));
@@ -1017,13 +1053,13 @@ async function next() {
     // On disk while Claude works, so a run cut off by Kea closing is found and continued at the next start.
     const inflight = () => {
       try {
-        fs.writeFileSync(inflightFile(), JSON.stringify({ task: job.task, arg: job.arg, why: job.why, start: entry.start, session: entry.session, tries: job.tries || 0 }));
+        fs.writeFileSync(inflightOf(slot), JSON.stringify({ task: job.task, arg: job.arg, why: job.why, start: entry.start, session: entry.session, tries: job.tries || 0 }));
       } catch {}
     };
     inflight();
     step(`${job.session ? 'Continuing: ' : ''}${t.label}…`);
     const child = spawn(claude, args, { cwd, env: { ...workspace.engineEnv(uv), KEA_RUN_ID: String(entry.id), KEA_TASK: job.task }, windowsHide: true });
-    current.child = child;
+    slot.child = child;
     let buf = '';
     let result = null;
     let errText = '';
@@ -1050,7 +1086,7 @@ async function next() {
           } else if (ev.type === 'assistant') {
             entry.turns++;
             // The bar moves with each of Claude's steps (not every one: a run takes dozens).
-            if (entry.turns % 3 === 0) send('scholar:run', { ...entry, running: true });
+            if (entry.turns % 3 === 0) emit();
           }
         } catch {}
       }
@@ -1136,14 +1172,15 @@ async function next() {
 /** Stop the run (the student's choice: it isn't continued later) and clear the queue. */
 function stop() {
   for (const j of queue.splice(0)) j.resolve(null);
-  if (current?.child) {
-    current.job.stopping = true;
-    current.child.kill();
-  }
+  for (const x of slots())
+    if (x.child) {
+      x.job.stopping = true;
+      x.child.kill();
+    }
 }
 
 // Waiting runs carry their own estimate, so the time left covers the whole queue.
-const status = () => ({ running: current ? { ...current.entry, running: true } : null, queued: queue.map((j) => ({ task: j.task, arg: j.arg, label: TASKS[j.task].label, expectedMs: estimate(j.task, j.arg).ms })) });
+const status = () => ({ running: slots().length ? { ...slots()[0].entry, running: true, others: slots().length - 1 } : null, parallel: [...side].map((x) => ({ ...x.entry, running: true })), queued: queue.map((j) => ({ task: j.task, arg: j.arg, label: TASKS[j.task].label, expectedMs: estimate(j.task, j.arg).ms })) });
 const activity = () => readJson(activityFile(), []);
 const news = () => readJson(newsFile(), []);
 function markNewsRead(ids) {
@@ -1164,4 +1201,4 @@ function deleteNews(ids = [], keys = []) {
   return gone.map((n) => inboxKey({ course: n.course || '', title: n.title, body: n.body }));
 }
 
-module.exports = { run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS, _test: { depthRows, transientError, eachOnce, queue: () => queue, current: () => current } };
+module.exports = { run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS, _test: { depthRows, transientError, eachOnce, queue: () => queue, current: () => current, side: () => side } };

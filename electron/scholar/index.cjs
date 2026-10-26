@@ -655,7 +655,7 @@ function register() {
   ipcMain.handle('scholar:studyList', () => {
     const running = runner.status();
     // (A set whose run is set aside to continue later is still being made.)
-    const busy = new Set([running.running, ...running.queued, ...(runner.pending()?.runs || [])].filter((j) => j && j.task === 'practice').map((j) => String(j.arg).split(/\s+/)[0]));
+    const busy = new Set([running.running, ...(running.parallel || []), ...running.queued, ...(runner.pending()?.runs || [])].filter((j) => j && j.task === 'practice').map((j) => String(j.arg).split(/\s+/)[0]));
     // (Another device's sets are settled by the device making them.)
     if (!devices.follower()) study.settle((id) => busy.has(id));
     return study.list();
@@ -692,7 +692,7 @@ function register() {
     const arg = `${w.courseCode} ${w.chapter}`;
     if (devices.follower()) return (devices.relay({ task: 'steps', arg }), { queued: true, ...w });
     const st = runner.status();
-    if (![st.running, ...st.queued].some((j) => j && j.task === 'steps' && j.arg === arg)) runner.run('steps', arg, 'manual');
+    if (![st.running, ...(st.parallel || []), ...st.queued].some((j) => j && j.task === 'steps' && j.arg === arg)) runner.run('steps', arg, 'manual');
     return { queued: true, ...w };
   });
   // The saved questions of some chapters with how each has gone, for choosing exactly what to study.

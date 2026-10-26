@@ -109,6 +109,7 @@ function StatusCard({ run, queue, paused, dev, lastRun }: { run: RunProgress | n
             <div className="hero-sub">
               {run.batch && run.batch.total > 1 ? `Class ${Math.min(run.batch.done + 1, run.batch.total)} of ${run.batch.total} · ` : ''}
               {run.phase === 'claude' ? 'Claude is reading' : 'Kea is checking by itself'}
+              {run.others ? ` · ${run.others} more at once` : ''}
               {where ? ` · on ${where}` : ''}
             </div>
           </div>

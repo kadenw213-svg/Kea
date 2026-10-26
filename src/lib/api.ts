@@ -543,6 +543,8 @@ export interface QueuedRun {
 /** What a run reports for its progress bar (also sent from the primary to the other devices). */
 export interface RunProgress {
   label: string;
+  /** Other runs going at the same time. */
+  others?: number;
   arg: string;
   start: string;
   phase?: 'check' | 'claude';
@@ -585,6 +587,8 @@ export interface ScholarSetup {
 }
 export interface ScholarRun {
   id: string;
+  /** Other runs going at the same time (question sets are written several at once). */
+  others?: number;
   task: string;
   label: string;
   arg: string;
