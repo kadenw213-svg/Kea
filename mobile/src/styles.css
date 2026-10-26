@@ -627,12 +627,14 @@ b.low {
   background: var(--bg);
   display: flex;
   flex-direction: column;
-  padding-top: env(safe-area-inset-top, 0px);
+  /* (Clear of the phone's clock and status icons, with a little room to spare.) */
+  padding-top: calc(env(safe-area-inset-top, 0px) + 6px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+/* The study screens fill the overlay inside that room, so their close button is never under the clock. */
 .m-overlay .st-player {
   position: absolute;
-  inset: 0;
+  inset: calc(env(safe-area-inset-top, 0px) + 6px) 0 env(safe-area-inset-bottom, 0px) 0;
 }
 /* The book under the quiz, not beside it, and big enough to read. */
 .m-overlay .st-player.with-reading .st-player-body {
