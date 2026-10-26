@@ -2637,3 +2637,30 @@
     grid-column: 2;
   }
 }
+
+/* Rows stay quiet: their buttons are light until the row is pointed at (the main hand-in link keeps its outline). */
+.sch-row .sch-row-actions .btn:not(.sch-quick) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-2);
+}
+.sch-row:hover .sch-row-actions .btn:not(.sch-quick),
+.sch-row .sch-row-actions .btn:not(.sch-quick):focus-visible {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+.sch-row .sch-row-actions .btn:not(.sch-quick):hover {
+  border-color: var(--border-strong);
+}
+/* Each class's reading gets room for its chapter titles (two across instead of three cramped ones). */
+.sch-banners {
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+}
+.sch-chapter-name {
+  flex: 1;
+  min-width: 0;
+}
+.sch-chapter-btns .btn:not(:hover) {
+  background: transparent;
+}
