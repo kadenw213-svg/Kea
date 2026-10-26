@@ -3,6 +3,7 @@
 // to hide everything but the book. And read aloud like an audiobook: the phone's own voices (offline ones work with no
 // signal), carrying on with the screen off, with speed, a sleep timer, and the next chapter after this one.
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { endsWithAbbrev, pauseAfter, spoken } from './speech';
 import { ChevronLeft, Gauge, Headphones, Moon, Pause, Play, Settings2, SkipBack, SkipForward, Square, Type, X } from 'lucide-react';
 import { api } from '../../src/lib/api';
 import { loadPdf, PDFDocumentProxy } from '../../src/editors/pdf/pdfjs';
@@ -53,22 +54,9 @@ function chapterInfo(file: string) {
 // ---------- The book's words, as sentences to read ----------
 /** Where on its page a sentence is: boxes as shares of the page's width and height, from the top left. */
 type Box = [number, number, number, number];
-type Sentence = { id: string; page: number; text: string; boxes: Box[] };
+type Sentence = { id: string; page: number; text: string; boxes: Box[]; /** ms of quiet after it (a heading, a paragraph's end). */ pause?: number };
 type Line = { text: string; x0: number; x1: number; top: number; bottom: number };
 const texts = new Map<string, Promise<Sentence[]>>();
-/** How a sentence is said: letter-spaced headings as words, numbers and symbols as they're meant. */
-function spoken(t: string) {
-  return (
-    t
-      // Letter-spaced headings ("C H E 1 0 1 1") as words, section numbers as numbers ("1. 1" → "1.1").
-      .replace(/\b(?:[A-Za-z0-9] ){2,}[A-Za-z0-9]\b/g, (m) => m.replace(/ /g, ''))
-      .replace(/(\d)\. (\d)/g, '$1.$2')
-      .replace(/\s*→\s*/g, ' gives ')
-      .replace(/\s*•\s*/g, '. ')
-      // A power of ten loses its raised exponent in the text ("5 × 103"): said as it's meant.
-      .replace(/× ?10([−-])?(\d{1,2})\b/g, (_m, minus, d) => `× 10 to the ${minus ? 'minus ' : ''}${d}`)
-  );
-}
 /**
  * Every sentence of the book, in order, with its page and where it is on the page (for marking it while it's read);
  * running heads, footers, page numbers and the contents' dot leaders left out.
@@ -85,6 +73,9 @@ function sentencesOf(file: string, pdf: PDFDocumentProxy) {
           const tc = await page.getTextContent();
           const lines: Line[] = [];
           let cur: Line | null = null;
+          // Where the last piece of text ended, to put a space between words a PDF stores as separate pieces.
+          let lastEnd = 0;
+          let lastY = 0;
           for (const it of tc.items as any[]) {
             if (typeof it.str !== 'string') continue;
             if (it.str) {
@@ -92,7 +83,16 @@ function sentencesOf(file: string, pdf: PDFDocumentProxy) {
               const [x, y] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
               const hgt = it.height || Math.hypot(it.transform[2], it.transform[3]);
               const box = { x0: x / vp.width, x1: (x + it.width) / vp.width, top: (y - hgt) / vp.height, bottom: (y + hgt * 0.25) / vp.height };
+              // A piece on another baseline with no end-of-line mark is a new line all the same.
+              if (cur && Math.abs(y - lastY) > hgt * 0.6) {
+                cur.text = cur.text.trim();
+                if (cur.text) lines.push(cur);
+                cur = null;
+              }
               if (!cur) cur = { text: '', ...box };
+              else if (x - lastEnd > hgt * 0.18 && !/\s$/.test(cur.text) && !/^\s/.test(it.str)) cur.text += ' ';
+              lastEnd = x + it.width;
+              lastY = y;
               cur.text += it.str;
               cur.x0 = Math.min(cur.x0, box.x0);
               cur.x1 = Math.max(cur.x1, box.x1);
@@ -118,20 +118,34 @@ function sentencesOf(file: string, pdf: PDFDocumentProxy) {
           // (Not read: page numbers, contents lines with their dot leaders, the running heads.)
           const ls = all.filter((l) => l.text && !/^[\divxlc.\s]+$/i.test(l.text) && !/(\.\s?){4,}/.test(l.text) && !/^contents$/i.test(l.text) && !repeated(l.text));
           // The page's text in one string, with where each line starts in it (a word split by a hyphen joined again).
+          // A heading, or the end of a paragraph, is marked (U+2029) so it's read as its own piece with a pause after it.
           let raw = '';
           const at: { start: number; line: Line }[] = [];
-          for (const l of ls) {
-            if (/\w-$/.test(raw) && /^[a-z]/.test(l.text)) raw = raw.slice(0, -1);
-            else if (raw) raw += ' ';
+          const heights = ls.map((l) => l.bottom - l.top).sort((x, y) => x - y);
+          const lineH = heights[heights.length >> 1] || 0.012;
+          const rights = ls.map((l) => l.x1).sort((x, y) => x - y);
+          const right = rights[Math.floor(rights.length * 0.8)] || 1;
+          ls.forEach((l, j) => {
+            const prev = ls[j - 1];
+            if (prev) {
+              const gap = l.top - prev.bottom;
+              const heading = !/[.!?:;,"”’)\]-]$/.test(prev.text) && /^[A-Z0-9“"(]/.test(l.text) && (gap > lineH * 0.6 || prev.bottom - prev.top > lineH * 1.25 || prev.x1 < right - 0.25);
+              const paragraph = gap > lineH * 0.9 || (prev.x1 < right - 0.12 && /[.!?:"”’)]$/.test(prev.text) && /^[A-Z0-9“"(]/.test(l.text));
+              if (heading || paragraph) raw += '\u2029 ';
+              else if (/\w-$/.test(raw) && /^[a-z]/.test(l.text)) raw = raw.slice(0, -1);
+              else raw += ' ';
+            }
             at.push({ start: raw.length, line: l });
             raw += l.text;
-          }
+          });
           // Sentences end at . ! or ? followed by a space and a new sentence (not inside 1.500, 1. 1 or e.g.).
           const cuts: [number, number][] = [];
           let from = 0;
-          const end = /[.!?]["”’)\]]*\s+(?=[A-Z0-9“"(])/g;
+          const end = /(?:[.!?]["”’)\]]*|\u2029)\s+(?=[A-Z0-9“"(])/g;
           for (let m; (m = end.exec(raw)); ) {
             if (/\d\.$/.test(raw.slice(0, m.index + 1)) && /^\d/.test(raw.slice(m.index + m[0].length))) continue;
+            // (Not after an abbreviation: "Fig. 3", "e.g. Water".)
+            if (raw[m.index] === '.' && endsWithAbbrev(raw.slice(0, m.index + 1))) continue;
             cuts.push([from, m.index + m[0].trimEnd().length]);
             from = m.index + m[0].length;
           }
@@ -140,12 +154,14 @@ function sentencesOf(file: string, pdf: PDFDocumentProxy) {
           const merged: [number, number][] = [];
           for (const c of cuts) {
             const last = merged[merged.length - 1];
-            if (last && last[1] - last[0] < 30) last[1] = c[1];
+            // (A heading stays its own piece, however short.)
+            if (last && last[1] - last[0] < 30 && !/\u2029\s*$/.test(raw.slice(last[0], last[1] + 1))) last[1] = c[1];
             else merged.push([...c]);
           }
           merged.forEach(([a, b], i) => {
             const text = spoken(raw.slice(a, b).trim());
             if (!text) return;
+            const pause = pauseAfter(raw.slice(a, Math.min(raw.length, b + 2)));
             // The lines it touches: from its start to its end on each (the middle ones whole).
             const boxes: Box[] = [];
             at.forEach(({ start, line }, j) => {
@@ -157,7 +173,7 @@ function sentencesOf(file: string, pdf: PDFDocumentProxy) {
               const s1 = Math.min(span, b - start) / span;
               boxes.push([line.x0 + w * s0, line.top, w * (s1 - s0), line.bottom - line.top]);
             });
-            out.push({ id: `${p}:${i}`, page: p, text, boxes });
+            out.push({ id: `${p}:${i}`, page: p, text, boxes, ...(pause ? { pause } : {}) });
           });
         });
         return out;
@@ -303,7 +319,7 @@ export function Book({ target, onClose, onOpen }: { target: BookTarget; onClose(
       if (i < 0 && saved?.said && Number(saved.said.split(':')[0]) === cur) i = all.findIndex((s) => s.id === saved.said);
       if (i < 0) i = Math.max(0, all.findIndex((s) => s.page >= cur));
       mine.current = true;
-      await Kea.readAloud({ items: all.slice(i).map(({ id, text }) => ({ id, text })), title: `${info.code ? info.code + ' · ' : ''}${target.title}`, voice: look.voice || undefined, rate: look.rate });
+      await Kea.readAloud({ items: all.slice(i).map(({ id, text, pause }) => ({ id, text, ...(pause ? { pause } : {}) })), title: `${info.code ? info.code + ' · ' : ''}${target.title}`, voice: look.voice || undefined, rate: look.rate });
       setSpeech({ state: 'playing', id: all[i].id, index: 0, total: all.length - i });
     } catch (e: any) {
       toast(e?.message || 'Kea couldn’t start reading aloud.');

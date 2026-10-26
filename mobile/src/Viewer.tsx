@@ -9,6 +9,7 @@ import { Kea } from './kea';
 import { Book } from './Book';
 import { setLook, useLook } from './theme';
 import { toast } from './ui';
+import { spoken } from './speech';
 
 export type ViewTarget = { file: string; title: string; type?: string; chapter?: string; autoplay?: boolean };
 type Kind = 'pdf' | 'doc' | 'epub' | 'sheet' | 'slides' | 'text' | 'markdown' | 'image' | 'audio' | 'video' | 'other';
@@ -374,9 +375,9 @@ function useReadAloud(body: React.RefObject<HTMLDivElement>, ready: boolean, tit
       i < from
         ? []
         : (e.innerText.match(/[^.!?]+(?:[.!?]+["”’)\]]*|$)/g) || [e.innerText])
-            .map((t) => t.trim())
+            .map((t) => spoken(t.trim()))
             .filter(Boolean)
-            .map((t, k) => ({ id: `d${i}:${k}`, text: t }))
+            .map((t, k, all) => ({ id: `d${i}:${k}`, text: t, ...(k === all.length - 1 ? { pause: /^H\d$/.test(e.tagName) ? 600 : 350 } : {}) }))
     );
     if (!items.length) return toast('There’s no text here to read aloud.');
     mine.current = true;
