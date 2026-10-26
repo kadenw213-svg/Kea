@@ -1015,3 +1015,263 @@ button.fcard-desc.add:hover {
 .file-grid.size-large .fcard-thumb {
   height: 228px;
 }
+
+/* Home: today at a glance (classes connected) */
+.today {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 18px;
+  padding: 18px 20px;
+  margin-bottom: 26px;
+  display: grid;
+  gap: 16px;
+}
+.today-loading {
+  min-height: 140px;
+}
+.today-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.today-day {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.today-head h2 {
+  margin: 4px 0 0;
+  font-size: 19px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.today-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-2);
+}
+.today-stats {
+  display: flex;
+  gap: 8px;
+}
+.today-stat {
+  display: grid;
+  justify-items: center;
+  min-width: 78px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.today-stat:hover {
+  border-color: var(--border-strong);
+}
+.today-stat b {
+  font-size: 20px;
+  line-height: 1.1;
+}
+.today-stat span {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.today-stat.warn b {
+  color: var(--danger);
+}
+.today-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 22px;
+}
+.today-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 2px 0 6px;
+}
+.today-list {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+.today-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  text-align: left;
+  padding: 8px 10px 8px 12px;
+  border: none;
+  border-left: 3px solid var(--k, var(--border-strong));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.today-item:hover {
+  background: var(--hover);
+}
+.today-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.today-item .muted {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.today-none {
+  padding: 8px 2px;
+  font-size: 13px;
+}
+.today-missing {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.today-missing svg {
+  color: var(--danger);
+  flex-shrink: 0;
+}
+.today-side {
+  display: grid;
+  align-content: start;
+}
+.today-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.today-nav button,
+.today-classes button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.today-nav button:hover,
+.today-classes button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}
+.today-nav svg {
+  color: var(--text-2);
+}
+.today-nav em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.today-classes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.today-classes i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.today-classes span {
+  font-size: 12px;
+  font-weight: 600;
+}
+.today-setup {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.today-setup b {
+  display: block;
+  font-size: 16px;
+}
+@media (max-width: 900px) {
+  .today-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* With classes on Home, creating a file is one compact row: icon and name side by side. */
+.home-start.compact .start-row {
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 8px;
+}
+.home-start.compact .start-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.home-start.compact .start-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.home-start.compact .start-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  border: none;
+  flex-shrink: 0;
+}
+.home-start.compact .start-card:hover .start-thumb {
+  transform: none;
+  background: var(--surface-3);
+}
+.home-start.compact .start-thumb svg {
+  width: 18px;
+  height: 18px;
+}
+.home-start.compact .start-card span {
+  padding-left: 0;
+}
+.home-start.compact .tool-row {
+  margin-top: 10px;
+}

@@ -2550,3 +2550,90 @@
   color: var(--warning);
   background: color-mix(in srgb, var(--warning) 14%, transparent);
 }
+
+/* Study (every chapter): one row per chapter, Read and Study side by side */
+.res-top {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  flex-wrap: wrap;
+  margin: 14px 0 6px;
+}
+.res-top .res-review {
+  flex: 1 1 320px;
+  margin: 0;
+}
+.res-top .res-classes {
+  align-self: center;
+}
+.res-list {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.res-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+.res-row:first-child {
+  border-top: none;
+}
+.res-row:hover {
+  background: var(--hover);
+}
+.res-row.off .res-row-main {
+  opacity: 0.55;
+}
+.res-row.on {
+  background: var(--accent-soft);
+}
+.res-row-main {
+  display: grid;
+  min-width: 0;
+}
+.res-row .res-ch-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.res-row .res-ch-sub {
+  font-size: 12px;
+}
+.res-progress {
+  display: flex;
+  width: 70px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+.res-progress i.m {
+  background: var(--success);
+}
+.res-progress i.l {
+  background: var(--danger);
+}
+.res-acts {
+  display: flex;
+  gap: 6px;
+}
+.res-row .res-tick:disabled {
+  opacity: 0.3;
+}
+@media (max-width: 700px) {
+  .res-row {
+    grid-template-columns: auto 1fr;
+  }
+  .res-progress {
+    display: none;
+  }
+  .res-acts {
+    grid-column: 2;
+  }
+}

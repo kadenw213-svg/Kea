@@ -1700,3 +1700,102 @@ button.hub-mode:hover:not(:disabled) {
     padding: 14px 14px;
   }
 }
+
+/* The Study page, cleaned up: one main action (practise), its options beside it, the other modes in one row. */
+.hub-practice {
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: var(--accent-soft);
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: grid;
+  gap: 14px;
+}
+.hub-practice-main {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+.hub-practice-main > svg {
+  color: var(--accent);
+}
+.hub-practice-main b {
+  display: block;
+  font-size: 16px;
+}
+.hub-practice-main .muted {
+  font-size: 13px;
+}
+.hub-start {
+  padding: 9px 20px;
+  font-size: 14px;
+}
+.hub-options {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+.hub-opt {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+.hub-opt > span {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.hub-sizes.wrap {
+  flex-wrap: wrap;
+}
+.hub-sizes button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.hub-n {
+  opacity: 0.65;
+  margin-left: 2px;
+}
+.hub-ways {
+  display: grid;
+  gap: 8px;
+}
+.hub-ways .hub-modes {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+.hub-ways .hub-mode {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+}
+.hub-mode-text {
+  display: grid;
+}
+.hub-mode-text small {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.hub-more {
+  align-items: center;
+}
+.hub-more .tb-h {
+  margin: 0 6px 0 0;
+}
+@media (max-width: 600px) {
+  .hub-practice-main {
+    grid-template-columns: auto 1fr;
+  }
+  .hub-start {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+  .hub-opt {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .hub-sizes {
+    flex-wrap: wrap;
+  }
+}

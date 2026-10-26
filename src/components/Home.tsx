@@ -44,6 +44,7 @@ import { Preview } from './home/Preview';
 import { ConnectDrives } from './home/ConnectDrives';
 import { DriveLogo } from './home/DriveLogo';
 import { TemplateGallery } from './home/Templates';
+import { HomeToday } from './home/Today';
 import { LayoutTemplate, Clapperboard, ImagePlus } from 'lucide-react';
 import { useSetting } from '../lib/settings';
 
@@ -365,21 +366,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
           </>
         )}
 
-        {showScholar !== false && (
-          <section className="scholar-start">
-            <div className="section-head">
-              <h2>Scholar</h2>
-              <span className="muted">Your classes, their textbooks and your calendar, kept up to date for you.</span>
-            </div>
-            <div className="scholar-row">
-              <button className="scholar-card wide" onClick={() => openScholar({ name: 'week' })}>
-                <GraduationCap size={26} />
-                <span className="scholar-name">Open this week</span>
-                <span className="scholar-desc">What's due, your readings and textbooks, the calendar and the Library, all in Scholar</span>
-              </button>
-            </div>
-          </section>
-        )}
+        {showScholar !== false && <HomeToday />}
 
         {(showStart || showTools) && (
         <section className={`home-start ${showScholar !== false ? 'compact' : ''}`}>

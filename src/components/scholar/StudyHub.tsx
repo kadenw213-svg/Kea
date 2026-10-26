@@ -65,9 +65,9 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   // Answers at the end (like the real exam) or after each question; remembered on this device.
   const [instant, setInstantState] = useState(() => {
     try {
-      return localStorage.getItem('kea.examInstant') === '1';
+      return localStorage.getItem('kea.examInstant') !== '0';
     } catch {
-      return false;
+      return true;
     }
   });
   const setInstant = (v: boolean) => {
@@ -165,87 +165,103 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
         </div>
       )}
 
-      {(pool?.length || 0) > 0 && (
-        <div className="hub-pick">
-          <div className="hub-pick-row">
-            <span className="hub-pick-label">Topics</span>
-            <div className="hub-chips">
-            <button className={`st-chip ${!topics.length ? 'on' : ''}`} onClick={() => setTopics([])}>
-              All
-            </button>
-            {sectionsOf.map((s) => {
-              const n = (pool || []).filter((p) => (p.section || 'Other') === s).length;
-              const on = topics.includes(s);
-              return (
-                <button key={s} className={`st-chip ${on ? 'on' : ''}`} onClick={() => setTopics(on ? topics.filter((x) => x !== s) : [...topics, s])} title={s}>
-                  {s.length > 44 ? `${s.slice(0, 42)}…` : s} <span className="muted">{n}</span>
-                </button>
-              );
-            })}
-            </div>
+      {/* The main thing to do: practise, with a sensible default (25 questions, one at a time) and the options beside it. */}
+      <div className="hub-practice">
+        <div className="hub-practice-main">
+          <ClipboardList size={22} />
+          <div>
+            <b>Practice questions</b>
+            <span className="muted">{exam ? (narrowed ? `${exam} questions match what you picked` : `${exam} questions, shuffled, missed ones first`) : narrowed ? 'None match what you picked' : saved ? 'No questions yet' : '…'}</span>
           </div>
-          <div className="hub-pick-row">
-            <span className="hub-pick-label">Questions</span>
-            <div className="hub-chips">
-            {WHICH.map(([w, label]) => {
-              const n = inTopics.filter((p) => (w === 'new' ? !p.seen && p.box == null : w === 'missed' ? isMissed(p) : w === 'starred' ? p.starred : true)).length;
-              return (
-                <button key={w} className={`st-chip ${which === w ? 'on' : ''}`} disabled={!n && w !== 'all'} onClick={() => setWhich(w)}>
-                  {label} <span className="muted">{n}</span>
-                </button>
-              );
-            })}
-            </div>
-          </div>
+          <button className="btn primary hub-start" disabled={!exam || !!busy} onClick={() => open('exam', Math.min(size, exam))}>
+            {busy === 'exam' ? <Loader2 size={15} className="spin" /> : null} Start {exam ? Math.min(size, exam) : ''}
+          </button>
         </div>
-      )}
+        {exam > 0 && (
+          <div className="hub-options">
+            <div className="hub-opt">
+              <span>How many</span>
+              <div className="hub-sizes">
+                {SIZES.filter((n) => n < exam).map((n) => (
+                  <button key={n} className={size === n ? 'on' : ''} onClick={() => setSize(n)}>
+                    {n}
+                  </button>
+                ))}
+                <button className={size >= exam ? 'on' : ''} onClick={() => setSize(exam)}>
+                  All {exam}
+                </button>
+              </div>
+            </div>
+            <div className="hub-opt">
+              <span>Answers</span>
+              <div className="hub-sizes">
+                <button className={instant ? 'on' : ''} onClick={() => setInstant(true)}>
+                  After each question
+                </button>
+                <button className={!instant ? 'on' : ''} onClick={() => setInstant(false)}>
+                  At the end, like a test
+                </button>
+              </div>
+            </div>
+            {(pool?.length || 0) > 0 && (
+              <div className="hub-opt">
+                <span>Which</span>
+                <div className="hub-sizes">
+                  {WHICH.map(([w, label]) => {
+                    const n = inTopics.filter((p) => (w === 'new' ? !p.seen && p.box == null : w === 'missed' ? isMissed(p) : w === 'starred' ? p.starred : true)).length;
+                    return (
+                      <button key={w} className={which === w ? 'on' : ''} disabled={!n && w !== 'all'} onClick={() => setWhich(w)}>
+                        {label} <span className="hub-n">{n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {/* (Topics only when there's more than one to choose between.) */}
+            {sectionsOf.length > 1 && (
+              <div className="hub-opt">
+                <span>Topics</span>
+                <div className="hub-sizes wrap">
+                  <button className={!topics.length ? 'on' : ''} onClick={() => setTopics([])}>
+                    All
+                  </button>
+                  {sectionsOf.map((t) => {
+                    const n = (pool || []).filter((p) => (p.section || 'Other') === t).length;
+                    const on = topics.includes(t);
+                    return (
+                      <button key={t} className={on ? 'on' : ''} onClick={() => setTopics(on ? topics.filter((x) => x !== t) : [...topics, t])} title={t}>
+                        {t.length > 40 ? `${t.slice(0, 38)}…` : t} <span className="hub-n">{n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
-      <div className="hub-modes">
-        <div className="hub-mode primary">
-          <ClipboardList size={20} />
-          <b>Practice exam</b>
-          <span>{exam ? (narrowed ? `From the ${exam} you picked` : `From ${exam} saved questions, shuffled`) : narrowed ? 'None match what you picked' : saved ? 'No questions yet' : '…'}</span>
-          {exam > 0 && (
-            <div className="hub-sizes">
-              {SIZES.filter((n) => n < exam).map((n) => (
-                <button key={n} className={size === n ? 'on' : ''} onClick={() => setSize(n)}>
-                  {n}
-                </button>
-              ))}
-              <button className={size >= exam ? 'on' : ''} onClick={() => setSize(exam)}>
-                All {exam}
-              </button>
-            </div>
-          )}
-          {exam > 0 && (
-            <div className="hub-sizes" title="When you see what's right">
-              <button className={!instant ? 'on' : ''} onClick={() => setInstant(false)}>
-                Answers at the end
-              </button>
-              <button className={instant ? 'on' : ''} onClick={() => setInstant(true)}>
-                After each
-              </button>
-            </div>
-          )}
-          <button className="btn primary sm" disabled={!exam || !!busy} onClick={() => open('exam', Math.min(size, exam))}>
-            {busy === 'exam' ? <Loader2 size={13} className="spin" /> : null} Start
-          </button>
+      <div className="hub-ways">
+        <div className="tb-h">Other ways to study</div>
+        <div className="hub-modes">
+          {(
+            [
+              ['', 'Flashcards', Layers, 'Flip through, star the hard ones'],
+              ['learn', 'Learn', Brain, 'Rounds until you know every card'],
+              ['match', 'Match', Shapes, 'Pair terms and meanings'],
+              ['listen', 'Listen', Headphones, 'Hands-free, read aloud']
+            ] as const
+          ).map(([mode, label, Icon, sub]) => (
+            <button key={label} className="hub-mode" disabled={((!cards || narrowed) && (mode === 'match' || !exam)) || !!busy} onClick={() => open('cards', cards || exam, mode)} title={sub}>
+              <Icon size={18} />
+              <span className="hub-mode-text">
+                <b>{label}</b>
+                <small>{cards && !narrowed ? `${cards} cards` : mode === 'match' ? 'Needs flashcards' : exam ? `${exam} as cards` : 'No cards yet'}</small>
+              </span>
+            </button>
+          ))}
         </div>
-        {(
-          [
-            ['', 'Flashcards', Layers, 'Flip through, star the hard ones'],
-            ['learn', 'Learn', Brain, 'Rounds until you know every card'],
-            ['match', 'Match', Shapes, 'Race to pair terms and meanings'],
-            ['listen', 'Listen', Headphones, 'Read aloud hands-free, with time to answer']
-          ] as const
-        ).map(([mode, label, Icon, sub]) => (
-          <button key={label} className="hub-mode" disabled={((!cards || narrowed) && (mode === 'match' || !exam)) || !!busy} onClick={() => open('cards', cards || exam, mode)}>
-            <Icon size={20} />
-            <b>{label}</b>
-            <span>{cards && !narrowed ? `${cards} cards` : mode === 'match' ? 'Needs flashcards' : exam ? `${exam} questions as cards` : 'No cards yet'}</span>
-            <small>{sub}</small>
-          </button>
-        ))}
       </div>
 
       {!exam && saved && (
@@ -266,6 +282,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
       )}
 
       <div className="hub-more">
+        <span className="tb-h">Make more</span>
         <MenuButton
           button={() => (
             <button className="btn sm" disabled={canMake === false}>

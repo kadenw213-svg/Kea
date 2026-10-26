@@ -303,7 +303,7 @@ export function ScholarScreen() {
           <CalendarDays size={17} /> Calendar
         </button>
         <button className={`sch-link ${view.name === 'resources' ? 'on' : ''}`} onClick={() => go({ name: 'resources' })} disabled={!hasData}>
-          <Layers size={17} /> My resources
+          <Layers size={17} /> Study
         </button>
         <div className="sch-head">Classes</div>
         {courses.map((c) => (

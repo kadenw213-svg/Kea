@@ -469,7 +469,8 @@ function choose(all: StudyQuestion[], n: number, history: Record<string, StudyHi
 export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant' }) {
   const all = set.questions || [];
   const [n, setN] = useState(auto ? all.length : Math.min(all.length, 25));
-  const [instant, setInstant] = useState(auto === 'instant');
+  // (One question at a time unless the exam was opened to give answers at the end.)
+  const [instant, setInstant] = useState(auto !== 'end');
   const [run, setRun] = useState<Shown[] | null>(null);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [selfMarks, setSelfMarks] = useState<(boolean | undefined)[]>([]);
@@ -582,11 +583,11 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
         <div className="st-setup-row">
           <span>Answers</span>
           <div className="st-seg">
-            <button className={!instant ? 'on' : ''} onClick={() => setInstant(false)}>
-              At the end, like an exam
-            </button>
             <button className={instant ? 'on' : ''} onClick={() => setInstant(true)}>
               After each question
+            </button>
+            <button className={!instant ? 'on' : ''} onClick={() => setInstant(false)}>
+              At the end, like an exam
             </button>
           </div>
         </div>

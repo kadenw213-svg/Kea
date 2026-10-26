@@ -1,35 +1,19 @@
-// My resources: every class's chapters, to read or to be quizzed on (one switch decides what a tap does), and the
-// practice you've done or made yourself. Question banks stay out of sight: they're what every quiz draws from.
+// Study: every class's chapters as one list, each with Read (its textbook) and Study (its questions), how its practice
+// has gone, and the practice you've done or made yourself. Review (what's due) is the one button at the top.
 import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Brain, Check, ClipboardCheck, ClipboardList, ClipboardPaste, Layers, Plus } from 'lucide-react';
+import type { PoolItem } from '../../lib/api';
 import { api, ScholarCourse, ScholarCourseDetail, StudySet } from '../../lib/api';
 import { openPaths } from '../../lib/open';
 import { setPdfTarget } from '../../lib/pdfTarget';
 import { useScholar } from './scholarStore';
 import { SetRow, openStudySet, useStudySets } from './Study';
 import { openStudyHub } from './StudyHub';
-import { StudyPicker } from './StudyModes';
 
-type Mode = 'read' | 'quiz';
-const MODE_KEY = 'kea.resources.mode';
-const readMode = (): Mode => {
-  try {
-    return localStorage.getItem(MODE_KEY) === 'read' ? 'read' : 'quiz';
-  } catch {
-    return 'quiz';
-  }
-};
 
 export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[]; courseId?: string }) {
   const version = useScholar((s) => s.version);
   const sets = useStudySets();
-  const [mode, setModeState] = useState<Mode>(readMode);
-  const setMode = (m: Mode) => {
-    setModeState(m);
-    try {
-      localStorage.setItem(MODE_KEY, m);
-    } catch {}
-  };
   const [filter, setFilter] = useState<string>(courseId || '');
   const [details, setDetails] = useState<ScholarCourseDetail[] | null>(null);
   // Chapters ticked to quiz together (one class at a time): "courseId|Chapter N".
@@ -42,13 +26,31 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
   }, [courseId, courses.map((c) => c.id).join(), version]);
   useEffect(() => setFilter(courseId || ''), [courseId]);
 
-  // Saved questions per chapter (from the chapters' question banks), shown in quiz mode.
+  // Saved questions per chapter (each question once, whichever set it's in), with how practice on them has gone.
+  const [pools, setPools] = useState<Record<string, PoolItem[]>>({});
+  useEffect(() => {
+    if (!details) return;
+    let live = true;
+    Promise.all(details.map((d) => api.scholar.studyPool({ courseId: d.id, chapters: d.chapters.map((c) => c.label) }).then((p) => [d.id, p] as const).catch(() => [d.id, [] as PoolItem[]] as const))).then(
+      (list) => live && setPools(Object.fromEntries(list))
+    );
+    return () => {
+      live = false;
+    };
+  }, [details, sets?.length]);
   const questions = useMemo(() => {
-    const out = new Map<string, number>();
-    for (const s of sets || [])
-      if (s.bank && s.kind === 'exam' && s.status === 'ready') for (const ch of s.chapters) out.set(`${s.courseId}|${ch}`, (out.get(`${s.courseId}|${ch}`) || 0) + s.count);
+    const out = new Map<string, { n: number; right: number; missed: number }>();
+    for (const [cid, list] of Object.entries(pools))
+      for (const p of list) {
+        const k = `${cid}|${p.chapter}`;
+        const e = out.get(k) || { n: 0, right: 0, missed: 0 };
+        e.n++;
+        if (p.lastRight === true) e.right++;
+        else if (p.lastRight === false) e.missed++;
+        out.set(k, e);
+      }
     return out;
-  }, [sets]);
+  }, [pools]);
   const shownClasses = (details || []).filter((d) => !filter || d.id === filter);
   // Practice that's yours: exams taken, sets being made, your own and imported sets.
   const practice = (sets || []).filter((s) => !s.bank && (!filter || s.courseId === filter) && (s.attempts > 0 || s.status !== 'ready' || s.source === 'mine'));
@@ -71,24 +73,22 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
     <div className={courseId ? 'res' : 'sch-page res'}>
       {!courseId && (
         <>
-          <h1 className="sch-title">My resources</h1>
-          <p className="sch-sub">Every chapter of your classes, to read or to be quizzed on, and the practice you've done.</p>
+          <h1 className="sch-title">Study</h1>
+          <p className="sch-sub">Every chapter of your classes: read it, or study its questions. Review brings back what's due before each test.</p>
         </>
       )}
-      <div className="res-bar">
-        <div className="st-seg res-mode" role="tablist">
-          <button className={mode === 'read' ? 'on' : ''} onClick={() => (setMode('read'), setPicked([]))}>
-            <BookOpen size={14} /> Read
-          </button>
-          <button className={mode === 'quiz' ? 'on' : ''} onClick={() => setMode('quiz')}>
-            <ClipboardCheck size={14} /> Quiz me
-          </button>
-        </div>
-        <span className="muted res-hint">{mode === 'read' ? 'Tap a chapter to open its textbook.' : 'Tap a chapter to be quizzed on it, or tick a few to quiz them together.'}</span>
+      <div className="res-top">
+        <button className="res-review" onClick={() => openStudySet(`review:${filter || 'all'}`)}>
+          <Brain size={18} />
+          <span>
+            <b>Review what's due</b>
+            <span className="muted">Questions and cards coming back before each test{filter ? '' : ', every class'}</span>
+          </span>
+        </button>
         {!courseId && courses.length > 1 && (
           <div className="seg-mini res-classes">
             <button className={!filter ? 'on' : ''} onClick={() => setFilter('')}>
-              All
+              All classes
             </button>
             {courses.map((c) => (
               <button key={c.id} className={filter === c.id ? 'on' : ''} onClick={() => setFilter(c.id)}>
@@ -99,56 +99,45 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
         )}
       </div>
 
-      {mode === 'quiz' && (
-        <button className="res-review" onClick={() => openStudySet(`review:${filter || 'all'}`)}>
-          <Brain size={18} />
-          <span>
-            <b>Review what's due</b>
-            <span className="muted">Cards and questions coming back before each test{filter ? '' : ', every class'}</span>
-          </span>
-        </button>
-      )}
-      {mode === 'quiz' && courses.length > 0 && (
-        <details className="res-choose">
-          <summary>Choose chapters to review</summary>
-          <StudyPicker key={filter} classes={courses.map((c) => ({ id: c.id, code: c.code }))} start={filter || undefined} />
-        </details>
-      )}
-
       {!details ? (
         <div className="spinner" />
       ) : (
         shownClasses.map((d) => (
           <section key={d.id} className="res-class">
             {!courseId && <h2 className="sch-h2">{d.code}</h2>}
-            <div className="res-chapters">
+            <div className="res-list">
               {d.chapters.map((ch) => {
                 const key = `${d.id}|${ch.label}`;
-                const n = questions.get(key) || 0;
-                const can = mode === 'read' ? !!ch.pdf : n > 0;
+                const q = questions.get(key);
+                const n = q?.n || 0;
                 const on = picked.includes(key);
                 return (
-                  <div key={ch.label} className={`res-ch ${can ? '' : 'off'} ${on ? 'on' : ''}`}>
-                    {mode === 'quiz' && (
-                      <button className={`res-tick ${on ? 'on' : ''}`} disabled={!can} onClick={() => toggle(key)} title="Quiz this chapter together with others">
-                        {on && <Check size={13} />}
-                      </button>
-                    )}
-                    <button className="res-ch-main" disabled={!can} onClick={() => (mode === 'read' ? read(d, ch.label) : quiz(d, [ch.label]))}>
+                  <div key={ch.label} className={`res-row ${!n && !ch.pdf ? 'off' : ''} ${on ? 'on' : ''}`}>
+                    <button className={`res-tick ${on ? 'on' : ''}`} disabled={!n} onClick={() => toggle(key)} title={n ? 'Study this chapter together with others' : 'No questions yet'} aria-label="Pick">
+                      {on && <Check size={13} />}
+                    </button>
+                    <div className="res-row-main">
                       <span className="res-ch-title">
                         <b>{ch.label.replace(/^Chapter /, 'Ch ')}</b> {ch.title || ''}
                       </span>
                       <span className="muted res-ch-sub">
-                        {mode === 'read'
-                          ? ch.pdf
-                            ? `${ch.pdf.pages ? `${ch.pdf.pages} pages` : 'Textbook chapter'}${ch.sections.length ? ` · ${ch.sections.length} sections` : ''}`
-                            : 'Being written'
-                          : n
-                            ? `${n} questions`
-                            : 'No questions yet'}
+                        {[ch.pdf ? (ch.pdf.pages ? `${ch.pdf.pages} pages` : 'Textbook chapter') : 'Textbook being written', n ? `${n} questions` : 'no questions yet'].join(' · ')}
                       </span>
-                    </button>
-                    {mode === 'read' ? <BookOpen size={15} className="res-go" /> : <ClipboardCheck size={15} className="res-go" />}
+                    </div>
+                    {n > 0 && (
+                      <span className="res-progress" title={`${q!.right} right last time, ${q!.missed} missed, ${n - q!.right - q!.missed} not tried`}>
+                        <i className="m" style={{ width: `${(q!.right / n) * 100}%` }} />
+                        <i className="l" style={{ width: `${(q!.missed / n) * 100}%` }} />
+                      </span>
+                    )}
+                    <div className="res-acts">
+                      <button className="btn sm" disabled={!ch.pdf} onClick={() => read(d, ch.label)}>
+                        <BookOpen size={14} /> Read
+                      </button>
+                      <button className="btn sm" disabled={!n} onClick={() => quiz(d, [ch.label])}>
+                        <ClipboardCheck size={14} /> Study
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -162,7 +151,7 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
                   Clear
                 </button>
                 <button className="btn primary sm" onClick={() => quiz(d, picked.map((k) => k.split('|')[1]))}>
-                  <ClipboardCheck size={14} /> Quiz these {picked.length}
+                  <ClipboardCheck size={14} /> Study these {picked.length}
                 </button>
               </div>
             )}
