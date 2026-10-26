@@ -5,6 +5,7 @@ import { useScholar } from '../../src/components/scholar/scholarStore';
 import type { OpenedFile } from './kea';
 import type { BookTarget } from './Book';
 import { Viewer } from './Viewer';
+import { useBack } from './back';
 
 /** The textbook open on the phone: a chapter's PDF from the library (or any PDF), where it was left. */
 export type ReaderTarget = BookTarget;
@@ -12,6 +13,8 @@ export type ReaderTarget = BookTarget;
 /** The study player (over everything) whenever a set, the hub or review is open. */
 export function StudyHost() {
   const id = useScholar((s) => s.study);
+  // (Back leaves the quiz or deck: its answers are saved as it closes.)
+  useBack(!!id, () => useScholar.getState().set({ study: null }));
   if (!id) return null;
   return (
     <div className="m-overlay">

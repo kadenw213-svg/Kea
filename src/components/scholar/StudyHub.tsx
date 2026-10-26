@@ -83,6 +83,8 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   const [pool, setPool] = useState<PoolItem[] | null>(null);
   const [topics, setTopics] = useState<string[]>([]);
   const [which, setWhich] = useState<Which>('all');
+  // The options are open on a wide screen; on a phone they fold into one line under Start.
+  const [opts, setOpts] = useState(() => typeof window === 'undefined' || window.innerWidth > 700);
   useEffect(() => {
     api.scholar
       .studyPool({ courseId: scope.courseId, chapters: scope.chapters })
@@ -177,7 +179,14 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
             {busy === 'exam' ? <Loader2 size={15} className="spin" /> : null} Start {exam ? Math.min(size, exam) : ''}
           </button>
         </div>
-        {exam > 0 && (
+        {exam > 0 && !opts && (
+          <button className="hub-opts-sum" onClick={() => setOpts(true)}>
+            {Math.min(size, exam)} questions · answers {instant ? 'after each question' : 'at the end'}
+            {which !== 'all' ? ` · ${WHICH.find(([w]) => w === which)![1].toLowerCase()}` : ''}
+            {topics.length ? ` · ${topics.length} topic${topics.length > 1 ? 's' : ''}` : ''} <span>Change</span>
+          </button>
+        )}
+        {exam > 0 && opts && (
           <div className="hub-options">
             <div className="hub-opt">
               <span>How many</span>

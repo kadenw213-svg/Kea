@@ -1799,3 +1799,25 @@ button.hub-mode:hover:not(:disabled) {
     flex-wrap: wrap;
   }
 }
+
+.hub-opts-sum {
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 10px 0 0;
+  cursor: pointer;
+}
+.hub-opts-sum span {
+  color: var(--accent);
+  font-weight: 600;
+  margin-left: 6px;
+}
+@media (max-width: 600px) {
+  .hub-ways .hub-modes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

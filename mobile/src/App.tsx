@@ -12,12 +12,13 @@ import type { OpenedFile } from './kea';
 import { openStudyHub } from '../../src/components/scholar/StudyHub';
 import { openStudySet } from '../../src/components/scholar/Study';
 import { StudyPicker } from '../../src/components/scholar/StudyModes';
-import { lastPlace, places } from './Book';
+import { places } from './Book';
 import { reloadScholar, useScholar } from '../../src/components/scholar/scholarStore';
 import { FilesTab } from './Files';
 import { PairFlow, SettingsPage, Welcome } from './Welcome';
 import { checkForUpdate, installUpdate, useUpdate } from './update';
 import { toast } from './ui';
+import { useBack } from './back';
 import { getLook } from './theme';
 import { THEMES, gradeColor, ink } from '../../src/lib/themes';
 
@@ -217,6 +218,14 @@ export function App() {
     if (connect) setPairing(true);
   };
   const read = (path: string, name: string) => setReader({ file: path, chapter: name, title: name.replace(/\.pdf$/i, '') });
+
+  // Back (the phone's button): another tab goes Home first, then whatever opened on top closes first. (Before the
+  // early returns below, so the hooks run in the same order every time.)
+  useBack(!!classes && !!tab && tab !== 'classes', () => setTab('classes'));
+  useBack(!!item, () => setItem(null));
+  useBack(!!reader, () => setReader(null));
+  useBack(!!opened, () => setOpened(null));
+  useBack(settings, () => setSettings(false));
 
   if (!welcomed && state && !paired) return <Welcome onTools={() => finishWelcome(false)} onConnect={() => finishWelcome(true)} />;
   if (pairing)
@@ -456,27 +465,26 @@ function TodayTop({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
       {banners.length > 0 && (
         <section>
           <h2>Reading this week</h2>
-          {banners.map((b) => (
-            <div key={b.id} className="card read-card" onClick={() => ctx.open(b)}>
-              <span>
-                <b>{b.courseCode}</b> {b.readings.map((r) => `${r.chapter}${r.title ? `: ${r.title}` : ''}`).join(' · ') || b.title}
-              </span>
-              {b.readings.length > 0 && (
-                <div className="actions" onClick={(e) => e.stopPropagation()}>
-                  <button className="btn" onClick={() => openStudyHub({ courseId: b.courseId, code: b.courseCode, title: b.readings.map((r) => r.chapter).join(', '), chapters: b.readings.map((r) => r.chapter) })}>
-                    <ClipboardCheck size={16} /> Study
+          <div className="wk-reads">
+            {banners.flatMap((b) =>
+              (b.readings.length ? b.readings : [{ chapter: b.title, title: null, pdf: null } as any]).map((r: any) => (
+                <div key={`${b.id}:${r.chapter}`} className="wk-read">
+                  <button className="wk-read-main" disabled={!r.pdf} onClick={() => r.pdf && ctx.read({ file: r.pdf.file, chapter: r.chapter, title: r.title || r.chapter })}>
+                    <span className="wk-read-code">{b.courseCode}</span>
+                    <span className="wk-read-title">
+                      <b>{r.chapter.replace(/^Chapter /, 'Ch ')}</b> {r.title || ''}
+                    </span>
+                    {r.pdf && <BookOpen size={16} className="wk-read-go" />}
                   </button>
-                  {b.readings
-                    .filter((r) => r.pdf)
-                    .map((r) => (
-                      <button key={r.chapter} className="btn" onClick={() => ctx.read({ file: r.pdf!.file, chapter: r.chapter, title: r.title || r.chapter })}>
-                        <BookOpen size={16} /> {r.chapter.replace(/^Chapter /, 'Ch ')}
-                      </button>
-                    ))}
+                  {b.readings.length > 0 && (
+                    <button className="wk-read-study" aria-label="Study" onClick={() => openStudyHub({ courseId: b.courseId, code: b.courseCode, title: `${r.chapter}${r.title ? `: ${r.title}` : ''}`, chapters: [r.chapter] })}>
+                      <ClipboardCheck size={16} />
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
+              ))
+            )}
+          </div>
         </section>
       )}
     </>
@@ -707,6 +715,9 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
   const [readings, setReadings] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const c = ctx.data.details.find((x) => x.code === code);
+  useBack(!!c, () => setCode(null));
+  useBack(readings, () => setReadings(false));
+  useBack(reviewing, () => setReviewing(false));
   const classList = ctx.data.details.map((d) => ({ id: d.id, code: d.code }));
   if (!c && readings) return <Readings ctx={ctx} onBack={() => setReadings(false)} />;
   if (!c && reviewing) return <ReviewPick ctx={ctx} due={due} onBack={() => setReviewing(false)} />;
@@ -714,7 +725,6 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
     return (
       <div className="page">
         <TodayTop ctx={ctx} missing={missing} />
-        <ContinueReading ctx={ctx} />
         <div className="hub2">
           <button className="card review-all" onClick={() => setReviewing(true)}>
             <Brain size={22} />
@@ -947,22 +957,6 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
   );
 }
 
-/** The book read last, to carry on where it was left (by reading or listening). */
-function ContinueReading({ ctx }: { ctx: Ctx }) {
-  const p = lastPlace();
-  // (Only lately: a book from weeks ago isn't "carrying on".)
-  if (!p || Date.now() - Date.parse(p.at) > 14 * 864e5) return null;
-  return (
-    <button className="card continue" onClick={() => ctx.read({ file: p.file, chapter: p.chapter, title: p.title })}>
-      <BookOpen size={20} />
-      <span className="class-main">
-        <span className="muted small block">Continue reading</span>
-        <b>{p.title}</b>
-        <span className="muted small block">{[p.code, p.pages ? `Page ${p.page + 1} of ${p.pages}` : ''].filter(Boolean).join(' · ')}</span>
-      </span>
-    </button>
-  );
-}
 
 /** Every class's chapters to read (or listen to), one class at a time or all of them, with a check when finished. */
 function Readings({ ctx, onBack }: { ctx: Ctx; onBack(): void }) {
