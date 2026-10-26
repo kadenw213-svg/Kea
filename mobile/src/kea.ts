@@ -3,6 +3,8 @@
 // assignment folders).
 import { registerPlugin } from '@capacitor/core';
 import { phoneRequests, studyOut } from './study';
+import { getLook, onThemeChange, setLook } from './theme';
+import { THEMES } from '../../src/lib/themes';
 import type { ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 
 interface KeaNative {
@@ -156,6 +158,9 @@ export async function loadData(ms = 45000): Promise<{ data: KeaData | null; erro
     try {
       localStorage.setItem(CACHE, r.text);
     } catch {}
+    // The theme picked on the PC, when it's newer than the phone's.
+    const look = (d as any).look as { theme?: string; at?: string } | undefined;
+    if (look?.theme && look.theme in THEMES && look.at && look.at > (getLook().themeAt || '') && look.theme !== getLook().theme) setLook({ theme: look.theme as any, themeAt: look.at });
     return { data: d, error: null };
   } catch (e: any) {
     const m = String(e?.message || e);
@@ -269,7 +274,8 @@ export function syncOut() {
     try {
       study = studyOut();
     } catch {}
-    Kea.writeFile({ path: 'phone.json', text: JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000), deleted: phoneDeleted().slice(-1000), study, requests: phoneRequests() }) }).catch(() => {});
+    const l = getLook();
+    Kea.writeFile({ path: 'phone.json', text: JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000), deleted: phoneDeleted().slice(-1000), study, requests: phoneRequests(), look: { theme: l.theme, at: l.themeAt || '' } }) }).catch(() => {});
   }, 1500);
 }
 export function setPhoneDeleted(keys: string[]) {
@@ -317,3 +323,8 @@ export async function appendScan(path: string, extra: string): Promise<number> {
   await Kea.replaceFile({ path, data: btoa(bin) });
   return doc.getPageCount();
 }
+
+// A theme picked on the phone goes to the PC with the next phone.json.
+onThemeChange((l) => {
+  if (l.themeAt && l.themeAt > new Date(Date.now() - 60000).toISOString()) syncOut();
+});

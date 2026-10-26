@@ -121,6 +121,10 @@ function applyMarks(phone) {
     }
   }
   if (phone.study && devices.mergeStudy(phone.study)) changed = true;
+  // The theme picked on the phone, when it's newer than this computer's.
+  const look = phone.look;
+  if (look && typeof look.theme === 'string' && require('../themes.json')[look.theme] && look.at && look.at > settings.get('appearance.themeAt', '') && look.theme !== settings.get('appearance.theme', 'dark'))
+    settings.set({ 'appearance.theme': look.theme, 'appearance.themeAt': look.at });
   // What the phone asked for (more questions, worked steps, a check now), each done once, through the same checks as
   // another computer's requests (devices.cjs).
   const asks = (Array.isArray(phone.requests) ? phone.requests : []).filter((r) => r && typeof r.id === 'string');
@@ -170,6 +174,8 @@ async function snapshot() {
   // What was deleted on the PC, so the phone also hides its own copies.
   const inboxDeleted = (precheck.readInbox().deletedKeys || []).slice(-1500);
   return {
+    // The theme (Settings → Appearance), so Kea on the phone looks the same; the newer choice wins either way.
+    look: { theme: settings.get('appearance.theme', 'dark'), at: settings.get('appearance.themeAt', '') },
     ...fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, platform: browser.schoolInfo().platform, courses, items, details, grades, inbox, inboxDeleted, doneLog }),
     // The study folder as it is here (sets, saved questions, progress), for the phone to study from; its pictures are in
     // the library zip. A set still being written stays out until it's ready.
@@ -201,6 +207,16 @@ const syncSoon = (delay) => {
   if (!devices.follower()) cloud.schedule(snapshot, delay);
   devices.soon(delay);
 };
+// A new theme goes to the phone with the next copy (the phone takes it when it's newer than its own).
+const themeKey = (all) => `${all['appearance.theme'] || 'dark'}|${all['appearance.themeAt'] || ''}`;
+let lastTheme = null;
+settings.onChange((all) => {
+  if (lastTheme === null) lastTheme = themeKey(all);
+  else if (themeKey(all) !== lastTheme) {
+    lastTheme = themeKey(all);
+    syncSoon(3000);
+  }
+});
 
 // ---------- Other computers (the same classes on more than one PC, scanned by only one of them) ----------
 const devices = require('./devices.cjs');

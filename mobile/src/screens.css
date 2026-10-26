@@ -24,12 +24,12 @@
   color: var(--text-2);
 }
 .btn.danger {
-  border-color: #6b3a37;
-  color: #f28b82;
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: var(--danger);
   background: transparent;
 }
 .danger-text {
-  color: #f28b82 !important;
+  color: var(--danger) !important;
 }
 .actions .btn {
   flex: 1 1 auto;
@@ -75,10 +75,10 @@
   display: flex;
   gap: 6px;
   align-items: center;
-  background: color-mix(in srgb, #81c995 14%, transparent);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
 }
 .note.warn {
-  background: color-mix(in srgb, #fdd663 14%, transparent);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
 }
 .stale.upd {
   background: var(--accent-soft);
@@ -408,7 +408,7 @@
   border-top: 1px solid var(--border);
 }
 .fl.ok svg {
-  color: #81c995;
+  color: var(--success);
 }
 .fl b {
   color: var(--text);
@@ -467,7 +467,7 @@
   color: var(--text-2);
 }
 .set-row > svg.ok-ic {
-  color: #81c995;
+  color: var(--success);
 }
 .toggle {
   display: flex;
@@ -513,7 +513,7 @@
   margin: 4px 0 0;
 }
 .class-head .bigrade.low {
-  color: #f28b82;
+  color: var(--danger);
 }
 .ch-text {
   min-width: 0;
@@ -553,7 +553,7 @@
   font-size: 13.5px;
 }
 .inbox-acts button.danger {
-  color: #f28b82;
+  color: var(--danger);
 }
 .review-all {
   justify-content: flex-start;
@@ -956,7 +956,7 @@
   color: var(--accent);
 }
 .read-pct.done {
-  color: #81c995;
+  color: var(--success);
 }
 
 /* The sentence being read, on the page (above the page's colour filter, so it keeps the accent colour). */
@@ -982,10 +982,10 @@
 
 /* ---------- Any file: documents, books, spreadsheets, slides, media ---------- */
 .file-ic.k-sheet {
-  color: #81c995;
+  color: var(--success);
 }
 .file-ic.k-slides {
-  color: #fcad70;
+  color: var(--warning);
 }
 .file-ic.k-epub {
   color: var(--accent);
@@ -1165,4 +1165,19 @@
 input.range {
   width: 100%;
   accent-color: var(--accent);
+}
+
+/* Readings: one class at a time */
+.class-pick {
+  width: 100%;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.review-classes {
+  flex-wrap: wrap;
 }

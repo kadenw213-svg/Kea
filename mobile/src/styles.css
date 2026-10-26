@@ -145,8 +145,8 @@ h2 {
   place-items: center;
 }
 .tabs b.alert {
-  background: #f28b82;
-  color: #2a0f0d;
+  background: var(--danger);
+  color: var(--on-danger);
 }
 
 .row {
@@ -164,8 +164,8 @@ h2 {
   color: var(--text-3);
 }
 .row.missing {
-  border-color: #6b3a37;
-  border-left-color: #f28b82;
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-left-color: var(--danger);
 }
 .check {
   border: none;
@@ -175,7 +175,7 @@ h2 {
   display: grid;
 }
 .row.done .check {
-  color: #81c995;
+  color: var(--success);
 }
 .dot {
   width: 10px;
@@ -211,13 +211,13 @@ h2 {
   margin-right: 6px;
   padding: 0 6px;
   border-radius: 999px;
-  background: #f28b82;
-  color: #2a0f0d;
+  background: var(--danger);
+  color: var(--on-danger);
   font-size: 11px;
   font-weight: 700;
 }
 .miss h2 {
-  color: #f28b82;
+  color: var(--danger);
 }
 .miss-banner {
   display: flex;
@@ -225,7 +225,7 @@ h2 {
   align-items: center;
   padding: 8px 10px;
   border-radius: 10px;
-  background: color-mix(in srgb, #f28b82 16%, transparent);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
   color: var(--text);
   font-size: 13.5px;
 }
@@ -279,7 +279,7 @@ h2 {
 }
 .grade.low,
 b.low {
-  color: #f28b82;
+  color: var(--danger);
 }
 .bigrade {
   font-size: 34px;
@@ -307,8 +307,8 @@ b.low {
   color: var(--text);
 }
 .chips button.danger {
-  border-color: #f28b82;
-  color: #f28b82;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 .msg-actions {
   display: flex;
@@ -608,7 +608,7 @@ b.low {
   padding: 8px 10px;
   border: 0;
   border-radius: 10px;
-  background: color-mix(in srgb, #fdd663 16%, transparent);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
   color: inherit;
   font: inherit;
   font-size: 13px;

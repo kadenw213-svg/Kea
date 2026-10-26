@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, BookOpen, Brain, CalendarDays, Camera, CheckCircle2, ChevronLeft, ChevronRight, Circle, ClipboardCheck, Download, ExternalLink, FileText, FolderOpen, GraduationCap, Inbox, Layers, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Award, Home, BookOpen, Brain, CalendarDays, Camera, CheckCircle2, ChevronLeft, ChevronRight, Circle, ClipboardCheck, Download, ExternalLink, FileText, FolderOpen, GraduationCap, Inbox, Layers, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, X } from 'lucide-react';
 import type { ScholarChapter, ScholarInboxItem, ScholarItem, StudySet } from '../../src/lib/api';
 import { api } from '../../src/lib/api';
 import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
@@ -18,6 +18,8 @@ import { FilesTab } from './Files';
 import { PairFlow, SettingsPage, Welcome } from './Welcome';
 import { checkForUpdate, installUpdate, useUpdate } from './update';
 import { toast } from './ui';
+import { getLook } from './theme';
+import { THEMES, gradeColor, ink } from '../../src/lib/themes';
 
 // ---------- Dates ----------
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -42,7 +44,8 @@ const ago = (at: string) => {
   if (s < 86400) return `${Math.round(s / 3600)}h`;
   return new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
-const typeColor = (t: string) => categoryOf(t).color;
+// (Made for dark backgrounds; darker on a light theme so they still read.)
+const typeColor = (t: string) => ink(categoryOf(t).color, THEMES[getLook().theme]?.dark !== false);
 const LABEL: Record<string, string> = { lecture: 'Lecture', lab: 'Lab', exam: 'Exam', final_exam: 'Final exam', lab_practical: 'Lab practical', quiz: 'Quiz', assignment: 'Assignment', discussion: 'Discussion', paper: 'Paper', peer_review: 'Peer review', lab_handout: 'Lab handout', other_deadline: 'To do', administrative_deadline: 'Deadline', break: 'Break', reading: 'Reading', weekly_reading: 'This week', project: 'Project' };
 
 /** The PC's copy into the shared study code and screens (and once, what changes here goes back to the PC). */
@@ -68,16 +71,16 @@ function useStudyData(data: KeaData | null) {
   }, [data]);
 }
 
-// Classes connected: today, calendar, classes (with studying), inbox and files. Not connected: files (scan and PDFs)
-// and what connecting classes would add.
-type Tab = 'today' | 'calendar' | 'classes' | 'inbox' | 'files';
+// Classes connected: Home (what's next and missing, studying, readings and each class), the calendar, the inbox and
+// files. Not connected: files (scan and PDFs) and what connecting classes would add.
+type Tab = 'calendar' | 'classes' | 'inbox' | 'files';
 const WELCOMED = 'kea.welcomed';
 
 export function App() {
   const [data, setData] = useState<KeaData | null>(cachedData());
   const [state, setState] = useState<Awaited<ReturnType<typeof Kea.state>> | null>(null);
   const [welcomed, setWelcomed] = useState(() => !!localStorage.getItem(WELCOMED));
-  // (No tab picked yet: Today with classes, Scan & PDFs without.)
+  // (No tab picked yet: Home with classes, Scan & PDFs without.)
   const [tab, setTab] = useState<Tab | null>(null);
   const [item, setItem] = useState<ScholarItem | null>(null);
   const [course, setCourse] = useState<string | null>(null);
@@ -223,7 +226,7 @@ export function App() {
         onCancel={() => setPairing(false)}
         onDone={() => {
           setPairing(false);
-          setTab('today');
+          setTab('classes');
           refresh();
         }}
       />
@@ -261,9 +264,8 @@ export function App() {
   const tabs = (
     classes
       ? [
-          ['today', Sun, 'Today', missing.length],
+          ['classes', Home, 'Home', missing.length],
           ['calendar', CalendarDays, 'Calendar', 0],
-          ['classes', GraduationCap, 'Classes', 0],
           ['inbox', Inbox, 'Inbox', unread],
           ['files', Camera, 'Scan', 0]
         ]
@@ -303,10 +305,9 @@ export function App() {
             <Loader2 size={14} className="spin" /> Getting your textbooks{library.files ? ` · ${library.files} files` : ''}…
           </div>
         )}
-        {ctx && current === 'today' && <Today ctx={ctx} missing={missing} />}
         {ctx && current === 'inbox' && <InboxView items={inbox} readIds={readIds} markRead={markRead} remove={remove} />}
         {ctx && current === 'calendar' && <Agenda ctx={ctx} />}
-        {current === 'classes' && (ctx ? <Classes ctx={ctx} code={course} setCode={setCourse} /> : <ClassesPitch onConnect={() => setPairing(true)} />)}
+        {current === 'classes' && (ctx ? <Classes ctx={ctx} code={course} setCode={setCourse} missing={missing} /> : <ClassesPitch onConnect={() => setPairing(true)} />)}
         {current === 'files' && <FilesTab data={classes} read={read} />}
       </main>
       <nav className="tabs">
@@ -314,7 +315,7 @@ export function App() {
           <button key={id} className={current === id ? 'on' : ''} onClick={() => (setTab(id), id !== 'classes' && setCourse(null))}>
             <Icon size={22} />
             <span>{label}</span>
-            {badge > 0 && <b className={id === 'today' ? 'alert' : ''}>{badge}</b>}
+            {badge > 0 && <b className={id === 'classes' ? 'alert' : ''}>{badge}</b>}
           </button>
         ))}
       </nav>
@@ -419,19 +420,16 @@ function Row({ ctx, it, date }: { ctx: Ctx; it: ScholarItem; date?: boolean }) {
   );
 }
 
-function Today({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
+/** The top of Home: the next class or event today, missing work, and this week's reading. */
+function TodayTop({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
   const t = today();
-  const week = iso(addDays(new Date(), 7));
-  const upcoming = ctx.items.filter((i) => i.type !== 'weekly_reading' && i.date >= t && i.date <= week);
-  const days = [...new Set(upcoming.map((i) => i.date))];
   const now = new Date().getHours() * 60 + new Date().getMinutes();
-  const next = upcoming.find((i) => i.date === t && i.start && Number(i.start.slice(0, 2)) * 60 + Number(i.start.slice(3, 5)) > now);
+  const next = ctx.items.find((i) => i.type !== 'weekly_reading' && i.date === t && i.start && Number(i.start.slice(0, 2)) * 60 + Number(i.start.slice(3, 5)) > now);
   const banners = ctx.data.courses
     .map((c) => ctx.items.find((b) => b.type === 'weekly_reading' && b.courseId === c.id && b.date <= t && (b.dateEnd || b.date) >= t))
     .filter((b): b is ScholarItem => !!b);
   return (
-    <div className="page">
-      <ContinueReading ctx={ctx} />
+    <>
       {next && (
         <div className="next" style={{ borderColor: typeColor(next.type) }} onClick={() => ctx.open(next)}>
           <div className="next-k">Next</div>
@@ -481,18 +479,7 @@ function Today({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
           ))}
         </section>
       )}
-      {days.map((d) => (
-        <section key={d}>
-          <h2>{dayName(d)}</h2>
-          {upcoming
-            .filter((i) => i.date === d)
-            .map((i) => (
-              <Row key={i.id} ctx={ctx} it={i} />
-            ))}
-        </section>
-      ))}
-      <p className="muted small">Updated from your PC {ctx.data.synced ? ago(ctx.data.synced) + ' ago' : ''}.</p>
-    </div>
+    </>
   );
 }
 
@@ -624,7 +611,7 @@ function Agenda({ ctx }: { ctx: Ctx }) {
 
 /** Every class (with review across all of them), and one class: its grade, what's coming, its chapters to read and
  * study, its practice sets and its grades. */
-function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCode(c: string | null): void }) {
+function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | null; setCode(c: string | null): void; missing: ScholarItem[] }) {
   const version = useScholar((s) => s.version);
   const [sets, setSets] = useState<StudySet[]>([]);
   const [due, setDue] = useState<number | null>(null);
@@ -637,19 +624,22 @@ function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCod
       .catch(() => setDue(null));
   }, [ctx.data, version]);
   const [readings, setReadings] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const c = ctx.data.details.find((x) => x.code === code);
   const classList = ctx.data.details.map((d) => ({ id: d.id, code: d.code }));
   if (!c && readings) return <Readings ctx={ctx} onBack={() => setReadings(false)} />;
+  if (!c && reviewing) return <ReviewPick ctx={ctx} due={due} onBack={() => setReviewing(false)} />;
   if (!c)
     return (
       <div className="page">
+        <TodayTop ctx={ctx} missing={missing} />
         <ContinueReading ctx={ctx} />
         <div className="hub2">
-          <button className="card review-all" onClick={() => openStudySet('review:all')}>
+          <button className="card review-all" onClick={() => setReviewing(true)}>
             <Brain size={22} />
             <span>
               <b>Review</b>
-              <span className="muted small block">{due == null ? 'A mix of every class' : due ? `${due} due, a mix of every class` : 'Nothing due right now'}</span>
+              <span className="muted small block">{due ? `${due} due · pick a class or chapters` : 'Everything, a class, or chapters'}</span>
             </span>
           </button>
           <button className="card review-all" onClick={() => setReadings(true)}>
@@ -660,10 +650,6 @@ function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCod
             </span>
           </button>
         </div>
-        <details className="why choose">
-          <summary>Review only some chapters</summary>
-          <StudyPicker classes={classList} />
-        </details>
         <h2>Your classes</h2>
         {ctx.data.details.map((d) => {
           const g = ctx.data.grades[d.code]?.final;
@@ -677,7 +663,7 @@ function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCod
                   {d.chapters.filter((ch) => ch.pdf).length} chapters to read{banks ? ` · ${banks} question banks` : ''}
                 </span>
               </span>
-              {g && <span className={`grade ${g.percent != null && g.percent < 60 ? 'low' : ''}`}>{g.percent != null ? `${g.percent}%` : g.shown}</span>}
+              {g && <span className="grade" style={{ color: gradeTint(g.percent) }}>{g.percent != null ? `${g.percent}%` : g.shown}</span>}
             </button>
           );
         })}
@@ -691,7 +677,7 @@ function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCod
   return (
     <div className="page">
       <button className="back" onClick={() => setCode(null)}>
-        <ChevronLeft size={18} /> Classes
+        <ChevronLeft size={18} /> Home
       </button>
       <div className="class-head">
         <span className="class-main">
@@ -699,7 +685,7 @@ function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCod
           <span className="muted">{c.name}</span>
           {(c.instructor || c.contact) && <span className="muted small block">{[c.instructor, c.contact].filter(Boolean).join(' · ')}</span>}
         </span>
-        {grades?.final && <span className={`bigrade ${grades.final.percent != null && grades.final.percent < 60 ? 'low' : ''}`}>{grades.final.percent != null ? `${grades.final.percent}%` : grades.final.shown}</span>}
+        {grades?.final && <span className="bigrade" style={{ color: gradeTint(grades.final.percent) }}>{grades.final.percent != null ? `${grades.final.percent}%` : grades.final.shown}</span>}
       </div>
       <div className="grid2">
         <button className="btn" onClick={() => openStudySet(`review:${c.id}`)}>
@@ -774,7 +760,7 @@ function Classes({ ctx, code, setCode }: { ctx: Ctx; code: string | null; setCod
                 <div>{g.title}</div>
                 {g.comment && <div className="muted small">{g.comment}</div>}
               </div>
-              <b className={g.percent != null && g.percent < 60 ? 'low' : ''}>{g.percent != null ? `${g.percent}%` : g.shown}</b>
+              <b style={{ color: gradeTint(g.percent) }}>{g.percent != null ? `${g.percent}%` : g.shown}</b>
             </div>
           ))}
           {gradeItems.length > 5 && (
@@ -893,28 +879,41 @@ function ContinueReading({ ctx }: { ctx: Ctx }) {
         <b>{p.title}</b>
         <span className="muted small block">{[p.code, p.pages ? `Page ${p.page + 1} of ${p.pages}` : ''].filter(Boolean).join(' · ')}</span>
       </span>
-      {p.pages > 0 && (
-        <span className="ring" style={{ ['--p' as any]: `${Math.round(((p.page + 1) / p.pages) * 100)}%` }}>
-          {Math.round(((p.page + 1) / p.pages) * 100)}%
-        </span>
-      )}
     </button>
   );
 }
 
-/** Every class's chapters to read (or listen to), with how far each was read. */
+/** Every class's chapters to read (or listen to), one class at a time or all of them, with a check when finished. */
 function Readings({ ctx, onBack }: { ctx: Ctx; onBack(): void }) {
   const done = places();
+  const [only, setOnly] = useState(() => localStorage.getItem(READINGS_CLASS) || '');
+  const pick = (id: string) => {
+    setOnly(id);
+    try {
+      localStorage.setItem(READINGS_CLASS, id);
+    } catch {}
+  };
+  const withPdfs = ctx.data.details.filter((d) => d.chapters.some((ch) => ch.pdf));
+  const shown = withPdfs.filter((d) => !only || d.id === only);
   return (
     <div className="page">
       <button className="back" onClick={onBack}>
-        <ChevronLeft size={18} /> Classes
+        <ChevronLeft size={18} /> Home
       </button>
       <h1>Readings</h1>
+      {withPdfs.length > 1 && (
+        <select className="class-pick" value={only && withPdfs.some((d) => d.id === only) ? only : ''} onChange={(e) => pick(e.target.value)} aria-label="Class">
+          <option value="">All classes</option>
+          {withPdfs.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.code} · {d.name}
+            </option>
+          ))}
+        </select>
+      )}
       <p className="muted small">Tap a chapter to read it. In the book, the headphones read it aloud, even with the screen off or no signal.</p>
-      {ctx.data.details.map((d) => {
+      {(shown.length ? shown : withPdfs).map((d) => {
         const chs = d.chapters.filter((ch) => ch.pdf);
-        if (!chs.length) return null;
         return (
           <section key={d.id}>
             <h2>
@@ -922,14 +921,18 @@ function Readings({ ctx, onBack }: { ctx: Ctx; onBack(): void }) {
             </h2>
             {chs.map((ch) => {
               const p = done[ch.pdf!.file];
-              const pct = p?.pages ? Math.round(((p.page + 1) / p.pages) * 100) : 0;
+              const finished = !!p?.pages && p.page + 1 >= p.pages * 0.95;
               return (
                 <button key={ch.label} className="card reading-row" onClick={() => ctx.read({ file: ch.pdf!.file, chapter: ch.label, title: ch.title || ch.label })}>
                   <span className="class-main">
                     <b>{ch.label}</b>
                     {ch.title && <span className="muted small block">{ch.title}</span>}
                   </span>
-                  {pct > 0 && <span className={`read-pct ${pct >= 95 ? 'done' : ''}`}>{pct >= 95 ? <CheckCircle2 size={16} /> : `${pct}%`}</span>}
+                  {finished && (
+                    <span className="read-pct done" title="Finished">
+                      <CheckCircle2 size={16} />
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -939,3 +942,38 @@ function Readings({ ctx, onBack }: { ctx: Ctx; onBack(): void }) {
     </div>
   );
 }
+const READINGS_CLASS = 'kea.readingsClass';
+
+/** Review: everything, one class, or chosen chapters (spaced review, the ones due first). */
+function ReviewPick({ ctx, due, onBack }: { ctx: Ctx; due: number | null; onBack(): void }) {
+  const classList = ctx.data.details.map((d) => ({ id: d.id, code: d.code }));
+  return (
+    <div className="page">
+      <button className="back" onClick={onBack}>
+        <ChevronLeft size={18} /> Home
+      </button>
+      <h1>Review</h1>
+      <p className="muted small">Questions and cards come back just before you'd forget them, and before each test.</p>
+      <button className="card review-all" onClick={() => openStudySet('review:all')}>
+        <Brain size={22} />
+        <span>
+          <b>Everything</b>
+          <span className="muted small block">{due ? `${due} due, a mix of every class` : 'A mix of every class'}</span>
+        </span>
+      </button>
+      <h2>One class</h2>
+      <div className="chips review-classes">
+        {classList.map((c) => (
+          <button key={c.id} onClick={() => openStudySet(`review:${c.id}`)}>
+            {c.code}
+          </button>
+        ))}
+      </div>
+      <h2>Chosen chapters</h2>
+      <StudyPicker classes={classList} />
+    </div>
+  );
+}
+
+/** A grade's colour, from A (dark green) to F (red), for the theme in use. */
+const gradeTint = (percent: number | null | undefined) => gradeColor(percent, THEMES[getLook().theme]?.dark !== false);

@@ -30,6 +30,8 @@ function get(key, fallback) {
 }
 
 function set(patch) {
+  // The theme carries the time it was picked, so the phone and the PC keep the newer choice when they sync.
+  if (patch && patch['appearance.theme'] && patch['appearance.theme'] !== all()['appearance.theme'] && !patch['appearance.themeAt']) patch = { ...patch, 'appearance.themeAt': new Date().toISOString() };
   const next = { ...all() };
   for (const [k, v] of Object.entries(patch || {})) {
     if (v === null || v === undefined) delete next[k];

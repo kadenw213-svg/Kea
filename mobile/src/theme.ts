@@ -2,12 +2,15 @@
 // dim, light, sepia), the accent colour, the text size, and the reader's own page colour and voice. Kept on the phone
 // and applied as the colour variables every screen already uses.
 import { useEffect, useState } from 'react';
+import { THEMES, ThemeId } from '../../src/lib/themes';
 
-export type ThemeId = 'dark' | 'black' | 'dim' | 'light' | 'sepia';
+export type { ThemeId };
 export type AccentId = 'silver' | 'blue' | 'teal' | 'green' | 'purple' | 'pink' | 'orange' | 'yellow';
 export type PageId = 'match' | 'white' | 'sepia' | 'dark' | 'black';
 export interface Look {
   theme: ThemeId;
+  /** When the theme was last picked (here or on the PC): the newer choice wins when they sync. */
+  themeAt?: string;
   accent: AccentId;
   /** Class sites and publisher pages (ALEKS, Pearson…) opened from Kea take these colours. */
   siteColors: boolean;
@@ -31,13 +34,7 @@ export interface Look {
 const DEFAULT: Look = { theme: 'dark', accent: 'silver', siteColors: true, scale: 1, page: 'match', voice: '', rate: 1, follow: true, highlight: 'fill', docScale: 1, docFont: 'serif', docLeading: 1.6 };
 const KEY = 'kea.look';
 
-const THEMES: Record<ThemeId, { label: string; dark: boolean; c: Record<string, string> }> = {
-  dark: { label: 'Dark', dark: true, c: { bg: '#131314', surface: '#1b1c1e', 'surface-2': '#222326', 'surface-3': '#2c2e31', 'surface-4': '#36373a', border: '#2f3134', 'border-strong': '#444649', hover: '#26282b', text: '#e3e4e6', 'text-2': '#c4c7c5', 'text-3': '#8e9196' } },
-  black: { label: 'Black', dark: true, c: { bg: '#000000', surface: '#0e0e0f', 'surface-2': '#151516', 'surface-3': '#1f2022', 'surface-4': '#2a2b2d', border: '#232426', 'border-strong': '#38393c', hover: '#18191a', text: '#e3e4e6', 'text-2': '#bfc2c0', 'text-3': '#86898e' } },
-  dim: { label: 'Dim', dark: true, c: { bg: '#1a1f27', surface: '#222833', 'surface-2': '#29303c', 'surface-3': '#323a47', 'surface-4': '#3c4553', border: '#353d4a', 'border-strong': '#4a5363', hover: '#2c3340', text: '#e4e8ee', 'text-2': '#c3c9d3', 'text-3': '#8d96a5' } },
-  light: { label: 'Light', dark: false, c: { bg: '#f6f7f9', surface: '#ffffff', 'surface-2': '#f0f1f4', 'surface-3': '#e5e7eb', 'surface-4': '#d9dce1', border: '#dfe1e6', 'border-strong': '#c4c8cf', hover: '#eceef1', text: '#1b1c1e', 'text-2': '#3c4043', 'text-3': '#6b7076' } },
-  sepia: { label: 'Sepia', dark: false, c: { bg: '#f4ecd8', surface: '#faf4e4', 'surface-2': '#efe5cc', 'surface-3': '#e6dabd', 'surface-4': '#dacdab', border: '#e0d3b3', 'border-strong': '#c9b98f', hover: '#ece1c5', text: '#3b2f20', 'text-2': '#5b4a35', 'text-3': '#86735a' } }
-};
+// (The themes themselves are shared with Kea on the PC: src/lib/themes.ts.)
 // Each accent, for dark themes and for light ones.
 const ACCENTS: Record<AccentId, { label: string; dark: string; light: string }> = {
   silver: { label: 'Classic (silver and blue)', dark: '#a8c7fa', light: '#0b57d0' },
@@ -68,12 +65,24 @@ export function getLook(): Look {
 }
 const subs = new Set<(l: Look) => void>();
 export function setLook(patch: Partial<Look>) {
-  const l = { ...getLook(), ...patch };
+  const before = getLook();
+  // A theme picked here is newer than the PC's; one that came from the PC keeps the PC's time.
+  if (patch.theme && patch.theme !== before.theme && !patch.themeAt) patch = { ...patch, themeAt: new Date().toISOString() };
+  const l = { ...before, ...patch };
   try {
     localStorage.setItem(KEY, JSON.stringify(l));
   } catch {}
   applyLook(l);
   subs.forEach((f) => f(l));
+  if (patch.theme && patch.theme !== before.theme) themeListeners.forEach((f) => f(l));
+}
+/** Told when the theme changes (to send it to the PC and to the shared screens' settings). */
+const themeListeners = new Set<(l: Look) => void>();
+export const onThemeChange = (f: (l: Look) => void) => (themeListeners.add(f), () => themeListeners.delete(f));
+/** Pages turned light or dark in a reader: the app's theme follows (as on the PC), keeping the page colour as the theme. */
+export function setPageTheme(id: PageId) {
+  const theme: ThemeId = id === 'white' ? 'light' : id === 'sepia' ? 'sepia' : id === 'black' ? 'black' : id === 'dark' ? (THEMES[getLook().theme]?.dark ? getLook().theme : 'dark') : getLook().theme;
+  setLook({ theme, page: 'match' });
 }
 export function useLook(): Look {
   const [l, setL] = useState(getLook);
@@ -105,6 +114,7 @@ export function applyLook(l: Look = getLook()) {
   const t = THEMES[l.theme] || THEMES.dark;
   const a = ACCENTS[l.accent] || ACCENTS.silver;
   const s = document.documentElement.style;
+  // (Every colour the screens use, the state colours too: red and green that read on this theme.)
   for (const [k, v] of Object.entries(t.c)) s.setProperty(`--${k}`, v);
   const accent = t.dark ? a.dark : a.light;
   s.setProperty('--accent', accent);

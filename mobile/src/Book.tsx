@@ -7,7 +7,7 @@ import { ChevronLeft, Gauge, Headphones, Moon, Pause, Play, Settings2, SkipBack,
 import { api } from '../../src/lib/api';
 import { loadPdf, PDFDocumentProxy } from '../../src/editors/pdf/pdfjs';
 import { Kea, PhoneVoice, cachedData } from './kea';
-import { PAGES, PageId, isScan, pageFor, setLook, useLook } from './theme';
+import { PAGES, PageId, isScan, pageFor, pageOf, setLook, setPageTheme, useLook } from './theme';
 import { toast } from './ui';
 
 export type BookTarget = { file: string; chapter: string; title: string; autoplay?: boolean };
@@ -452,6 +452,7 @@ export function Book({ target, onClose, onOpen }: { target: BookTarget; onClose(
 /** The page: its colour, its size, and following along while it's read. */
 function LookSheet({ zoom, setZoom, scan, onClose }: { zoom: number; setZoom(z: number): void; scan: boolean; onClose(): void }) {
   const look = useLook();
+  const [pagesOnly, setPagesOnly] = useState(look.page !== 'match');
   return (
     <div className="bk-sheet">
       <div className="bk-sheet-head">
@@ -465,15 +466,24 @@ function LookSheet({ zoom, setZoom, scan, onClose }: { zoom: number; setZoom(z: 
           <input type="checkbox" checked={!!look.darkScans} onChange={(e) => setLook({ darkScans: e.target.checked })} /> Colour scans too (dark pages for scans)
         </label>
       )}
-      <span className="muted small">Colour</span>
+      <span className="muted small">Colour (all of Kea follows, quizzes too)</span>
       <div className="bk-opts">
-        {(Object.keys(PAGES) as PageId[]).map((id) => (
-          <button key={id} className={`bk-swatch ${look.page === id ? 'on' : ''}`} onClick={() => setLook({ page: id })}>
-            <i style={{ background: PAGES[id].bg || 'linear-gradient(135deg, var(--bg) 50%, var(--text) 50%)' }} />
-            {PAGES[id].label}
-          </button>
-        ))}
+        {(Object.keys(PAGES) as PageId[])
+          .filter((id) => id !== 'match')
+          .map((id) => {
+            const on = look.page === id || (look.page === 'match' && pageOf(look) === PAGES[id]);
+            return (
+              <button key={id} className={`bk-swatch ${on ? 'on' : ''}`} onClick={() => (pagesOnly ? setLook({ page: id }) : setPageTheme(id))}>
+                <i style={{ background: PAGES[id].bg }} />
+                {PAGES[id].label}
+              </button>
+            );
+          })}
       </div>
+      <label className="toggle">
+        <input type="checkbox" checked={pagesOnly} onChange={(e) => (setPagesOnly(e.target.checked), !e.target.checked && setLook({ page: 'match' }))} />
+        <span>Only the pages (keep the rest of Kea as it is)</span>
+      </label>
       <span className="muted small">Size</span>
       <div className="bk-opts">
         {[1, 1.25, 1.5, 2].map((z) => (

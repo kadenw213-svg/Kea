@@ -561,7 +561,7 @@ function Appearance() {
             </button>
           ))}
         </div>
-        <span className="muted small">Book pages</span>
+        <span className="muted small">Book pages (as the theme unless you pick a colour for pages only)</span>
         <div className="bk-opts">
           {(Object.keys(PAGES) as PageId[]).map((id) => (
             <button key={id} className={`bk-chip ${look.page === id ? 'on' : ''}`} onClick={() => setLook({ page: id })}>
