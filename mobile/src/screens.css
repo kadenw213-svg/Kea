@@ -428,7 +428,9 @@
   width: 100%;
 }
 .settings {
-  padding: 0 16px;
+  /* (Sides only: the top keeps the overlay's room for the phone's clock.) */
+  padding-left: 16px;
+  padding-right: 16px;
 }
 .settings .pair-top {
   padding-top: 8px;
