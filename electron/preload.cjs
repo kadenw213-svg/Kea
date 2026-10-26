@@ -106,7 +106,7 @@ contextBridge.exposeInMainWorld('api', {
     mailList: () => ipcRenderer.invoke('scholar:mailList'),
     mailSync: () => ipcRenderer.invoke('scholar:mailSync'),
     onOpenMail: (cb) => {
-      const h = (_e, id) => cb(id);
+      const h = (_e, id, reply) => cb(id, !!reply);
       ipcRenderer.on('scholar:openMail', h);
       return () => ipcRenderer.removeListener('scholar:openMail', h);
     },

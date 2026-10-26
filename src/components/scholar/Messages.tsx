@@ -125,7 +125,7 @@ function Composer({ draft, courses, onClose, onSent }: { draft: Compose; courses
   );
 }
 
-export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; openId?: string }) {
+export function MessagesView({ courses, openId, reply }: { courses: ScholarCourse[]; openId?: string; reply?: boolean }) {
   const [mail, reload] = useMail();
   const [box, setBox] = useState<Box>('inbox');
   const [open, setOpen] = useState<string | null>(openId || null);
@@ -222,6 +222,14 @@ export function MessagesView({ courses, openId }: { courses: ScholarCourse[]; op
     const saved = mail?.drafts.find((d) => d.key === key);
     setCompose({ key, course: m.course, replyTo: m.id, subject: m.title, body: saved?.body || signed(true) });
   };
+  // Opened from a message's notification: the reply box is open, ready to type.
+  const replied = useRef<string | null>(null);
+  useEffect(() => {
+    if (reply && openId && msg && msg.id === openId && replied.current !== openId) {
+      replied.current = openId;
+      replyTo(msg);
+    }
+  }, [reply, openId, msg?.id]);
 
   return (
     <div className="sch-page ml-page">

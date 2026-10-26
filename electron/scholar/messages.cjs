@@ -86,10 +86,13 @@ async function syncMailbox(force = false) {
     // New unread mail since the last read (not on the very first read, which would notify the whole mailbox).
     if (m.box.seeded && !keepOld) {
       const { Notification } = require('electron');
+      const notify = require('./notify.cjs');
       for (const n of inbox.filter((x) => x.unread && !before.has(x.id)).slice(0, 5)) {
-        if (!Notification.isSupported()) continue;
-        const note = new Notification({ title: `${n.course ? `${n.course}: ` : ''}${n.from || 'New message'}`, body: `${n.subject}${n.preview ? `\n${n.preview.slice(0, 160)}` : ''}` });
-        note.on('click', () => openInKea(n.id));
+        if (!Notification.isSupported() || !notify.wanted('message', n.course)) continue;
+        // Who sent it and the class, then the subject and the whole message; a click opens it in Kea with Reply open.
+        const from = String(n.from || '').replace(/<[^>]*>?.*$/, '').replace(/"/g, '').trim();
+        const note = new Notification({ title: [from || 'New message', n.course].filter(Boolean).join(' · '), body: `${n.subject}${n.preview && !String(n.subject).startsWith(n.preview) ? `\n${n.preview}` : ''}`, silent: notify.silent() });
+        note.on('click', () => openInKea(n.id, true));
         note.show();
         notes.push(note);
         notes.splice(0, Math.max(0, notes.length - 20));
@@ -193,13 +196,13 @@ async function noteHint(x, body) {
 }
 
 /** Bring Kea forward on its Messages page, with this message open. */
-function openInKea(id) {
+function openInKea(id, reply = false) {
   const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed() && /index\.html|localhost/.test(x.webContents.getURL()));
   if (!w) return;
   if (w.isMinimized()) w.restore();
   w.show();
   w.focus();
-  w.webContents.send('scholar:openMail', id);
+  w.webContents.send('scholar:openMail', id, reply);
 }
 
 function register({ browser, precheck, db }) {

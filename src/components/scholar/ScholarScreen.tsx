@@ -143,7 +143,7 @@ export function ScholarScreen() {
 
   useEffect(() => api.scholar.onChanged(() => reloadScholar()), []);
   // A new-message notification clicked: its message, open in Messages.
-  useEffect(() => api.scholar.onOpenMail((id) => useScholar.getState().set({ view: { name: 'messages', id } })), []);
+  useEffect(() => api.scholar.onOpenMail((id, reply) => useScholar.getState().set({ view: { name: 'messages', id, reply } })), []);
   useEffect(() => {
     const inbox = () =>
       api.scholar
@@ -228,7 +228,7 @@ export function ScholarScreen() {
     ) : (!hasData && !['scans', 'library', 'inbox', 'resources', 'account'].includes(view.name)) || view.name === 'add' ? (
       <AddClass first={!hasData} />
     ) : view.name === 'messages' ? (
-      <MessagesView courses={ctx.courses} openId={view.id} />
+      <MessagesView courses={ctx.courses} openId={view.id} reply={view.reply} />
     ) : view.name === 'inbox' ? (
       <InboxView ctx={ctx} />
     ) : view.name === 'calendar' ? (

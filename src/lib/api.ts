@@ -156,7 +156,8 @@ export interface KeaApi {
     changes(opts: { since?: string; course?: string }): Promise<{ since: string; events: (HistoryEvent & { title: string | null; course: string | null })[] }>;
     mailList(): Promise<MailList>;
     mailSync(): Promise<{ inbox: number; sent: number; unreadable?: boolean } | null>;
-    onOpenMail(cb: (id: string) => void): () => void;
+    /** A message to open in Messages (from its notification); `reply`: with the reply box open. */
+    onOpenMail(cb: (id: string, reply: boolean) => void): () => void;
     /** A message in full, read from the class site (cached after the first time). */
     mailRead(id: string, refresh?: boolean): Promise<{ text: string; quoted?: string; at: string | null; noLink?: boolean }>;
     mailDraft(key: string, draft: MailDraft | null): Promise<boolean>;

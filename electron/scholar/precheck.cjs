@@ -836,7 +836,7 @@ function updateInbox(dir, ous = {}) {
   writeInbox({ ...box, items, seeded: true });
   if (box.seeded && fresh.length) {
     const { Notification, BrowserWindow } = require('electron');
-    for (const n of fresh.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.body.slice(0, 200) }).show();
+    for (const n of fresh.filter((x) => require('./notify.cjs').wanted(x.kind || 'announcement', x.course)).slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.body, silent: require('./notify.cjs').silent() }).show();
     BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:news', { course: '', title: '', body: '' }));
     // An announcement telling the class what to practice for a test counts like an instructor's message.
     const { noteHint } = require('./messages.cjs');
@@ -940,9 +940,10 @@ async function updateAlerts(list) {
   writeInbox({ ...now, seeded: true });
   if (box.seeded) {
     const { Notification } = require('electron');
-    for (const n of fresh.slice(0, 5)) {
+    const notify = require('./notify.cjs');
+    for (const n of fresh.filter((x) => notify.wanted(x.kind, x.course)).slice(0, 5)) {
       if (!Notification.isSupported()) continue;
-      const note = new Notification({ title: n.course ? `${n.course}: ${n.title}` : n.title, body: `${n.body.slice(0, 180)}${n.kind === 'message' ? ' (click to reply)' : ''}` });
+      const note = new Notification({ title: n.course ? `${n.course}: ${n.title}` : n.title, body: `${n.body}${n.kind === 'message' ? '\n(Click to reply)' : ''}`, silent: notify.silent() });
       // Clicking a message's notification opens it with Reply pressed; anything else opens on the class site.
       note.on('click', () => {
         if (n.kind === 'message') {
@@ -1039,7 +1040,7 @@ function updateGrades(dir, ous) {
   box.items.unshift(...add);
   writeInbox({ ...box, items: box.items.slice(0, 500) });
   const { Notification } = require('electron');
-  for (const n of add.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.kind === 'grade' ? `${n.score}${n.percent != null ? ` (${n.percent}%)` : ''}` : n.body.slice(0, 200) }).show();
+  for (const n of add.filter((x) => require('./notify.cjs').wanted(x.kind, x.course)).slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.kind === 'grade' ? `${n.score}${n.percent != null ? ` (${n.percent}%)` : ''}` : n.body, silent: require('./notify.cjs').silent() }).show();
 }
 
 /** One message straight into the Inbox (and a notification), once per id. */

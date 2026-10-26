@@ -516,6 +516,12 @@ export const SECTIONS: Section[] = [
         help: 'Outside platforms’ gradebooks can’t be checked without Claude, so on the other days only classes with something new are read. Every day uses a little more of your Claude plan.'
       },
       { key: 'scholar.curriculumCheck', label: 'Match chapters to each syllabus', type: 'toggle', default: true, help: 'Every day Kea compares each class’s chapters with its syllabus outcomes and topical outline by itself; Claude only fixes a class when something doesn’t match. Shown under each class → Textbook → Syllabus.' },
+      { key: 'scholar.notifyMessages', group: 'Notifications', label: 'Notify me of new messages', type: 'toggle', default: true, help: 'With who sent it and the whole message. Click it to answer in Kea with the reply box open.' },
+      { key: 'scholar.notifyAnnouncements', label: 'Notify me of announcements', type: 'toggle', default: true },
+      { key: 'scholar.notifyGrades', label: 'Notify me of new grades and feedback', type: 'toggle', default: true },
+      { key: 'scholar.notifyQuietClasses', label: 'Classes to keep quiet', type: 'text', default: '', advanced: true, help: 'Class codes, separated by commas (BIO1112, ENG1001). Their news still goes to the Inbox.' },
+      { key: 'scholar.notifyQuietFrom', label: 'Quiet hours from', type: 'text', default: '', advanced: true, help: 'Like 22:00. Notifications in the quiet hours come without a sound.' },
+      { key: 'scholar.notifyQuietTo', label: 'Quiet hours until', type: 'text', default: '', advanced: true, help: 'Like 07:00.' },
       { key: 'scholar.background', label: 'Keep checking when Kea’s window is closed', type: 'toggle', default: true, help: 'Closing the window leaves Kea in the notification area (by the clock), so the class checks and paused scans still run. Quit from its icon there.' },
       { key: 'scholar.studyPdfs', group: 'Textbooks and study', label: "Write each week's textbook chapters", type: 'toggle', default: true, help: "Each class's chapters for the week ahead, written from what the class covers and its tests." },
       { key: 'scholar.questionBanks', label: 'Keep a question bank for every chapter', type: 'toggle', default: true, help: 'Each chapter with a textbook gets saved practice questions (Quiz me in the textbook), and more are written when you run low. Written once, then free to take on every device.' },
