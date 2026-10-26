@@ -76,13 +76,13 @@ button {
   height: 12px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #3a3c3f;
+  background: var(--scroll, #3a3c3f);
   border: 3px solid transparent;
   background-clip: padding-box;
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #505357;
+  background: var(--scroll-hover, #505357);
   background-clip: padding-box;
   border: 3px solid transparent;
 }
@@ -332,7 +332,7 @@ body.col-resizing * {
   border-color: transparent;
 }
 .btn.primary:hover {
-  background: #bdd5fc;
+  background: color-mix(in srgb, var(--accent) 82%, var(--text));
 }
 .btn.danger {
   color: var(--danger);
@@ -623,8 +623,8 @@ body.col-resizing * {
   pointer-events: none;
 }
 .toast {
-  background: #e3e3e3;
-  color: #1f1f1f;
+  background: var(--text);
+  color: var(--bg);
   padding: 12px 18px;
   border-radius: 10px;
   box-shadow: var(--shadow);

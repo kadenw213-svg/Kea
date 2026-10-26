@@ -192,8 +192,10 @@ function darkSettings() {
   const g = (k, d) => settings.get(`sites.${k}`, d);
   const sites = {};
   for (const id of ['d2l', 'canvas', 'blackboard', 'moodle', 'schoology', 'classroom', 'publishers', 'other']) sites[id] = g(`dark.${id}`, id !== 'other' || g('dark.other', true));
+  // A light Kea theme keeps class sites light too, when they match Kea.
+  const keaDark = !!(require('../themes.json')[settings.get('appearance.theme', 'dark')] || { dark: true }).dark;
   return {
-    on: g('dark', true) !== false,
+    on: g('dark', true) !== false && (keaDark || g('matchKea', true) === false),
     strength: Number(g('darkStrength', 0.9)),
     brightness: Number(g('darkBrightness', 1)),
     contrast: Number(g('darkContrast', 1)),
@@ -217,11 +219,16 @@ function keaTheme() {
     const n = parseInt(custom.slice(1), 16);
     onAccent = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 150 ? '#111111' : '#ffffff';
   }
-  // Kea's panel colour, with Settings → Appearance → Panel contrast (the same sums as the window's own theme).
-  const c = Number(settings.get('appearance.surfaceContrast', 0)) || 0;
-  const x = Math.max(0, Math.min(255, 0x1b + c * 3));
-  const hex = (n) => n.toString(16).padStart(2, '0');
-  return { surface: `#${hex(x)}${hex(x)}${hex(Math.min(255, x + 2))}`, text: '#e3e3e3', accent, onAccent };
+  // Kea's panel colour, from the theme, with Settings → Appearance → Panel contrast (the same sums as the window's).
+  const theme = require('../themes.json')[settings.get('appearance.theme', 'dark')] || require('../themes.json').dark;
+  if (!theme.dark && settings.get('appearance.accent') !== 'custom') {
+    accent = { blue: '#0b57d0', purple: '#8430ce', teal: '#00796b', green: '#188038', orange: '#c5501b', pink: '#c2185b' }[settings.get('appearance.accent', 'blue')] || '#0b57d0';
+    onAccent = '#ffffff';
+  }
+  const c = (Number(settings.get('appearance.surfaceContrast', 0)) || 0) * (theme.dark ? 3 : -3);
+  const n = parseInt(theme.c.surface.slice(1), 16);
+  const hex = (v) => Math.max(0, Math.min(255, v + c)).toString(16).padStart(2, '0');
+  return { surface: `#${hex((n >> 16) & 255)}${hex((n >> 8) & 255)}${hex(n & 255)}`, text: theme.c.text, accent, onAccent, dark: theme.dark };
 }
 
 /** Right-click in the class-site window: back, forward, reload, and dark mode on or off for this site. */

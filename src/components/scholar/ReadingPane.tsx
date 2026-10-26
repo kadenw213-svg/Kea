@@ -6,7 +6,7 @@ import { BookOpen, Moon, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { loadPdf, PDFDocumentProxy } from '../../editors/pdf/pdfjs';
 import { findChapter, OutlineEntry, readOutline } from '../../lib/pdfTarget';
-import { useSetting, useSettings } from '../../lib/settings';
+import { setPagesDark, usePagesDark, useSetting, useSettings } from '../../lib/settings';
 import { MathText } from './MathText';
 
 export interface ReadingTarget {
@@ -250,7 +250,7 @@ export function ReadingPane({ file, target, onClose }: { file: string; target: R
   const [width, setWidth] = useState(0);
   const [mark, setMark] = useState<{ top: number; at: number } | null>(null);
   // Dark pages, the same choice as Kea's PDF viewer (toggling here changes it there too).
-  const dark = !!useSetting<boolean>('pdf.darkPages');
+  const dark = usePagesDark();
   const scroller = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let live = true;
@@ -302,7 +302,7 @@ export function ReadingPane({ file, target, onClose }: { file: string; target: R
           {target.chapter}
           {target.section || target.topic ? <span className="muted"> · {target.section || target.topic}</span> : null}
         </span>
-        <button className={`icon-btn sm ${dark ? 'active' : ''}`} title={dark ? 'Light pages' : 'Dark pages'} onClick={() => useSettings.getState().set({ 'pdf.darkPages': !dark })}>
+        <button className={`icon-btn sm ${dark ? 'active' : ''}`} title={dark ? 'Light pages' : 'Dark pages'} onClick={() => setPagesDark(!dark)}>
           <Moon size={15} />
         </button>
         <button className="icon-btn sm" title="Close the reading" onClick={onClose}>

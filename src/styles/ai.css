@@ -403,8 +403,8 @@
 .sugg-new {
   margin-top: 4px;
   font-size: 12.5px;
-  background: #26292e;
-  border-left: 3px solid #5f6368;
+  background: var(--surface-2);
+  border-left: 3px solid var(--border-strong);
   padding: 4px 8px;
   border-radius: 4px;
   user-select: text;

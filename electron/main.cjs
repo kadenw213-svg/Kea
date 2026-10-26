@@ -134,17 +134,27 @@ async function moveStorage(win) {
   }
 }
 
+/** The theme's colours for the window frame before the page has loaded (Settings → Appearance → Theme). */
+function windowTheme() {
+  const themes = require('./themes.json');
+  let id = 'dark';
+  try {
+    id = require('./settings.cjs').get('appearance.theme', 'dark');
+  } catch {}
+  return (themes[id] || themes.dark).c;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: '#131314',
+    backgroundColor: windowTheme().bg,
     show: false,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     titleBarStyle: 'hidden',
-    titleBarOverlay: process.platform === 'win32' ? { color: '#131314', symbolColor: '#c4c7c5', height: 44 } : undefined,
+    titleBarOverlay: process.platform === 'win32' ? { color: windowTheme().bg, symbolColor: windowTheme()['text-2'], height: 44 } : undefined,
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -571,11 +581,11 @@ ipcMain.on('app:confirm-close', () => {
 });
 
 ipcMain.on('app:set-title-overlay', (_e, color, symbolColor) => {
-  if (mainWindow && process.platform === 'win32') {
-    try {
-      mainWindow.setTitleBarOverlay({ color, symbolColor, height: 44 });
-    } catch {}
-  }
+  if (!mainWindow) return;
+  try {
+    mainWindow.setBackgroundColor(color);
+    if (process.platform === 'win32') mainWindow.setTitleBarOverlay({ color, symbolColor, height: 44 });
+  } catch {}
 });
 
 // ---------- Updates (GitHub Releases) ----------

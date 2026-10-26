@@ -91,7 +91,7 @@ import { docxToDoc } from './docxImport';
 import { Footnote, Pagination, pageGroups, hfHtml, footnotesOf } from './pagination';
 import { DocMeta, defaultMeta, pageBox, hfFor, cssLineHeight, PAGE_SIZES } from './docMeta';
 import { PageSetupDialog, HeaderFooterDialog } from './DocDialogs';
-import { setting, useSetting, openSettings, useSettings } from '../../lib/settings';
+import { setting, useSetting, openSettings, useSettings, useThemeDark } from '../../lib/settings';
 import { DOMSerializer } from '@tiptap/pm/model';
 import { Citation, Bibliography, refreshCitations } from './citations';
 import { CitationsDialog, CiteTarget } from './CitationsDialog';
@@ -217,7 +217,10 @@ export default function DocEditor({ tab, active }: { tab: Tab; active: boolean }
 }
 
 function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; active: boolean; initialHtml: string; initialMeta: DocMeta }) {
-  const paperSetting = useSetting<'dark' | 'light'>('doc.paper');
+  // The page colour: as the theme (dark grey on dark themes, white on light ones) unless a colour is picked.
+  const paperChoice = useSetting<'match' | 'dark' | 'light'>('doc.paper');
+  const themeIsDark = useThemeDark();
+  const paperSetting: 'dark' | 'light' = paperChoice === 'dark' || paperChoice === 'light' ? paperChoice : themeIsDark ? 'dark' : 'light';
   const [paper, setPaper] = useState<'dark' | 'light'>(paperSetting);
   useEffect(() => setPaper(paperSetting), [paperSetting]);
   const [zoom, setZoom] = useState(() => Number(setting('doc.zoom')) || 1);

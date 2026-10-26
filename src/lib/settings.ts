@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from './api';
+import { LIGHT_ACCENTS, themeOf } from './themes';
 
 /**
  * App settings. Every option is declared once here (label, type, default, whether it's "advanced")
@@ -102,6 +103,20 @@ export const SECTIONS: Section[] = [
     label: 'Appearance',
     icon: 'Palette',
     fields: [
+      {
+        key: 'appearance.theme',
+        label: 'Theme',
+        type: 'select',
+        default: 'dark',
+        options: [
+          { value: 'dark', label: 'Dark' },
+          { value: 'black', label: 'Black (true black)' },
+          { value: 'dim', label: 'Dim (blue-grey)' },
+          { value: 'light', label: 'Light' },
+          { value: 'sepia', label: 'Sepia (warm paper)' }
+        ],
+        help: 'Colours all of Kea: menus, the calendar, quizzes and textbook pages. Kea on your phone uses the same theme. Scans and printing stay white.'
+      },
       {
         key: 'appearance.accent',
         label: 'Accent colour',
@@ -220,8 +235,9 @@ export const SECTIONS: Section[] = [
         key: 'doc.paper',
         label: 'Page colour while editing',
         type: 'select',
-        default: 'dark',
+        default: 'match',
         options: [
+          { value: 'match', label: 'As the theme' },
           { value: 'dark', label: 'Dark grey (easy on the eyes)' },
           { value: 'light', label: 'White (like paper)' }
         ],
@@ -404,7 +420,18 @@ export const SECTIONS: Section[] = [
         ]
       },
       { key: 'pdf.sidebar', label: 'Show page thumbnails', type: 'toggle', default: true },
-      { key: 'pdf.darkPages', label: 'Dark pages (easier on the eyes; view only)', type: 'toggle', default: false },
+      {
+        key: 'pdf.darkPages',
+        label: 'Page colour (view only)',
+        type: 'select',
+        default: 'match',
+        options: [
+          { value: 'match', label: 'As the theme' },
+          { value: 'light', label: 'Always white' },
+          { value: 'dark', label: 'Always dark' }
+        ],
+        help: 'Textbooks and PDFs take the theme\u2019s colours unless you pick one here. Scans stay white.'
+      },
       { key: 'pdf.highlightColor', label: 'Highlighter colour', type: 'color', default: '#ffd400' },
       { key: 'pdf.inkColor', label: 'Pen colour', type: 'color', default: '#1a73e8', advanced: true },
       { key: 'pdf.inkWidth', label: 'Pen thickness', type: 'range', default: 2.5, min: 0.5, max: 12, step: 0.5, advanced: true },
@@ -808,6 +835,27 @@ export const useSettings = create<SettingsStore>((set, get) => ({
 }));
 
 /** Read one setting outside React. */
+/** Whether the theme is a dark one. */
+export const themeDark = (v: Record<string, any> = useSettings.getState().values) => themeOf(v['appearance.theme']).dark;
+/** Whether PDF and textbook pages show dark: as the theme, unless always white or always dark is picked. */
+export function pagesDark(v: Record<string, any> = useSettings.getState().values) {
+  const p = v['pdf.darkPages'];
+  return p === 'dark' ? true : p === 'light' ? false : themeDark(v);
+}
+export const usePagesDark = () => useSettings((s) => pagesDark(s.values));
+export const useThemeDark = () => useSettings((s) => themeDark(s.values));
+/**
+ * Pages turned light or dark from a reader (the textbook, a PDF): the whole app follows, so the book and the quiz
+ * beside it always match. A light theme turned dark goes to Dark; a dark one turned light goes to Light (or Sepia
+ * stays when it's already light).
+ */
+export function setPagesDark(dark: boolean) {
+  const v = useSettings.getState().values;
+  const t = v['appearance.theme'] || 'dark';
+  const next = dark ? (themeOf(t).dark ? t : 'dark') : themeOf(t).dark ? 'light' : t;
+  useSettings.getState().set({ 'appearance.theme': next, 'appearance.themeAt': new Date().toISOString(), 'pdf.darkPages': 'match' });
+}
+
 export function setting<T = any>(key: string): T {
   const v = useSettings.getState().values[key];
   return (v === undefined ? DEFAULTS[key] : v) as T;
@@ -854,11 +902,20 @@ function hexToRgb(h: string) {
 function applyAppearance() {
   const v = useSettings.getState().values;
   const root = document.documentElement.style;
+  const theme = themeOf(v['appearance.theme']);
+  for (const [k, val] of Object.entries(theme.c)) root.setProperty(`--${k}`, val);
+  root.setProperty('color-scheme', theme.dark ? 'dark' : 'light');
+  document.documentElement.dataset.theme = theme.dark ? 'dark' : 'light';
+  document.documentElement.dataset.palette = v['appearance.theme'] || 'dark';
+  api.setTitleOverlay?.(theme.c.bg, theme.c['text-2']);
   let [accent, strong, on] = ACCENTS[v['appearance.accent']] || ACCENTS.blue;
   if (v['appearance.accent'] === 'custom') {
     accent = v['appearance.accentCustom'] || accent;
+  } else if (!theme.dark) accent = LIGHT_ACCENTS[v['appearance.accent']] || LIGHT_ACCENTS.blue;
+  if (v['appearance.accent'] === 'custom' || !theme.dark) {
     const [r, g, b] = hexToRgb(accent);
-    strong = `rgb(${Math.round(r * 0.85)}, ${Math.round(g * 0.85)}, ${Math.round(b * 0.85)})`;
+    const k = theme.dark ? 0.85 : 0.82;
+    strong = `rgb(${Math.round(r * k)}, ${Math.round(g * k)}, ${Math.round(b * k)})`;
     on = 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#111' : '#fff';
   }
   const [r, g, b] = hexToRgb(accent.startsWith('#') ? accent : '#a8c7fa');
@@ -867,14 +924,16 @@ function applyAppearance() {
   root.setProperty('--on-accent', on);
   root.setProperty('--accent-soft', `rgba(${r}, ${g}, ${b}, 0.14)`);
 
+  // Panel contrast: the theme's own panels, moved away from the background (lighter on dark themes, darker on light).
   const c = Number(v['appearance.surfaceContrast']) || 0;
   if (c) {
-    const base = [0x1b, 0x23, 0x2c, 0x36];
-    base.forEach((n, i) => {
-      const x = Math.max(0, Math.min(255, n + c * (3 + i))).toString(16).padStart(2, '0');
-      root.setProperty(i === 0 ? '--surface' : `--surface-${i + 1}`, `#${x}${x}${Math.min(255, parseInt(x, 16) + 2).toString(16).padStart(2, '0')}`);
+    ['surface', 'surface-2', 'surface-3', 'surface-4'].forEach((name, i) => {
+      const [r, g, b] = hexToRgb(theme.c[name]);
+      const d = c * (3 + i) * (theme.dark ? 1 : -1);
+      const ch = (x: number) => Math.max(0, Math.min(255, x + d)).toString(16).padStart(2, '0');
+      root.setProperty(`--${name}`, `#${ch(r)}${ch(g)}${ch(b)}`);
     });
-  } else ['--surface', '--surface-2', '--surface-3', '--surface-4'].forEach((p) => root.removeProperty(p));
+  }
 
   const rad = Number(v['appearance.radius'] ?? 1);
   root.setProperty('--radius-sm', `${6 * rad}px`);

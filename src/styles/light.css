@@ -1,0 +1,50 @@
+/* Light and sepia themes: colours chosen for dark backgrounds (pastel icons, silver headings), made to read on a
+   light page. The theme's own colours come from electron/themes.json (applied in src/lib/settings.ts). */
+:root[data-theme='light'] .home-title {
+  background: linear-gradient(90deg, var(--text), var(--text-2) 55%, var(--text-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+:root[data-theme='light'] .scholar-card svg {
+  color: var(--text-2);
+}
+:root[data-theme='light'] .start-thumb.doc,
+:root[data-theme='light'] .tpl-thumb {
+  color: #1a63c9;
+}
+:root[data-theme='light'] .start-thumb.sheet {
+  color: #188038;
+}
+:root[data-theme='light'] .start-thumb.slides {
+  color: #c25e00;
+}
+:root[data-theme='light'] .start-thumb.code {
+  color: #8430ce;
+}
+:root[data-theme='light'] .start-thumb.pdf {
+  color: #c5221f;
+}
+:root[data-theme='light'] .start-thumb.image {
+  color: #9a7400;
+}
+:root[data-theme='light'] .start-thumb.video {
+  color: #c2185b;
+}
+:root[data-theme='light'] .start-thumb.tpl {
+  color: #00796b;
+}
+:root[data-theme='light'] .brand-mark {
+  color: #0b1d3a;
+}
+:root[data-theme='light'] .acct-badge.owner {
+  color: #a86400;
+}
+:root[data-theme='light'] .as-bar-fill.warm {
+  background: #d9822b;
+}
+:root[data-theme='light'] .ai-toolbar-btn {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), rgba(132, 48, 206, 0.1));
+}
+:root[data-theme='light'] .pv-badge {
+  color: #fff;
+}

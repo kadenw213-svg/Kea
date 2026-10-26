@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   removeRecent: (p) => ipcRenderer.invoke('recent:remove', p),
   clearRecent: () => ipcRenderer.invoke('recent:clear'),
   setZoom: (f) => webFrame.setZoomFactor(f),
+  setTitleOverlay: (color, symbolColor) => ipcRenderer.send('app:set-title-overlay', color, symbolColor),
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     set: (patch) => ipcRenderer.invoke('settings:set', patch),

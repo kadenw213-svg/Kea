@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import './styles/global.css';
+import './styles/light.css';
 import './styles/home.css';
 import './styles/settings.css';
 import { loadSettings } from './lib/settings';

@@ -530,7 +530,7 @@
   margin: 0 0 14px;
 }
 .st-star.on {
-  color: #fdd663;
+  color: var(--warning);
 }
 .sm-progress {
   display: flex;

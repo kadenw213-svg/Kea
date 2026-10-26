@@ -53,7 +53,7 @@ import { loadPdf, PasswordError, getTextRects, PDFDocumentProxy, TextItemRect } 
 import { readOutline, takePdfTarget, findChapter, OutlineEntry } from '../../lib/pdfTarget';
 import type { Annotation, Box, DocState, PageInfo, PageRef, TextAnn, Tool, ImageAnn } from './types';
 import { DEFAULTS } from './types';
-import { setting, useSettings } from '../../lib/settings';
+import { setPagesDark, setting, usePagesDark, useSettings } from '../../lib/settings';
 import { HandInButton } from '../../components/scholar/HandIn';
 import { QuizMeButton } from '../../components/scholar/QuizMe';
 import { PageView, ToolStyle, measureTextAnn } from './PageView';
@@ -215,7 +215,9 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [darkPages, setDarkPages] = useState(() => !!setting('pdf.darkPages'));
+  // Pages take the theme's colours (a scan stays on white unless pages are set to always dark).
+  const themePages = usePagesDark();
+  const darkPages = themePages && (!/[\/]scans[\/]/i.test(tab.path || '') || setting('pdf.darkPages') === 'dark');
   const [sidebar, setSidebar] = useState(() => setting('pdf.sidebar') !== false);
   // A textbook's chapters and sections (the PDF's bookmarks), shown in the side panel next to the pages.
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
@@ -1398,13 +1400,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
             <ClipboardList size={18} />
           </button>
         )}
-        <button className={`icon-btn ${darkPages ? 'active' : ''}`} title="Dark pages (view only)" onClick={() =>
-            setDarkPages((d) => {
-              // Remembered, so the next PDF opens the same way.
-              useSettings.getState().set({ 'pdf.darkPages': !d });
-              return !d;
-            })
-          }>
+        <button className={`icon-btn ${darkPages ? 'active' : ''}`} title={darkPages ? 'Light pages (the whole app turns light)' : 'Dark pages (the whole app turns dark)'} onClick={() => setPagesDark(!darkPages)}>
           <Moon size={18} />
         </button>
         <div className="tb-sep" />

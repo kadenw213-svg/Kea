@@ -42,7 +42,8 @@ import { inboxParts, kindOf } from './inboxFormat';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
 import { openPaths } from '../../lib/open';
 import { setPdfTarget } from '../../lib/pdfTarget';
-import { useSettings } from '../../lib/settings';
+import { useSettings, useThemeDark } from '../../lib/settings';
+import { gradeColor } from '../../lib/themes';
 import { toast, prompt } from '../../store';
 import { useScholar, reloadScholar, bumpInbox, ScholarView } from './scholarStore';
 import { Picker as HandInPicker } from './HandIn';
@@ -311,7 +312,7 @@ export function ScholarScreen() {
             <span className="sch-course-text">
               <span className="sch-code">
                 {c.code}
-                {grades[c.id] != null && <span className={`sch-grade ${grades[c.id]! < 60 ? 'low' : ''}`}>{grades[c.id]}%</span>}
+                {grades[c.id] != null && <GradeText className="sch-grade" percent={grades[c.id]!} />}
               </span>
               <span className="sch-cname">{c.name}</span>
             </span>
@@ -822,7 +823,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
                 {i.score && (
                   <span className="ib-score">
                     {i.score}
-                    {i.percent != null ? ` · ${i.percent}%` : ''}
+                    {i.percent != null ? <> · <GradeText percent={i.percent} /></> : ''}
                   </span>
                 )}
                 {i.updated && <span className="ln-tag">Updated</span>}
@@ -1319,7 +1320,7 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
         </div>
         {grades?.final && (grades.final.percent != null || grades.final.shown) && (
           <button className="grade-big" onClick={() => setTab('grades')} title="Your overall grade">
-            <span>{grades.final.percent != null ? `${grades.final.percent}%` : grades.final.shown}</span>
+            <GradeText percent={grades.final.percent} text={grades.final.percent != null ? `${grades.final.percent}%` : grades.final.shown} />
             <small>{grades.final.percent != null && grades.final.shown && !grades.final.shown.includes('%') ? grades.final.shown : 'Grade'}</small>
           </button>
         )}
@@ -1407,8 +1408,8 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
                   <div className="gr-title">{g.title}</div>
                   {g.comment && <div className="gr-comment">{g.comment}</div>}
                 </div>
-                <div className={`gr-score ${g.percent != null && g.percent < 60 ? 'low' : g.percent != null && g.percent >= 90 ? 'high' : ''}`}>
-                  <b>{g.percent != null ? `${g.percent}%` : g.shown}</b>
+                <div className="gr-score">
+                  <GradeText as="b" percent={g.percent} text={g.percent != null ? `${g.percent}%` : g.shown} />
                   {g.score && <span className="muted">{g.score}</span>}
                 </div>
               </div>
@@ -1873,5 +1874,16 @@ function Loading() {
     <div className="center-fill" style={{ minHeight: 200 }}>
       <div className="spinner" />
     </div>
+  );
+}
+
+/** A grade, coloured by its letter: A dark green, B yellow-green, C yellow, D orange, F red. */
+function GradeText({ percent, text, className, as = 'span' }: { percent: number | null | undefined; text?: string | null; className?: string; as?: 'span' | 'b' }) {
+  const dark = useThemeDark();
+  const Tag = as;
+  return (
+    <Tag className={className} style={{ color: gradeColor(percent, dark) }}>
+      {text ?? `${percent}%`}
+    </Tag>
   );
 }

@@ -84,6 +84,8 @@ export interface RecoveryEntry {
 
 export interface KeaApi {
   setZoom(factor: number): void;
+  /** The window's caption buttons (Windows): the theme's background and text colours. */
+  setTitleOverlay?(color: string, symbolColor: string): void;
   settings: {
     get(): Promise<Record<string, any>>;
     set(patch: Record<string, any>): Promise<Record<string, any>>;

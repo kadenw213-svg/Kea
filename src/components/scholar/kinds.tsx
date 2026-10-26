@@ -3,7 +3,8 @@
 import { useMemo } from 'react';
 import { BookOpen, ClipboardList, Globe, KeyRound, Link2, ListChecks, MessageSquare, Presentation, Upload, Video, GraduationCap } from 'lucide-react';
 import { api, ScholarItem, ScholarLink } from '../../lib/api';
-import { useSetting, useSettings } from '../../lib/settings';
+import { useSetting, useSettings, useThemeDark } from '../../lib/settings';
+import { ink } from '../../lib/themes';
 
 // ---------- Kinds of item, grouped into a few colors ----------
 export interface Category {
@@ -35,14 +36,16 @@ export function useColors(courseIds: string[]) {
   const by = useSetting<'type' | 'class'>('scholar.colorBy') || 'type';
   const typeColors = useSetting<Record<string, string>>('scholar.typeColors') || {};
   const classColors = useSetting<Record<string, string>>('scholar.classColors') || {};
+  // (The colours are made for dark backgrounds; on a light theme they're shown darker, so they still read.)
+  const dark = useThemeDark();
   return useMemo(() => {
-    const course = (id: string) => classColors[id] || CLASS_COLORS[Math.max(0, courseIds.indexOf(id)) % CLASS_COLORS.length];
+    const course = (id: string) => ink(classColors[id] || CLASS_COLORS[Math.max(0, courseIds.indexOf(id)) % CLASS_COLORS.length], dark);
     const type = (t: string) => {
       const c = categoryOf(t);
-      return typeColors[c.id] || c.color;
+      return ink(typeColors[c.id] || c.color, dark);
     };
     return { by, course, type, item: (it: Pick<ScholarItem, 'type' | 'courseId'>) => (by === 'class' ? course(it.courseId) : type(it.type)) };
-  }, [by, JSON.stringify(typeColors), JSON.stringify(classColors), courseIds.join(',')]);
+  }, [by, JSON.stringify(typeColors), JSON.stringify(classColors), courseIds.join(','), dark]);
 }
 export type Colors = ReturnType<typeof useColors>;
 
