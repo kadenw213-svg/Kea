@@ -3170,8 +3170,21 @@ def _explain_problems(q: dict, explain: str) -> list[str]:
         out.append(f"the explanation uses a formula ({formula.group(0).strip()[:40]}) without saying what its symbols stand for: add \"where …\" with each symbol's meaning and unit")
     # A calculation needs its worked steps (shown when the student misses it).
     steps = q.get("steps")
+    worked = q.get("type") == "num" or str(q.get("level", "")).lower() in ("apply", "multistep")
     if q.get("type") == "num" and not (isinstance(steps, list) and len([s for s in steps if str(s).strip()]) >= 3):
-        out.append("a calculation needs `steps`: its worked solution, 3 to 8 short steps")
+        out.append("a calculation needs `steps`: its walkthrough, 3 to 8 steps")
+    # A calculation's walkthrough: what it asks, the formula with every symbol explained, and the boxed answer.
+    if worked and isinstance(steps, list) and steps:
+        heads = [s for s in steps if isinstance(s, dict)]
+        if not heads:
+            out.append("the steps are plain lines: write the walkthrough form (`asks`, steps with `title`/`text`/`math`/`terms`, `final`)")
+        else:
+            if not str(q.get("asks", "")).strip():
+                out.append("the walkthrough needs `asks`: what the question is asking, in plain words, with what it gives")
+            if not isinstance(q.get("final"), dict) or not str(q["final"].get("math", "")).strip():
+                out.append("the walkthrough needs `final.math`: the answer with its unit, boxed at the end")
+            if any(str(s.get("math", "")).strip() and "=" in str(s.get("math", "")) for s in heads) and not any(s.get("terms") for s in heads):
+                out.append("the formula step needs `terms`: what each symbol means, its value and where that comes from")
     # A calculation or a reasoning question needs more than the result.
     if (q.get("type") == "num" or str(q.get("level", "")).lower() in ("apply", "multistep")) and len(explain) < 90:
         out.append("the explanation is too thin to learn from: say why each step is taken (2 to 5 sentences)")

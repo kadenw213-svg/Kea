@@ -733,7 +733,12 @@ export interface PoolItem {
  * k: the question's key (the same question in two sets has the same key); section: the textbook section that answers
  * it; steps: its worked solution; answerDisputed: the steps writer found the stored answer may be wrong.
  */
-type QuestionBase = { k?: string; explain: string; chapter: string | null; section?: string | null; topic: string | null; source: string | null; steps?: string[]; answerDisputed?: boolean; image?: string; image_credit?: string; /** For each choice, the mistake it stands for ("" for a right one): shown when the student picks it. */ wrong?: string[] };
+/**
+ * One step of a worked solution: plain text (older sets), or a walkthrough step with a heading, its explanation, a
+ * formula (LaTeX) and what each symbol in it means, the value it takes and where that comes from.
+ */
+export type StudyStep = string | { title?: string; text?: string; math?: string; terms?: { sym: string; means: string; value?: string; why?: string }[] };
+type QuestionBase = { k?: string; explain: string; chapter: string | null; section?: string | null; topic: string | null; source: string | null; steps?: StudyStep[]; /** What the question is asking, in plain words, with what it gives. */ asks?: string; /** The answer at the end of the walkthrough: LaTeX `math` (boxed) and a sentence. */ final?: { math?: string; text?: string }; answerDisputed?: boolean; image?: string; image_credit?: string; /** For each choice, the mistake it stands for ("" for a right one): shown when the student picks it. */ wrong?: string[] };
 export type StudyQuestion = QuestionBase &
   (
   | { type: 'mc'; q: string; choices: string[]; answer: number; explain: string; chapter: string | null; topic: string | null; source: string | null }

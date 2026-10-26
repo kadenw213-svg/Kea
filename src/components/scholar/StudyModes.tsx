@@ -11,6 +11,7 @@ import { reloadScholar, useScholar } from './scholarStore';
 import { Exam, grade, QuestionCard, Shown, Answer, shuffle } from './Study';
 import { ReadingContext, useMissReading } from './ReadingPane';
 import { MathText } from './MathText';
+import { stepText } from './Explanation';
 import { openStudyHub } from './StudyHub';
 import { StudyImage } from './StudyImage';
 
@@ -536,7 +537,7 @@ export function Review({ courseId, chapters = [], sections = [] }: { courseId: s
   const lookUp = () => {
     if (!it) return;
     const x = it.item as StudyCard & StudyQuestion;
-    missReading({ chapter: it.chapter, section: x.section, topic: x.topic, query: it.kind === 'card' ? `${x.front} ${x.back}` : `${x.q} ${typeof x.answer === 'string' ? x.answer : ''}`, key: it.k, steps: it.kind === 'card' ? undefined : x.steps });
+    missReading({ chapter: it.chapter, section: x.section, topic: x.topic, query: it.kind === 'card' ? `${x.front} ${x.back}` : `${x.q} ${typeof x.answer === 'string' ? x.answer : ''}`, key: it.k, steps: it.kind === 'card' ? undefined : x.steps?.map(stepText) });
   };
   useEffect(() => {
     if (result === false) lookUp();

@@ -305,7 +305,7 @@ async function depthPre(job, step, code) {
             ...(q.choices ? [`   Choices: ${q.choices.join(' | ')}`] : []),
             `   Answer: ${answerOf(q)}${q.unit ? ` ${q.unit}` : ''}`,
             `   Explanation: ${String(q.explain || '').replace(/\s+/g, ' ')}`,
-            ...((q.steps || []).length ? [`   Steps: ${q.steps.join(' / ')}`] : [])
+            ...((q.steps || []).length ? [`   Steps: ${q.steps.map(require('./study.cjs').stepLine).join(' / ')}`] : [])
           ].join('\n')
         )
       ].join('\n')

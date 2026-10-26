@@ -126,11 +126,19 @@ Every question has:
     reason ("convert mL to L first, because molarity is per liter"), and a sanity check of the answer's size or units;
   - for `mc`: also why the most tempting wrong choice is wrong (the mistake it comes from).
   Kea's check rejects explanations that use a formula without saying what its symbols mean.
-- `steps`: the worked solution, as a list of short steps the student follows when they miss it (Kea shows them
-  numbered). Calculations: 3 to 8 steps (what's asked and given with units; the formula by name with every symbol
-  defined; conversions first, with why; rearrange, substitute, compute; the answer with units and a sense check).
-  Concept questions: 2 to 5 steps of reasoning (the deciding rule, how it applies here, why the tempting wrong choice
-  fails). Every question except `short` has steps; Kea's check rejects calculations without them.
+- `steps`: the worked solution the student reads after answering. Written for someone who got it wrong and doesn't
+  see how to start: slow, complete, plain and professional (no emojis, exclamation marks or slang).
+  - Calculations (`num`, and `apply`/`multistep` questions with arithmetic or a chain of ideas) get a **walkthrough**:
+    `asks` (what the question is really asking and what it gives, with units), then 3 to 8 step objects
+    `{ "title", "text", "math", "terms" }`, then `final` (`{ "math", "text" }`, drawn boxed). The formula step lists
+    every symbol in `terms` as `{ "sym", "means", "value", "why" }`: what it actually is, the number it takes here and
+    where that number comes from ("NaCl splits into two ions", "given for water"). Then conversions with why,
+    substitute, one algebra move per step, what each result means ("per kilogram, but we only have 0.500 kg"), and
+    the conversion to what's asked. `math`, `sym` and `final.math` are LaTeX (`\Delta T_f = i K_f m`,
+    `\frac{5}{3.72}`); `text` is plain. The full format and an example are in the `kea-steps` skill.
+  - Concept questions: 2 to 5 plain-string steps of reasoning (the deciding rule, how it applies here, why the
+    tempting wrong choice fails).
+  Every question except `short` has steps; Kea's check rejects calculations without a walkthrough.
 - `chapter`: the chapter label it tests ("Chapter 5"); `topic`: the idea it tests in a few words, using the
   textbook's own term ("Boyle's law", "molarity").
 - `section`: the textbook section that teaches the answer, exactly as the chapter's `Sections:` line in the brief
@@ -155,7 +163,8 @@ Balance and difficulty:
 - Plain text only, no LaTeX or Markdown. Use Unicode: x², x³, √, ≤, ≥, ≠, ±, π, Δ, →, ⇌, °, subscripts like H₂O and
   CO₂, superscripts like Na⁺ and SO₄²⁻, and fractions like (x + 1)/(x − 2). An exponent or subscript that isn't a
   single Unicode character is written `^(…)` or `_(…)`: `(1.00375)^(72)`, `e^(rt)`, `log_(b)(x)`, `10^(−4)`; Kea draws
-  these as real superscripts and subscripts. Never `**`, `\frac` or `$…$`.
+  these as real superscripts and subscripts. Never `**`, `\frac` or `$…$` in these fields. The one exception: the
+  walkthrough's `math`, `sym` and `final.math` fields are LaTeX (see `steps`).
 - Be accurate: check every answer by working it, and keep the explanation's numbers consistent with the answer.
 - Quote only what the brief or the textbook shows. A quotation, statistic or page number credited to a real author
   comes from them word for word; otherwise invent a clearly made-up source ("a 2021 article by A. Ruiz") rather than
@@ -197,7 +206,7 @@ each part with how far along you are:
   { "type": "mc", "q": "…", "choices": ["…", "…", "…", "…"], "answer": 2, "wrong": ["the mistake choice A stands for", "… B …", "", "… D …"], "level": "apply", "explain": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law", "source": "FunSheet Ch 5" },
   { "type": "multi", "q": "Select all that apply: …", "choices": ["…", "…", "…", "…", "…"], "answer": [0, 3], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "tf", "q": "…", "answer": false, "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
-  { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "calc": "745/760*5.60/2.24", "level": "multistep", "explain": "…", "steps": ["Find …. Given: …", "Formula: …, where …", "Convert …", "Substitute: …", "Answer: 2.45 atm, which makes sense because …"], "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "calc": "745/760*5.60/2.24", "level": "multistep", "explain": "…", "asks": "What the question asks and gives, in plain words", "steps": [{"title": "Understand the formula", "text": "…", "math": "P_1 V_1 = P_2 V_2", "terms": [{"sym": "P_1", "means": "the starting pressure", "value": "745 mmHg", "why": "given"}]}, {"title": "Convert to atmospheres", "text": "…", "math": "745\\ \\text{mmHg} \\times \\frac{1\\ \\text{atm}}{760\\ \\text{mmHg}} = 0.980\\ \\text{atm}"}, {"title": "Solve for the unknown", "text": "…", "math": "…"}], "final": {"math": "2.45\\ \\text{atm}", "text": "… which makes sense because …"}, "chapter": "…", "topic": "…", "source": "…" },
   { "type": "blank", "q": "The pressure of a gas is inversely proportional to its volume at constant temperature; this is ____ law.", "answer": "Boyle's", "accept": ["Boyle"], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "short", "q": "…", "answer": "…", "explain": "…", "chapter": "…", "topic": "…", "source": "…" }
 ] }

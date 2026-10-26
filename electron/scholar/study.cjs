@@ -774,13 +774,41 @@ const prompt = (arg) => {
 // ---------- Checking what Claude wrote ----------
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 
-/** A worked solution: 1 to 14 short steps, each one line of plain text. */
-const cleanSteps = (steps) => (Array.isArray(steps) ? steps.map(str).filter(Boolean).map((x) => x.slice(0, 600)).slice(0, 14) : []);
+/**
+ * One step of a worked solution: a line of plain text (older sets), or a walkthrough step { title, text, math (LaTeX),
+ * terms: [{ sym (LaTeX), means, value, why }] }. Null when there's nothing in it.
+ */
+function cleanStep(x) {
+  if (typeof x === 'string') return str(x).slice(0, 600) || null;
+  if (!x || typeof x !== 'object') return null;
+  const terms = (Array.isArray(x.terms) ? x.terms : [])
+    .filter((t) => t && str(t.sym) && str(t.means))
+    .slice(0, 10)
+    .map((t) => ({ sym: str(t.sym).slice(0, 80), means: str(t.means).slice(0, 240), ...(str(t.value) ? { value: str(t.value).slice(0, 100) } : {}), ...(str(t.why) ? { why: str(t.why).slice(0, 240) } : {}) }));
+  const step = { ...(str(x.title) ? { title: str(x.title).slice(0, 120) } : {}), ...(str(x.text) ? { text: str(x.text).slice(0, 1200) } : {}), ...(str(x.math) ? { math: str(x.math).slice(0, 400) } : {}), ...(terms.length ? { terms } : {}) };
+  return step.text || step.math || terms.length ? step : null;
+}
+/** A worked solution: up to 16 steps. */
+const cleanSteps = (steps) => (Array.isArray(steps) ? steps.map(cleanStep).filter(Boolean).slice(0, 16) : []);
+/** A step as one line of text (for briefs and checks). */
+const stepLine = (x) => (typeof x === 'string' ? x : [x.title, x.text, x.math, ...(x.terms || []).map((t) => `${t.sym}: ${t.means}${t.value ? ` = ${t.value}` : ''}`)].filter(Boolean).join(' — '));
+/** The walkthrough's framing: what the question asks, and the boxed answer at the end. */
+function cleanWalk(q) {
+  const asks = str(q.asks).slice(0, 700);
+  const fin = q.final && typeof q.final === 'object' ? { ...(str(q.final.math) ? { math: str(q.final.math).slice(0, 240) } : {}), ...(str(q.final.text) ? { text: str(q.final.text).slice(0, 400) } : {}) } : null;
+  return { ...(asks ? { asks } : {}), ...(fin && (fin.math || fin.text) ? { final: fin } : {}) };
+}
+/** A calculation or multi-step question. */
+const isWorked = (q) => q.type === 'num' || q.level === 'apply' || q.level === 'multistep';
+/** Has a walkthrough in the newer form (headed steps, what it asks, or the boxed answer). */
+const isWalkthrough = (q) => !!q.asks || !!q.final || (Array.isArray(q.steps) && q.steps.some((x) => x && typeof x === 'object'));
+/** Needs worked steps written: none yet, or (a calculation) only short plain ones. */
+const needsSteps = (q) => q.type !== 'short' && (!(Array.isArray(q.steps) && q.steps.length > 1) || (isWorked(q) && !isWalkthrough(q)));
 
 /** One question, cleaned, or null when it can't be used. */
 function cleanQuestion(q) {
   if (!q || typeof q !== 'object') return null;
-  const base = { type: q.type, q: str(q.q), explain: str(q.explain), chapter: str(q.chapter) || null, section: str(q.section) || null, topic: str(q.topic) || null, source: str(q.source) || null, ...(['recall', 'apply', 'multistep'].includes(q.level) ? { level: q.level } : {}), ...(cleanSteps(q.steps).length ? { steps: cleanSteps(q.steps) } : {}), ...(q.answerDisputed ? { answerDisputed: true } : {}), ...picture(q) };
+  const base = { type: q.type, q: str(q.q), explain: str(q.explain), chapter: str(q.chapter) || null, section: str(q.section) || null, topic: str(q.topic) || null, source: str(q.source) || null, ...(['recall', 'apply', 'multistep'].includes(q.level) ? { level: q.level } : {}), ...(cleanSteps(q.steps).length ? { steps: cleanSteps(q.steps) } : {}), ...cleanWalk(q), ...(q.answerDisputed ? { answerDisputed: true } : {}), ...picture(q) };
   if (!base.q) return null;
   if (q.type === 'mc' || q.type === 'multi') {
     const choices = Array.isArray(q.choices) ? q.choices.map(str).filter(Boolean) : [];
@@ -1105,7 +1133,7 @@ function applyFixes(courseId, fixes) {
       touched = true;
       changed++;
       // (The key stays the question's old one even when its wording is fixed.)
-      return { ...q, k, ...(str(fix.explain).length >= 40 ? { explain: str(fix.explain) } : {}), ...(cleanSteps(fix.steps).length >= 2 ? { steps: cleanSteps(fix.steps) } : {}), ...(str(fix.q) ? { q: str(fix.q) } : {}), ...(fix.wrong_answer ? { answerDisputed: true } : {}) };
+      return { ...q, k, ...(str(fix.explain).length >= 40 ? { explain: str(fix.explain) } : {}), ...(cleanSteps(fix.steps).length >= 2 ? { steps: cleanSteps(fix.steps), ...cleanWalk(fix) } : {}), ...(str(fix.q) ? { q: str(fix.q) } : {}), ...(fix.wrong_answer ? { answerDisputed: true } : {}) };
     });
     if (touched) writeJson(f, s);
   }
@@ -1153,7 +1181,8 @@ function stepsBrief(courseId, code, label) {
   const ws = profiles.paths().workspace;
   const dir = path.join(ws, 'data', 'study', 'steps', code);
   fs.mkdirSync(dir, { recursive: true });
-  const qs = catalog('exam', courseId, [label]).filter((q) => q.type !== 'short' && !(Array.isArray(q.steps) && q.steps.length > 1));
+  // (A calculation whose steps are only short lines of text gets a full walkthrough too.)
+  const qs = catalog('exam', courseId, [label]).filter(needsSteps);
   const ans = (q) => (q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join('; ') : q.type === 'tf' ? (q.answer ? 'True' : 'False') : `${q.answer}${q.unit ? ` ${q.unit}` : ''}`);
   const lines = [`# ${code} ${label}: ${qs.length} questions that need worked steps`, ''];
   qs.forEach((q, i) =>
@@ -1182,4 +1211,4 @@ function whereIs(k) {
   return null;
 }
 
-module.exports = { addHint, hints, applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark, teacherContext, _test: { pick } };
+module.exports = { addHint, hints, applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, stepLine, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark, teacherContext, _test: { pick } };

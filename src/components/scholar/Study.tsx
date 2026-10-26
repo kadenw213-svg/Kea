@@ -14,6 +14,7 @@ import { CardTest, Learn, Match, Review, SetEditor, SpeakButton, StarButton } fr
 import { openStudyHub, parseScope, StudyHub } from './StudyHub';
 import '../../styles/study.css';
 import { MathText } from './MathText';
+import { Explanation, stepText } from './Explanation';
 import { StudyImage } from './StudyImage';
 
 // ---------- Shared state ----------
@@ -476,6 +477,8 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
   const [checked, setChecked] = useState<boolean[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [saved, setSaved] = useState(false);
+  /** After each question: the one on screen (one at a time, checked, then Next). */
+  const [cur, setCur] = useState(0);
 
   const start = () => {
     // (The exam before this one, if it wasn't saved yet.)
@@ -489,6 +492,7 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
     setChecked([]);
     setSubmitted(false);
     setSaved(false);
+    setCur(0);
   };
   useEffect(() => {
     if (auto && all.length) start();
@@ -519,7 +523,7 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
     const target = (i: number) => {
       const q = run[i].q;
       opened.current.add(i);
-      missReading({ chapter: q.chapter, section: q.section, topic: q.topic, query: `${q.q} ${answerText(q)}`, key: q.k, steps: q.steps });
+      missReading({ chapter: q.chapter, section: q.section, topic: q.topic, query: `${q.q} ${answerText(q)}`, key: q.k, steps: q.steps?.map(stepText) });
     };
     if (submitted) {
       const first = results.findIndex((r) => r === false);
@@ -594,7 +598,47 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
   }
 
   const setAnswer = (i: number, a: Answer) => !submitted && !checked[i] && setAnswers((p) => p.map((x, k) => (k === i ? a : x)));
-  const answered = answers.filter((a) => a !== null && a !== '' && !(Array.isArray(a) && !a.length)).length;
+  const given = (a: Answer) => a !== null && a !== '' && !(Array.isArray(a) && !a.length);
+  const answered = answers.filter(given).length;
+  const finish = () => (setSubmitted(true), document.querySelector('.st-main')?.scrollTo({ top: 0, behavior: 'smooth' }));
+  if (instant && !submitted)
+    return (
+      <OneAtATime
+        run={run}
+        cur={cur}
+        answers={answers}
+        results={results}
+        checked={checked}
+        setAnswer={setAnswer}
+        onSelf={(i, ok) =>
+          setSelfMarks((p) => {
+            const c = [...p];
+            c[i] = ok;
+            return c;
+          })
+        }
+        check={(i) =>
+          setChecked((p) => {
+            const c = [...p];
+            c[i] = true;
+            return c;
+          })
+        }
+        go={(i) => (setCur(i), document.querySelector('.st-main')?.scrollTo({ top: 0 }))}
+        finish={finish}
+        finishEarly={() => {
+          // (Only the questions checked so far count: the rest weren't tried.)
+          const keep = run.map((_, i) => i).filter((i) => checked[i]);
+          setRun(keep.map((i) => run[i]));
+          setAnswers(keep.map((i) => answers[i]));
+          setSelfMarks(keep.map((i) => selfMarks[i]));
+          setJudged(keep.map((i) => judged[i]));
+          setChecked(keep.map(() => true));
+          finish();
+        }}
+        given={given}
+      />
+    );
   return (
     <div className="st-exam">
       {submitted && (
@@ -637,8 +681,91 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
           <span className="muted">
             {answered} of {run.length} answered
           </span>
-          <button className="btn primary" onClick={() => (setSubmitted(true), document.querySelector('.st-main')?.scrollTo({ top: 0, behavior: 'smooth' }))}>
+          <button className="btn primary" onClick={finish}>
             Finish and see my score
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Answers after each question: one question on screen. Check marks it (the card turns green or red and the explanation
+ * opens), then Next; the dots along the top jump back to any question. Enter checks, then goes on.
+ */
+function OneAtATime({ run, cur, answers, results, checked, setAnswer, onSelf, check, go, finish, finishEarly, given }: { run: Shown[]; cur: number; answers: Answer[]; results: (boolean | null)[]; checked: boolean[]; setAnswer(i: number, a: Answer): void; onSelf(i: number, ok: boolean): void; check(i: number): void; go(i: number): void; finish(): void; finishEarly(): void; given(a: Answer): boolean }) {
+  const s = run[cur];
+  const done = !!checked[cur];
+  const last = cur === run.length - 1;
+  const right = results.filter((r, i) => checked[i] && r === true).length;
+  const marked = checked.filter(Boolean).length;
+  const next = () => {
+    const after = run.findIndex((_, i) => i > cur && !checked[i]);
+    const any = run.findIndex((_, i) => !checked[i]);
+    if (after >= 0) go(after);
+    else if (any >= 0 && any !== cur) go(any);
+    else finish();
+  };
+  const latest = useRef({ done, next, ok: given(answers[cur]), cur });
+  latest.current = { done, next, ok: given(answers[cur]), cur };
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey || (e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
+      const l = latest.current;
+      if (l.done) (e.preventDefault(), l.next());
+      else if (l.ok) (e.preventDefault(), check(l.cur));
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, []);
+  const allDone = marked === run.length;
+  return (
+    <div className="st-exam st-one">
+      <div className="st-one-top">
+        <span className="st-one-count">
+          Question {cur + 1} <span className="muted">of {run.length}</span>
+        </span>
+        <span className="muted">{marked ? `${right} of ${marked} right` : ''}</span>
+      </div>
+      <div className="st-dots" role="tablist">
+        {run.map((_, i) => (
+          <button key={i} className={`${i === cur ? 'cur' : ''} ${checked[i] ? (results[i] === true ? 'right' : results[i] === false ? 'wrong' : 'mark') : given(answers[i]) ? 'answered' : ''}`} onClick={() => go(i)} aria-label={`Question ${i + 1}`} />
+        ))}
+      </div>
+      <QuestionCard key={cur} num={cur + 1} s={s} answer={answers[cur]} setAnswer={(a) => setAnswer(cur, a)} reveal={done} result={results[cur]} onSelf={(ok) => onSelf(cur, ok)} />
+      <div className="st-one-nav">
+        {cur > 0 && (
+          <button className="btn" onClick={() => go(cur - 1)}>
+            <ArrowLeft size={14} /> Back
+          </button>
+        )}
+        <span className="grow" />
+        {!done ? (
+          <>
+            {!last && (
+              <button className="btn" onClick={() => go(cur + 1)}>
+                Skip
+              </button>
+            )}
+            <button className="btn primary" disabled={!given(answers[cur])} onClick={() => check(cur)}>
+              Check
+            </button>
+          </>
+        ) : allDone ? (
+          <button className="btn primary" onClick={finish}>
+            See my score
+          </button>
+        ) : (
+          <button className="btn primary" onClick={next}>
+            Next <ArrowRight size={14} />
+          </button>
+        )}
+      </div>
+      {!allDone && marked > 0 && (
+        <div className="st-one-end">
+          <button className="btn sm" onClick={finishEarly}>
+            Finish now and see my score
           </button>
         </div>
       )}
@@ -661,57 +788,6 @@ function questionCards(s: StudySetFull): StudySetFull {
   return { ...s, kind: 'cards', cards, questions: undefined, count: cards.length };
 }
 
-/**
- * The worked solution, step by step: open by itself after a miss, a click away after a right answer. A question
- * without steps yet offers to have its chapter's written now.
- */
-export function WorkedSteps({ q, open: startOpen }: { q: StudyQuestion; open: boolean }) {
-  const [open, setOpen] = useState(startOpen);
-  const [asked, setAsked] = useState(false);
-  useEffect(() => setOpen(startOpen), [startOpen, q.k]);
-  if (q.type === 'short') return null;
-  if (!q.steps?.length) {
-    if (!startOpen || !q.k) return null;
-    return (
-      <div className="st-steps none">
-        {asked ? (
-          <span className="muted">The step-by-step solutions for this chapter are being written (a few minutes; follow it under Scans).</span>
-        ) : (
-          <button
-            className="btn sm"
-            onClick={() =>
-              api.scholar
-                .studyStepsFor(q.k!)
-                .then(() => setAsked(true))
-                .catch((err) => toast(err?.message || 'Kea couldn’t start that.', 'error'))
-            }
-          >
-            Write step-by-step solutions for {q.chapter || 'this chapter'}
-          </button>
-        )}
-      </div>
-    );
-  }
-  return (
-    <div className="st-steps">
-      {q.answerDisputed && <div className="st-disputed">Kea’s review found the stored answer to this question may be wrong: the steps below work it correctly.</div>}
-      <button className="st-steps-head" onClick={() => setOpen(!open)}>
-        {open ? 'Step by step' : 'Show the steps'}
-        <span className="muted"> · {q.steps.length} steps</span>
-      </button>
-      {open && (
-        <ol>
-          {q.steps.map((s, i) => (
-            <li key={i}>
-              <MathText text={s} />
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
-}
-
 /** A question's right answer in words (what the book should say). */
 const answerText = (q: StudyQuestion) =>
   q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join(' ') : q.type === 'tf' ? '' : q.type === 'num' ? q.unit || '' : q.answer;
@@ -727,7 +803,7 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
           <MathText text={q.q} />
           <StudyImage src={q.image} credit={q.image_credit} />
         </div>
-        <ReadingButton id={q.k} chapter={q.chapter} section={q.section} topic={q.topic} query={`${q.q} ${answerText(q)}`} steps={reveal ? q.steps : undefined} />
+        <ReadingButton id={q.k} chapter={q.chapter} section={q.section} topic={q.topic} query={`${q.q} ${answerText(q)}`} steps={reveal ? q.steps?.map(stepText) : undefined} />
       </div>
       {(q.type === 'mc' || q.type === 'multi') && (
         <div className="st-choices">
@@ -787,47 +863,7 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
           Check
         </button>
       )}
-      {reveal && (
-        <div className="st-explain">
-          {q.type === 'short' && (
-            <div className="st-model">
-              <b>Model answer:</b> <MathText text={q.answer} />
-            </div>
-          )}
-          {(q.type === 'mc' || q.type === 'multi') && q.wrong && <WhyNot q={q} s={s} answer={answer} />}
-          <div><MathText text={q.explain} /></div>
-          <WorkedSteps q={q} open={result === false} />
-          {q.type === 'short' && (
-            <div className="st-self">
-              <span className="muted">Did you get it?</span>
-              <button className={`btn sm ${result === true ? 'tonal' : ''}`} onClick={() => onSelf(true)}>
-                <Check size={13} /> Yes
-              </button>
-              <button className={`btn sm ${result === false ? 'tonal' : ''}`} onClick={() => onSelf(false)}>
-                <X size={13} /> No
-              </button>
-            </div>
-          )}
-          {(q.chapter || q.topic) && <div className="muted st-src">{[q.chapter, q.topic, q.source].filter(Boolean).join(' · ')}</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Each wrong choice the student picked, with the mistake it stands for (from the question's `wrong` notes). */
-function WhyNot({ q, s, answer }: { q: StudyQuestion & { choices: string[] }; s: Shown; answer: Answer }) {
-  const picked = (q.type === 'mc' ? [answer] : Array.isArray(answer) ? answer : []).filter((p): p is number => typeof p === 'number');
-  const right = (orig: number) => (q.type === 'mc' ? q.answer === orig : (q.answer as number[]).includes(orig));
-  const notes = picked.map((pos) => ({ pos, orig: s.order[pos] })).filter(({ orig }) => orig != null && !right(orig) && q.wrong?.[orig]);
-  if (!notes.length) return null;
-  return (
-    <div className="st-whynot">
-      {notes.map(({ pos, orig }) => (
-        <div key={pos}>
-          <b>Why not {String.fromCharCode(65 + pos)}:</b> <MathText text={q.wrong![orig]} />
-        </div>
-      ))}
+      {reveal && <Explanation q={q} s={s} answer={answer} result={result} onSelf={onSelf} />}
     </div>
   );
 }
