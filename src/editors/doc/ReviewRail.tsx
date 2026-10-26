@@ -41,7 +41,8 @@ export function ReviewRail({
   onMeta,
   showResolved,
   setShowResolved,
-  stage
+  stage,
+  onAskClaude
 }: {
   editor: Editor;
   meta: DocMeta;
@@ -55,6 +56,8 @@ export function ReviewRail({
   showResolved: boolean;
   setShowResolved(v: boolean): void;
   stage: HTMLElement | null;
+  /** A reply to one of Claude's comments (or one that names Claude): Claude answers in the thread and makes the fix. */
+  onAskClaude?(thread: CommentThread, quote: string, reply: string): void;
 }) {
   const [tops, setTops] = useState<Record<string, number>>({});
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -351,13 +354,15 @@ export function ReviewRail({
                     <div className="rv-replybox">
                       <input
                         className="input sm"
-                        placeholder="Reply…"
+                        placeholder={onAskClaude && isAiAuthor(t.author) ? 'Reply to Claude…' : 'Reply…'}
                         value={reply}
                         onChange={(e) => setReply(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && reply.trim()) {
-                            setThreads((l) => l.map((x) => (x.id === t.id ? { ...x, replies: [...x.replies, { id: uid(), author: me, text: reply.trim(), at: Date.now() }] } : x)));
+                            const text = reply.trim();
+                            setThreads((l) => l.map((x) => (x.id === t.id ? { ...x, replies: [...x.replies, { id: uid(), author: me, text, at: Date.now() }] } : x)));
                             setReply('');
+                            if (onAskClaude && (isAiAuthor(t.author) || /@?claude\b/i.test(text))) onAskClaude(t, it.quote, text);
                           }
                         }}
                       />

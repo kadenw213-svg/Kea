@@ -89,7 +89,9 @@ import { editorRegistry, setDirty, toast, prompt, useTabs } from '../../store';
 import { FontSize, ParagraphFormat, PageBreak, ResizableImage, Search as SearchExt, searchKey, cleanPastedHtml } from './extensions';
 import { docxToDoc } from './docxImport';
 import { Footnote, Pagination, pageGroups, hfHtml, footnotesOf } from './pagination';
-import { DocMeta, defaultMeta, pageBox, hfFor, cssLineHeight, PAGE_SIZES } from './docMeta';
+import { DocMeta, defaultMeta, pageBox, hfFor, cssLineHeight, PAGE_SIZES, type CommentThread } from './docMeta';
+import { ask } from '../../lib/assistant';
+import { chatOf } from '../../components/assistant/assistantStore';
 import { PageSetupDialog, HeaderFooterDialog } from './DocDialogs';
 import { setting, useSetting, openSettings, useSettings, useThemeDark } from '../../lib/settings';
 import { DOMSerializer } from '@tiptap/pm/model';
@@ -770,6 +772,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
             showResolved={showResolved}
             setShowResolved={setShowResolved}
             stage={stageRef.current}
+            onAskClaude={setting('doc.replyToClaude') === false ? undefined : (t, quote, text) => askAboutComment(tab.id, t, quote, text)}
           />
         )}
         </div>
@@ -1491,4 +1494,26 @@ del.sg-del { color: #a50e0e; text-decoration: line-through; }
 .toc-dots { flex: 1; border-bottom: 1px dotted #5f6368; transform: translateY(-3px); }
 mark { color: inherit; }
 </style></head><body>${body}</body></html>`;
+}
+
+/**
+ * A reply to one of Claude's comments goes to Claude in this document's Claude tab: it answers in the same thread and,
+ * when the reply asks for a change, makes that small fix in the passage (as a suggestion when suggesting is on).
+ */
+function askAboutComment(tabId: string, t: CommentThread, quote: string, text: string) {
+  if (chatOf(tabId).busy) {
+    toast('Claude is still working on this document. Reply again when it’s done.');
+    return;
+  }
+  const thread = [`Claude: ${t.text}`, ...t.replies.map((r) => `${r.author}: ${r.text}`)].join('\n');
+  ask(
+    tabId,
+    [
+      `I replied to a comment in the document (comment id ${t.id}).`,
+      `The passage: "${quote.slice(0, 600)}"`,
+      `The thread so far:\n${thread}\nMe: ${text}`,
+      `Answer me in that comment's thread with reply_to_comment (id ${t.id}). If I asked for a change, make just that change to this passage (keep everything else as it is), then say in the thread what you changed. Keep it short.`
+    ].join('\n\n')
+  );
+  toast('Sent to Claude. Its answer comes in the comment thread.');
 }

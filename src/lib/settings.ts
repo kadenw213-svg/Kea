@@ -243,6 +243,7 @@ export const SECTIONS: Section[] = [
         ],
         help: 'Printing and PDFs are always on white.'
       },
+      { key: 'doc.replyToClaude', label: 'Replying to Claude’s comments asks Claude', type: 'toggle', default: true, help: 'A reply in the thread of one of Claude’s comments (or one that says “Claude”) goes to Claude, which answers in the thread and makes the small fix you ask for.' },
       { key: 'doc.font', label: 'Font', type: 'select', default: 'Arial', options: ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Segoe UI', 'Times New Roman', 'Trebuchet MS', 'Verdana'].map((f) => ({ value: f, label: f })) },
       { key: 'doc.size', label: 'Font size', type: 'number', default: 11, min: 6, max: 72, step: 0.5, unit: 'pt' },
       {
