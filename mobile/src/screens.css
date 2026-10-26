@@ -1303,3 +1303,161 @@ input.range {
   color: var(--success);
   flex-shrink: 0;
 }
+
+/* Home: every class as a card (its picture, its colour, grade, this week's reading), two across */
+.mcards {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.mcard {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+  min-width: 0;
+}
+.mcard:active {
+  border-color: var(--k);
+}
+.mcard-pic {
+  position: relative;
+  height: 74px;
+  background: color-mix(in srgb, var(--k) 22%, var(--surface-2));
+  border-bottom: 3px solid var(--k);
+  overflow: hidden;
+}
+.mcard-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.mcard-pic.plain {
+  display: flex;
+  align-items: flex-end;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--k) 34%, var(--surface-2)), color-mix(in srgb, var(--k) 10%, var(--surface-2)));
+}
+.mcard-mono {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--k) 80%, var(--text));
+  opacity: 0.85;
+}
+.mcard-grade {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+.mcard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 12px 10px;
+  min-width: 0;
+}
+.mcard-code {
+  font-size: 15px;
+  color: var(--k);
+}
+.mcard-name {
+  font-size: 12.5px;
+  color: var(--k);
+  opacity: 0.85;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mcard-reads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 10px 10px;
+  margin-top: auto;
+}
+.mcard-reads.wide {
+  padding: 0;
+  margin-bottom: 6px;
+}
+.mcard-read {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--k, var(--accent)) 40%, var(--border));
+  background: color-mix(in srgb, var(--k, var(--accent)) 10%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.mcard-reads.wide .mcard-read {
+  padding: 9px 12px;
+  font-size: 14px;
+}
+.mcard-read:disabled {
+  opacity: 0.5;
+}
+
+/* A class: Study and Readings first, side by side */
+.class-go {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+.class-go button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--k, var(--accent)) 45%, var(--border));
+  background: color-mix(in srgb, var(--k, var(--accent)) 11%, var(--surface));
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.class-go button:active {
+  background: color-mix(in srgb, var(--k, var(--accent)) 20%, var(--surface));
+}
+.class-go svg {
+  color: var(--k, var(--accent));
+  margin-bottom: 4px;
+}
+.class-go b {
+  font-size: 16px;
+}
+.class-go span {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+/* Settings: the mix of question kinds */
+.mix-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 22px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 14px;
+}
+.mix-row input {
+  width: 100%;
+}
+.mix-row b {
+  text-align: right;
+}

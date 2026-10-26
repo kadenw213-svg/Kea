@@ -1275,3 +1275,140 @@ button.fcard-desc.add:hover {
 .home-start.compact .tool-row {
   margin-top: 10px;
 }
+
+/* Classes on Home: one card each (picture, colour, grade, this week's reading), 2×2 by default */
+.ccards {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0 6px;
+}
+@media (max-width: 760px) {
+  .ccards {
+    grid-template-columns: repeat(min(var(--cols, 2), 2), minmax(0, 1fr));
+  }
+}
+.ccard {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.ccard:hover {
+  border-color: color-mix(in srgb, var(--k) 55%, var(--border));
+}
+.ccard-open {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+.ccard-pic {
+  display: block;
+  height: 92px;
+  background: color-mix(in srgb, var(--k) 22%, var(--surface-2));
+  border-bottom: 3px solid var(--k);
+  overflow: hidden;
+}
+.ccard-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ccard-pic.plain {
+  display: flex;
+  align-items: flex-end;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--k) 34%, var(--surface-2)), color-mix(in srgb, var(--k) 10%, var(--surface-2)));
+}
+.ccard-mono {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--k) 80%, var(--text));
+  opacity: 0.85;
+}
+.ccard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px 12px;
+  min-width: 0;
+}
+.ccard-code {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--k);
+}
+.ccard-name {
+  font-size: 13px;
+  color: var(--k);
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ccard-next {
+  font-size: 12px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ccard-grade {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+.ccard-reads {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px 12px;
+  margin-top: auto;
+}
+.ccard-reads-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  margin-right: 2px;
+}
+.ccard-read {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--k) 40%, var(--border));
+  background: color-mix(in srgb, var(--k) 10%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ccard-read:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--k) 20%, transparent);
+}
+.ccard-read:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

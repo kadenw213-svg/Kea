@@ -55,7 +55,7 @@ import { StudyPlayer } from './Study';
 import { ResourcesView } from './Resources';
 import { MessagesView } from './Messages';
 import { ChangesBox, ClassRules, SyllabusMap, ItemHistory } from './History';
-import { openStudyHub } from './StudyHub';
+import { openClassStudy, openStudyHub } from './StudyHub';
 import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
 import '../../styles/scholar.css';
 
@@ -459,7 +459,7 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
         {it.readings.length > 0 && !['administrative_deadline', 'break', 'no_class'].includes(it.type) && (
           <button
             className="btn sm"
-            title={`Study ${it.readings.map((r) => r.chapter).join(', ')}: practice exam, flashcards, Learn and Match`}
+            title={`Practice questions on ${it.readings.map((r) => r.chapter).join(', ')}`}
             onClick={(e) => {
               e.stopPropagation();
               openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: it.readings.map((r) => r.chapter), itemId: TEST.has(it.type) ? it.id : undefined });
@@ -659,7 +659,7 @@ function ReadingCard({ ctx, b, showCourse = true }: { ctx: Ctx; b: ScholarItem; 
                 </button>
                 <button
                   className="btn sm"
-                  title="Review, practice exams, flashcards, Learn and Match for this chapter"
+                  title="Practice questions on this chapter"
                   onClick={(e) => {
                     e.stopPropagation();
                     openStudyHub({ courseId: b.courseId, code: b.courseCode, title: `${r.chapter}${r.title ? `: ${r.title}` : ''}`, chapters: [r.chapter] });
@@ -1247,7 +1247,7 @@ function WeeksView({ ctx, c }: { ctx: Ctx; c: ScholarCourseDetail }) {
   );
 }
 
-function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; startTab?: 'weeks' }) {
+function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; startTab?: 'weeks' | 'textbook' }) {
   const version = useScholar((s) => s.version);
   // undefined while loading; null when there's no such class (removed, or another profile's).
   const [c, setC] = useState<ScholarCourseDetail | null | undefined>(undefined);
@@ -1330,6 +1330,22 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
           </button>
         )}
       </div>
+      <div className="cls-go">
+        <button className="cls-go-btn" style={{ ['--k' as any]: ctx.colors.course(c.id) }} onClick={() => openClassStudy(c, c.chapters.map((ch) => ch.label))}>
+          <ClipboardCheck size={20} />
+          <span>
+            <b>Study</b>
+            <span className="muted">Practice questions by chapter and topic</span>
+          </span>
+        </button>
+        <button className={`cls-go-btn ${tab === 'textbook' ? 'on' : ''}`} style={{ ['--k' as any]: ctx.colors.course(c.id) }} onClick={() => setTab('textbook')}>
+          <BookOpen size={20} />
+          <span>
+            <b>Readings</b>
+            <span className="muted">{c.chapters.filter((ch) => ch.pdf).length} chapters to read</span>
+          </span>
+        </button>
+      </div>
       <ClassRules code={c.code} />
       <SyllabusMap code={c.code} />
       <div className="cls-tabs">
@@ -1337,10 +1353,9 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
           [
             ['week', 'Coming up'],
             ['weeks', 'Week by week'],
-            ['textbook', 'Textbook'],
+            ['textbook', 'Readings'],
             ['calendar', 'Calendar'],
-            ['grades', 'Grades'],
-            ['study', 'Study']
+            ['grades', 'Grades']
           ] as const
         ).map(([id, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
@@ -1422,7 +1437,6 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
           </div>
         ))}
       {tab === 'calendar' && <CalendarView ctx={ctx} courseId={c.id} />}
-      {tab === 'study' && <ResourcesView courses={ctx.courses} courseId={c.id} />}
     </div>
   );
 }
@@ -1463,7 +1477,7 @@ function Textbook({ c }: { c: ScholarCourseDetail }) {
                   e.stopPropagation();
                   openStudyHub({ courseId: c.id, code: c.code, title: `${ch.label}${ch.title ? `: ${ch.title}` : ''}`, chapters: [ch.label] });
                 }}
-                title="Review, practice exams, flashcards, Learn and Match for this chapter"
+                title="Practice questions on this chapter"
               >
                 <ClipboardCheck size={14} /> Study
               </button>
@@ -1737,7 +1751,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           >
             <ClipboardCheck size={14} /> Study {it.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ')}
           </button>
-          <div className="muted st-hint">A practice exam, flashcards, Learn and Match on everything this covers, by topic.</div>
+          <div className="muted st-hint">A practice exam on everything this covers, by chapter and topic, with a walkthrough for every question.</div>
         </section>
       )}
       {instructions && (

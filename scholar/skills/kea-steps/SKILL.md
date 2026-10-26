@@ -11,8 +11,7 @@ user-invocable: true
 Arguments: `$ARGUMENTS` = Kea's brief (`data/study/steps/<CODE>/<Chapter N>.md`), then the output file
 (`…/<Chapter N>.steps.json`), optionally followed by `resume`.
 
-The brief lists each question that needs a worked solution (none yet, or a calculation with only short plain
-steps), with its key `k`, the question, its choices, the correct answer and its current explanation. Read the brief
+The brief lists each question that needs its walkthrough (none yet, or only plain lines of text), with its key `k`, the question, its choices, the correct answer and its current explanation. Read the brief
 once. Open nothing else unless you must check one fact (then only the chapter's notes,
 `data/study/notes/<CODE>/<Chapter N>.md`, with Grep).
 
@@ -50,9 +49,11 @@ write an entry with `asks`, `steps` (objects) and `final`:
 
 ## Concept questions
 
-For `mc`, `multi`, `tf`, `blank` that are recall or reasoning without arithmetic: 2 to 5 steps, each a plain string
-(one or two sentences): the rule or idea that decides it, how it applies to this case, and why the tempting wrong
-choice fails. No `asks` or `final` needed.
+For `mc`, `multi`, `tf`, `blank` and `match` that are recall or reasoning without arithmetic, the same walkthrough
+form, shorter (the student sees it at once on "I don't know", so it teaches on its own): `asks` (what the question
+is really asking, in plain words), then 2 to 5 step objects with a `title` and `text` (the rule or idea that decides
+it, how it applies to this case, why the tempting wrong choice fails; `math` and `terms` only where there's a
+formula), then `final` `{ "text" }`: the answer and the one-line reason.
 
 ## Rules for both
 

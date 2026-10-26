@@ -72,6 +72,7 @@ const api: any = {
   },
   scholar: {
     courses: async () => data?.courses || [],
+    courseImages: async () => 0,
     course: async (id: string) => data?.details.find((c) => c.id === id || c.code === id) || null,
     openLink: async (url: string) => (Kea.open({ url }), true),
     // Claude writes on the PC: from here, asking always works (the PC does it when it's on).

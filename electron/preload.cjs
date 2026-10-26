@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('api', {
     renameProfile: (id, name) => ipcRenderer.invoke('scholar:renameProfile', id, name),
     status: () => ipcRenderer.invoke('scholar:status'),
     courses: () => ipcRenderer.invoke('scholar:courses'),
+    courseImages: () => ipcRenderer.invoke('scholar:courseImages'),
     items: (q) => ipcRenderer.invoke('scholar:items', q),
     course: (id) => ipcRenderer.invoke('scholar:course', id),
     setDone: (id, done) => ipcRenderer.invoke('scholar:setDone', id, done),

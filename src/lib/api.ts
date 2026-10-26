@@ -115,6 +115,7 @@ export interface KeaApi {
     renameProfile(id: string, name: string): Promise<ProfileList>;
     status(): Promise<{ hasData: boolean; paths: { dir: string; workspace: string; db: string; textbooks: string } }>;
     courses(): Promise<ScholarCourse[]>;
+    courseImages(): Promise<number>;
     items(q: { from: string; to: string; courseId?: string }): Promise<ScholarItem[]>;
     course(id: string): Promise<ScholarCourseDetail | null>;
     setDone(id: string, done: boolean): Promise<boolean>;
@@ -751,6 +752,8 @@ export type StudyQuestion = QuestionBase &
   | { type: 'short'; q: string; answer: string; explain: string; chapter: string | null; topic: string | null; source: string | null }
   /** Fill in the blank ("____" in q): a word or two; `accept` lists other forms that count (a symbol, a synonym). */
   | { type: 'blank'; q: string; answer: string; accept?: string[]; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  /** Matching: each [term, what it matches]; the right sides are shown shuffled, one picked for each term. */
+  | { type: 'match'; q: string; pairs: [string, string][]; explain: string; chapter: string | null; topic: string | null; source: string | null }
   );
 /** How a question has gone, across every set and device. */
 export interface StudyHistory {
@@ -869,6 +872,8 @@ export interface ScholarCourse {
   next: { id: string; title: string; type: string; date: string; due: string | null } | null;
   dueThisWeek: number;
   chapters: number;
+  /** The class's picture from the class site (a small JPEG data address), when it has one. */
+  image?: string | null;
 }
 export interface ScholarChapter {
   label: string;

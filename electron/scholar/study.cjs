@@ -87,7 +87,8 @@ function update(id, patch) {
 
 /** A question's or card's key: its wording, ignoring case, spacing and punctuation. */
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const keyOf = (it) => crypto.createHash('sha1').update(norm(it.q ?? it.front)).digest('hex').slice(0, 12);
+// (A matching question's pairs are part of it: two "Match each term…" questions are different questions.)
+const keyOf = (it) => crypto.createHash('sha1').update(norm(it.q ?? it.front) + (Array.isArray(it.pairs) ? norm(JSON.stringify(it.pairs)) : '')).digest('hex').slice(0, 12);
 const keyed = (items) => (items || []).map((it) => (it.k ? it : { ...it, k: keyOf(it) }));
 
 /** Every set, newest first, with the best score and how many cards are known. */
@@ -816,8 +817,8 @@ function cleanWalk(q) {
 const isWorked = (q) => q.type === 'num' || q.level === 'apply' || q.level === 'multistep';
 /** Has a walkthrough in the newer form (headed steps, what it asks, or the boxed answer). */
 const isWalkthrough = (q) => !!q.asks || !!q.final || (Array.isArray(q.steps) && q.steps.some((x) => x && typeof x === 'object'));
-/** Needs worked steps written: none yet, or (a calculation) only short plain ones. */
-const needsSteps = (q) => q.type !== 'short' && (!(Array.isArray(q.steps) && q.steps.length > 1) || (isWorked(q) && !isWalkthrough(q)));
+/** Needs its walkthrough written: every question but a written answer has one (shown at once on "I don't know"). */
+const needsSteps = (q) => q.type !== 'short' && !isWalkthrough(q);
 
 /** One question, cleaned, or null when it can't be used. */
 function cleanQuestion(q) {
@@ -844,6 +845,12 @@ function cleanQuestion(q) {
   if (q.type === 'blank') {
     const accept = Array.isArray(q.accept) ? q.accept.map(str).filter(Boolean) : [];
     return str(q.answer) && /_{2,}/.test(base.q) ? { ...base, answer: str(q.answer), ...(accept.length ? { accept } : {}) } : null;
+  }
+  // Matching: 3 to 8 [term, what it matches] pairs, every right side different (they're shown shuffled).
+  if (q.type === 'match') {
+    const pairs = Array.isArray(q.pairs) ? q.pairs.filter((x) => Array.isArray(x) && x.length === 2).map(([a, b]) => [str(a), str(b)]) : [];
+    const ok = pairs.length >= 3 && pairs.length <= 8 && pairs.length === q.pairs.length && pairs.every(([a, b]) => a && b) && new Set(pairs.map(([, b]) => b.toLowerCase())).size === pairs.length;
+    return ok ? { ...base, pairs } : null;
   }
   return null;
 }
@@ -1181,7 +1188,7 @@ function pool(courseId, chapters) {
 /** The first chapter (in the order given: soonest test first) with saved questions that have no worked steps yet. */
 function stepsNeed(chapters) {
   for (const { courseId, label } of chapters) {
-    const missing = catalog('exam', courseId, [label]).filter((q) => q.type !== 'short' && !(Array.isArray(q.steps) && q.steps.length > 1));
+    const missing = catalog('exam', courseId, [label]).filter(needsSteps);
     if (missing.length) return { courseId, label, missing: missing.length };
   }
   return null;
@@ -1197,7 +1204,7 @@ function stepsBrief(courseId, code, label) {
   fs.mkdirSync(dir, { recursive: true });
   // (A calculation whose steps are only short lines of text gets a full walkthrough too.)
   const qs = catalog('exam', courseId, [label]).filter(needsSteps);
-  const ans = (q) => (q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join('; ') : q.type === 'tf' ? (q.answer ? 'True' : 'False') : `${q.answer}${q.unit ? ` ${q.unit}` : ''}`);
+  const ans = (q) => (q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join('; ') : q.type === 'tf' ? (q.answer ? 'True' : 'False') : q.type === 'match' ? q.pairs.map(([a, b]) => `${a} = ${b}`).join('; ') : `${q.answer}${q.unit ? ` ${q.unit}` : ''}`);
   const lines = [`# ${code} ${label}: ${qs.length} questions that need worked steps`, ''];
   qs.forEach((q, i) =>
     lines.push(

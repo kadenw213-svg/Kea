@@ -8,7 +8,7 @@ import { api, ReviewItem, ReviewQueue, ScholarCourse, StudyCard, StudyQuestion, 
 import { toast } from '../../store';
 import { judgeBlank } from '../../lib/blank';
 import { reloadScholar, useScholar } from './scholarStore';
-import { Exam, grade, QuestionCard, Shown, Answer, shuffle } from './Study';
+import { Exam, grade, QuestionCard, Shown, Answer, shuffle, showQuestion } from './Study';
 import { ReadingContext, useMissReading } from './ReadingPane';
 import { MathText } from './MathText';
 import { stepText } from './Explanation';
@@ -525,7 +525,7 @@ export function Review({ courseId, chapters = [], sections = [] }: { courseId: s
   const shown: Shown | null = useMemo(() => {
     if (!it || it.kind !== 'question') return null;
     const q = it.item as StudyQuestion;
-    return { q, order: 'choices' in q ? shuffle(q.choices.map((_, i) => i)) : [] };
+    return showQuestion(q);
   }, [it?.k, pos]);
   const result = shown && revealed ? grade(shown, answer, self, judged) : null;
   const reading = useContext(ReadingContext);
@@ -537,7 +537,7 @@ export function Review({ courseId, chapters = [], sections = [] }: { courseId: s
   const lookUp = () => {
     if (!it) return;
     const x = it.item as StudyCard & StudyQuestion;
-    missReading({ chapter: it.chapter, section: x.section, topic: x.topic, query: it.kind === 'card' ? `${x.front} ${x.back}` : `${x.q} ${typeof x.answer === 'string' ? x.answer : ''}`, key: it.k, steps: it.kind === 'card' ? undefined : x.steps?.map(stepText) });
+    missReading({ chapter: it.chapter, section: x.section, topic: x.topic, query: it.kind === 'card' ? `${x.front} ${x.back}` : `${x.q} ${'answer' in x && typeof x.answer === 'string' ? x.answer : ''}`, key: it.k, steps: it.kind === 'card' ? undefined : x.steps?.map(stepText) });
   };
   useEffect(() => {
     if (result === false) lookUp();

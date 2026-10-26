@@ -3233,11 +3233,13 @@ def practice_check_cmd(
                 continue
             kind, stem = q.get("type"), str(q.get("q", "")).strip()
             where = f"question {n} ({kind})"
+            # (Matching questions share stems like "Match each term…": their pairs make them different.)
+            key = stem.lower() + (json.dumps(q.get("pairs")).lower() if kind == "match" else "")
             if not stem:
                 problems.append(f"{where}: empty stem")
-            elif stem.lower() in seen:
+            elif key in seen:
                 problems.append(f"{where}: duplicate stem")
-            seen.add(stem.lower())
+            seen.add(key)
             if q.get("image") and not (path.parent.parent.parent / str(q["image"])).is_file() and not Path(str(q["image"])).is_file():
                 problems.append(f"{where}: its image {q['image']} isn't there (save it with study-image get)")
             explain = str(q.get("explain", "")).strip()
@@ -3245,6 +3247,13 @@ def practice_check_cmd(
                 problems.append(f"{where}: no explanation")
             else:
                 problems.extend(f"{where}: {p}" for p in _explain_problems(q, explain))
+            # Every question carries its walkthrough, shown at once when the student says they don't know or misses
+            # it: what it asks, the reasoning in headed steps, and the answer at the end.
+            if kind != "short" and not any(p.startswith(where) and "walkthrough" in p for p in problems):
+                heads = [s for s in (q.get("steps") or []) if isinstance(s, dict) and (str(s.get("text", "")).strip() or str(s.get("math", "")).strip())]
+                fin = q.get("final") if isinstance(q.get("final"), dict) else {}
+                if len(heads) < 2 or not str(q.get("asks", "")).strip() or not (str(fin.get("math", "")).strip() or str(fin.get("text", "")).strip()):
+                    problems.append(f"{where}: needs its walkthrough: `asks`, 2 to 8 headed `steps` (title and text; math and terms where there's a formula) and `final` (text, or math for a value)")
             if kind in ("mc", "multi"):
                 choices = q.get("choices")
                 if not isinstance(choices, list) or len(choices) < 3 or not all(str(c).strip() for c in choices):
@@ -3317,8 +3326,14 @@ def practice_check_cmd(
                     problems.append(f"{where}: a blank needs ____ in the question where the answer goes")
                 if "accept" in q and not isinstance(q["accept"], list):
                     problems.append(f"{where}: accept must be a list of other forms that count")
+            elif kind == "match":
+                pairs = q.get("pairs")
+                if not (isinstance(pairs, list) and 3 <= len(pairs) <= 8 and all(isinstance(x, list) and len(x) == 2 and all(str(y).strip() for y in x) for x in pairs)):
+                    problems.append(f"{where}: matching needs `pairs`: 3 to 8 [term, what it matches] pairs")
+                elif len({str(x[0]).strip().lower() for x in pairs}) != len(pairs) or len({str(x[1]).strip().lower() for x in pairs}) != len(pairs):
+                    problems.append(f"{where}: every term and every match must be different")
             else:
-                problems.append(f"{where}: type must be mc, multi, tf, num, short or blank")
+                problems.append(f"{where}: type must be mc, multi, tf, num, short, blank or match")
     if count and len(items) < count * 0.9:
         problems.append(f"only {len(items)} of the {count} asked for")
     # Exam level, checked rather than hoped for: every question says how hard it is, and a set leans hard.
@@ -3334,8 +3349,16 @@ def practice_check_cmd(
                 problems.append(f"{share('recall'):.0%} are recall: at most 35%; make more of them apply or multistep, like the exams")
             if share("multistep") < 0.2:
                 problems.append(f"only {share('multistep'):.0%} are multistep: at least 20% should chain steps (conversions, two concepts, a calculation feeding another)")
-            if blanks > 0.15:
-                problems.append(f"{blanks:.0%} are fill-in-the-blank: at most 15% (more only when the class's tests use blanks)")
+            if blanks > 0.25:
+                problems.append(f"{blanks:.0%} are fill-in-the-blank: at most 25%")
+            # A good mix of kinds (Kea builds each practice exam from them in the student's chosen mix).
+            types = [q.get("type") for q in items if isinstance(q, dict)]
+            if types.count("mc") / len(items) > 0.55:
+                problems.append(f"{types.count('mc') / len(items):.0%} are multiple choice: at most 55%; mix in fill in the blank, matching, select all that apply and (where the chapter has them) calculations")
+            if len(set(types)) < 4:
+                problems.append(f"only {len(set(types))} kinds of question: use at least 4 (multiple choice, fill in the blank, matching, select all, calculations, true or false)")
+            if types.count("match") < (2 if len(items) >= 25 else 1):
+                problems.append(f"{types.count('match')} matching questions: include at least {2 if len(items) >= 25 else 1} (terms and definitions, structures and functions, formulas and what they find)")
         # Across the set: the right answer is the longest choice about as often as chance, not most of the time.
         mcs = [q for q in items if isinstance(q, dict) and q.get("type") == "mc" and isinstance(q.get("answer"), int)
                and isinstance(q.get("choices"), list) and 0 <= q["answer"] < len(q["choices"])]

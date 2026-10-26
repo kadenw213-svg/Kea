@@ -9,6 +9,7 @@ import { AUTO, checkForUpdate, installUpdate, useUpdate } from './update';
 import { toast } from './ui';
 import { ACCENT_LIST, PAGES, PageId, THEME_LIST, setLook, useLook } from './theme';
 import { VoiceSheet } from './Book';
+import { useSetting, useSettings } from '../../src/lib/settings';
 
 type NativeState = Awaited<ReturnType<typeof Kea.state>>;
 const DOWNLOAD = 'https://github.com/kadenw213-svg/Kea/releases/latest';
@@ -455,6 +456,7 @@ export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onC
             </div>
           </section>
         )}
+        {paired && <HomeAndStudy />}
         <Appearance />
         <Notifications on={!!state?.notifications} />
         <section className="set">
@@ -598,9 +600,82 @@ function Appearance() {
           <input type="checkbox" checked={look.follow} onChange={(e) => setLook({ follow: e.target.checked })} />
           <span>Turn the pages while reading aloud</span>
         </label>
-        <p className="muted small">Listening to flashcards (the Listen mode in any deck) has its own options there: speed, the pause before each answer and between cards, and more.</p>
       </section>
       {voices && <VoiceSheet onClose={() => setVoices(false)} />}
+    </>
+  );
+}
+
+const MIX: [string, string][] = [
+  ['mc', 'Multiple choice'],
+  ['blank', 'Fill in the blank'],
+  ['match', 'Matching'],
+  ['multi', 'Select all that apply'],
+  ['num', 'Calculations'],
+  ['tf', 'True or false'],
+  ['short', 'Written answers']
+];
+
+/** What Home's class cards show, and (under More) the mix of question kinds in a practice exam. */
+function HomeAndStudy() {
+  const set = (k: string, v: any) => useSettings.getState().set({ [k]: v });
+  const cols = String(useSetting<string>('scholar.homeColumns') || '2');
+  const pictures = useSetting<boolean>('scholar.homePictures') !== false;
+  const week = useSetting<boolean>('scholar.homeWeek') !== false;
+  const grades = useSetting<boolean>('scholar.homeGrades') !== false;
+  const values = useSettings((st) => st.values);
+  const [more, setMore] = useState(false);
+  return (
+    <>
+      <section className="set">
+        <h2>Home</h2>
+        <div className="chips">
+          {(
+            [
+              ['2', 'Two across'],
+              ['1', 'One per row']
+            ] as const
+          ).map(([v, l]) => (
+            <button key={v} className={`bk-chip ${cols === v || (v === '2' && Number(cols) > 2) ? 'on' : ''}`} onClick={() => set('scholar.homeColumns', v)}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <label className="toggle">
+          <input type="checkbox" checked={pictures} onChange={(e) => set('scholar.homePictures', e.target.checked)} />
+          <span>Class pictures from the class site</span>
+        </label>
+        <label className="toggle">
+          <input type="checkbox" checked={week} onChange={(e) => set('scholar.homeWeek', e.target.checked)} />
+          <span>This week’s reading on each class</span>
+        </label>
+        <label className="toggle">
+          <input type="checkbox" checked={grades} onChange={(e) => set('scholar.homeGrades', e.target.checked)} />
+          <span>Grade on each class</span>
+        </label>
+        <p className="muted small">Class colours come from Kea on your computer (This week → Colours, by class).</p>
+      </section>
+      <section className="set">
+        <h2>Practice exams</h2>
+        <button className="btn ghost" onClick={() => setMore(!more)}>
+          {more ? 'Hide' : 'Mix of question kinds'}
+        </button>
+        {more && (
+          <>
+            <p className="muted small">How often each kind comes up, compared with the others (0 leaves it out). When a chapter doesn’t have enough of one kind, the others fill in.</p>
+            {MIX.map(([k, label]) => {
+              const v = Number(values[`study.mix.${k}`] ?? 1);
+              return (
+                <label key={k} className="mix-row">
+                  <span>{label}</span>
+                  <input type="range" min={0} max={10} step={1} value={v} onChange={(e) => set(`study.mix.${k}`, Number(e.target.value))} />
+                  <b>{v}</b>
+                </label>
+              );
+            })}
+          </>
+        )}
+      </section>
     </>
   );
 }

@@ -36,6 +36,7 @@ function setDone(s, id, on, at = new Date().toISOString()) {
 
 // ---------- The copy in the student's cloud drive (for Kea on their phone) ----------
 const cloud = require('./cloud.cjs');
+const courseImages = require('./courseImages.cjs');
 
 /**
  * Bring in what the phone changed (phone.json in the drive folder): checkmarks, newest change winning, and Inbox
@@ -152,7 +153,7 @@ async function snapshot() {
   const P = profiles.paths();
   const done = readState().done || {};
   const day = (n) => localDate(new Date(Date.now() + n * 864e5));
-  const courses = await db.courses(P.db, P.textbooks, done);
+  const courses = courseImages.withImages(await db.courses(P.db, P.textbooks, done));
   const items = await db.items(P.db, P.textbooks, done, { from: day(-28), to: day(150) });
   const details = (await Promise.all(courses.map((c) => db.course(P.db, P.textbooks, done, c.id)))).filter(Boolean);
   const grades = {};
@@ -177,7 +178,7 @@ async function snapshot() {
   const inboxDeleted = (precheck.readInbox().deletedKeys || []).slice(-1500);
   return {
     // The theme (Settings → Appearance), so Kea on the phone looks the same; the newer choice wins either way.
-    look: { theme: settings.get('appearance.theme', 'dark'), at: settings.get('appearance.themeAt', '') },
+    look: { theme: settings.get('appearance.theme', 'dark'), at: settings.get('appearance.themeAt', ''), classColors: settings.get('scholar.classColors', {}) },
     ...fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, platform: browser.schoolInfo().platform, courses, items, details, grades, inbox, inboxDeleted, doneLog }),
     // The study folder as it is here (sets, saved questions, progress), for the phone to study from; its pictures are in
     // the library zip. A set still being written stays out until it's ready.
@@ -318,7 +319,11 @@ async function tick() {
       .catch((err) => console.error('Inbox check', err))
       // Then the class site's whole mailbox (the primary only: one device reads the class site).
       .then(() => !devices.follower() && require('./messages.cjs').syncMailbox())
-      .catch((err) => console.error('Mailbox', err));
+      .catch((err) => console.error('Mailbox', err))
+      // Then any class picture that's missing or a few weeks old (for the classes' cards on Home).
+      .then(() => courseImages.refresh())
+      .then((n) => n && (BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed')), syncSoon(5000)))
+      .catch((err) => console.error('Class pictures', err));
   }
   try {
     // How often (days) the class check runs: every day unless the student chose otherwise; 0 = only when asked. (The
@@ -482,7 +487,13 @@ function register() {
   });
   ipcMain.handle('scholar:renameProfile', (_e, id, name) => profiles.rename(id, name));
   ipcMain.handle('scholar:status', () => ({ hasData: fs.existsSync(p().db), paths: p() }));
-  ipcMain.handle('scholar:courses', () => db.courses(p().db, p().textbooks, readState().done || {}));
+  ipcMain.handle('scholar:courses', async () => courseImages.withImages(await db.courses(p().db, p().textbooks, readState().done || {})));
+  // Each class's picture from the class site, read again now (Settings → Scholar).
+  ipcMain.handle('scholar:courseImages', async () => {
+    const n = await courseImages.refresh({ force: true });
+    if (n) (BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed')), syncSoon(5000));
+    return n;
+  });
   ipcMain.handle('scholar:items', (_e, q) => db.items(p().db, p().textbooks, readState().done || {}, q || {}));
   ipcMain.handle('scholar:course', (_e, id) => db.course(p().db, p().textbooks, readState().done || {}, id));
   ipcMain.handle('scholar:setDone', (_e, id, done) => {

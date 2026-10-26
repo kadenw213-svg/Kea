@@ -2664,3 +2664,43 @@
 .sch-chapter-btns .btn:not(:hover) {
   background: transparent;
 }
+
+/* A class's two ways in, at the top of its page */
+.cls-go {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 4px 0 14px;
+}
+.cls-go-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--k) 40%, var(--border));
+  background: color-mix(in srgb, var(--k) 9%, var(--surface));
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cls-go-btn > svg {
+  color: var(--k);
+  flex-shrink: 0;
+}
+.cls-go-btn span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cls-go-btn b {
+  font-size: 15px;
+}
+.cls-go-btn .muted {
+  font-size: 12.5px;
+}
+.cls-go-btn:hover,
+.cls-go-btn.on {
+  background: color-mix(in srgb, var(--k) 17%, var(--surface));
+}

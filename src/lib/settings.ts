@@ -537,43 +537,28 @@ export const SECTIONS: Section[] = [
       },
       { key: 'scholar.instructorHints', label: 'Write practice when the instructor points something out', type: 'toggle', default: true, help: 'When a message or announcement says the test will have problems like something ("practice these, the practical will have more like them"), Kea always keeps it word for word for every practice set it writes for that class. With this on, it also writes 25 questions in that style for the next test right away (at most one set per class every three days).' },
       { key: 'scholar.pictureQuestions', label: 'Picture questions for identification', type: 'toggle', default: true, help: 'Chapters that test recognizing things (lab practicals, specimens, structures, anatomy, glassware, molecular shapes) get a set of questions that show a real picture from Wikimedia Commons and ask what it is. Pictures are saved with the questions, so they work offline.' },
-      { key: 'scholar.autoReading', label: 'Open the reading when you miss one', type: 'toggle', default: true, help: 'A wrong answer opens the textbook beside it, at the section that teaches it, when Kea is sure it found that section. Otherwise the explanation under the question is shown on its own (the book icon still opens the chapter).' },
       { key: 'scholar.depthReviews', label: 'Review chapters at exam depth', type: 'toggle', default: true, advanced: true, help: 'When your teacher posts something new for a test within three weeks (a study focus, a review sheet or key), Claude checks those chapters against it and writes a practice set for that test where they fall short. It fixes explanations only on questions you got wrong, and rewrites a textbook chapter only when it’s missing something the test asks. Nothing new from the teacher, no run.' },
+      { key: 'scholar.homeClasses', group: 'Home', label: 'Show my classes as cards on Home', type: 'toggle', default: true, help: 'Each class with its picture, its colour, its grade and this week’s reading. Click a card to open the class; its Study and Readings buttons are at the top. Class colours are set under This week → Colours (by class).' },
+      {
+        key: 'scholar.homeColumns',
+        label: 'Class cards',
+        type: 'select',
+        default: '2',
+        options: [['1', 'One per row'], ['2', 'Two across (2×2)'], ['3', 'Three across'], ['4', 'Four across']].map(([value, label]) => ({ value, label })),
+        when: (v) => v['scholar.homeClasses'] !== false
+      },
+      { key: 'scholar.homePictures', label: 'Class pictures from the class site', type: 'toggle', default: true, when: (v) => v['scholar.homeClasses'] !== false, help: 'The picture each class has on D2L or Canvas. A class without one shows its colour.' },
+      { key: 'scholar.homeWeek', label: 'This week’s reading on each class', type: 'toggle', default: true, when: (v) => v['scholar.homeClasses'] !== false, help: 'A button for each chapter to read this week, side by side.' },
+      { key: 'scholar.homeGrades', label: 'Grade on each class', type: 'toggle', default: true, when: (v) => v['scholar.homeClasses'] !== false },
+      { key: 'study.mix.mc', group: 'Practice questions', label: 'Multiple choice', type: 'range', default: 5, min: 0, max: 10, advanced: true, help: 'How often each kind of question comes up in a practice exam, compared with the others (0 leaves it out). Kea uses what each chapter has: when there aren’t enough of one kind, the others fill in.' },
+      { key: 'study.mix.blank', label: 'Fill in the blank', type: 'range', default: 3, min: 0, max: 10, advanced: true },
+      { key: 'study.mix.match', label: 'Matching', type: 'range', default: 2, min: 0, max: 10, advanced: true },
+      { key: 'study.mix.multi', label: 'Select all that apply', type: 'range', default: 2, min: 0, max: 10, advanced: true },
+      { key: 'study.mix.num', label: 'Calculations', type: 'range', default: 3, min: 0, max: 10, advanced: true, help: 'Only in chapters that have calculations.' },
+      { key: 'study.mix.tf', label: 'True or false', type: 'range', default: 1, min: 0, max: 10, advanced: true },
+      { key: 'study.mix.short', label: 'Written answers', type: 'range', default: 1, min: 0, max: 10, advanced: true, help: 'You mark these yourself against the model answer.' },
       { key: 'scholar.mailSignature', group: 'Messages', label: 'Message signature', type: 'text', default: '', help: 'Added under every new message you write in Messages (edit it there, under Signature).', advanced: true },
       { key: 'scholar.mailSignatureReplies', label: 'Add the signature to replies too', type: 'toggle', default: true, advanced: true },
-      { key: 'study.listen.rate', group: 'Listening to flashcards', label: 'Reading speed', type: 'number', default: 1, min: 0.5, max: 2.5, step: 0.05, unit: '×', help: 'How fast Listen reads cards (Listen is a flashcard mode: it reads each card, waits, then reads the answer, hands-free).' },
-      { key: 'study.listen.gap', label: 'Pause before the answer', type: 'number', default: 4, min: 0, max: 30, step: 0.5, unit: 's', help: 'Time to think of the answer before Kea says it.' },
-      { key: 'study.listen.between', label: 'Pause between cards', type: 'number', default: 2, min: 0, max: 30, step: 0.5, unit: 's' },
-      {
-        key: 'study.listen.first',
-        label: 'Read first',
-        type: 'select',
-        default: 'front',
-        options: [
-          { value: 'front', label: 'The question (term), then the answer' },
-          { value: 'back', label: 'The answer (definition), then the question' }
-        ]
-      },
-      { key: 'study.listen.repeat', label: 'Times to read each card', type: 'number', default: 1, min: 1, max: 5, step: 1 },
-      { key: 'study.listen.repeatAnswer', label: 'Say the answer twice', type: 'toggle', default: false },
-      {
-        key: 'study.listen.which',
-        label: 'Cards to read',
-        type: 'select',
-        default: 'all',
-        options: [
-          { value: 'all', label: 'All of them' },
-          { value: 'learning', label: 'Only ones I’m still learning' },
-          { value: 'starred', label: 'Only starred ones' }
-        ]
-      },
-      { key: 'study.listen.shuffle', label: 'Shuffle the cards', type: 'toggle', default: false },
-      { key: 'study.listen.loop', label: 'Start again at the end', type: 'toggle', default: false },
-      { key: 'study.listen.choices', label: 'Read the answer choices', type: 'toggle', default: true, help: 'For multiple-choice questions, the choices are read after the question.' },
-      { key: 'study.listen.explain', label: 'Read the explanation after the answer', type: 'toggle', default: false },
-      { key: 'study.listen.number', label: 'Say the card number', type: 'toggle', default: true },
-      { key: 'study.listen.cue', label: 'Say “Answer” before the answer', type: 'toggle', default: true },
-      { key: 'study.listen.voice', label: 'Voice (this computer)', type: 'text', default: '', advanced: true, help: 'A voice name from this computer’s voices; empty uses the default. On the phone, the voice is chosen in Settings → Reading aloud.' },
       {
         key: 'scholar.cloud',
         group: 'Your devices',

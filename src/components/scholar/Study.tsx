@@ -1,7 +1,7 @@
 // Study materials: practice exams and flashcard decks. Claude writes a whole set at once, only when the student asks;
 // Kea keeps it and shuffles, samples and grades it here, as often as the student likes, with no Claude involved.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ClipboardList, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Pencil, Star, Brain, Shapes, FileCheck, Repeat, Headphones } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ClipboardList, HelpCircle, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Pencil, Star, Brain, Shapes, FileCheck, Repeat, Headphones } from 'lucide-react';
 import { api, StudyCard, StudyHistory, StudyKind, StudyQuestion, StudySet, StudySetFull } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
@@ -14,7 +14,7 @@ import { CardTest, Learn, Match, Review, SetEditor, SpeakButton, StarButton } fr
 import { openStudyHub, parseScope, StudyHub } from './StudyHub';
 import '../../styles/study.css';
 import { MathText } from './MathText';
-import { Explanation, stepText } from './Explanation';
+import { Explanation } from './Explanation';
 import { StudyImage } from './StudyImage';
 
 // ---------- Shared state ----------
@@ -375,6 +375,8 @@ export interface Shown {
   order: number[]; // shown position → original choice index
 }
 export type Answer = number | number[] | boolean | string | null;
+/** A question ready to show: choices (or a matching question's right sides) in a fresh order. */
+export const showQuestion = (q: StudyQuestion): Shown => ({ q, order: 'choices' in q ? shuffle(q.choices.map((_, i) => i)) : q.type === 'match' ? shuffle(q.pairs.map((_, i) => i)) : [] });
 
 const SUPERSCRIPT: Record<string, string> = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁻': '-', '⁺': '+' };
 
@@ -436,6 +438,8 @@ export function grade(s: Shown, a: Answer, self?: boolean, judged?: boolean): bo
     return got.length === q.answer.length && got.every((x, i) => x === q.answer[i]);
   }
   if (q.type === 'tf') return a === q.answer;
+  // (Matching: for each term, the shown position of what was picked for it.)
+  if (q.type === 'match') return Array.isArray(a) && q.pairs.every((_, i) => typeof a[i] === 'number' && a[i] >= 0 && s.order[a[i]] === i);
   if (q.type === 'num') {
     const n = typeof a === 'string' ? parseNumber(a) : null;
     return n != null && Math.abs(n - q.answer) <= q.tolerance + 1e-12;
@@ -476,6 +480,8 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
   const [selfMarks, setSelfMarks] = useState<(boolean | undefined)[]>([]);
   const [judged, setJudged] = useState<(boolean | undefined)[]>([]);
   const [checked, setChecked] = useState<boolean[]>([]);
+  /** Questions answered "I don't know": missed, with the answer and its walkthrough shown straight away. */
+  const [dunno, setDunno] = useState<boolean[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [saved, setSaved] = useState(false);
   /** After each question: the one on screen (one at a time, checked, then Next). */
@@ -484,13 +490,13 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
   const start = () => {
     // (The exam before this one, if it wasn't saved yet.)
     persist();
-    opened.current = new Set();
     const picked = choose(all, n, set.history || {});
-    setRun(picked.map((q) => ({ q, order: 'choices' in q ? shuffle(q.choices.map((_, i) => i)) : [] })));
+    setRun(picked.map(showQuestion));
     setAnswers(picked.map(() => null));
     setSelfMarks([]);
     setJudged([]);
     setChecked([]);
+    setDunno([]);
     setSubmitted(false);
     setSaved(false);
     setCur(0);
@@ -498,13 +504,25 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
   useEffect(() => {
     if (auto && all.length) start();
   }, [set.id]);
-  const results = useMemo(() => (run ? run.map((s, i) => grade(s, answers[i], selfMarks[i], judged[i])) : []), [run, answers, selfMarks, judged]);
+  const results = useMemo(() => (run ? run.map((s, i) => (dunno[i] ? false : grade(s, answers[i], selfMarks[i], judged[i]))) : []), [run, answers, selfMarks, judged, dunno]);
+  const dontKnow = (i: number) => {
+    setDunno((p) => {
+      const c = [...p];
+      c[i] = true;
+      return c;
+    });
+    setChecked((p) => {
+      const c = [...p];
+      c[i] = true;
+      return c;
+    });
+  };
   // Blanks are marked as they're revealed: Kea's own matching, then the local model for anything it can't place.
   useEffect(() => {
     if (!run) return;
     run.forEach((s, i) => {
       const q = s.q;
-      if (q.type !== 'blank' || judged[i] !== undefined || !(submitted || checked[i])) return;
+      if (q.type !== 'blank' || dunno[i] || judged[i] !== undefined || !(submitted || checked[i])) return;
       judgeBlank(typeof answers[i] === 'string' ? (answers[i] as string) : '', q.answer, q.accept || [], q.q).then((ok) =>
         setJudged((p) => {
           const c = [...p];
@@ -516,36 +534,18 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
   }, [run, submitted, checked]);
   const score = results.filter((r) => r === true).length;
   const unmarked = results.filter((r) => r === null).length;
-  // A miss opens the reading that teaches it: as soon as it's checked, or (at the end) the first one missed.
-  const missReading = useMissReading();
-  const opened = useRef<Set<number>>(new Set());
-  useEffect(() => {
-    if (!run) return;
-    const target = (i: number) => {
-      const q = run[i].q;
-      opened.current.add(i);
-      missReading({ chapter: q.chapter, section: q.section, topic: q.topic, query: `${q.q} ${answerText(q)}`, key: q.k, steps: q.steps?.map(stepText) });
-    };
-    if (submitted) {
-      const first = results.findIndex((r) => r === false);
-      if (first >= 0 && !opened.current.size) target(first);
-      return;
-    }
-    const miss = results.findIndex((r, i) => r === false && checked[i] && !opened.current.has(i));
-    if (miss >= 0) target(miss);
-  }, [results, submitted, checked]);
   // Save the attempt once, with what's marked: as soon as everything is marked after Finish, or otherwise when the exam
   // closes, a new one starts, or the window goes (an unmarked written answer, or an unanswered question of an exam not
   // finished, counts neither way). A miss on a question whose stored answer may be wrong isn't recorded as a miss.
-  const latest = useRef({ id: set.id, run, answers, results, submitted, saved });
-  latest.current = { id: set.id, run, answers, results, submitted, saved };
+  const latest = useRef({ id: set.id, run, answers, results, submitted, saved, dunno });
+  latest.current = { id: set.id, run, answers, results, submitted, saved, dunno };
   const persist = () => {
-    const { id, run: r, answers: ans, results: res, submitted: done, saved: was } = latest.current;
+    const { id, run: r, answers: ans, results: res, submitted: done, saved: was, dunno: idk } = latest.current;
     if (!r || was) return;
     const given = (a: Answer) => a !== null && a !== '' && !(Array.isArray(a) && !a.length);
     const items: [string, boolean | null][] = [];
     r.forEach((s, i) => {
-      if (!s.q.k || (!done && !given(ans[i]))) return;
+      if (!s.q.k || (!done && !given(ans[i]) && !idk[i])) return;
       const ok = res[i] === false && s.q.answerDisputed ? null : res[i];
       items.push([s.q.k, ok ?? null]);
     });
@@ -626,6 +626,8 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
           })
         }
         go={(i) => (setCur(i), document.querySelector('.st-main')?.scrollTo({ top: 0 }))}
+        dontKnow={dontKnow}
+        dunno={dunno}
         finish={finish}
         finishEarly={() => {
           // (Only the questions checked so far count: the rest weren't tried.)
@@ -634,6 +636,7 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
           setAnswers(keep.map((i) => answers[i]));
           setSelfMarks(keep.map((i) => selfMarks[i]));
           setJudged(keep.map((i) => judged[i]));
+          setDunno(keep.map((i) => dunno[i]));
           setChecked(keep.map(() => true));
           finish();
         }}
@@ -665,6 +668,8 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
           setAnswer={(a) => setAnswer(i, a)}
           reveal={submitted || !!checked[i]}
           result={results[i]}
+          dunno={!!dunno[i]}
+          onDontKnow={!submitted && !checked[i] ? () => dontKnow(i) : undefined}
           onSelf={(ok) => setSelfMarks((p) => {
             const c = [...p];
             c[i] = ok;
@@ -695,7 +700,7 @@ export function Exam({ set, auto }: { set: StudySetFull; auto?: 'end' | 'instant
  * Answers after each question: one question on screen. Check marks it (the card turns green or red and the explanation
  * opens), then Next; the dots along the top jump back to any question. Enter checks, then goes on.
  */
-function OneAtATime({ run, cur, answers, results, checked, setAnswer, onSelf, check, go, finish, finishEarly, given }: { run: Shown[]; cur: number; answers: Answer[]; results: (boolean | null)[]; checked: boolean[]; setAnswer(i: number, a: Answer): void; onSelf(i: number, ok: boolean): void; check(i: number): void; go(i: number): void; finish(): void; finishEarly(): void; given(a: Answer): boolean }) {
+function OneAtATime({ run, cur, answers, results, checked, setAnswer, onSelf, check, go, finish, finishEarly, given, dontKnow, dunno }: { run: Shown[]; cur: number; answers: Answer[]; results: (boolean | null)[]; checked: boolean[]; setAnswer(i: number, a: Answer): void; onSelf(i: number, ok: boolean): void; check(i: number): void; go(i: number): void; finish(): void; finishEarly(): void; given(a: Answer): boolean; dontKnow(i: number): void; dunno: boolean[] }) {
   const s = run[cur];
   const done = !!checked[cur];
   const last = cur === run.length - 1;
@@ -734,7 +739,7 @@ function OneAtATime({ run, cur, answers, results, checked, setAnswer, onSelf, ch
           <button key={i} className={`${i === cur ? 'cur' : ''} ${checked[i] ? (results[i] === true ? 'right' : results[i] === false ? 'wrong' : 'mark') : given(answers[i]) ? 'answered' : ''}`} onClick={() => go(i)} aria-label={`Question ${i + 1}`} />
         ))}
       </div>
-      <QuestionCard key={cur} num={cur + 1} s={s} answer={answers[cur]} setAnswer={(a) => setAnswer(cur, a)} reveal={done} result={results[cur]} onSelf={(ok) => onSelf(cur, ok)} />
+      <QuestionCard key={cur} num={cur + 1} s={s} answer={answers[cur]} setAnswer={(a) => setAnswer(cur, a)} reveal={done} result={results[cur]} onSelf={(ok) => onSelf(cur, ok)} dunno={!!dunno[cur]} onDontKnow={!done ? () => dontKnow(cur) : undefined} />
       <div className="st-one-nav">
         {cur > 0 && (
           <button className="btn" onClick={() => go(cur - 1)}>
@@ -783,7 +788,7 @@ function questionCards(s: StudySetFull): StudySetFull {
   const back = (q: StudyQuestion) =>
     q.type === 'tf' ? (q.answer ? 'True' : 'False') : q.type === 'num' ? `${q.answer}${q.unit ? ` ${q.unit}` : ''}` : answerText(q);
   const cards = (s.questions || [])
-    .filter((q) => q.type !== 'short')
+    .filter((q) => q.type !== 'short' && q.type !== 'match')
     .map((q) => ({ k: q.k, front: q.type === 'tf' ? `True or false: ${q.q}` : q.q, back: back(q), chapter: q.chapter, section: q.section, topic: q.topic, image: q.image, image_credit: q.image_credit, ...('choices' in q ? { choices: q.choices } : {}), ...(q.type === 'multi' ? { multi: true } : {}), explain: q.explain }));
   // (The same id as the questions' own set, so Learn and known-card progress are kept between sessions.)
   return { ...s, kind: 'cards', cards, questions: undefined, count: cards.length };
@@ -791,11 +796,15 @@ function questionCards(s: StudySetFull): StudySetFull {
 
 /** A question's right answer in words (what the book should say). */
 const answerText = (q: StudyQuestion) =>
-  q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join(' ') : q.type === 'tf' ? '' : q.type === 'num' ? q.unit || '' : q.answer;
+  q.type === 'mc' ? q.choices[q.answer] : q.type === 'multi' ? q.answer.map((i) => q.choices[i]).join(' ') : q.type === 'tf' ? '' : q.type === 'num' ? q.unit || '' : q.type === 'match' ? q.pairs.map(([a, b]) => `${a}: ${b}`).join('; ') : q.answer;
 
-export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf, onCheck }: { num: number; s: Shown; answer: Answer; setAnswer(a: Answer): void; reveal: boolean; result: boolean | null; onSelf(ok: boolean): void; onCheck?: () => void }) {
+/**
+ * One question. "I don't know" (where it's offered) counts it as missed and shows the answer with its explanation and
+ * walkthrough at once, written with the question, so there's nothing to wait for.
+ */
+export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf, onCheck, onDontKnow, dunno }: { num: number; s: Shown; answer: Answer; setAnswer(a: Answer): void; reveal: boolean; result: boolean | null; onSelf(ok: boolean): void; onCheck?: () => void; onDontKnow?: () => void; dunno?: boolean }) {
   const q = s.q;
-  const state = !reveal ? '' : result === true ? 'right' : result === false ? 'wrong' : 'mark';
+  const state = !reveal ? '' : dunno ? 'help' : result === true ? 'right' : result === false ? 'wrong' : 'mark';
   return (
     <div className={`st-q ${state}`}>
       <div className="st-q-head">
@@ -804,7 +813,11 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
           <MathText text={q.q} />
           <StudyImage src={q.image} credit={q.image_credit} />
         </div>
-        <ReadingButton id={q.k} chapter={q.chapter} section={q.section} topic={q.topic} query={`${q.q} ${answerText(q)}`} steps={reveal ? q.steps?.map(stepText) : undefined} />
+        {onDontKnow && !reveal && (
+          <button className="st-idk" onClick={onDontKnow} title="Show the answer and how it's worked out (counts as missed)">
+            <HelpCircle size={15} /> I don’t know
+          </button>
+        )}
       </div>
       {(q.type === 'mc' || q.type === 'multi') && (
         <div className="st-choices">
@@ -851,20 +864,61 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
           <input value={typeof answer === 'string' ? answer : ''} onChange={(e) => setAnswer(e.target.value)} placeholder="A word or two" disabled={reveal} autoCapitalize="off" spellCheck={false} />
           {reveal && result === null && <span className="muted">Checking…</span>}
           {reveal && result !== null && <span className="st-correct-val">Answer: {q.answer}</span>}
-          {reveal && result === false && (
+          {reveal && result === false && !dunno && (
             <button className="btn sm" onClick={() => onSelf(true)} title="Kea marked this wrong, but it means the same thing">
               <Check size={13} /> I was right
             </button>
           )}
         </div>
       )}
+      {q.type === 'match' && <MatchQuestion q={q} s={s} answer={answer} setAnswer={setAnswer} reveal={reveal} />}
       {q.type === 'short' && <textarea className="st-short" value={typeof answer === 'string' ? answer : ''} onChange={(e) => setAnswer(e.target.value)} placeholder="Write your answer" disabled={reveal} rows={3} />}
       {onCheck && (
         <button className="btn sm" onClick={onCheck}>
           Check
         </button>
       )}
-      {reveal && <Explanation q={q} s={s} answer={answer} result={result} onSelf={onSelf} />}
+      {reveal && <Explanation q={q} s={s} answer={answer} result={result} onSelf={onSelf} dunno={dunno} />}
+    </div>
+  );
+}
+
+/** Matching: each term with a list of the (shuffled) right sides to pick from; after checking, each row right or wrong. */
+function MatchQuestion({ q, s, answer, setAnswer, reveal }: { q: Extract<StudyQuestion, { type: 'match' }>; s: Shown; answer: Answer; setAnswer(a: Answer): void; reveal: boolean }) {
+  const picks = Array.isArray(answer) ? answer : [];
+  const pick = (i: number, pos: number) => {
+    const next = q.pairs.map((_, k) => (typeof picks[k] === 'number' ? picks[k] : -1));
+    next[i] = pos;
+    setAnswer(next.some((x) => x >= 0) ? next : null);
+  };
+  const used = new Set(picks.filter((x) => typeof x === 'number' && x >= 0));
+  return (
+    <div className="st-match">
+      {q.pairs.map(([term], i) => {
+        const pos = typeof picks[i] === 'number' ? picks[i] : -1;
+        const ok = pos >= 0 && s.order[pos] === i;
+        return (
+          <div key={i} className={`st-match-row ${reveal ? (ok ? 'correct' : 'incorrect') : ''}`}>
+            <span className="st-match-term">
+              <MathText text={term} />
+            </span>
+            <select value={pos} disabled={reveal} onChange={(e) => pick(i, Number(e.target.value))}>
+              <option value={-1}>Choose…</option>
+              {s.order.map((orig, p) => (
+                <option key={p} value={p}>
+                  {used.has(p) && p !== pos ? '✓ ' : ''}
+                  {q.pairs[orig][1]}
+                </option>
+              ))}
+            </select>
+            {reveal && !ok && (
+              <span className="st-match-right">
+                <MathText text={q.pairs[i][1]} />
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -101,6 +101,11 @@ notes and review sheets: "multiple choice, calculation problems and short essays
     is wrong because of its content, not because it sounds absolute.
   - The answer doesn't repeat the question's key words when the wrong choices don't.
 - `multi`: "Select all that apply", 4 to 6 choices, 2 or more correct.
+- `match`: matching. `q` says what to match ("Match each structure to its function"), and `pairs` lists 3 to 8
+  `[term, what it matches]` pairs (Kea shows the right sides shuffled and the student picks one for each term). Every
+  term and every right side different; right sides about the same length and style, so none stands out. Good for
+  terms and definitions, structures and functions, formulas and what they find, scientists and discoveries,
+  equations and reaction types.
 - `tf`: only where the course uses true/false; prefer `mc`.
 - `num`: a calculation with a numeric answer: `answer` (number), `tolerance` (absolute; fit it to sensible
   rounding, such as 0.01 for an answer of 2.45), `unit`, and `calc`: the plain arithmetic that gives the answer,
@@ -112,11 +117,14 @@ notes and review sheets: "multiple choice, calculation problems and short essays
   a name, a symbol, a short number with its unit): `answer`, plus `accept`, a list of other forms a teacher would take
   ("NaCl" for "sodium chloride", "ATP" for "adenosine triphosphate", a common synonym). Kea forgives spelling
   slips, capitals and plurals itself and has a local model judge the rest, so list only real alternatives. The stem
-  must make one answer clearly right. Blanks are recall: at most 15% of a set (`practice-check` enforces it), and
-  only for terms a test really asks for, never a trivial definition. More only when the class's own tests use
-  fill-in-the-blank; none when they're multiple choice only.
+  must make one answer clearly right. Blanks: at most 25% of a set (`practice-check` enforces it), only for terms,
+  names, symbols and values a test really asks for, never a trivial definition.
 - `short`: a short written answer or explanation (essay-style courses, "explain why"). `answer` is a model answer
   in 1 to 4 sentences, with the points a grader would look for. The student marks their own answer against it.
+
+**A good mix of kinds.** A set of 15 or more uses at least four kinds, has at least one `match` (two in 25 or more),
+and is at most 55% `mc`: mix in `blank`, `match`, `multi` and, where the chapter has calculations, `num`
+(`practice-check` enforces it). Kea builds each practice exam from these in the student's chosen mix.
 
 Every question has:
 - `explain`: teaches the idea, so a student who got it wrong learns it from this alone (2 to 5 sentences):
@@ -136,9 +144,12 @@ Every question has:
     substitute, one algebra move per step, what each result means ("per kilogram, but we only have 0.500 kg"), and
     the conversion to what's asked. `math`, `sym` and `final.math` are LaTeX (`\Delta T_f = i K_f m`,
     `\frac{5}{3.72}`); `text` is plain. The full format and an example are in the `kea-steps` skill.
-  - Concept questions: 2 to 5 plain-string steps of reasoning (the deciding rule, how it applies here, why the
-    tempting wrong choice fails).
-  Every question except `short` has steps; Kea's check rejects calculations without a walkthrough.
+  - Every other question (except `short`) also gets a walkthrough, shown at once when the student taps "I don't
+    know" or misses it, so it has to teach on its own: `asks` (what the question is really asking, in plain words),
+    then 2 to 5 step objects with a `title` and `text` (the rule or idea that decides it, how it applies to this
+    question, why the tempting wrong answer fails, with `math` and `terms` only where there's a formula), then
+    `final` (`{ "text" }`: the answer and the one-line reason; `math` too when it's a value).
+  Kea's check rejects a question (other than `short`) without its walkthrough.
 - `chapter`: the chapter label it tests ("Chapter 5"); `topic`: the idea it tests in a few words, using the
   textbook's own term ("Boyle's law", "molarity").
 - `section`: the textbook section that teaches the answer, exactly as the chapter's `Sections:` line in the brief
@@ -207,7 +218,8 @@ each part with how far along you are:
   { "type": "multi", "q": "Select all that apply: …", "choices": ["…", "…", "…", "…", "…"], "answer": [0, 3], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "tf", "q": "…", "answer": false, "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
   { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "calc": "745/760*5.60/2.24", "level": "multistep", "explain": "…", "asks": "What the question asks and gives, in plain words", "steps": [{"title": "Understand the formula", "text": "…", "math": "P_1 V_1 = P_2 V_2", "terms": [{"sym": "P_1", "means": "the starting pressure", "value": "745 mmHg", "why": "given"}]}, {"title": "Convert to atmospheres", "text": "…", "math": "745\\ \\text{mmHg} \\times \\frac{1\\ \\text{atm}}{760\\ \\text{mmHg}} = 0.980\\ \\text{atm}"}, {"title": "Solve for the unknown", "text": "…", "math": "…"}], "final": {"math": "2.45\\ \\text{atm}", "text": "… which makes sense because …"}, "chapter": "…", "topic": "…", "source": "…" },
-  { "type": "blank", "q": "The pressure of a gas is inversely proportional to its volume at constant temperature; this is ____ law.", "answer": "Boyle's", "accept": ["Boyle"], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "blank", "q": "The pressure of a gas is inversely proportional to its volume at constant temperature; this is ____ law.", "answer": "Boyle's", "accept": ["Boyle"], "explain": "…", "asks": "…", "steps": [{"title": "…", "text": "…"}, {"title": "…", "text": "…"}], "final": {"text": "…"}, "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "match", "q": "Match each gas law to what it holds constant.", "pairs": [["Boyle's law", "Temperature and amount of gas"], ["Charles's law", "Pressure and amount of gas"], ["Avogadro's law", "Pressure and temperature"]], "level": "recall", "explain": "…", "asks": "…", "steps": [{"title": "…", "text": "…"}, {"title": "…", "text": "…"}], "final": {"text": "…"}, "chapter": "…", "topic": "…", "source": "…" },
   { "type": "short", "q": "…", "answer": "…", "explain": "…", "chapter": "…", "topic": "…", "source": "…" }
 ] }
 ```

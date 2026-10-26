@@ -1,7 +1,7 @@
 // Study: every class's chapters as one list, each with Read (its textbook) and Study (its questions), how its practice
 // has gone, and the practice you've done or made yourself. Review (what's due) is the one button at the top.
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Brain, Check, ClipboardCheck, ClipboardList, ClipboardPaste, Layers, Plus } from 'lucide-react';
+import { BookOpen, Check, ClipboardCheck, ClipboardList, ClipboardPaste, Layers, Plus } from 'lucide-react';
 import type { PoolItem } from '../../lib/api';
 import { api, ScholarCourse, ScholarCourseDetail, StudySet } from '../../lib/api';
 import { openPaths } from '../../lib/open';
@@ -74,17 +74,10 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
       {!courseId && (
         <>
           <h1 className="sch-title">Study</h1>
-          <p className="sch-sub">Every chapter of your classes: read it, or study its questions. Review brings back what's due before each test.</p>
+          <p className="sch-sub">Every chapter of your classes: read it, or study its questions. Tick several to study them together.</p>
         </>
       )}
       <div className="res-top">
-        <button className="res-review" onClick={() => openStudySet(`review:${filter || 'all'}`)}>
-          <Brain size={18} />
-          <span>
-            <b>Review what's due</b>
-            <span className="muted">Questions and cards coming back before each test{filter ? '' : ', every class'}</span>
-          </span>
-        </button>
         {!courseId && courses.length > 1 && (
           <div className="seg-mini res-classes">
             <button className={!filter ? 'on' : ''} onClick={() => setFilter('')}>

@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, Home, BookOpen, Brain, CalendarDays, Camera, CheckCircle2, ChevronLeft, ChevronRight, Circle, ClipboardCheck, Download, ExternalLink, FileText, FolderOpen, GraduationCap, Inbox, Layers, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, X } from 'lucide-react';
-import type { ScholarChapter, ScholarInboxItem, ScholarItem, StudySet } from '../../src/lib/api';
+import { AlertTriangle, Award, Home, BookOpen, Brain, CalendarDays, Camera, CheckCircle2, ChevronLeft, Circle, ClipboardCheck, Download, ExternalLink, FolderOpen, GraduationCap, Inbox, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, X } from 'lucide-react';
+import type { ScholarInboxItem, ScholarItem, StudySet } from '../../src/lib/api';
 import { api } from '../../src/lib/api';
 import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
-import { CATEGORIES, LinkGroups, TODO, categoryOf, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
+import { CATEGORIES, CLASS_COLORS, LinkGroups, TODO, categoryOf, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
+import { useSetting } from '../../src/lib/settings';
 import { Kea, KeaData, cachedData, doneOf, inboxKey, loadData, phoneDeleted, phoneDone, phoneRead, setPhoneDeleted, setPhoneDone, setPhoneRead, syncOut, watchClasses } from './kea';
 import { loadStudy, onStudyChange } from './study';
 import { setDesktopData, studyChanged } from './desktopApi';
 import { OpenedView, Reader, ReaderTarget, StudyHost } from './StudyTab';
 import type { OpenedFile } from './kea';
-import { openStudyHub } from '../../src/components/scholar/StudyHub';
+import { openClassStudy, openStudyHub } from '../../src/components/scholar/StudyHub';
 import { openStudySet } from '../../src/components/scholar/Study';
-import { StudyPicker } from '../../src/components/scholar/StudyModes';
 import { places } from './Book';
 import { reloadScholar, useScholar } from '../../src/components/scholar/scholarStore';
 import { FilesTab } from './Files';
@@ -47,6 +47,12 @@ const ago = (at: string) => {
 };
 // (Made for dark backgrounds; darker on a light theme so they still read.)
 const typeColor = (t: string) => ink(categoryOf(t).color, THEMES[getLook().theme]?.dark !== false);
+/** A class's colour: the one chosen on the PC (This week → Colours), or its place in the list. */
+const classColor = (data: KeaData, id: string) => {
+  const chosen = ((data as any).look?.classColors || {}) as Record<string, string>;
+  const i = Math.max(0, data.courses.findIndex((c) => c.id === id));
+  return ink(chosen[id] || CLASS_COLORS[i % CLASS_COLORS.length], THEMES[getLook().theme]?.dark !== false);
+};
 const LABEL: Record<string, string> = { lecture: 'Lecture', lab: 'Lab', exam: 'Exam', final_exam: 'Final exam', lab_practical: 'Lab practical', quiz: 'Quiz', assignment: 'Assignment', discussion: 'Discussion', paper: 'Paper', peer_review: 'Peer review', lab_handout: 'Lab handout', other_deadline: 'To do', administrative_deadline: 'Deadline', break: 'Break', reading: 'Reading', weekly_reading: 'This week', project: 'Project' };
 
 /** The PC's copy into the shared study code and screens (and once, what changes here goes back to the PC). */
@@ -367,7 +373,7 @@ function ClassesPitch({ onConnect }: { onConnect(): void }) {
             <BookOpen size={18} /> Textbook chapters to read anywhere, even offline
           </li>
           <li>
-            <Brain size={18} /> Practice exams, flashcards and review that sync both ways
+            <Brain size={18} /> Practice exams with a walkthrough for every question, synced both ways
           </li>
           <li>
             <Inbox size={18} /> Announcements, grades and messages, with notifications
@@ -429,14 +435,11 @@ function Row({ ctx, it, date }: { ctx: Ctx; it: ScholarItem; date?: boolean }) {
   );
 }
 
-/** The top of Home: the next class or event today, missing work, and this week's reading. */
+/** The top of Home: the next class or event today, and missing work. */
 function TodayTop({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
   const t = today();
   const now = new Date().getHours() * 60 + new Date().getMinutes();
   const next = ctx.items.find((i) => i.type !== 'weekly_reading' && i.date === t && i.start && Number(i.start.slice(0, 2)) * 60 + Number(i.start.slice(3, 5)) > now);
-  const banners = ctx.data.courses
-    .map((c) => ctx.items.find((b) => b.type === 'weekly_reading' && b.courseId === c.id && b.date <= t && (b.dateEnd || b.date) >= t))
-    .filter((b): b is ScholarItem => !!b);
   return (
     <>
       {next && (
@@ -462,31 +465,31 @@ function TodayTop({ ctx, missing }: { ctx: Ctx; missing: ScholarItem[] }) {
           ))}
         </section>
       )}
-      {banners.length > 0 && (
-        <section>
-          <h2>Reading this week</h2>
-          <div className="wk-reads">
-            {banners.flatMap((b) =>
-              (b.readings.length ? b.readings : [{ chapter: b.title, title: null, pdf: null } as any]).map((r: any) => (
-                <div key={`${b.id}:${r.chapter}`} className="wk-read">
-                  <button className="wk-read-main" disabled={!r.pdf} onClick={() => r.pdf && ctx.read({ file: r.pdf.file, chapter: r.chapter, title: r.title || r.chapter })}>
-                    <span className="wk-read-code">{b.courseCode}</span>
-                    <span className="wk-read-title">
-                      <b>{r.chapter.replace(/^Chapter /, 'Ch ')}</b> {r.title || ''}
-                    </span>
-                    {r.pdf && <BookOpen size={16} className="wk-read-go" />}
-                  </button>
-                  {b.readings.length > 0 && (
-                    <button className="wk-read-study" aria-label="Study" onClick={() => openStudyHub({ courseId: b.courseId, code: b.courseCode, title: `${r.chapter}${r.title ? `: ${r.title}` : ''}`, chapters: [r.chapter] })}>
-                      <ClipboardCheck size={16} />
-                    </button>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-      )}
+    </>
+  );
+}
+
+/** This week's reading for a class: its chapters as buttons side by side (tap to read). */
+function weekReadings(ctx: Ctx, courseId: string) {
+  const t = today();
+  return ctx.items.find((b) => b.type === 'weekly_reading' && b.courseId === courseId && b.date <= t && (b.dateEnd || b.date) >= t)?.readings || [];
+}
+function ReadChips({ ctx, reads }: { ctx: Ctx; reads: ScholarItem['readings'] }) {
+  return (
+    <>
+      {reads.map((r) => (
+        <button
+          key={r.chapter}
+          className="mcard-read"
+          disabled={!r.pdf}
+          onClick={(e) => {
+            e.stopPropagation();
+            r.pdf && ctx.read({ file: r.pdf.file, chapter: r.chapter, title: r.title || r.chapter });
+          }}
+        >
+          <BookOpen size={13} /> {r.chapter.replace(/^Chapter /, 'Ch ')}
+        </button>
+      ))}
     </>
   );
 }
@@ -698,118 +701,97 @@ function Agenda({ ctx }: { ctx: Ctx }) {
   );
 }
 
-/** Every class (with review across all of them), and one class: its grade, what's coming, its chapters to read and
- * study, its practice sets and its grades. */
+/** Home (what's next and missing, then every class as a card), and one class: Study and Readings at the top, then this
+ * week's reading, what's coming, its practice exams and its grades. */
 function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | null; setCode(c: string | null): void; missing: ScholarItem[] }) {
   const version = useScholar((s) => s.version);
   const [sets, setSets] = useState<StudySet[]>([]);
-  const [due, setDue] = useState<number | null>(null);
   const [allGrades, setAllGrades] = useState(false);
   useEffect(() => {
     api.scholar.studyList().then(setSets).catch(() => setSets([]));
-    api.scholar
-      .studyReview({ limit: 200 })
-      .then((q) => setDue(q.due.length + q.fresh.length))
-      .catch(() => setDue(null));
   }, [ctx.data, version]);
   const [readings, setReadings] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
   const c = ctx.data.details.find((x) => x.code === code);
   useBack(!!c, () => setCode(null));
   useBack(readings, () => setReadings(false));
-  useBack(reviewing, () => setReviewing(false));
-  const classList = ctx.data.details.map((d) => ({ id: d.id, code: d.code }));
-  if (!c && readings) return <Readings ctx={ctx} onBack={() => setReadings(false)} />;
-  if (!c && reviewing) return <ReviewPick ctx={ctx} due={due} onBack={() => setReviewing(false)} />;
+  const columns = Number(useSetting<string>('scholar.homeColumns') || 2);
+  const pictures = useSetting<boolean>('scholar.homePictures') !== false;
+  const showWeek = useSetting<boolean>('scholar.homeWeek') !== false;
+  const showGrades = useSetting<boolean>('scholar.homeGrades') !== false;
+  if (c && readings) return <Readings ctx={ctx} course={c} onBack={() => setReadings(false)} />;
   if (!c)
     return (
       <div className="page">
         <TodayTop ctx={ctx} missing={missing} />
-        <div className="hub2">
-          <button className="card review-all" onClick={() => setReviewing(true)}>
-            <Brain size={22} />
-            <span>
-              <b>Review</b>
-              <span className="muted small block">{due ? `${due} due · pick a class or chapters` : 'Everything, a class, or chapters'}</span>
-            </span>
-          </button>
-          <button className="card review-all" onClick={() => setReadings(true)}>
-            <BookOpen size={22} />
-            <span>
-              <b>Readings</b>
-              <span className="muted small block">Every chapter, to read or listen to</span>
-            </span>
-          </button>
-        </div>
         <h2>Your classes</h2>
-        {ctx.data.details.map((d) => {
-          const g = ctx.data.grades[d.code]?.final;
-          const banks = sets.filter((s) => s.courseId === d.id && s.bank && s.status === 'ready').length;
-          return (
-            <button key={d.id} className="card class" onClick={() => setCode(d.code)}>
-              <span className="class-main">
-                <b>{d.code}</b>
-                <span className="muted small block">{d.name}</span>
-                <span className="muted small block">
-                  {d.chapters.filter((ch) => ch.pdf).length} chapters to read{banks ? ` · ${banks} question banks` : ''}
-                </span>
-              </span>
-              {g && <span className="grade" style={{ color: gradeTint(g.percent) }}>{g.percent != null ? `${g.percent}%` : g.shown}</span>}
-            </button>
-          );
-        })}
-        <p className="muted small">Everything here works offline. Answers, flashcards and stars go back to your computer; new questions are written there.</p>
+        <div className="mcards" style={{ ['--cols' as any]: Math.min(2, Math.max(1, columns || 2)) }}>
+          {ctx.data.courses.map((d) => {
+            const g = ctx.data.grades[d.code]?.final;
+            const k = classColor(ctx.data, d.id);
+            const reads = showWeek ? weekReadings(ctx, d.id) : [];
+            return (
+              <div key={d.id} className="mcard" style={{ ['--k' as any]: k }} onClick={() => setCode(d.code)} role="button">
+                <div className={`mcard-pic ${pictures && d.image ? '' : 'plain'}`}>
+                  {pictures && d.image ? <img src={d.image} alt="" /> : <span className="mcard-mono">{d.code.replace(/\d.*$/, '')}</span>}
+                  {showGrades && g && (g.percent != null || g.shown) && (
+                    <span className="mcard-grade" style={{ color: gradeTint(g.percent) }}>
+                      {g.percent != null ? `${g.percent}%` : g.shown}
+                    </span>
+                  )}
+                </div>
+                <div className="mcard-body">
+                  <b className="mcard-code">{d.code}</b>
+                  <span className="mcard-name">{d.name}</span>
+                </div>
+                {reads.length > 0 && (
+                  <div className="mcard-reads">
+                    <ReadChips ctx={ctx} reads={reads} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="muted small">Everything here works offline. Answers and stars go back to your computer; new questions are written there.</p>
       </div>
     );
+  const k = classColor(ctx.data, c.id);
   const grades = ctx.data.grades[c.code];
   const upcoming = ctx.items.filter((i) => i.courseId === c.id && i.date >= today() && i.type !== 'weekly_reading').slice(0, 6);
-  const mine = sets.filter((s) => s.courseId === c.id && !s.bank && s.status !== 'failed');
+  const mine = sets.filter((s) => s.courseId === c.id && !s.bank && s.status !== 'failed' && s.kind === 'exam');
   const gradeItems = grades?.items || [];
+  const reads = weekReadings(ctx, c.id);
   return (
-    <div className="page">
+    <div className="page" style={{ ['--k' as any]: k }}>
       <button className="back" onClick={() => setCode(null)}>
         <ChevronLeft size={18} /> Home
       </button>
       <div className="class-head">
         <span className="class-main">
-          <h1>{c.code}</h1>
+          <h1 style={{ color: k }}>{c.code}</h1>
           <span className="muted">{c.name}</span>
           {(c.instructor || c.contact) && <span className="muted small block">{[c.instructor, c.contact].filter(Boolean).join(' · ')}</span>}
         </span>
         {grades?.final && <span className="bigrade" style={{ color: gradeTint(grades.final.percent) }}>{grades.final.percent != null ? `${grades.final.percent}%` : grades.final.shown}</span>}
       </div>
-      <div className="grid2">
-        <button className="btn" onClick={() => openStudySet(`review:${c.id}`)}>
-          <Brain size={16} /> Review all
+      <div className="class-go">
+        <button onClick={() => openClassStudy(c, c.chapters.map((ch) => ch.label))}>
+          <ClipboardCheck size={20} />
+          <b>Study</b>
+          <span>Practice questions</span>
         </button>
-        {c.url ? (
-          <button className="btn" onClick={() => Kea.open({ url: c.url! })}>
-            <ExternalLink size={16} /> Class site
-          </button>
-        ) : (
-          <span />
-        )}
+        <button onClick={() => setReadings(true)}>
+          <BookOpen size={20} />
+          <b>Readings</b>
+          <span>{c.chapters.filter((ch) => ch.pdf).length} chapters</span>
+        </button>
       </div>
-      {c.chapters.length > 0 && (
+      {reads.length > 0 && (
         <>
-          <h2>Chapters</h2>
-          <div className="wk-reads">
-            {c.chapters.map((ch: ScholarChapter) => (
-              <div key={ch.label} className="wk-read">
-                <button className="wk-read-main" disabled={!ch.pdf} onClick={() => ch.pdf && ctx.read({ file: ch.pdf.file, chapter: ch.label, title: ch.title || ch.label })}>
-                  <span className="wk-read-title">
-                    <b>{ch.label.replace(/^Chapter /, 'Ch ')}</b> {ch.title || ''}
-                    {!ch.pdf && <span className="muted small"> · being written</span>}
-                  </span>
-                  {ch.pdf && <BookOpen size={16} className="wk-read-go" />}
-                </button>
-                <button className="wk-read-study" aria-label="Study" onClick={() => openStudyHub({ courseId: c.id, code: c.code, title: ch.title ? `${ch.label}: ${ch.title}` : ch.label, chapters: [ch.label] })}>
-                  <ClipboardCheck size={16} />
-                </button>
-              </div>
-            ))}
+          <h2>This week</h2>
+          <div className="mcard-reads wide">
+            <ReadChips ctx={ctx} reads={reads} />
           </div>
-          <p className="muted small">Tap a chapter to read it; the clipboard opens its questions and flashcards.</p>
         </>
       )}
       {upcoming.length > 0 && (
@@ -822,13 +804,13 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
       )}
       {mine.length > 0 && (
         <>
-          <h2>Your practice sets</h2>
+          <h2>Your practice exams</h2>
           {mine.map((s) => (
             <button key={s.id} className="card link" disabled={s.status !== 'ready'} onClick={() => openStudySet(s.id)}>
-              {s.kind === 'exam' ? <ClipboardCheck size={16} /> : <Layers size={16} />}
+              <ClipboardCheck size={16} />
               <span className="class-main">
-                {s.itemTitle || s.title.replace(/^(Practice exam|Flashcards): /, '')}
-                <span className="muted small block">{s.status === 'making' ? 'Being written on your computer…' : `${s.count} ${s.kind === 'exam' ? 'questions' : 'cards'}${s.best != null ? ` · best ${Math.round(s.best * 100)}%` : ''}`}</span>
+                {s.itemTitle || s.title.replace(/^Practice exam: /, '')}
+                <span className="muted small block">{s.status === 'making' ? 'Being written on your computer…' : `${s.count} questions${s.best != null ? ` · best ${Math.round(s.best * 100)}%` : ''}`}</span>
               </span>
             </button>
           ))}
@@ -852,6 +834,11 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
             </button>
           )}
         </>
+      )}
+      {c.url && (
+        <button className="btn ghost" onClick={() => Kea.open({ url: c.url! })}>
+          <ExternalLink size={16} /> Class site
+        </button>
       )}
     </div>
   );
@@ -950,96 +937,36 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
 }
 
 
-/** Every class's chapters to read (or listen to), one class at a time or all of them, with a check when finished. */
-function Readings({ ctx, onBack }: { ctx: Ctx; onBack(): void }) {
+/** A class's chapters to read (or listen to), with a check when finished; the clipboard studies that chapter. */
+function Readings({ ctx, course: d, onBack }: { ctx: Ctx; course: KeaData['details'][number]; onBack(): void }) {
   const done = places();
-  const [only, setOnly] = useState(() => localStorage.getItem(READINGS_CLASS) || '');
-  const pick = (id: string) => {
-    setOnly(id);
-    try {
-      localStorage.setItem(READINGS_CLASS, id);
-    } catch {}
-  };
-  const withPdfs = ctx.data.details.filter((d) => d.chapters.some((ch) => ch.pdf));
-  const shown = withPdfs.filter((d) => !only || d.id === only);
   return (
     <div className="page">
       <button className="back" onClick={onBack}>
-        <ChevronLeft size={18} /> Home
+        <ChevronLeft size={18} /> {d.code}
       </button>
       <h1>Readings</h1>
-      {withPdfs.length > 1 && (
-        <select className="class-pick" value={only && withPdfs.some((d) => d.id === only) ? only : ''} onChange={(e) => pick(e.target.value)} aria-label="Class">
-          <option value="">All classes</option>
-          {withPdfs.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.code} · {d.name}
-            </option>
-          ))}
-        </select>
-      )}
       <p className="muted small">Tap a chapter to read it. In the book, the headphones read it aloud, even with the screen off or no signal.</p>
-      {(shown.length ? shown : withPdfs).map((d) => {
-        const chs = d.chapters.filter((ch) => ch.pdf);
-        return (
-          <section key={d.id}>
-            <h2>
-              {d.code} <span className="muted small">· {d.name}</span>
-            </h2>
-            <div className="wk-reads">
-              {chs.map((ch) => {
-                const p = done[ch.pdf!.file];
-                const finished = !!p?.pages && p.page + 1 >= p.pages * 0.95;
-                return (
-                  <div key={ch.label} className="wk-read">
-                    <button className="wk-read-main" onClick={() => ctx.read({ file: ch.pdf!.file, chapter: ch.label, title: ch.title || ch.label })}>
-                      <span className="wk-read-title">
-                        <b>{ch.label.replace(/^Chapter /, 'Ch ')}</b> {ch.title || ''}
-                      </span>
-                      {finished ? <CheckCircle2 size={16} className="wk-read-done" aria-label="Finished" /> : <BookOpen size={16} className="wk-read-go" />}
-                    </button>
-                    <button className="wk-read-study" aria-label="Study" onClick={() => openStudyHub({ courseId: d.id, code: d.code, title: ch.title ? `${ch.label}: ${ch.title}` : ch.label, chapters: [ch.label] })}>
-                      <ClipboardCheck size={16} />
-                    </button>
-                  </div>
-                );
-              })}
+      <div className="wk-reads">
+        {d.chapters.map((ch) => {
+          const p = ch.pdf ? done[ch.pdf.file] : undefined;
+          const finished = !!p?.pages && p.page + 1 >= p.pages * 0.95;
+          return (
+            <div key={ch.label} className="wk-read">
+              <button className="wk-read-main" disabled={!ch.pdf} onClick={() => ch.pdf && ctx.read({ file: ch.pdf.file, chapter: ch.label, title: ch.title || ch.label })}>
+                <span className="wk-read-title">
+                  <b>{ch.label.replace(/^Chapter /, 'Ch ')}</b> {ch.title || ''}
+                  {!ch.pdf && <span className="muted small"> · being written</span>}
+                </span>
+                {finished ? <CheckCircle2 size={16} className="wk-read-done" aria-label="Finished" /> : ch.pdf ? <BookOpen size={16} className="wk-read-go" /> : null}
+              </button>
+              <button className="wk-read-study" aria-label="Study" onClick={() => openClassStudy(d, d.chapters.map((x) => x.label), [ch.label])}>
+                <ClipboardCheck size={16} />
+              </button>
             </div>
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-const READINGS_CLASS = 'kea.readingsClass';
-
-/** Review: everything, one class, or chosen chapters (spaced review, the ones due first). */
-function ReviewPick({ ctx, due, onBack }: { ctx: Ctx; due: number | null; onBack(): void }) {
-  const classList = ctx.data.details.map((d) => ({ id: d.id, code: d.code }));
-  return (
-    <div className="page">
-      <button className="back" onClick={onBack}>
-        <ChevronLeft size={18} /> Home
-      </button>
-      <h1>Review</h1>
-      <p className="muted small">Questions and cards come back just before you'd forget them, and before each test.</p>
-      <button className="card review-all" onClick={() => openStudySet('review:all')}>
-        <Brain size={22} />
-        <span>
-          <b>Everything</b>
-          <span className="muted small block">{due ? `${due} due, a mix of every class` : 'A mix of every class'}</span>
-        </span>
-      </button>
-      <h2>One class</h2>
-      <div className="chips review-classes">
-        {classList.map((c) => (
-          <button key={c.id} onClick={() => openStudySet(`review:${c.id}`)}>
-            {c.code}
-          </button>
-        ))}
+          );
+        })}
       </div>
-      <h2>Chosen chapters</h2>
-      <StudyPicker classes={classList} />
     </div>
   );
 }

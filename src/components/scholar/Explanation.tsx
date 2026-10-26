@@ -1,11 +1,11 @@
 // What a student sees after checking an answer: right or wrong, why each choice is right or wrong, and the worked
 // solution as a walkthrough (what the question asks, the formula with every symbol explained, each step, the answer
-// boxed). Older questions with plain-text steps show them as a numbered list.
+// boxed). Older questions with plain-text steps show them as a numbered list. Everything here is written with the
+// question, so it shows at once.
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, X } from 'lucide-react';
-import { api, StudyQuestion, StudyStep } from '../../lib/api';
+import { Check, ChevronDown, ChevronRight, HelpCircle, X } from 'lucide-react';
+import { StudyQuestion, StudyStep } from '../../lib/api';
 import { cachedSvg, texToSvg } from '../../lib/tex';
-import { toast } from '../../store';
 import { MathText } from './MathText';
 
 type Shown = { q: StudyQuestion; order: number[] };
@@ -66,14 +66,22 @@ function answerLine(q: StudyQuestion, s: Shown) {
         {q.unit ? ` ${q.unit}` : ''}
       </>
     );
+  if (q.type === 'match') return <>shown beside each term</>;
   return <MathText text={q.answer} />;
 }
 
-export function Explanation({ q, s, answer, result, onSelf }: { q: StudyQuestion; s: Shown; answer: Answer; result: boolean | null; onSelf(ok: boolean): void }) {
-  const choice = q.type === 'mc' || q.type === 'multi';
+/** `dunno`: the student said they didn't know: the answer and the whole walkthrough, without a verdict. */
+export function Explanation({ q, s, answer, result, onSelf, dunno }: { q: StudyQuestion; s: Shown; answer: Answer; result: boolean | null; onSelf(ok: boolean): void; dunno?: boolean }) {
   return (
     <div className="st-explain ex">
-      {q.type === 'short' ? (
+      {dunno ? (
+        <div className="ex-verdict help">
+          <HelpCircle size={16} />
+          <span>
+            <b>Here’s how it works.</b> The answer is {q.type === 'short' ? <MathText text={q.answer} /> : answerLine(q, s)}.
+          </span>
+        </div>
+      ) : q.type === 'short' ? (
         <div className="ex-verdict mark">
           <b>Model answer</b>
           <div className="ex-model">
@@ -102,9 +110,9 @@ export function Explanation({ q, s, answer, result, onSelf }: { q: StudyQuestion
           </div>
         </section>
       )}
-      {choice && <Choices q={q as StudyQuestion & { choices: string[] }} s={s} answer={answer} />}
-      <Walkthrough q={q} open={result === false || isWorked(q)} />
-      {q.type === 'short' && (
+      {(q.type === 'mc' || q.type === 'multi') && <Choices q={q} s={s} answer={answer} />}
+      <Walkthrough q={q} open={!!dunno || result === false || isWorked(q)} />
+      {q.type === 'short' && !dunno && (
         <div className="st-self">
           <span className="muted">Did you get it?</span>
           <button className={`btn sm ${result === true ? 'tonal' : ''}`} onClick={() => onSelf(true)}>
@@ -121,7 +129,7 @@ export function Explanation({ q, s, answer, result, onSelf }: { q: StudyQuestion
 }
 
 /** Every choice, in the order shown, marked right or wrong with the reason (the mistake a wrong one stands for). */
-function Choices({ q, s, answer }: { q: StudyQuestion & { choices: string[] }; s: Shown; answer: Answer }) {
+function Choices({ q, s, answer }: { q: Extract<StudyQuestion, { type: 'mc' | 'multi' }>; s: Shown; answer: Answer }) {
   const picked = new Set((q.type === 'mc' ? [answer] : Array.isArray(answer) ? answer : []).filter((p): p is number => typeof p === 'number'));
   const right = (orig: number) => (q.type === 'mc' ? q.answer === orig : (q.answer as number[]).includes(orig));
   // (Without any notes there's nothing to add beyond the colours on the choices themselves.)
@@ -153,33 +161,13 @@ function Choices({ q, s, answer }: { q: StudyQuestion & { choices: string[] }; s
   );
 }
 
-/** The worked solution. A question without one (or with only short plain steps) offers to have its chapter's written. */
+/** The worked solution, written with the question. */
 export function Walkthrough({ q, open: startOpen }: { q: StudyQuestion; open: boolean }) {
   const [open, setOpen] = useState(startOpen);
-  const [asked, setAsked] = useState(false);
   useEffect(() => setOpen(startOpen), [startOpen, q.k]);
   if (q.type === 'short') return null;
   const steps = q.steps || [];
-  const write = (label: string) =>
-    asked ? (
-      <span className="muted">The walkthroughs for this chapter are being written (a few minutes; follow it under Scans).</span>
-    ) : (
-      <button
-        className="btn sm"
-        onClick={() =>
-          api.scholar
-            .studyStepsFor(q.k!)
-            .then(() => setAsked(true))
-            .catch((err) => toast(err?.message || 'Kea couldn’t start that.', 'error'))
-        }
-      >
-        {label}
-      </button>
-    );
-  if (!steps.length && !q.final) {
-    if (!startOpen || !q.k) return null;
-    return <div className="st-steps none">{write(`Write step-by-step walkthroughs for ${q.chapter || 'this chapter'}`)}</div>;
-  }
+  if (!steps.length && !q.final) return null;
   const walk = isWalkthrough(q);
   return (
     <section className="ex-sec ex-walk">
@@ -213,7 +201,6 @@ export function Walkthrough({ q, open: startOpen }: { q: StudyQuestion; open: bo
               )}
             </div>
           )}
-          {!walk && isWorked(q) && q.k && <div className="ex-more">{write('Write a detailed walkthrough for this chapter')}</div>}
         </div>
       )}
     </section>
