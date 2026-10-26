@@ -7,9 +7,8 @@ import { Check, ChevronDown, ChevronRight, ClipboardList, Image, Loader2, Minus,
 import { api, PoolItem, ReviewQueue, ScholarChapter } from '../../lib/api';
 import { toast } from '../../store';
 import { pickByMix } from '../../lib/studyMix';
-import { MenuButton } from '../Popover';
 import { useScholar } from './scholarStore';
-import { MakeMenu, SetRow, shuffle, useCanMake, useStudySets } from './Study';
+import { SetRow, shuffle, useCanMake, useStudySets } from './Study';
 
 export interface StudyScope {
   courseId: string;
@@ -156,7 +155,26 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   const n = Math.min(size, picked.length);
   const c = q?.counts[scope.courseId];
   const days = c?.test ? Math.round((Date.parse(`${c.test.date}T12:00`) - Date.now()) / 864e5) : null;
-  const target = scope.itemId ? { itemId: scope.itemId } : { chapters: scope.chapters };
+  // The chapters ticked (by any of their topics, or the chapter itself when it has no questions yet).
+  const tickedChapters = scope.chapters.filter((ch) => [...sel].some((k) => k.startsWith(`${ch}\u0000`)));
+  const target = scope.itemId ? { itemId: scope.itemId } : { chapters: tickedChapters.length ? tickedChapters : scope.chapters };
+  // A chapter being written now (a set still being made for it alone).
+  const writing = (ch: string) => (sets || []).some((st) => st.courseId === scope.courseId && st.status === 'making' && st.kind === 'exam' && st.chapters.length === 1 && st.chapters[0] === ch);
+  const toWrite = tickedChapters.filter((ch) => !writing(ch));
+  // 25 new questions for each ticked chapter (one set each, written one after another on your Claude plan).
+  const writeTicked = async () => {
+    setBusy('write');
+    try {
+      for (const ch of toWrite) await api.scholar.studyMake({ kind: 'exam', courseId: scope.courseId, chapters: [ch], count: 25, mode: 'new' });
+      useScholar.getState().set({ version: useScholar.getState().version + 1 });
+      toast(`Writing 25 questions for ${toWrite.length === 1 ? short(toWrite[0]) : `each of ${toWrite.length} chapters`}, each with its walkthrough. A chapter takes a few minutes.`, 'success');
+    } catch (err: any) {
+      toast(err?.message || 'Kea couldn’t start that.', 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+  const chapterList = (chs: string[]) => (chs.length <= 4 ? chs.map(short).join(', ') : `${chs.slice(0, 3).map(short).join(', ')} and ${chs.length - 3} more`);
   const mine = (sets || []).filter((s) => s.courseId === scope.courseId && (scope.itemId ? s.itemId === scope.itemId : s.chapters.join('|') === scope.chapters.join('|')) && s.kind === 'exam' && s.attempts > 0);
   const mastered = inPick.filter((p) => p.lastRight === true).length;
   const learning = inPick.filter((p) => p.lastRight === false).length;
@@ -183,7 +201,8 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
     }
   };
   const chapterTitle = (ch: string) => titles.get(ch) || '';
-  const allKeys = [...tree].flatMap(([ch, topics]) => [...topics.keys()].map((t) => `${ch}\u0000${t}`));
+  const keysOf = (ch: string, topics: Map<string, PoolItem[]>) => (topics.size ? [...topics.keys()].map((t) => `${ch}\u0000${t}`) : [`${ch}\u0000*`]);
+  const allKeys = [...tree].flatMap(([ch, topics]) => keysOf(ch, topics));
 
   return (
     <div className="hub">
@@ -210,25 +229,25 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
             <Loader2 size={16} className="spin" />
           </div>
         ) : (
-          [...tree].filter(([, topics]) => topics.size > 0).map(([ch, topics]) => {
-            const keys = [...topics.keys()].map((t) => `${ch}\u0000${t}`);
+          [...tree].map(([ch, topics]) => {
+            const keys = keysOf(ch, topics);
             const count = [...topics.values()].reduce((a, l) => a + l.length, 0);
             const on = keys.filter((k) => sel.has(k)).length;
-            const state = !keys.length || !on ? 'none' : on === keys.length ? 'all' : 'some';
+            const state = !on ? 'none' : on === keys.length ? 'all' : 'some';
             const isOpen = open.includes(ch);
             const right = [...topics.values()].flat().filter((p) => p.lastRight === true).length;
             return (
-              <div key={ch} className={`hub-ch ${state !== 'none' ? 'on' : ''}`}>
+              <div key={ch} className={`hub-ch ${state !== 'none' ? 'on' : ''} ${count ? '' : 'empty'}`}>
                 <div className="hub-ch-row">
-                  <button className={`hub-tick ${state}`} disabled={!count} onClick={() => toggle(keys, state !== 'all')} aria-label={`Study ${ch}`}>
+                  <button className={`hub-tick ${state}`} onClick={() => toggle(keys, state !== 'all')} aria-label={`Tick ${ch}`}>
                     {state === 'all' ? <Check size={13} /> : state === 'some' ? <Minus size={13} /> : null}
                   </button>
-                  <button className="hub-ch-main" disabled={!count} onClick={() => (topics.size > 1 ? setOpen(isOpen ? open.filter((x) => x !== ch) : [...open, ch]) : toggle(keys, state !== 'all'))}>
+                  <button className="hub-ch-main" onClick={() => (topics.size > 1 ? setOpen(isOpen ? open.filter((x) => x !== ch) : [...open, ch]) : toggle(keys, state !== 'all'))}>
                     <span className="hub-ch-title">
                       <b>{short(ch)}</b> {chapterTitle(ch)}
                     </span>
                     <span className="hub-ch-sub muted">
-                      {count ? `${count} questions${topics.size > 1 ? ` · ${topics.size} topics` : ''}` : 'No questions yet'}
+                      {writing(ch) ? 'Being written…' : count ? `${count} questions${topics.size > 1 ? ` · ${topics.size} topics` : ''}` : 'No questions yet'}
                     </span>
                     {count > 0 && (
                       <span className="hub-ch-bar" title={`${right} of ${count} right last time`}>
@@ -256,11 +275,6 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
             );
           })
         )}
-        {pool && [...tree].some(([, t]) => !t.size) && (
-          <div className="hub-none muted">
-            No questions yet: {[...tree].filter(([, t]) => !t.size).map(([ch]) => short(ch).replace(/^Ch /, '')).join(', ').replace(/^/, 'Ch ')}
-          </div>
-        )}
       </div>
 
       {/* Start, with the few choices that matter beside it (kept on screen at the bottom). */}
@@ -274,7 +288,9 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
                 ? 'Tick a chapter or topic above'
                 : picked.length
                   ? `${picked.length} questions${inPick.length ? ` · ${mastered} right last time, ${learning} missed` : ''}`
-                  : 'None match what you picked'}
+                  : !inPick.length
+                    ? 'No questions yet in what you ticked: write some below'
+                    : 'None match what you picked'}
             </span>
           </div>
           <button className="btn primary hub-start" disabled={!n || !!busy} onClick={start}>
@@ -342,16 +358,17 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
       )}
 
       <div className="hub-more">
-        <span className="tb-h">Make more</span>
-        <MenuButton
-          button={() => (
-            <button className="btn sm" disabled={canMake === false}>
-              <Sparkles size={13} /> Write more questions
-            </button>
-          )}
+        <span className="tb-h">Write questions</span>
+        <button
+          className="btn sm tonal"
+          disabled={canMake === false || !!busy || !toWrite.length || !!scope.itemId}
+          onClick={writeTicked}
+          title={canMake === false ? 'Connect your Claude account in Scans to write questions' : 'Each chapter gets its own set of 25 new questions (multiple choice, fill in the blank, matching and more), each with its walkthrough'}
         >
-          {(close) => <MakeMenu kind="exam" courseId={scope.courseId} target={target} canMake={canMake} close={close} />}
-        </MenuButton>
+          {busy === 'write' ? <Loader2 size={13} className="spin" /> : <Sparkles size={13} />}{' '}
+          {toWrite.length ? `Write 25 questions for ${toWrite.length === 1 ? short(toWrite[0]) : `each of ${toWrite.length} chapters`}` : 'Tick chapters to write questions for'}
+        </button>
+        {toWrite.length > 1 && <span className="muted hub-write-which">{chapterList(toWrite)}</span>}
         <button
           className="btn sm"
           disabled={canMake === false || !!busy}

@@ -2077,3 +2077,24 @@ button.hub-mode:hover:not(:disabled) {
 .st-q.help {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
 }
+
+/* A chapter with no questions yet: its own Write button */
+.hub-ch-main.as-row {
+  cursor: default;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "title" "sub";
+}
+.hub-ch-main.as-row:hover {
+  background: transparent;
+}
+.hub-write {
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.hub-ch.empty .hub-ch-title {
+  color: var(--text-2);
+}
+.hub-write-which {
+  font-size: 12.5px;
+}
