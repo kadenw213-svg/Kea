@@ -3170,7 +3170,9 @@ def _explain_problems(q: dict, explain: str) -> list[str]:
         out.append(f"the explanation uses a formula ({formula.group(0).strip()[:40]}) without saying what its symbols stand for: add \"where …\" with each symbol's meaning and unit")
     # A calculation needs its worked steps (shown when the student misses it).
     steps = q.get("steps")
-    worked = q.get("type") == "num" or str(q.get("level", "")).lower() in ("apply", "multistep")
+    # (A reasoning question with no arithmetic keeps plain steps; a calculation of any type gets the walkthrough.)
+    arithmetic = any(re.search(r"\d\s*[=×x*/÷]\s*\d|=\s*-?\d", str(s)) for s in (steps or []) if isinstance(s, str))
+    worked = q.get("type") == "num" or (str(q.get("level", "")).lower() in ("apply", "multistep") and arithmetic)
     if q.get("type") == "num" and not (isinstance(steps, list) and len([s for s in steps if str(s).strip()]) >= 3):
         out.append("a calculation needs `steps`: its walkthrough, 3 to 8 steps")
     # A calculation's walkthrough: what it asks, the formula with every symbol explained, and the boxed answer.
