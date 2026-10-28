@@ -16,6 +16,9 @@
 //   attempts.json       { [id]: [{ at, score, total, n, items: [[k, right]] }] }   (practice exams; `items` says how
 //                        each question went, which is each question's history across every set)
 //                        (spaced review's answers are kept under the id `review`, one attempt per answer)
+//                        (the Study stream saves under `stream-<courseId>`, with no set of its own; an answer to a
+//                        question shown again just after it was missed is `[k, right, 'r']`, a relearn answer, which
+//                        doesn't count in the question's history: right seconds after the explanation isn't learned)
 //   cards.json          { [id]: { known: [card key], at } }          (flashcards; older copies hold card indices)
 //   stars.json          { [k]: true }                                (starred cards and questions)
 //   review.json         { [k]: { box, due, last, lapses } }          (spaced review, see review())
@@ -91,11 +94,15 @@ const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').tr
 const keyOf = (it) => crypto.createHash('sha1').update(norm(it.q ?? it.front) + (Array.isArray(it.pairs) ? norm(JSON.stringify(it.pairs)) : '')).digest('hex').slice(0, 12);
 const keyed = (items) => (items || []).map((it) => (it.k ? it : { ...it, k: keyOf(it) }));
 
+/** A Study stream's attempt bucket (one per class, no set file, never listed and never given a best score). */
+const isStream = (id) => String(id || '').startsWith('stream-');
+
 /** Every set, newest first, with the best score and how many cards are known. */
 function list() {
   const attempts = readJson(file('attempts.json'), {});
   const cards = readJson(file('cards.json'), {});
   return index()
+    .filter((e) => !isStream(e.id))
     .map((e) => {
       const a = attempts[e.id] || [];
       return {
@@ -110,13 +117,15 @@ function list() {
 }
 
 /** How each question has gone, across every set and device: { [k]: { seen, right, last, lastRight } }. */
-function history() {
+const history = () => historyFrom(readJson(file('attempts.json'), {}));
+/** history() from the contents of attempts.json. A relearn answer (`[k, ok, 'r']`) counts neither way. */
+function historyFrom(attempts) {
   const out = {};
-  for (const list of Object.values(readJson(file('attempts.json'), {})))
-    for (const a of list || [])
-      for (const [k, ok] of a.items || []) {
-        // (An answer left unmarked, or not graded, counts neither way.)
-        if (ok == null) continue;
+  for (const list of Object.values(attempts || {}))
+    for (const a of Array.isArray(list) ? list : [])
+      for (const [k, ok, tag] of a.items || []) {
+        // (An answer left unmarked, or not graded, counts neither way; nor does one given just after the explanation.)
+        if (ok == null || tag === 'r') continue;
         const h = (out[k] = out[k] || { seen: 0, right: 0, last: '', lastRight: null });
         h.seen++;
         if (ok) h.right++;
@@ -127,6 +136,8 @@ function history() {
 
 /** A set with its items keyed, and (for exams) each question's history, so the player can favour the ones to practise. */
 function get(id) {
+  if (typeof id === 'string' && id.startsWith('stream:')) return streamSet(id.slice(7));
+  if (typeof id === 'string' && id.startsWith('saved:')) return savedSet(id.slice(6));
   const e = index().find((x) => x.id === id);
   if (!e) return null;
   // (A set made from saved questions on a device that isn't the primary waits in `local/` until the primary's copy comes.)
@@ -145,6 +156,53 @@ function get(id) {
   out.learn = learnGet(id);
   out.matchBest = readJson(file('match.json'), {})[id] || null;
   return out;
+}
+
+/** A ready exam set's questions, keyed (from `sets/`, or `local/` while the primary's copy hasn't come). */
+const questionsOf = (e) => keyed(readJson(file('sets', `${e.id}.json`), null)?.questions || readJson(file('local', `${e.id}.json`), {}).questions);
+
+/**
+ * Every saved question of a class (each once, whichever set it's in), with its history and bookmarks: what the Study
+ * stream draws from. Served by get('stream:<courseId>'), so no set file is made for it.
+ */
+function streamSet(courseId) {
+  const entries = index().filter((e) => e.kind === 'exam' && e.courseId === courseId && e.status === 'ready');
+  const seen = new Map();
+  for (const e of entries) for (const q of questionsOf(e)) if (!seen.has(q.k)) seen.set(q.k, q.chapter ? q : { ...q, chapter: (e.chapters || [])[0] || null });
+  const questions = [...seen.values()];
+  const h = history();
+  const stars = starred();
+  return {
+    id: `stream-${courseId}`,
+    kind: 'exam',
+    title: 'Study',
+    courseId,
+    courseCode: entries[0]?.courseCode || '',
+    chapters: [...new Set(entries.flatMap((e) => e.chapters || []))],
+    itemId: null,
+    itemTitle: null,
+    count: questions.length,
+    createdAt: '',
+    status: 'ready',
+    source: 'saved',
+    stream: true,
+    questions,
+    history: Object.fromEntries(questions.filter((q) => h[q.k]).map((q) => [q.k, h[q.k]])),
+    starred: questions.filter((q) => stars[q.k]).map((q) => q.k),
+    known: []
+  };
+}
+
+/** Every bookmarked question of a class (or of every class: 'all'), each with its class: the Saved page. */
+function savedSet(courseId) {
+  const stars = starred();
+  const seen = new Map();
+  for (const e of index()) {
+    if (e.kind !== 'exam' || e.status !== 'ready' || (courseId !== 'all' && e.courseId !== courseId)) continue;
+    for (const q of questionsOf(e)) if (stars[q.k] && !seen.has(q.k)) seen.set(q.k, { ...q, chapter: q.chapter || (e.chapters || [])[0] || null, courseId: e.courseId, courseCode: e.courseCode });
+  }
+  const questions = [...seen.values()];
+  return { id: 'saved', kind: 'exam', title: 'Saved', courseId: courseId === 'all' ? '' : courseId, courseCode: '', chapters: [], itemId: null, itemTitle: null, count: questions.length, createdAt: '', status: 'ready', source: 'saved', questions, starred: questions.map((q) => q.k), known: [] };
 }
 
 // A set's id: its kind, then letters, digits and hyphens ("exam-pick-hub…-1a2b3c4d" from the Study page, too).
@@ -176,7 +234,8 @@ function remove(id) {
 /** An attempt: its score, and how each question went ([key, right], right null for an unmarked written answer). */
 function saveAttempt(id, a) {
   const attempts = readJson(file('attempts.json'), {});
-  const items = Array.isArray(a.items) ? a.items.filter((x) => Array.isArray(x) && typeof x[0] === 'string').map(([k, ok]) => [k, ok == null ? null : !!ok]) : undefined;
+  // (A relearn answer keeps its 'r': see history().)
+  const items = Array.isArray(a.items) ? a.items.filter((x) => Array.isArray(x) && typeof x[0] === 'string').map(([k, ok, tag]) => (tag === 'r' ? [k, ok == null ? null : !!ok, 'r'] : [k, ok == null ? null : !!ok])) : undefined;
   (attempts[id] = attempts[id] || []).push({ at: new Date().toISOString(), score: a.score, total: a.total, n: a.n, ...(items ? { items } : {}) });
   writeJson(file('attempts.json'), attempts);
   // Every miss comes back in spaced review: box 0, due today. Ones got right keep their place (no demotion).
@@ -367,7 +426,7 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
 // it's used. Banks are ordinary sets (bank: true), written one at a time by the primary. Library classes can't make more,
 // so their authors ship 100 per chapter instead.
 const BANK_LOW = 5;
-const BANK_MORE = 20;
+const BANK_MORE = 25;
 
 /**
  * The next chapter (soonest test first) that tests identification and has few picture questions yet, as a request for
@@ -1232,4 +1291,4 @@ function whereIs(k) {
   return null;
 }
 
-module.exports = { addHint, hints, applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, stepLine, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark, teacherContext, _test: { pick } };
+module.exports = { addHint, hints, applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, stepLine, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark, teacherContext, isStream, _test: { pick, historyFrom, strongTopics } };

@@ -666,6 +666,10 @@ function HomeAndStudy() {
       </section>
       <section className="set">
         <h2>Practice exams</h2>
+        <label className="toggle">
+          <input type="checkbox" checked={!!values['study.sound']} onChange={(e) => set('study.sound', e.target.checked)} />
+          <span>Soft sounds for right and wrong answers</span>
+        </label>
         <button className="btn ghost" onClick={() => setMore(!more)}>
           {more ? 'Hide' : 'Mix of question kinds'}
         </button>

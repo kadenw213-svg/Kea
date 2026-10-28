@@ -4,30 +4,21 @@ import { api } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
 import { openScholar, useScholar } from './scholarStore';
-import { openStudyHub, stableStudyId } from './StudyHub';
+import { openStream } from './StudyStream';
 
 /**
- * Quiz yourself on a chapter: its saved questions (the chapter's question bank and every set made on it), as one quiz
- * that asks missed and unseen questions first. The same quiz entry is reused each time, so its history builds up.
+ * Quiz yourself on a chapter: its saved questions (the chapter's question bank and every set made on it), as the Study
+ * stream, unseen and missed questions first.
  */
 export async function quizChapter(courseId: string, chapter: string, code = '') {
-  if (code) {
-    openScholar(useScholar.getState().view);
-    return openStudyHub({ courseId, code, title: chapter, chapters: [chapter] });
-  }
   const { count } = await api.scholar.studySaved({ kind: 'exam', courseId, chapters: [chapter] }).catch(() => ({ count: 0 }));
   if (!count) {
     const writing = await api.scholar.studyBanks().catch(() => false);
     return toast(writing ? `${chapter}'s questions are being written. They'll be ready in a few minutes (follow it under Scans).` : `${chapter} has no saved questions yet, and Claude isn't connected to write them.`, writing ? 'success' : 'error');
   }
-  const id = stableStudyId('exam-quiz', [courseId, chapter]);
-  try {
-    await api.scholar.studyMake({ id, kind: 'exam', courseId, chapters: [chapter], mode: 'saved', count });
-    openScholar(useScholar.getState().view);
-    useScholar.getState().set({ study: id });
-  } catch (err: any) {
-    toast(err?.message || 'Kea couldn’t open the quiz.', 'error');
-  }
+  // (No set is made for it: its answers go to the class's stream bucket.)
+  openScholar(useScholar.getState().view);
+  openStream({ courseId, code, chapters: [chapter] });
 }
 
 /** The PDF toolbar's Quiz me, shown when the open file is one of your class textbooks. */

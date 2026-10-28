@@ -707,9 +707,18 @@ function register() {
     return ok;
   });
   ipcMain.handle('scholar:studyDelete', (_e, id) => study.remove(id));
+  // Running low on a chapter's questions: more get written, ~5 s after an attempt. The Study stream saves every 10
+  // answers, so its saves only check on leaving the stream (`final`) or once every 25 answers.
+  let banksTimer = null;
+  let streamAnswers = 0;
+  const banksSoon = () => (clearTimeout(banksTimer), (banksTimer = setTimeout(keepBanks, 5000)));
   ipcMain.handle('scholar:studyAttempt', (_e, id, a) => {
     study.saveAttempt(id, a);
-    setTimeout(keepBanks, 5000); // running low on a chapter's questions: more get written
+    if (!study.isStream(id)) banksSoon();
+    else {
+      streamAnswers += Array.isArray(a?.items) ? a.items.length : 0;
+      if (a?.final || streamAnswers >= 25) (streamAnswers = 0), banksSoon();
+    }
     return true;
   });
   ipcMain.handle('scholar:studyKnown', (_e, id, known) => study.setKnown(id, known));

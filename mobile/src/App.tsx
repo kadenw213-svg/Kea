@@ -938,7 +938,7 @@ function Readings({ ctx, course: d, onBack }: { ctx: Ctx; course: KeaData['detai
                 </span>
                 {finished ? <CheckCircle2 size={16} className="wk-read-done" aria-label="Finished" /> : ch.pdf ? <BookOpen size={16} className="wk-read-go" /> : null}
               </button>
-              <button className="wk-read-study" aria-label="Study" onClick={() => openClassStudy(d, d.chapters.map((x) => x.label), [ch.label])}>
+              <button className="wk-read-study" aria-label="Study" onClick={() => openClassStudy(d, d.chapters.map((x) => x.label), [ch.label], true)}>
                 <ClipboardCheck size={16} />
               </button>
             </div>

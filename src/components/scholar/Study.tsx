@@ -1,7 +1,7 @@
 // Study materials: practice exams and flashcard decks. Claude writes a whole set at once, only when the student asks;
 // Kea keeps it and shuffles, samples and grades it here, as often as the student likes, with no Claude involved.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ClipboardList, HelpCircle, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Pencil, Star, Brain, Shapes, FileCheck, Repeat, Headphones } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ClipboardList, HelpCircle, Layers, Loader2, RotateCcw, Shuffle, Trash2, X, AlertTriangle, Pencil, Bookmark, Brain, Shapes, FileCheck, Repeat, Headphones } from 'lucide-react';
 import { api, StudyCard, StudyHistory, StudyKind, StudyQuestion, StudySet, StudySetFull } from '../../lib/api';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
@@ -16,6 +16,8 @@ import '../../styles/study.css';
 import { MathText } from './MathText';
 import { Explanation } from './Explanation';
 import { StudyImage } from './StudyImage';
+import { StudyStream, parseStream, streamTitle } from './StudyStream';
+import { Saved } from './Saved';
 
 // ---------- Shared state ----------
 /** Every set, reloaded when Kea says something changed (a set finished) and while one is being made. */
@@ -182,7 +184,8 @@ export function SetRow({ s, showCourse = false }: { s: StudySet; showCourse?: bo
         : [
             `${s.count} ${s.kind === 'exam' ? 'questions' : 'cards'}${s.source === 'saved' ? ', from saved ones' : s.reused ? ` (${s.reused} saved, ${s.count - s.reused} new)` : ''}`,
             s.source === 'mine' && s.editedAt && s.editedAt.slice(0, 10) !== s.createdAt.slice(0, 10) ? `edited ${madeOn(s.editedAt)}` : `made ${madeOn(s.createdAt)}`,
-            s.kind === 'exam' && s.best != null ? `best ${pct(s.best)} (${s.attempts} tr${s.attempts === 1 ? 'y' : 'ies'})` : '',
+            // (A Study stream's bucket has no score: it never ends.)
+            s.kind === 'exam' && s.best != null && !s.id.startsWith('stream-') ? `best ${pct(s.best)} (${s.attempts} tr${s.attempts === 1 ? 'y' : 'ies'})` : '',
             s.kind === 'cards' && s.known ? `${s.known} known` : ''
           ]
             .filter(Boolean)
@@ -273,6 +276,9 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
   const [set, setSet] = useState<StudySetFull | null>(null);
   const [mode, setMode] = useState<DeckMode>(startMode || 'cards');
   const hub = id.startsWith('hub:') ? parseScope(id) : null;
+  // "stream:<scope>": the Study stream; "saved:<courseId|all>": the bookmarked questions.
+  const stream = id.startsWith('stream:') ? parseStream(id) : null;
+  const saved = id.startsWith('saved:') ? id.slice(6) : null;
   // The class's textbook chapters, so each question can open its reading beside the quiz.
   const [pdfs, setPdfs] = useState<Map<string, string>>(new Map());
   const [reading, setReading] = useState<ReadingTarget | null>(null);
@@ -287,7 +293,8 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
     setSet(null);
     setMode(startMode || 'cards');
     if (hub) setPdfCourse(hub.courseId);
-    if (review != null || edit != null || hub) return;
+    if (stream) setPdfCourse(stream.courseId);
+    if (review != null || edit != null || hub || stream || saved != null) return;
     const asCards = id.startsWith('qcards:');
     api.scholar.studyGet(asCards ? id.slice(7) : id).then((s) => {
       if (!s) return onClose();
@@ -306,8 +313,13 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
     return () => window.removeEventListener('keydown', key);
   }, [reading]);
   const file = reading && pdfs.get(reading.chapter);
-  const title = hub ? 'Study' : review != null ? 'Review' : edit != null ? (edit === 'new' || edit === 'import' ? 'New set' : 'Edit set') : set?.title || '';
-  const body = hub ? (
+  const streaming = !!stream || (!!set && set.kind === 'exam');
+  const title = stream ? streamTitle(stream.code, stream.chapters, stream.bookmarks) : saved != null ? 'Saved' : set?.kind === 'exam' ? streamTitle(set.courseCode, set.itemTitle ? [set.itemTitle] : set.chapters) : hub ? 'Study' : review != null ? 'Review' : edit != null ? (edit === 'new' || edit === 'import' ? 'New set' : 'Edit set') : set?.title || '';
+  const body = stream ? (
+    <StudyStream scope={stream} />
+  ) : saved != null ? (
+    <Saved courseId={saved === 'all' ? '' : saved} />
+  ) : hub ? (
     <StudyHub scope={hub} />
   ) : review != null ? (
       <Review courseId={review === 'all' ? '' : review} chapters={reviewChapters} sections={reviewSections} />
@@ -316,7 +328,8 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
     ) : !set ? (
       <div className="spinner" />
     ) : set.kind === 'exam' ? (
-      <Exam set={set} auto={(startMode as string) === 'exam-instant' ? 'instant' : (startMode as string) === 'exam' ? 'end' : undefined} />
+      // (Exam, the scored practice exam, stays for graded quizzes later; a saved set is studied as a stream now.)
+      <StudyStream set={set} />
     ) : mode === 'learn' ? (
       <Learn set={set} />
     ) : mode === 'test' ? (
@@ -330,12 +343,19 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
     );
   return (
     <ReadingContext.Provider value={{ has: (ch) => !!ch && pdfs.has(ch), open: setReading, current: reading, course: (cid) => cid !== pdfCourse && (setReading(null), setPdfCourse(cid)) }}>
-      <div className={`st-player ${file ? 'with-reading' : ''}`}>
+      <div className={`st-player ${file ? 'with-reading' : ''} ${streaming ? 'streaming' : ''}`}>
         <div className="st-player-head">
-          <button className="icon-btn" onClick={onClose} title="Close (Esc)">
-            <X size={18} />
-          </button>
+          {!streaming && (
+            <button className="icon-btn" onClick={onClose} title="Close (Esc)">
+              <X size={18} />
+            </button>
+          )}
           <div className="st-player-title">{title}</div>
+          {streaming && (
+            <button className="btn sm st-exit" onClick={onClose} title="Exit (Esc)">
+              Exit
+            </button>
+          )}
           {set?.kind === 'cards' && (
             <div className="st-seg st-modes">
               {DECK_MODES.map(([m, label, Icon]) => (
@@ -802,13 +822,13 @@ const answerText = (q: StudyQuestion) =>
  * One question. "I don't know" (where it's offered) counts it as missed and shows the answer with its explanation and
  * walkthrough at once, written with the question, so there's nothing to wait for.
  */
-export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf, onCheck, onDontKnow, dunno }: { num: number; s: Shown; answer: Answer; setAnswer(a: Answer): void; reveal: boolean; result: boolean | null; onSelf(ok: boolean): void; onCheck?: () => void; onDontKnow?: () => void; dunno?: boolean }) {
+export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf, onCheck, onDontKnow, dunno, brief }: { num?: number; s: Shown; answer: Answer; setAnswer(a: Answer): void; reveal: boolean; result: boolean | null; onSelf(ok: boolean): void; onCheck?: () => void; onDontKnow?: () => void; dunno?: boolean; /** The Study stream: no number, and a right answer's explanation folded to its first sentence. */ brief?: boolean }) {
   const q = s.q;
   const state = !reveal ? '' : dunno ? 'help' : result === true ? 'right' : result === false ? 'wrong' : 'mark';
   return (
     <div className={`st-q ${state}`}>
       <div className="st-q-head">
-        <span className="st-num">{num}</span>
+        {num != null && <span className="st-num">{num}</span>}
         <div className="st-stem">
           <MathText text={q.q} />
           <StudyImage src={q.image} credit={q.image_credit} />
@@ -878,7 +898,7 @@ export function QuestionCard({ num, s, answer, setAnswer, reveal, result, onSelf
           Check
         </button>
       )}
-      {reveal && <Explanation q={q} s={s} answer={answer} result={result} onSelf={onSelf} dunno={dunno} />}
+      {reveal && <Explanation q={q} s={s} answer={answer} result={result} onSelf={onSelf} dunno={dunno} brief={brief} />}
     </div>
   );
 }
@@ -984,7 +1004,7 @@ function Cards({ set }: { set: StudySetFull }) {
         </button>
         {starred.length > 0 && (
           <button className={`btn sm ${onlyStarred ? 'tonal' : ''}`} onClick={() => (setOnlyStarred(!onlyStarred), setPos(0), setFlipped(false))}>
-            <Star size={13} /> Starred ({starred.length})
+            <Bookmark size={13} /> Bookmarked ({starred.length})
           </button>
         )}
       </div>
@@ -1020,7 +1040,7 @@ function Cards({ set }: { set: StudySetFull }) {
           </div>
         </>
       ) : onlyStarred ? (
-        <div className="sch-empty">No starred cards left here.</div>
+        <div className="sch-empty">No bookmarked cards left here.</div>
       ) : (
         <div className="sch-empty">
           You know every card in this deck.

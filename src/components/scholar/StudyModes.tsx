@@ -3,7 +3,7 @@
 // deck, spaced Review across every set (timed so each card comes back before the test it's on), and sets the student
 // makes or pastes in from Quizlet.
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, ClipboardPaste, Plus, RotateCcw, Star, Timer, Trash2, Trophy, Volume2, X } from 'lucide-react';
+import { Bookmark, BookmarkCheck, Check, ChevronRight, ClipboardPaste, Plus, RotateCcw, Timer, Trash2, Trophy, Volume2, X } from 'lucide-react';
 import { api, ReviewItem, ReviewQueue, ScholarCourse, StudyCard, StudyQuestion, StudySetFull } from '../../lib/api';
 import { toast } from '../../store';
 import { judgeBlank } from '../../lib/blank';
@@ -42,19 +42,22 @@ export function SpeakButton({ text }: { text: string }) {
     </button>
   );
 }
-export function StarButton({ k, starred, onChange }: { k?: string; starred: boolean; onChange(on: boolean): void }) {
+/** Bookmark (kept as a star in stars.json, as before): bookmarked questions are kept under Saved. */
+export function StarButton({ k, starred, onChange, label }: { k?: string; starred: boolean; onChange(on: boolean): void; label?: boolean }) {
   if (!k) return null;
   return (
     <button
-      className={`icon-btn sm st-star ${starred ? 'on' : ''}`}
-      title={starred ? 'Starred: tap to unstar' : 'Star it to study it on its own'}
+      className={`${label ? 'btn sm' : 'icon-btn sm'} st-star ${starred ? 'on' : ''}`}
+      title={starred ? 'Bookmarked: tap to remove the bookmark' : 'Bookmark it to keep it under Saved'}
+      aria-pressed={starred}
       onClick={(e) => {
         e.stopPropagation();
         api.scholar.studyStar(k, !starred);
         onChange(!starred);
       }}
     >
-      <Star size={15} fill={starred ? 'currentColor' : 'none'} />
+      {starred ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
+      {label && (starred ? ' Bookmarked' : ' Bookmark')}
     </button>
   );
 }
@@ -262,7 +265,7 @@ export function Learn({ set }: { set: StudySetFull }) {
                     All {cards.length}
                   </button>
                   <button className={onlyStarred ? 'on' : ''} onClick={() => setOnlyStarred(true)}>
-                    <Star size={12} /> Starred ({starred.length})
+                    <Bookmark size={12} /> Bookmarked ({starred.length})
                   </button>
                 </div>
               </div>

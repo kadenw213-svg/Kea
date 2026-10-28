@@ -36,7 +36,8 @@ import {
   Monitor,
   ClipboardCheck,
   ShieldAlert,
-  Reply
+  Reply,
+  Bookmark
 } from 'lucide-react';
 import { inboxParts, kindOf } from './inboxFormat';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
@@ -53,6 +54,7 @@ import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, assignmentDoc, setClassColor, setTypeColor, useColors } from './kinds';
 import { StudyPlayer } from './Study';
 import { ResourcesView } from './Resources';
+import { Saved } from './Saved';
 import { MessagesView } from './Messages';
 import { ChangesBox, ClassRules, SyllabusMap, ItemHistory } from './History';
 import { openClassStudy, openStudyHub } from './StudyHub';
@@ -304,6 +306,9 @@ export function ScholarScreen() {
         </button>
         <button className={`sch-link ${view.name === 'resources' ? 'on' : ''}`} onClick={() => go({ name: 'resources' })} disabled={!hasData}>
           <Layers size={17} /> Study
+        </button>
+        <button className="sch-link" onClick={() => set({ study: 'saved:all' })} disabled={!hasData}>
+          <Bookmark size={17} /> Saved
         </button>
         <div className="sch-head">Classes</div>
         {courses.map((c) => (
@@ -1255,7 +1260,7 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
   // undefined while loading; null when there's no such class (removed, or another profile's).
   const [c, setC] = useState<ScholarCourseDetail | null | undefined>(undefined);
   const [loadError, setLoadError] = useState('');
-  const [tab, setTab] = useState<'week' | 'weeks' | 'calendar' | 'textbook' | 'grades' | 'study'>(startTab || 'week');
+  const [tab, setTab] = useState<'week' | 'weeks' | 'calendar' | 'textbook' | 'grades' | 'study' | 'saved'>(startTab || 'week');
   const [grades, setGrades] = useState<ScholarGrades | null>(null);
   useEffect(() => {
     let live = true;
@@ -1363,7 +1368,8 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
             ['weeks', 'Week by week'],
             ['textbook', 'Readings'],
             ['calendar', 'Calendar'],
-            ['grades', 'Grades']
+            ['grades', 'Grades'],
+            ['saved', 'Saved']
           ] as const
         ).map(([id, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
@@ -1445,6 +1451,7 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
           </div>
         ))}
       {tab === 'calendar' && <CalendarView ctx={ctx} courseId={c.id} />}
+      {tab === 'saved' && <Saved courseId={c.id} />}
     </div>
   );
 }

@@ -29,6 +29,11 @@
   --titlebar-h: 44px;
   --toolbar-h: 48px;
   --font: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Motion: one easing and three lengths, for calm movement (off with Reduce animations or the system setting). */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-1: 160ms;
+  --dur-2: 280ms;
+  --dur-3: 500ms;
   color-scheme: dark;
 }
 

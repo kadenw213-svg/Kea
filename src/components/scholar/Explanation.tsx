@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, HelpCircle, X } from 'lucide-react';
 import { StudyQuestion, StudyStep } from '../../lib/api';
 import { cachedSvg, texToSvg } from '../../lib/tex';
+import { firstSentence } from '../../lib/studyQueue';
 import { MathText } from './MathText';
 
 type Shown = { q: StudyQuestion; order: number[] };
@@ -70,8 +71,17 @@ function answerLine(q: StudyQuestion, s: Shown) {
   return <MathText text={q.answer} />;
 }
 
-/** `dunno`: the student said they didn't know: the answer and the whole walkthrough, without a verdict. */
-export function Explanation({ q, s, answer, result, onSelf, dunno }: { q: StudyQuestion; s: Shown; answer: Answer; result: boolean | null; onSelf(ok: boolean): void; dunno?: boolean }) {
+/**
+ * `dunno`: the student said they didn't know: the answer and the whole walkthrough, without a verdict. `brief` (the
+ * Study stream): a right answer shows the verdict and the first sentence of why, the rest behind "Show explanation",
+ * with worked steps folded even on a calculation; a wrong one shows everything, as always.
+ */
+export function Explanation({ q, s, answer, result, onSelf, dunno, brief }: { q: StudyQuestion; s: Shown; answer: Answer; result: boolean | null; onSelf(ok: boolean): void; dunno?: boolean; brief?: boolean }) {
+  const short = !!brief && result === true && !dunno && q.type !== 'short';
+  const [more, setMore] = useState(false);
+  useEffect(() => setMore(false), [q.k]);
+  const why = short && !more ? firstSentence(q.explain || '') : null;
+  const hasMore = !!why && (!!why.rest || (q.type === 'mc' || q.type === 'multi' ? !!q.wrong?.some(Boolean) : false) || !!(q.steps || []).length || !!q.final);
   return (
     <div className="st-explain ex">
       {dunno ? (
@@ -90,7 +100,7 @@ export function Explanation({ q, s, answer, result, onSelf, dunno }: { q: StudyQ
         </div>
       ) : result === null ? null : (
         <div className={`ex-verdict ${result ? 'right' : 'wrong'}`}>
-          {result ? <Check size={16} /> : <X size={16} />}
+          {result ? <Check size={16} className="ex-check" /> : <X size={16} />}
           <span>
             <b>{result ? 'Correct.' : 'Not quite.'}</b>
             {!result && (
@@ -104,14 +114,19 @@ export function Explanation({ q, s, answer, result, onSelf, dunno }: { q: StudyQ
       )}
       {q.explain && (
         <section className="ex-sec">
-          <h4>Why</h4>
+          {!why && <h4>Why</h4>}
           <div className="ex-text">
-            <MathText text={q.explain} />
+            <MathText text={why ? why.first : q.explain} />
           </div>
         </section>
       )}
-      {(q.type === 'mc' || q.type === 'multi') && <Choices q={q} s={s} answer={answer} />}
-      <Walkthrough q={q} open={!!dunno || result === false || isWorked(q)} />
+      {hasMore && (
+        <button className="link-btn ex-more" onClick={() => setMore(true)}>
+          Show explanation
+        </button>
+      )}
+      {!why && (q.type === 'mc' || q.type === 'multi') && <Choices q={q} s={s} answer={answer} />}
+      {!why && <Walkthrough q={q} open={!!dunno || result === false || (!brief && isWorked(q))} />}
       {q.type === 'short' && !dunno && (
         <div className="st-self">
           <span className="muted">Did you get it?</span>

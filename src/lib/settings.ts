@@ -574,6 +574,10 @@ export const SECTIONS: Section[] = [
       { key: 'study.mix.num', label: 'Calculations', type: 'range', default: 3, min: 0, max: 10, advanced: true, help: 'Only in chapters that have calculations.' },
       { key: 'study.mix.tf', label: 'True or false', type: 'range', default: 1, min: 0, max: 10, advanced: true },
       { key: 'study.mix.short', label: 'Written answers', type: 'range', default: 1, min: 0, max: 10, advanced: true, help: 'You mark these yourself against the model answer.' },
+      { key: 'study.sound', group: 'Studying', label: 'Soft sounds for right and wrong answers', type: 'toggle', default: false, help: 'A gentle rising tone when you’re right, a single low one when you’re not.' },
+      { key: 'study.stream.missGap', label: 'A missed question comes back after', type: 'number', default: 4, min: 2, max: 20, step: 1, unit: 'questions', advanced: true, help: 'Give or take one. Answering it then doesn’t count as learned: right just after the explanation isn’t the same as knowing it.' },
+      { key: 'study.stream.reviewShare', label: 'Share of questions from chapters already learned', type: 'range', default: 0.25, min: 0, max: 0.6, step: 0.05, advanced: true, help: 'When every chapter of a class is ticked, Kea goes through them in order. Chapters you’ve learned keep coming up this often (0.25 is about 1 in 4).' },
+      { key: 'study.stream.learnedAt', label: 'A chapter counts as learned at', type: 'number', default: 80, min: 50, max: 100, step: 5, unit: '%', advanced: true, help: 'Of its questions right the last time you answered them. Then the next chapter joins.' },
       { key: 'scholar.mailSignature', group: 'Messages', label: 'Message signature', type: 'text', default: '', help: 'Added under every new message you write in Messages (edit it there, under Signature).', advanced: true },
       { key: 'scholar.mailSignatureReplies', label: 'Add the signature to replies too', type: 'toggle', default: true, advanced: true },
       {

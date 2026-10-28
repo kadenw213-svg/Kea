@@ -1,5 +1,5 @@
-// Study: every class's chapters as one list, each with Read (its textbook) and Study (its questions), how its practice
-// has gone, and the practice you've done or made yourself. Review (what's due) is the one button at the top.
+// Study: every class's chapters as one list, each with Read (its textbook) and Study (its questions, as the Study
+// stream), and the practice you've made yourself. Review (what's due) is the one button at the top.
 import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Check, ClipboardCheck, ClipboardList, ClipboardPaste, Layers, Plus } from 'lucide-react';
 import type { PoolItem } from '../../lib/api';
@@ -8,7 +8,7 @@ import { openPaths } from '../../lib/open';
 import { setPdfTarget } from '../../lib/pdfTarget';
 import { useScholar } from './scholarStore';
 import { SetRow, openStudySet, useStudySets } from './Study';
-import { openStudyHub } from './StudyHub';
+import { openStream } from './StudyStream';
 
 
 export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[]; courseId?: string }) {
@@ -26,7 +26,7 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
   }, [courseId, courses.map((c) => c.id).join(), version]);
   useEffect(() => setFilter(courseId || ''), [courseId]);
 
-  // Saved questions per chapter (each question once, whichever set it's in), with how practice on them has gone.
+  // Saved questions per chapter (each question once, whichever set it's in).
   const [pools, setPools] = useState<Record<string, PoolItem[]>>({});
   useEffect(() => {
     if (!details) return;
@@ -39,14 +39,12 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
     };
   }, [details, sets?.length]);
   const questions = useMemo(() => {
-    const out = new Map<string, { n: number; right: number; missed: number }>();
+    const out = new Map<string, { n: number }>();
     for (const [cid, list] of Object.entries(pools))
       for (const p of list) {
         const k = `${cid}|${p.chapter}`;
-        const e = out.get(k) || { n: 0, right: 0, missed: 0 };
+        const e = out.get(k) || { n: 0 };
         e.n++;
-        if (p.lastRight === true) e.right++;
-        else if (p.lastRight === false) e.missed++;
         out.set(k, e);
       }
     return out;
@@ -65,8 +63,8 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
   };
   const quiz = (d: ScholarCourseDetail, labels: string[]) => {
     const ordered = d.chapters.map((c) => c.label).filter((l) => labels.includes(l));
-    const one = d.chapters.find((c) => c.label === ordered[0]);
-    openStudyHub({ courseId: d.id, code: d.code, title: ordered.length === 1 ? (one?.title ? `${one.label}: ${one.title}` : one?.label || '') : `${ordered.length} chapters`, chapters: ordered });
+    // (Straight into the Study stream; every chapter of the class ticked: in curriculum order.)
+    openStream({ courseId: d.id, code: d.code, chapters: ordered, ...(ordered.length > 1 && ordered.length === d.chapters.length ? { progression: true } : {}) });
   };
 
   return (
@@ -117,12 +115,6 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
                         {[ch.pdf ? (ch.pdf.pages ? `${ch.pdf.pages} pages` : 'Textbook chapter') : 'Textbook being written', n ? `${n} questions` : 'no questions yet'].join(' · ')}
                       </span>
                     </div>
-                    {n > 0 && (
-                      <span className="res-progress" title={`${q!.right} right last time, ${q!.missed} missed, ${n - q!.right - q!.missed} not tried`}>
-                        <i className="m" style={{ width: `${(q!.right / n) * 100}%` }} />
-                        <i className="l" style={{ width: `${(q!.missed / n) * 100}%` }} />
-                      </span>
-                    )}
                     <div className="res-acts">
                       <button className="btn sm" disabled={!ch.pdf} onClick={() => read(d, ch.label)}>
                         <BookOpen size={14} /> Read
