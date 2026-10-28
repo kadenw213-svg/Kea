@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { Popover } from './Popover';
 import { Columns2, PanelRightClose, XSquare } from 'lucide-react';
 import { Home, Plus, X, GraduationCap, Briefcase } from 'lucide-react';
-import { useAreas } from '../lib/areas';
+import { useAreas, useSetupDone } from '../lib/areas';
 import { openScholar } from './scholar/scholarStore';
 import { openWork } from './work/workStore';
 import { useTabs } from '../store';
@@ -217,6 +217,7 @@ export function TitleBar() {
 /** One button per area that has its own screen (School, Work), only for the areas that are on. */
 function AreaButtons() {
   const areas = useAreas();
+  const setupDone = useSetupDone();
   const tabs = useTabs((s) => s.tabs);
   const activeId = useTabs((s) => s.activeId);
   const activeKind = tabs.find((t) => t.id === activeId)?.kind;
@@ -224,7 +225,7 @@ function AreaButtons() {
     areas.includes('school') && { kind: 'scholar', label: 'School', icon: <GraduationCap size={16} />, open: () => openScholar() },
     areas.includes('work') && { kind: 'work', label: 'Work', icon: <Briefcase size={16} />, open: () => openWork() }
   ].filter(Boolean) as { kind: string; label: string; icon: JSX.Element; open: () => void }[];
-  if (!items.length) return null;
+  if (!setupDone || !items.length) return null;
   return (
     <div className="area-buttons">
       {items.map((it) => (

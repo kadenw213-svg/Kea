@@ -62,7 +62,12 @@ export const useSetupDone = () => useSettings((s) => s.loaded && s.values['areas
  * People who used Kea before areas existed shouldn't be asked what they use it for: if they have
  * classes or saved settings, keep what they had and skip the first-run screen.
  */
-export async function inferSetup(): Promise<boolean> {
+let inferring: Promise<boolean> | null = null;
+export function inferSetup(): Promise<boolean> {
+  // One check at a time (React runs effects twice in development).
+  return (inferring ??= runInfer().finally(() => (inferring = null)));
+}
+async function runInfer(): Promise<boolean> {
   const s = useSettings.getState();
   if (!s.loaded || s.values['areas.setupDone'] === true) return true;
   let hasClasses = false;
@@ -78,7 +83,9 @@ export async function inferSetup(): Promise<boolean> {
     // No recent list yet.
   }
   if (!hasClasses && !hasFiles) return false;
+  // The person may have answered the first-run question while this was checking: their answer wins.
+  if (useSettings.getState().values['areas.setupDone'] === true) return true;
   // Keep what they had: documents stay on, school stays on only if they have classes or never turned it off.
-  s.set({ 'areas.setupDone': true, 'scholar.enabled': hasClasses || s.values['scholar.enabled'] !== false });
+  useSettings.getState().set({ 'areas.setupDone': true, 'scholar.enabled': hasClasses || s.values['scholar.enabled'] !== false });
   return true;
 }

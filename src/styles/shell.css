@@ -624,3 +624,8 @@
 .reduce-motion .work-page {
   animation: none;
 }
+.work-period {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

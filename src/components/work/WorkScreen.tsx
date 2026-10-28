@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CalendarDays, Clock, LogIn, LogOut, RefreshCw, Users, Wallet, ArrowLeftRight, Check, X, Plus, ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-react';
-import { useWork, loadWork, w, WorkError, can, bumpWork, WorkView, Shift, Problem, dayKey, fmtTime, fmtDay, hours, money, weekStart, Person } from './workStore';
+import { useWork, loadWork, w, WorkError, can, bumpWork, WorkView, Shift, Problem, dayKey, fmtTime, fmtDay, hours, money, weekStart, Person, addDays } from './workStore';
 import { api } from '../../lib/api';
 import { useSetting } from '../../lib/settings';
 import { toast, ask } from '../../store';
@@ -334,7 +334,7 @@ function Schedule() {
           {swaps
             .filter((s) => s.status === 'offered' || s.status === 'claimed')
             .map((s) => {
-              const sh = shifts?.find((x) => x.id === s.shiftId);
+              const sh: Shift | undefined = s.shift || shifts?.find((x) => x.id === s.shiftId);
               return (
                 <div key={s.id} className="work-swap">
                   <ArrowLeftRight size={16} />
@@ -513,19 +513,20 @@ function Timecards() {
   const { me, people, tick } = useWork();
   const manager = can(me, 'manager') || can(me, 'payroll');
   const [personId, setPersonId] = useState(me?.id || '');
+  const [periodStart, setPeriodStart] = useState<string | null>(null);
   const [card, setCard] = useState<any | null>(null);
   const [requests, setRequests] = useState<any[]>([]);
   const [asking, setAsking] = useState(false);
 
   useEffect(() => {
     setCard(null);
-    w<any>('GET', `/v1/timecards?personId=${encodeURIComponent(personId)}`)
+    w<any>('GET', `/v1/timecards?personId=${encodeURIComponent(personId)}${periodStart ? `&periodStart=${periodStart}` : ''}`)
       .then(setCard)
       .catch((e) => (toast(e.message), setCard({ error: e.message })));
     w<any>('GET', '/v1/punch-requests')
       .then((r) => setRequests(listOf(r, 'requests')))
       .catch(() => setRequests([]));
-  }, [personId, tick]);
+  }, [personId, periodStart, tick]);
 
   const decide = async (id: string, approve: boolean) => {
     try {
@@ -591,7 +592,13 @@ function Timecards() {
       ) : card.error ? null : (
         <>
           <div className="work-period muted">
+            <button className="icon-btn sm" title="Previous pay period" onClick={() => card.period?.start && setPeriodStart(addDays(card.period.start, -14))}>
+              <ChevronLeft size={16} />
+            </button>
             Pay period {card.period?.start ? fmtDay(card.period.start) : ''} – {card.period?.end ? fmtDay(card.period.end) : ''}
+            <button className="icon-btn sm" title="Next pay period" onClick={() => card.period?.start && setPeriodStart(addDays(card.period.start, 14))}>
+              <ChevronRight size={16} />
+            </button>
             {card.approved && <span className="work-tag ok">Approved</span>}
           </div>
           <div className="work-totals">
@@ -831,9 +838,9 @@ function PayRun() {
           <ShieldAlert size={16} /> Prototype estimates. The tax tables used here haven’t been verified for this year, so this pay run can’t be finalized. Check every number before using it.
         </div>
       )}
-      {listOf(run.warnings, 'warnings').map((x: any, i: number) => (
+      {groupWarnings(listOf(run.warnings, 'warnings'), lines).map((x, i) => (
         <div key={i} className="work-banner warn">
-          <AlertTriangle size={15} /> {x.message || String(x)}
+          <AlertTriangle size={15} /> {x}
         </div>
       ))}
       <table className="work-table pay">
@@ -891,4 +898,30 @@ function PayRun() {
       )}
     </div>
   );
+}
+
+/**
+ * One line per kind of warning ("9 timecards aren't approved yet: …") instead of a row per person.
+ * The prototype notice is already the red banner, so its duplicate is dropped.
+ */
+function groupWarnings(warnings: any[], lines: any[]): string[] {
+  const name = (id: string) => lines.find((l) => l.personId === id)?.name || 'someone';
+  const groups = new Map<string, any[]>();
+  for (const w of warnings) {
+    if (/^(unverified|prototype)/i.test(w.code || '')) continue;
+    const key = w.personId ? w.code || w.message : w.message || w.code;
+    groups.set(key, [...(groups.get(key) || []), w]);
+  }
+  const out: string[] = [];
+  for (const [, list] of groups) {
+    if (list.length === 1 || !list[0].personId) {
+      out.push(list[0].message || String(list[0].code));
+      continue;
+    }
+    const who = list.map((w) => name(w.personId));
+    const shown = who.length > 4 ? who.slice(0, 4).join(', ') + ` and ${who.length - 4} more` : who.join(', ');
+    const what = (list[0].message || '').replace(/^[^:]+:\s*/, '');
+    out.push(`${what.charAt(0).toUpperCase() + what.slice(1)} for ${list.length} people: ${shown}.`);
+  }
+  return out;
 }

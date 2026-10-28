@@ -130,7 +130,15 @@ export function openWork(view?: WorkView) {
 // Date helpers shared by the work screens (local time).
 export const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 export const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-export const fmtDay = (iso: string | Date) => new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+/** A plain date ("2026-10-25") is a day in the workplace's calendar, not midnight UTC. */
+export const asDate = (v: string | Date) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T12:00`) : new Date(v));
+export const fmtDay = (iso: string | Date) => asDate(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+/** Move a plain date by some days. */
+export const addDays = (d: string, n: number) => {
+  const x = asDate(d);
+  x.setDate(x.getDate() + n);
+  return dayKey(x);
+};
 export const hours = (min: number) => `${(min / 60).toFixed(2).replace(/\.?0+$/, '')} h`;
 export const money = (cents: number) => (cents / 100).toLocaleString([], { style: 'currency', currency: 'USD' });
 export function weekStart(d = new Date()) {
