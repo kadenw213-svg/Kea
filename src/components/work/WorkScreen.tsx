@@ -120,12 +120,12 @@ interface StatusRow {
   positionId?: string;
   start: string;
   end: string;
-  state: 'on_time' | 'late' | 'no_show' | 'clocked_in' | 'clocked_out' | 'upcoming';
+  state: 'late' | 'no_show' | 'clocked_in' | 'clocked_out' | 'upcoming';
+  arrival?: 'on_time' | 'late' | null;
   minutesLate?: number;
 }
 
 const STATE_LABEL: Record<StatusRow['state'], string> = {
-  on_time: 'On time',
   late: 'Late',
   no_show: 'No-show',
   clocked_in: 'Clocked in',
@@ -156,16 +156,16 @@ function Today() {
         manager ? w<any>('GET', '/v1/alerts').catch(() => []) : Promise.resolve([])
       ]);
       if (stop) return;
-      setRows(listOf(st, 'rows'));
+      setRows(listOf(st, 'shifts'));
       setMine(listOf<Shift>(sh, 'shifts').filter((s) => s.personId === me?.id).sort((a, b) => a.start.localeCompare(b.start)));
-      setAlerts(listOf(al, 'alerts'));
+      setAlerts(listOf<any>(al, 'alerts').filter((a) => !a.resolved));
     };
     load();
     const t = setInterval(load, Math.max(15, refreshSec || 60) * 1000);
     return () => ((stop = true), clearInterval(t));
   }, [tick, me?.id, manager, refreshSec]);
 
-  const myRow = rows?.find((r) => r.personId === me?.id && (r.state === 'clocked_in' || r.state === 'upcoming' || r.state === 'late' || r.state === 'on_time' || r.state === 'no_show'));
+  const myRow = rows?.find((r) => r.personId === me?.id && (r.state === 'clocked_in' || r.state === 'upcoming' || r.state === 'late' || r.state === 'no_show'));
   const clockedIn = rows?.some((r) => r.personId === me?.id && r.state === 'clocked_in');
   const next = mine.find((s) => new Date(s.end) > new Date());
   const name = (id: string | null) => people.find((p) => p.id === id)?.name || 'Open shift';
@@ -244,7 +244,7 @@ function Today() {
                   </span>
                   <span className="work-state">
                     {STATE_LABEL[r.state] || r.state}
-                    {r.state === 'late' && r.minutesLate ? ` · ${r.minutesLate} min` : ''}
+                    {r.minutesLate && (r.state === 'late' || r.arrival === 'late') ? ` · ${r.minutesLate} min late` : r.arrival === 'on_time' ? ' · on time' : ''}
                   </span>
                 </div>
               ))}
@@ -664,6 +664,22 @@ const REASONS: [string, string][] = [
 const reasonLabel = (c: string) => REASONS.find((r) => r[0] === c)?.[1] || c;
 
 function MissedPunch({ onClose }: { onClose: () => void }) {
+  const me = useWork((s) => s.me);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [shiftId, setShiftId] = useState('');
+  useEffect(() => {
+    const from = new Date(Date.now() - 3 * 86400e3);
+    w<any>('GET', `/v1/shifts?from=${from.toISOString()}&to=${new Date().toISOString()}`)
+      .then((r) => {
+        const mine = listOf<Shift>(r, 'shifts').filter((s) => s.personId === me?.id && new Date(s.start) < new Date()).sort((a, b) => b.start.localeCompare(a.start));
+        setShifts(mine);
+        if (mine[0]) {
+          setShiftId(mine[0].id);
+          setDate(dayKey(new Date(mine[0].start)));
+        }
+      })
+      .catch(() => setShifts([]));
+  }, [me?.id]);
   const [type, setType] = useState<'in' | 'out'>('in');
   const [date, setDate] = useState(dayKey(new Date()));
   const [time, setTime] = useState('09:00');
@@ -671,7 +687,7 @@ function MissedPunch({ onClose }: { onClose: () => void }) {
   const [note, setNote] = useState('');
   const send = async () => {
     try {
-      await w('POST', '/v1/punch-requests', { type, at: new Date(`${date}T${time}`).toISOString(), reasonCode, note });
+      await w('POST', '/v1/punch-requests', { shiftId, type, at: new Date(`${date}T${time}`).toISOString(), reasonCode, note });
       toast('Sent to your manager.');
       bumpWork();
       onClose();
@@ -684,6 +700,17 @@ function MissedPunch({ onClose }: { onClose: () => void }) {
       <div className="dialog work-modal" onMouseDown={(e) => e.stopPropagation()}>
         <h2>Fix a missed punch</h2>
         <p className="muted">Your manager approves it, and the change is kept on record with your reason.</p>
+        <label>
+          Shift
+          <select value={shiftId} onChange={(e) => setShiftId(e.target.value)}>
+            {shifts.length === 0 && <option value="">No shifts in the last 3 days</option>}
+            {shifts.map((s) => (
+              <option key={s.id} value={s.id}>
+                {fmtDay(s.start)} · {fmtTime(s.start)}–{fmtTime(s.end)}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="work-row">
           <label>
             Missed
@@ -719,7 +746,7 @@ function MissedPunch({ onClose }: { onClose: () => void }) {
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn primary" onClick={send}>
+          <button className="btn primary" disabled={!shiftId} onClick={send}>
             Send to manager
           </button>
         </div>
@@ -825,7 +852,7 @@ function PayRun() {
             <>
               <tr key={l.personId} className="work-pay-row" onClick={() => setOpen(open === l.personId ? null : l.personId)}>
                 <td>{l.name}</td>
-                <td>{typeof l.hours === 'number' ? l.hours.toFixed(2) : hours((l.hours?.regularMin || 0) + (l.hours?.overtimeMin || 0))}</td>
+                <td>{(Number(l.hours?.regular || 0) + Number(l.hours?.overtime || 0)).toFixed(2)}{l.hours?.overtime ? ` (${Number(l.hours.overtime).toFixed(2)} OT)` : ''}</td>
                 <td>{money(cents(l.gross))}</td>
                 <td>{money(sumTax(l.taxes))}</td>
                 <td>

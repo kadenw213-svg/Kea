@@ -23,7 +23,7 @@ export function HomeWork({ payroll }: { payroll: boolean }) {
       .catch(() => setNext(null));
     if (can(me, 'manager'))
       w<any>('GET', '/v1/alerts')
-        .then((r) => setLate((Array.isArray(r) ? r : r?.alerts || []).length))
+        .then((r) => setLate((Array.isArray(r) ? r : r?.alerts || []).filter((x: any) => !x.resolved).length))
         .catch(() => setLate(0));
   }, [status, me?.id, tick]);
 
