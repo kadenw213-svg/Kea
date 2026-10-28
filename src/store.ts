@@ -5,7 +5,7 @@ import { setting } from './lib/settings';
 
 export interface Tab {
   id: string;
-  kind: EditorKind | 'home' | 'scholar';
+  kind: EditorKind | 'home' | 'scholar' | 'work';
   name: string;
   path: string | null;
   data: Uint8Array | null;

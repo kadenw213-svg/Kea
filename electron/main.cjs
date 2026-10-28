@@ -323,6 +323,7 @@ app.whenReady().then(() => {
   require('./media.cjs').register();
   require('./mcp/server.cjs').register({ getWindow: () => mainWindow });
   require('./account.cjs').register();
+  require('./server.cjs').register();
   require('./scholar/index.cjs').register();
   require('./dict.cjs').register();
   // Quizzes were removed in v0.15.0: clear the per-file quiz progress they kept.

@@ -47,6 +47,8 @@ import { TemplateGallery } from './home/Templates';
 import { HomeToday } from './home/Today';
 import { LayoutTemplate, Clapperboard, ImagePlus } from 'lucide-react';
 import { useSetting } from '../lib/settings';
+import { useAreas } from '../lib/areas';
+import { HomeWork } from './work/HomeWork';
 
 function greeting() {
   const h = new Date().getHours();
@@ -109,7 +111,9 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   const [showTemplates, setShowTemplates] = useState(false);
   const loadSeq = useRef(0);
   const showStart = useSetting<boolean>('home.showStart');
-  const showScholar = useSetting<boolean>('scholar.enabled');
+  const areas = useAreas();
+  const showScholar = areas.includes('school');
+  const showDocs = areas.includes('documents');
   const showTools = useSetting<boolean>('home.showTools');
   const showGreeting = useSetting<boolean>('home.greeting');
   const showPreviews = useSetting<boolean>('home.previews');
@@ -362,15 +366,17 @@ export function HomeScreen({ visible }: { visible: boolean }) {
         {showGreeting && (
           <>
             <h1 className="home-title">{greeting()}</h1>
-            <p className="home-sub">Your classes, readings and files in one place. Everything stays on this computer and your own drives.</p>
+            <p className="home-sub">{homeSub(areas)}</p>
           </>
         )}
 
-        {showScholar !== false && <HomeToday />}
+        {areas.includes('work') && <HomeWork payroll={areas.includes('payroll')} />}
 
-        {(showStart || showTools) && (
-        <section className={`home-start ${showScholar !== false ? 'compact' : ''}`}>
-          {showScholar !== false && <div className="section-head"><h2>Office</h2></div>}
+        {showScholar && <HomeToday />}
+
+        {showDocs && (showStart || showTools) && (
+        <section className={`home-start ${showScholar || areas.includes('work') ? 'compact' : ''}`}>
+          {(showScholar || areas.includes('work')) && <div className="section-head"><h2>Documents</h2></div>}
           {showStart && (
           <div className="start-row">
             <button className="start-card" onClick={() => newFile('doc')}>
@@ -439,6 +445,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
         </section>
         )}
 
+        {showDocs && (
         <section className="files-area">
           <nav className="sources">
             <div className="src-group">
@@ -650,9 +657,19 @@ export function HomeScreen({ visible }: { visible: boolean }) {
             )}
           </div>
         </section>
+        )}
+        {areas.length === 0 && <p className="home-sub">Every area of Kea is turned off. Turn one on in Settings → Home.</p>}
       </div>
       {showTemplates && <TemplateGallery onClose={() => setShowTemplates(false)} />}
       {showDrives && <ConnectDrives drives={drives} onClose={() => (setShowDrives(false), refreshDrives())} onChange={setDrives} />}
     </div>
   );
+}
+
+/** The line under the greeting names only the parts of Kea this person uses. */
+function homeSub(areas: string[]) {
+  const parts = [areas.includes('work') && 'your shifts', areas.includes('school') && 'your classes and readings', areas.includes('documents') && 'your files'].filter(Boolean) as string[];
+  if (!parts.length) return '';
+  const list = parts.length === 1 ? parts[0] : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+  return list.charAt(0).toUpperCase() + list.slice(1) + ' in one place.';
 }

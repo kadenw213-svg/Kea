@@ -5,6 +5,7 @@ import { api } from '../../src/lib/api';
 import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
 import { CATEGORIES, CLASS_COLORS, LinkGroups, TODO, categoryOf, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
 import { useSetting } from '../../src/lib/settings';
+import { useAreas } from '../../src/lib/areas';
 import { Kea, KeaData, cachedData, doneOf, inboxKey, loadData, phoneDeleted, phoneDone, phoneRead, setPhoneDeleted, setPhoneDone, setPhoneRead, syncOut, watchClasses } from './kea';
 import { loadStudy, onStudyChange } from './study';
 import { setDesktopData, studyChanged } from './desktopApi';
@@ -84,6 +85,7 @@ type Tab = 'calendar' | 'classes' | 'inbox' | 'files';
 const WELCOMED = 'kea.welcomed';
 
 export function App() {
+  const areas = useAreas();
   const [data, setData] = useState<KeaData | null>(cachedData());
   const [state, setState] = useState<Awaited<ReturnType<typeof Kea.state>> | null>(null);
   const [welcomed, setWelcomed] = useState(() => !!localStorage.getItem(WELCOMED));
@@ -276,19 +278,21 @@ export function App() {
       </div>
     );
 
+  // Only the areas this person uses get a tab (Settings → Home on the PC or phone).
+  const school = areas.includes('school');
+  const docs = areas.includes('documents');
   const tabs = (
-    classes
+    (classes && school
       ? [
           ['classes', Home, 'Home', missing.length],
           ['calendar', CalendarDays, 'Calendar', 0],
           ['inbox', Inbox, 'Inbox', unread],
-          ['files', Camera, 'Scan', 0]
+          docs && ['files', Camera, 'Scan', 0]
         ]
-      : [
-          ['files', Camera, 'Scan & PDFs', 0],
-          ['classes', GraduationCap, 'Classes', 0]
-        ]
-  ) as [Tab, typeof Sun, string, number][];
+      : [docs && ['files', Camera, 'Scan & PDFs', 0], school && ['classes', GraduationCap, 'Classes', 0]]
+    ).filter(Boolean) as [Tab, typeof Sun, string, number][]
+  );
+  if (!tabs.length) tabs.push(['files', Camera, 'Scan & PDFs', 0]);
   const current = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0];
   const ctx = classes && { data: classes, items, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')), read: (t: ReaderTarget) => setReader(t) };
   return (

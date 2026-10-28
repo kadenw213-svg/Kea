@@ -108,6 +108,12 @@ export interface KeaApi {
     close(): Promise<boolean>;
     onClosed(cb: () => void): () => void;
   };
+  work: {
+    call<T = any>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: T }>;
+    session(): Promise<{ personId: string; name: string; server: string | null } | null>;
+    demoLogin(personId: string): Promise<{ personId: string; name: string }>;
+    signOut(): Promise<boolean>;
+  };
   scholar: {
     profiles(): Promise<ProfileList>;
     createProfile(name: string): Promise<ProfileList>;

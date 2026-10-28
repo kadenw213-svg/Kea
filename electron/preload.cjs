@@ -46,6 +46,12 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('present:closed', fn);
     }
   },
+  work: {
+    call: (method, path, body) => ipcRenderer.invoke('work:call', { method, path, body }),
+    session: () => ipcRenderer.invoke('work:session'),
+    demoLogin: (personId) => ipcRenderer.invoke('work:demoLogin', personId),
+    signOut: () => ipcRenderer.invoke('work:signOut')
+  },
   account: {
     get: () => ipcRenderer.invoke('account:get'),
     suggest: () => ipcRenderer.invoke('account:suggest'),

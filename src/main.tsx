@@ -4,6 +4,7 @@ import './styles/global.css';
 import './styles/light.css';
 import './styles/home.css';
 import './styles/settings.css';
+import './styles/shell.css';
 import { loadSettings } from './lib/settings';
 
 // Settings load first so the app starts with the right look and behaviour.
