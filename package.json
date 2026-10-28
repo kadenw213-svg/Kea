@@ -15,7 +15,9 @@
     "dist": "node scripts/engine-vendor.cjs && vite build && electron-builder --win",
     "dist:mac": "node scripts/engine-vendor.cjs && vite build && electron-builder --mac",
     "release": "node scripts/release.cjs",
-    "postinstall": "node scripts/keep-out-of-onedrive.cjs && node scripts/engine-vendor.cjs"
+    "postinstall": "node scripts/keep-out-of-onedrive.cjs && node scripts/engine-vendor.cjs",
+    "server:dev": "node server/index.mjs",
+    "test:server": "node --test \"test/server/*.test.mjs\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.135.0",
