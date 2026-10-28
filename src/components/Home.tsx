@@ -48,7 +48,6 @@ import { HomeToday } from './home/Today';
 import { LayoutTemplate, Clapperboard, ImagePlus } from 'lucide-react';
 import { useSetting } from '../lib/settings';
 import { useAreas } from '../lib/areas';
-import { HomeWork } from './work/HomeWork';
 
 function greeting() {
   const h = new Date().getHours();
@@ -370,13 +369,11 @@ export function HomeScreen({ visible }: { visible: boolean }) {
           </>
         )}
 
-        {areas.includes('work') && <HomeWork payroll={areas.includes('payroll')} />}
-
         {showScholar && <HomeToday />}
 
         {showDocs && (showStart || showTools) && (
-        <section className={`home-start ${showScholar || areas.includes('work') ? 'compact' : ''}`}>
-          {(showScholar || areas.includes('work')) && <div className="section-head"><h2>Documents</h2></div>}
+        <section className={`home-start ${showScholar ? 'compact' : ''}`}>
+          {showScholar && <div className="section-head"><h2>Documents</h2></div>}
           {showStart && (
           <div className="start-row">
             <button className="start-card" onClick={() => newFile('doc')}>
@@ -668,7 +665,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
 
 /** The line under the greeting names only the parts of Kea this person uses. */
 function homeSub(areas: string[]) {
-  const parts = [areas.includes('work') && 'your shifts', areas.includes('school') && 'your classes and readings', areas.includes('documents') && 'your files'].filter(Boolean) as string[];
+  const parts = [areas.includes('school') && 'your classes and readings', areas.includes('documents') && 'your files'].filter(Boolean) as string[];
   if (!parts.length) return '';
   const list = parts.length === 1 ? parts[0] : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
   return list.charAt(0).toUpperCase() + list.slice(1) + ' in one place.';

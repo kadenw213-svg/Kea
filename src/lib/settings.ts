@@ -204,9 +204,7 @@ export const SECTIONS: Section[] = [
     fields: [
       { key: 'areas.documents', group: 'Areas of Kea', label: 'Documents (docs, sheets, slides, PDFs and files)', type: 'toggle', default: true },
       { key: 'scholar.enabled', label: 'School (classes, calendar, study and library)', type: 'toggle', default: true },
-      { key: 'areas.work', label: 'Work (schedule, time clock, timecards, certifications)', type: 'toggle', default: false, help: 'Turns on by itself when you join a workplace.' },
-      { key: 'areas.payroll', label: 'Payroll & HR (pay runs, pay stubs)', type: 'toggle', default: false, help: 'Only for people who run payroll for their workplace.', when: (v) => v['areas.work'] === true },
-      { key: 'areas.auto', label: 'Turn areas on by themselves when I start using them', type: 'toggle', default: true, advanced: true, help: 'Joining a class turns on School; joining a workplace turns on Work.' },
+      { key: 'areas.auto', label: 'Turn areas on by themselves when I start using them', type: 'toggle', default: true, advanced: true, help: 'Joining a class turns on School.' },
       { key: 'areas.setupDone', label: 'First-run setup finished', type: 'toggle', default: false, advanced: true, help: 'Turn off to see the "What will you use Kea for?" screen again.' },
       { key: 'home.showStart', label: 'Show "Start new" cards', type: 'toggle', default: true },
       { key: 'home.showTools', label: 'Show quick tools (Combine PDFs, Images to PDF)', type: 'toggle', default: true },
@@ -228,17 +226,6 @@ export const SECTIONS: Section[] = [
       { key: 'home.showAllTypes', label: 'Show every file type in folders', type: 'toggle', default: false, advanced: true, help: 'Normally Home only lists files Kea can open.' },
       { key: 'home.showHidden', label: 'Show hidden files and folders', type: 'toggle', default: false, advanced: true },
       { key: 'home.previewMaxMb', label: 'Skip previews for files bigger than', type: 'number', default: 80, min: 1, max: 2000, unit: 'MB', advanced: true }
-    ]
-  },
-  {
-    id: 'work',
-    label: 'Work',
-    icon: 'Briefcase',
-    blurb: 'Your workplace’s schedule, time clock and timecards. Your workplace sets its own rules (late threshold, breaks, overtime) on its server.',
-    fields: [
-      { key: 'server.url', label: 'Work server address', type: 'text', default: 'http://127.0.0.1:4850', help: 'Where your workplace’s Kea server is. http:// only works for this computer; anything else needs https://.' },
-      { key: 'work.refreshSec', label: 'Check for schedule changes every', type: 'number', default: 60, min: 15, max: 900, unit: 'seconds', advanced: true },
-      { key: 'work.clockConfirm', label: 'Ask before clocking out', type: 'toggle', default: false, advanced: true }
     ]
   },
   {

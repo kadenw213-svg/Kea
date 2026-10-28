@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { TitleBar } from './components/TitleBar';
 import { HomeScreen } from './components/Home';
 import { Welcome } from './components/Welcome';
-import { useSetupDone } from './lib/areas';
+import { useSetupDone, watchSchool } from './lib/areas';
 import { Overlays } from './components/Overlays';
 import { UpdateDialog, initUpdates } from './components/Updates';
 import { LookupPanel } from './components/lookup/LookupPanel';
@@ -27,7 +27,6 @@ import { modKey } from './lib/util';
 import { VoiceTypingPanel, toggleVoice } from './components/VoiceTyping';
 
 const PdfEditor = lazy(() => import('./editors/pdf/PdfEditor'));
-const WorkScreen = lazy(() => import('./components/work/WorkScreen').then((m) => ({ default: m.WorkScreen })));
 const ScholarScreen = lazy(() => import('./components/scholar/ScholarScreen').then((m) => ({ default: m.ScholarScreen })));
 const DocEditor = lazy(() => import('./editors/doc/DocEditor'));
 const SheetEditor = lazy(() => import('./editors/sheet/SheetEditor'));
@@ -62,6 +61,7 @@ export function App() {
   const activeId = useTabs((s) => s.activeId);
   const split = useTabs((s) => s.split);
   const setupDone = useSetupDone();
+  useEffect(() => (setupDone ? watchSchool() : undefined), [setupDone]);
   const [dragging, setDragging] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const startDivider = (e: React.PointerEvent) => {
@@ -241,16 +241,6 @@ export function App() {
             <ClaudeWorking tabId={t.id} />
             {t.kind === 'home' ? (
               setupDone ? <HomeScreen visible={t.id === activeId || !!(split && (t.id === split.left || t.id === split.right))} /> : <Welcome />
-            ) : t.kind === 'work' ? (
-              <Suspense
-                fallback={
-                  <div className="center-fill">
-                    <div className="spinner" />
-                  </div>
-                }
-              >
-                <WorkScreen />
-              </Suspense>
             ) : t.kind === 'scholar' ? (
               <Suspense
                 fallback={

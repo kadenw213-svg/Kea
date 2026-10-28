@@ -2,10 +2,9 @@ import { Logo } from './Logo';
 import { useRef, useState } from 'react';
 import { Popover } from './Popover';
 import { Columns2, PanelRightClose, XSquare } from 'lucide-react';
-import { Home, Plus, X, GraduationCap, Briefcase } from 'lucide-react';
+import { Home, Plus, X, GraduationCap } from 'lucide-react';
 import { useAreas, useSetupDone } from '../lib/areas';
 import { openScholar } from './scholar/scholarStore';
-import { openWork } from './work/workStore';
 import { useTabs } from '../store';
 import { FileIcon } from './FileIcon';
 import { MenuButton } from './Popover';
@@ -118,7 +117,7 @@ export function TitleBar() {
             onDragEnd={() => (dragFrom.current = null)}
             title={t.path || t.name}
           >
-            {t.kind === 'home' ? <Home size={16} /> : t.kind === 'scholar' ? <GraduationCap size={15} /> : t.kind === 'work' ? <Briefcase size={15} /> : <FileIcon name={t.name} kind={t.kind} size={15} />}
+            {t.kind === 'home' ? <Home size={16} /> : t.kind === 'scholar' ? <GraduationCap size={15} /> : <FileIcon name={t.name} kind={t.kind} size={15} />}
             {t.kind !== 'home' && <span className="tab-label">{t.name}</span>}
             {t.kind !== 'home' && (
               <button
@@ -214,7 +213,7 @@ export function TitleBar() {
   );
 }
 
-/** One button per area that has its own screen (School, Work), only for the areas that are on. */
+/** One button per area that has its own screen (School), only when that area is on. */
 function AreaButtons() {
   const areas = useAreas();
   const setupDone = useSetupDone();
@@ -223,7 +222,6 @@ function AreaButtons() {
   const activeKind = tabs.find((t) => t.id === activeId)?.kind;
   const items = [
     areas.includes('school') && { kind: 'scholar', label: 'School', icon: <GraduationCap size={16} />, open: () => openScholar() },
-    areas.includes('work') && { kind: 'work', label: 'Work', icon: <Briefcase size={16} />, open: () => openWork() }
   ].filter(Boolean) as { kind: string; label: string; icon: JSX.Element; open: () => void }[];
   if (!setupDone || !items.length) return null;
   return (

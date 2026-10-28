@@ -2,13 +2,13 @@ import { useSettings, setting } from './settings';
 import { api } from './api';
 
 /**
- * The parts of Kea a person can use: documents, school, work and payroll. Only the areas that are
- * on get a title-bar button, Home cards and menu items, so someone who only uses Kea for work
- * never sees the school side and the other way round. School keeps its old setting key
- * (scholar.enabled) so existing installs keep working.
+ * The parts of Kea a person can use: documents and school. Only the areas that are on get a
+ * title-bar button, Home sections and menu items. School keeps its old setting key
+ * (scholar.enabled) so existing installs keep working. (Staffing, time clock and payroll are a
+ * separate app, KeaS.)
  */
 
-export type AreaId = 'documents' | 'school' | 'work' | 'payroll';
+export type AreaId = 'documents' | 'school';
 
 export interface AreaInfo {
   id: AreaId;
@@ -16,23 +16,19 @@ export interface AreaInfo {
   /** One line for the first-run screen. */
   blurb: string;
   /** lucide icon name, resolved by the components that draw it. */
-  icon: 'FileText' | 'GraduationCap' | 'Briefcase' | 'Wallet';
+  icon: 'FileText' | 'GraduationCap';
   settingKey: string;
 }
 
 export const AREAS: AreaInfo[] = [
   { id: 'documents', label: 'Documents', blurb: 'Docs, spreadsheets, slides, PDFs, photos and video, plus your files and drives.', icon: 'FileText', settingKey: 'areas.documents' },
   { id: 'school', label: 'School', blurb: 'Your classes, calendar, readings and practice questions.', icon: 'GraduationCap', settingKey: 'scholar.enabled' },
-  { id: 'work', label: 'Work', blurb: 'Your schedule, clocking in and out, timecards, trainings and certifications.', icon: 'Briefcase', settingKey: 'areas.work' },
-  { id: 'payroll', label: 'Payroll & HR', blurb: 'Approve timecards, preview pay runs and pay stubs for your workplace.', icon: 'Wallet', settingKey: 'areas.payroll' }
 ];
 
 export const areaInfo = (id: AreaId) => AREAS.find((a) => a.id === id)!;
 
 function isOn(values: Record<string, any>, id: AreaId) {
-  const v = values[areaInfo(id).settingKey];
-  if (id === 'payroll') return v === true && values['areas.work'] === true;
-  return id === 'work' ? v === true : v !== false;
+  return values[areaInfo(id).settingKey] !== false;
 }
 
 /** The areas that are on, in display order. */
@@ -50,7 +46,7 @@ export function setAreas(on: Partial<Record<AreaId, boolean>>) {
   useSettings.getState().set(patch);
 }
 
-/** Something the person just started using (joined a workplace, added a class) turns its area on. */
+/** Something the person just started using (for example adding a class) turns its area on. */
 export function noteUsing(id: AreaId) {
   if (setting('areas.auto') === false || areaOn(id)) return;
   setAreas({ [id]: true });
@@ -88,4 +84,22 @@ async function runInfer(): Promise<boolean> {
   // Keep what they had: documents stay on, school stays on only if they have classes or never turned it off.
   useSettings.getState().set({ 'areas.setupDone': true, 'scholar.enabled': hasClasses || s.values['scholar.enabled'] !== false });
   return true;
+}
+
+/**
+ * Turn School on when classes first appear (added here, or synced from another device). Someone who
+ * already had classes and turned School off keeps it off. Returns an unsubscribe.
+ */
+export function watchSchool(): () => void {
+  let had: boolean | null = null;
+  const check = () =>
+    api.scholar
+      .status()
+      .then((st) => {
+        if (had === false && st.hasData) noteUsing('school');
+        had = st.hasData;
+      })
+      .catch(() => {});
+  check();
+  return api.scholar.onChanged(check);
 }

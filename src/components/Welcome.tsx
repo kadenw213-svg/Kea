@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Briefcase, Check, FileText, GraduationCap, Wallet } from 'lucide-react';
+import { Check, FileText, GraduationCap } from 'lucide-react';
 import { Logo } from './Logo';
 import { AREAS, AreaId, inferSetup, setAreas } from '../lib/areas';
 import { useSettings } from '../lib/settings';
 
-const ICONS = { FileText, GraduationCap, Briefcase, Wallet };
+const ICONS = { FileText, GraduationCap };
 
 /**
  * First run: "What will you use Kea for?". Any mix of areas; the ones left off stay out of the
@@ -13,7 +13,7 @@ const ICONS = { FileText, GraduationCap, Briefcase, Wallet };
 export function Welcome() {
   const loaded = useSettings((s) => s.loaded);
   const [checking, setChecking] = useState(true);
-  const [picked, setPicked] = useState<Record<AreaId, boolean>>({ documents: true, school: false, work: false, payroll: false });
+  const [picked, setPicked] = useState<Record<AreaId, boolean>>({ documents: true, school: false });
 
   useEffect(() => {
     if (!loaded) return;
@@ -25,10 +25,7 @@ export function Welcome() {
 
   const toggle = (id: AreaId) =>
     setPicked((p) => {
-      const next = { ...p, [id]: !p[id] };
-      if (id === 'payroll' && next.payroll) next.work = true;
-      if (id === 'work' && !next.work) next.payroll = false;
-      return next;
+      return { ...p, [id]: !p[id] };
     });
   const any = Object.values(picked).some(Boolean);
   const start = () => {
@@ -41,7 +38,7 @@ export function Welcome() {
       <div className="welcome-inner">
         <Logo size={40} />
         <h1>What will you use Kea for?</h1>
-        <p className="welcome-sub">Pick any that apply. You can change this later in Settings, and parts turn on by themselves when you join a class or a workplace.</p>
+        <p className="welcome-sub">Pick any that apply. You can change this later in Settings, and School turns on by itself when you add a class.</p>
         <div className="welcome-grid" role="group" aria-label="Areas of Kea">
           {AREAS.map((a) => {
             const Icon = ICONS[a.icon];
