@@ -542,17 +542,6 @@ export const SECTIONS: Section[] = [
       { key: 'scholar.pictureQuestions', label: 'Picture questions for identification', type: 'toggle', default: true, help: 'Chapters that test recognizing things (lab practicals, specimens, structures, anatomy, glassware, molecular shapes) get a set of questions that show a real picture from Wikimedia Commons and ask what it is. Pictures are saved with the questions, so they work offline.' },
       { key: 'scholar.depthReviews', label: 'Review chapters at exam depth', type: 'toggle', default: true, advanced: true, help: 'When your teacher posts something new for a test within three weeks (a study focus, a review sheet or key), Claude checks those chapters against it and writes a practice set for that test where they fall short. It fixes explanations only on questions you got wrong, and rewrites a textbook chapter only when it’s missing something the test asks. Nothing new from the teacher, no run.' },
       { key: 'scholar.weekStart', group: 'Calendar', label: 'Weeks start on', type: 'select', default: '0', options: [['0', 'Sunday'], ['1', 'Monday'], ['2', 'Tuesday'], ['3', 'Wednesday'], ['4', 'Thursday'], ['5', 'Friday'], ['6', 'Saturday']].map(([value, label]) => ({ value, label })), help: 'The first day of each week in the calendar. Kea on your phone has its own setting (Settings → Calendar).' },
-      { key: 'scholar.homeClasses', group: 'Home', label: 'Show my classes as cards on Home', type: 'toggle', default: true, help: 'Each class with its picture, its colour and its grade, under any missing work. Click a card to open the class: Study, Readings and this week’s reading are at the top. Class colours are set under This week → Colours (by class).' },
-      {
-        key: 'scholar.homeColumns',
-        label: 'Class cards',
-        type: 'select',
-        default: '2',
-        options: [['1', 'One per row'], ['2', 'Two across (2×2)'], ['3', 'Three across'], ['4', 'Four across']].map(([value, label]) => ({ value, label })),
-        when: (v) => v['scholar.homeClasses'] !== false
-      },
-      { key: 'scholar.homePictures', label: 'Class pictures from the class site', type: 'toggle', default: true, when: (v) => v['scholar.homeClasses'] !== false, help: 'The picture each class has on D2L or Canvas. A class without one shows its colour.' },
-      { key: 'scholar.homeGrades', label: 'Grade on each class', type: 'toggle', default: true, when: (v) => v['scholar.homeClasses'] !== false },
       { key: 'scholar.parallelRuns', group: 'Practice questions', label: 'Question sets written at once', type: 'number', default: 3, min: 1, max: 20, step: 1, help: 'When you write questions for several chapters, this many are written at the same time (each chapter is its own Claude run). More is faster and uses your Claude plan’s limit sooner; the same total either way. Class checks and textbooks still run one at a time.' },
       { key: 'study.mix.mc', group: 'Mix of question kinds', label: 'Multiple choice', type: 'range', default: 5, min: 0, max: 10, advanced: true, help: 'How often each kind of question comes up in a practice exam, compared with the others (0 leaves it out). Kea uses what each chapter has: when there aren’t enough of one kind, the others fill in.' },
       { key: 'study.mix.blank', label: 'Fill in the blank', type: 'range', default: 3, min: 0, max: 10, advanced: true },

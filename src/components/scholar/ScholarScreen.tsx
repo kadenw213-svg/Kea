@@ -54,9 +54,8 @@ import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, assignmentDoc, setClassColor, setTypeColor, useColors } from './kinds';
 import { StudyPlayer } from './Study';
 import { ResourcesView } from './Resources';
-import { Saved } from './Saved';
 import { MessagesView } from './Messages';
-import { ChangesBox, ClassRules, SyllabusMap, ItemHistory } from './History';
+import { ChangesBox, ItemHistory } from './History';
 import { openClassStudy, openStudyHub } from './StudyHub';
 import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
 import '../../styles/scholar.css';
@@ -1175,8 +1174,8 @@ function MonthGrid({ ctx, items, start, month, showCourse }: { ctx: Ctx; items: 
 
 // ---------- One class ----------
 /**
- * Every week of the class, start to end: what it covers (each chapter's topics, with the textbook and Study) and
- * everything due in it. This week first and open; the weeks before it folded at the bottom.
+ * Every week of the class: what it covers (each chapter's topics, with the textbook and Study), its tests by name, and
+ * how much else is due (each item is on the calendar). This week open; the weeks ahead folded; earlier weeks in one fold.
  */
 function WeeksView({ ctx, c }: { ctx: Ctx; c: ScholarCourseDetail }) {
   const items = useItems(iso(addDays(new Date(), -150)), iso(addDays(new Date(), 200)), c.id);
@@ -1189,68 +1188,87 @@ function WeeksView({ ctx, c }: { ctx: Ctx; c: ScholarCourseDetail }) {
   const due = (w: ScholarItem) => items.filter((i) => i.type !== 'weekly_reading' && i.type !== 'lecture' && i.date >= w.date && i.date <= end(w));
   const current = weeks.filter((w) => end(w) >= now);
   const past = weeks.filter((w) => end(w) < now).reverse();
-  const week = (w: ScholarItem, open: boolean) => (
-    <details key={w.id} className={`wbw-week ${w.date <= now && end(w) >= now ? 'now' : ''}`} open={open}>
-      <summary>
-        <b>
-          {shortDate(w.date)} – {shortDate(end(w))}
-        </b>
-        {w.date <= now && end(w) >= now && <span className="wbw-now">This week</span>}
-        <span className="muted">{w.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ') || w.title}</span>
-        <span className="muted wbw-count">{due(w).length ? `${due(w).length} due` : ''}</span>
-      </summary>
-      {w.readings.map((r) => {
-        const ch = chapter.get(r.chapter);
-        return (
-          <div key={r.chapter} className="wbw-ch">
-            <div className="wbw-ch-head">
-              <span>
-                <b>{r.chapter}</b>
-                {r.title ? `: ${r.title}` : ''}
-              </span>
-              <span className="sch-chapter-btns">
-                {r.pdf && (
-                  <button className="btn sm tonal" onClick={() => openReading(r)}>
-                    <BookOpen size={14} /> Read
+  const week = (w: ScholarItem, open: boolean) => {
+    const list = due(w);
+    const tests = list.filter((i) => TEST.has(i.type));
+    const rest = list.length - tests.length;
+    const isNow = w.date <= now && end(w) >= now;
+    return (
+      <details key={w.id} className={`wbw-week ${isNow ? 'now' : ''}`} open={open}>
+        <summary>
+          <b>
+            {shortDate(w.date)} – {shortDate(end(w))}
+          </b>
+          {isNow && <span className="wbw-now">This week</span>}
+          <span className="muted">{w.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ') || w.title}</span>
+          {tests.length > 0 && <span className="wbw-test">{tests.length === 1 ? typeLabel(tests[0]) : `${tests.length} tests`}</span>}
+        </summary>
+        {w.readings.map((r) => {
+          const ch = chapter.get(r.chapter);
+          return (
+            <div key={r.chapter} className="wbw-ch">
+              <div className="wbw-ch-head">
+                <span>
+                  <b>{r.chapter}</b>
+                  {r.title ? `: ${r.title}` : ''}
+                </span>
+                <span className="sch-chapter-btns">
+                  {r.pdf && (
+                    <button className="btn sm tonal" onClick={() => openReading(r)}>
+                      <BookOpen size={14} /> Read
+                    </button>
+                  )}
+                  <button className="btn sm" onClick={() => openStudyHub({ courseId: c.id, code: c.code, title: r.title ? `${r.chapter}: ${r.title}` : r.chapter, chapters: [r.chapter] })}>
+                    <ClipboardCheck size={14} /> Study
                   </button>
-                )}
-                <button className="btn sm" onClick={() => openStudyHub({ courseId: c.id, code: c.code, title: r.title ? `${r.chapter}: ${r.title}` : r.chapter, chapters: [r.chapter] })}>
-                  <ClipboardCheck size={14} /> Study
-                </button>
-              </span>
+                </span>
+              </div>
+              {ch?.sections?.length ? (
+                <ul className="wbw-topics">
+                  {ch.sections.map((s) => (
+                    <li key={s}>{s}</li>
+                  ))}
+                </ul>
+              ) : ch?.objectives?.length ? (
+                <ul className="wbw-topics">
+                  {ch.objectives.slice(0, 8).map((s) => (
+                    <li key={s}>{s}</li>
+                  ))}
+                </ul>
+              ) : (
+                r.summary && <div className="rd-summary">{r.summary}</div>
+              )}
             </div>
-            {ch?.sections?.length ? (
-              <ul className="wbw-topics">
-                {ch.sections.map((s) => (
-                  <li key={s}>{s}</li>
-                ))}
-              </ul>
-            ) : ch?.objectives?.length ? (
-              <ul className="wbw-topics">
-                {ch.objectives.slice(0, 8).map((s) => (
-                  <li key={s}>{s}</li>
-                ))}
-              </ul>
-            ) : (
-              r.summary && <div className="rd-summary">{r.summary}</div>
+          );
+        })}
+        {(tests.length > 0 || rest > 0) && (
+          <div className="wbw-due">
+            {tests.map((i) => (
+              <button key={i.id} className="wbw-test-row" onClick={() => ctx.open(i)}>
+                <b>{typeLabel(i)}</b>
+                <span>{i.title}</span>
+                <span className="muted">{dayName(i.date)}</span>
+              </button>
+            ))}
+            {rest > 0 && (
+              <button className="link-btn sm" onClick={() => ctx.go({ name: 'calendar' })} title="Every item is on the calendar">
+                {rest} other item{rest === 1 ? '' : 's'} due this week, on the calendar
+              </button>
             )}
           </div>
-        );
-      })}
-      {due(w).length > 0 && (
-        <div className="sch-list wbw-due">
-          {due(w).map((i) => (
-            <ItemRow key={i.id} ctx={ctx} it={i} showCourse={false} showDate />
-          ))}
-        </div>
-      )}
-    </details>
-  );
+        )}
+      </details>
+    );
+  };
   return (
     <div className="wbw-weeks">
-      {current.map((w, k) => week(w, k < 2))}
-      {past.length > 0 && <h2 className="sch-h2">Earlier weeks</h2>}
-      {past.map((w) => week(w, false))}
+      {current.map((w, k) => week(w, k === 0))}
+      {past.length > 0 && (
+        <details className="wbw-earlier">
+          <summary className="muted">Earlier weeks ({past.length})</summary>
+          {past.map((w) => week(w, false))}
+        </details>
+      )}
     </div>
   );
 }
@@ -1260,7 +1278,9 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
   // undefined while loading; null when there's no such class (removed, or another profile's).
   const [c, setC] = useState<ScholarCourseDetail | null | undefined>(undefined);
   const [loadError, setLoadError] = useState('');
-  const [tab, setTab] = useState<'week' | 'weeks' | 'calendar' | 'textbook' | 'grades' | 'study' | 'saved'>(startTab || 'week');
+  // The class page is its weeks; Readings and the grade open in their place.
+  const startPanel = startTab === 'textbook' ? 'readings' : 'weeks';
+  const [tab, setTab] = useState<'weeks' | 'readings' | 'grades'>(startPanel);
   const [grades, setGrades] = useState<ScholarGrades | null>(null);
   useEffect(() => {
     let live = true;
@@ -1285,7 +1305,7 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
       live = false;
     };
   }, [courseId, version]);
-  useEffect(() => setTab(startTab || 'week'), [courseId, startTab]);
+  useEffect(() => setTab(startPanel), [courseId, startTab]);
   const day = useToday();
   const items = useItems(iso(addDays(parse(day), -28)), iso(addDays(parse(day), 20)), courseId);
   if (c === undefined) return <Loading />;
@@ -1302,7 +1322,7 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
       </div>
     );
   const missing = (items || []).filter((i) => isMissing(i));
-  const upcoming = (items || []).filter((i) => i.date >= day &&i.type !== 'weekly_reading' && !missing.includes(i) && !isUnconfirmed(i));
+  const dueToday = (items || []).filter((i) => i.date === day && i.type !== 'weekly_reading' && i.type !== 'lecture' && !missing.includes(i));
   return (
     <div className="sch-page">
       <div className="cls-head">
@@ -1327,7 +1347,7 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
           </div>
         </div>
         {grades?.final && (grades.final.percent != null || grades.final.shown) && (
-          <button className="grade-big" onClick={() => setTab('grades')} title="Your overall grade">
+          <button className="grade-big" onClick={() => setTab(tab === 'grades' ? 'weeks' : 'grades')} title="Your grades in this class">
             <GradeText percent={grades.final.percent} text={grades.final.percent != null ? `${grades.final.percent}%` : grades.final.shown} />
             <small>{grades.final.percent != null && grades.final.shown && !grades.final.shown.includes('%') ? grades.final.shown : 'Grade'}</small>
           </button>
@@ -1346,7 +1366,7 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
             <span className="muted">Practice questions by chapter and topic</span>
           </span>
         </button>
-        <button className={`cls-go-btn ${tab === 'textbook' ? 'on' : ''}`} style={{ ['--k' as any]: ctx.colors.course(c.id) }} onClick={() => setTab('textbook')}>
+        <button className={`cls-go-btn ${tab === 'readings' ? 'on' : ''}`} style={{ ['--k' as any]: ctx.colors.course(c.id) }} onClick={() => setTab(tab === 'readings' ? 'weeks' : 'readings')}>
           <BookOpen size={20} />
           <span>
             <b>Readings</b>
@@ -1354,78 +1374,47 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
           </span>
         </button>
       </div>
-      {(items || [])
-        .filter((i) => i.type === 'weekly_reading' && i.date <= day && (i.dateEnd || i.date) >= day)
-        .map((b) => (
-          <ReadingCard key={b.id} ctx={ctx} b={b} showCourse={false} />
-        ))}
-      <ClassRules code={c.code} />
-      <SyllabusMap code={c.code} />
-      <div className="cls-tabs">
-        {(
-          [
-            ['week', 'Coming up'],
-            ['weeks', 'Week by week'],
-            ['textbook', 'Readings'],
-            ['calendar', 'Calendar'],
-            ['grades', 'Grades'],
-            ['saved', 'Saved']
-          ] as const
-        ).map(([id, label]) => (
-          <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === 'week' &&
-        (!items ? (
-          <Loading />
-        ) : (
-          <>
-            {missing.length > 0 && (
-              <section className="miss-box">
-                <div className="miss-head static">
-                  <AlertTriangle size={16} /> <b>{missing.length} missing</b>
-                </div>
-                <div className="sch-list">
-                  {missing.map((i) => (
-                    <ItemRow key={i.id} ctx={ctx} it={i} showCourse={false} showDate />
-                  ))}
-                </div>
-              </section>
-            )}
-            {items
-              .filter((i) => i.type === 'weekly_reading' && i.date > day)
-              .slice(0, 1)
-              .map((b) => (
-                <ReadingCard key={b.id} ctx={ctx} b={b} showCourse={false} />
-              ))}
-            <div className="sch-list" style={{ marginTop: 14 }}>
-              {upcoming.map((i) => (
-                <div key={i.id} className="cls-dated">
-                  <span className="cls-date">{dayName(i.date)}</span>
-                  <ItemRow ctx={ctx} it={i} showCourse={false} />
-                </div>
-              ))}
-            </div>
-            {c.portal.length > 0 && (
-              <section>
-                <h2 className="sch-h2">Class site</h2>
-                <div className="ln-list row">
-                  {c.portal
-                    .filter((p) => ['home', 'content', 'grades', 'announcements', 'dropbox', 'quizzes', 'discussions', 'external_home', 'external_gradebook'].includes(p.kind))
-                    .map((p) => (
-                      <button key={p.url} className="ln-main pill" onClick={() => openLink(p.url)}>
-                        <ExternalLink size={13} /> {p.label || p.kind.replace('external_', '').replace(/^\w/, (x) => x.toUpperCase())}
-                      </button>
+      {tab !== 'weeks' && (
+        <button className="link-btn sm cls-back" onClick={() => setTab('weeks')}>
+          <ChevronLeft size={14} /> Week by week
+        </button>
+      )}
+      {tab === 'weeks' && (
+        <>
+          <WeeksView ctx={ctx} c={c} />
+          {!items ? (
+            <Loading />
+          ) : (
+            <>
+              {missing.length > 0 && (
+                <section className="miss-box">
+                  <div className="miss-head static">
+                    <AlertTriangle size={16} /> <b>{missing.length} missing</b>
+                  </div>
+                  <div className="sch-list">
+                    {missing.map((i) => (
+                      <ItemRow key={i.id} ctx={ctx} it={i} showCourse={false} showDate />
                     ))}
-                </div>
+                  </div>
+                </section>
+              )}
+              <section>
+                <h2 className="sch-h2">Due today</h2>
+                {dueToday.length ? (
+                  <div className="sch-list">
+                    {dueToday.map((i) => (
+                      <ItemRow key={i.id} ctx={ctx} it={i} showCourse={false} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="muted cls-none">Nothing due today.</div>
+                )}
               </section>
-            )}
-          </>
-        ))}
-      {tab === 'weeks' && <WeeksView ctx={ctx} c={c} />}
-      {tab === 'textbook' && <Textbook c={c} />}
+            </>
+          )}
+        </>
+      )}
+      {tab === 'readings' && <Textbook c={c} />}
       {tab === 'grades' &&
         (!grades || !grades.items.length ? (
           <div className="sch-empty">No grades yet. They appear after Kea's next check of your class site.</div>
@@ -1450,8 +1439,6 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
             )}
           </div>
         ))}
-      {tab === 'calendar' && <CalendarView ctx={ctx} courseId={c.id} />}
-      {tab === 'saved' && <Saved courseId={c.id} />}
     </div>
   );
 }
