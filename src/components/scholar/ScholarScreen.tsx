@@ -1158,6 +1158,87 @@ function WeeksView({ ctx, c }: { ctx: Ctx; c: ScholarCourseDetail }) {
   );
 }
 
+/** The class's next tests, in one line of dates. */
+function KeyDates({ ctx, c }: { ctx: Ctx; c: ScholarCourseDetail }) {
+  const day = useToday();
+  const items = useItems(day, iso(addDays(parse(day), 120)), c.id);
+  const tests = (items || []).filter((i) => TEST.has(i.type) && !isDone(i)).slice(0, 4);
+  if (!tests.length) return null;
+  return (
+    <div className="cls-dates">
+      <span className="cls-dates-label">Key dates</span>
+      {tests.map((i) => (
+        <button key={i.id} className="cls-date-chip" onClick={() => ctx.open(i)} title={`${typeLabel(i)}: ${i.title}`}>
+          <b>{i.date === day ? 'Today' : shortDate(i.date)}</b> {i.title}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The class's announcements, newest first: the latest two, the rest behind "more". */
+function ClassNews({ code }: { code: string }) {
+  const version = useScholar((s) => s.version);
+  const [list, setList] = useState<ScholarInboxItem[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api.scholar
+      .inbox()
+      .then((r) => live && setList(r.filter((i) => i.kind === 'announcement' && i.course === code).sort((a, b) => b.at.localeCompare(a.at))))
+      .catch(() => live && setList([]));
+    return () => {
+      live = false;
+    };
+  }, [code, version]);
+  if (!list || !list.length) return null;
+  const shown = all ? list : list.slice(0, 2);
+  return (
+    <section className="cls-news">
+      <h2 className="sch-h2">Announcements</h2>
+      <div className="ib-list">
+        {shown.map((i) => {
+          const parts = inboxParts(i);
+          return (
+            <div key={i.id} className={`ib-item ${open === i.id ? 'open' : ''}`} onClick={() => setOpen(open === i.id ? null : i.id)}>
+              <div className="ib-head">
+                <span className="ib-icon">
+                  <Megaphone size={15} />
+                </span>
+                <b className="ib-title">{i.title}</b>
+                <span className="muted ib-at">{i.at ? new Date(i.at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
+              </div>
+              {parts.text && <div className="ib-body">{parts.text}</div>}
+              {open === i.id && parts.links.length > 0 && (
+                <div className="ib-links">
+                  {parts.links.map((l) => (
+                    <button
+                      key={l.url}
+                      className="ib-link"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openLink(l.url);
+                      }}
+                    >
+                      <ExternalLink size={13} /> {l.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {list.length > 2 && (
+        <button className="link-btn sm" onClick={() => setAll(!all)}>
+          {all ? 'Show fewer' : `${list.length - 2} older announcement${list.length - 2 === 1 ? '' : 's'}`}
+        </button>
+      )}
+    </section>
+  );
+}
+
 function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; startTab?: 'weeks' | 'textbook' }) {
   const version = useScholar((s) => s.version);
   // undefined while loading; null when there's no such class (removed, or another profile's).
@@ -1266,6 +1347,8 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
       )}
       {tab === 'weeks' && (
         <>
+          <KeyDates ctx={ctx} c={c} />
+          <ClassNews code={c.code} />
           <WeeksView ctx={ctx} c={c} />
           {!items ? (
             <Loading />

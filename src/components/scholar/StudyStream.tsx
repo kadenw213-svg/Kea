@@ -27,6 +27,8 @@ export interface StreamScope {
   topics?: string[];
   /** The class's bookmarked questions too (or only them, with no chapters). */
   bookmarks?: boolean;
+  /** Your weak-spot questions too, by key (from Study's Weak spots row). */
+  weak?: string[];
   /** Every chapter of the class ticked: one chapter at a time in curriculum order. */
   progression?: boolean;
 }
@@ -42,9 +44,9 @@ export const parseStream = (id: string): StreamScope | null => {
 };
 const short = (label: string) => label.replace(/^Chapter /, 'Ch ');
 /** The header's words: the class and its chapters. */
-export function streamTitle(code: string, chapters: string[], bookmarks?: boolean) {
+export function streamTitle(code: string, chapters: string[], bookmarks?: boolean, weak?: boolean) {
   const chs = chapters.length > 4 ? `${chapters.slice(0, 3).map(short).join(', ')} and ${chapters.length - 3} more` : chapters.map(short).join(', ');
-  return [code, [chs, bookmarks ? 'Bookmarked' : ''].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
+  return [code, [chs, bookmarks ? 'Bookmarked' : '', weak ? 'Weak spots' : ''].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
 }
 
 type Item = StudyQuestion & { k: string; type: string; chapter: string | null; level?: string | null };
@@ -75,10 +77,11 @@ export function StudyStream({ scope, set }: { scope?: StreamScope; set?: StudySe
       const starred = new Set(src?.starred || []);
       const topics = scope?.topics ? new Set(scope.topics) : null;
       const chapters = new Set(scope?.chapters || []);
+      const weak = new Set(scope?.weak || []);
       const all = ((src?.questions || []) as Item[]).filter((q) => q.k);
       const items = set
         ? all
-        : all.filter((q) => (q.chapter && chapters.has(q.chapter) && (!topics || topics.has(`${q.chapter}\u0000${q.section || 'Other'}`))) || (scope?.bookmarks && starred.has(q.k)));
+        : all.filter((q) => (q.chapter && chapters.has(q.chapter) && (!topics || topics.has(`${q.chapter}\u0000${q.section || 'Other'}`))) || (scope?.bookmarks && starred.has(q.k)) || weak.has(q.k));
       // (The class's chapters in curriculum order; anything else after, as it comes.)
       const order = (course?.chapters || []).map((c) => c.label);
       if (live) setData({ items, history: src?.history || {}, starred, order });

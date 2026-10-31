@@ -314,7 +314,7 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
   }, [reading]);
   const file = reading && pdfs.get(reading.chapter);
   const streaming = !!stream || (!!set && set.kind === 'exam');
-  const title = stream ? streamTitle(stream.code, stream.chapters, stream.bookmarks) : saved != null ? 'Saved' : set?.kind === 'exam' ? streamTitle(set.courseCode, set.itemTitle ? [set.itemTitle] : set.chapters) : hub ? 'Study' : review != null ? 'Review' : edit != null ? (edit === 'new' || edit === 'import' ? 'New set' : 'Edit set') : set?.title || '';
+  const title = stream ? streamTitle(stream.code, stream.chapters, stream.bookmarks, !!stream.weak?.length) : saved != null ? 'Saved' : set?.kind === 'exam' ? streamTitle(set.courseCode, set.itemTitle ? [set.itemTitle] : set.chapters) : hub ? 'Study' : review != null ? 'Review' : edit != null ? (edit === 'new' || edit === 'import' ? 'New set' : 'Edit set') : set?.title || '';
   const body = stream ? (
     <StudyStream scope={stream} />
   ) : saved != null ? (

@@ -2662,3 +2662,44 @@
 .cal-attention > section {
   margin: 0;
 }
+
+/* A class's key dates (its next tests) and its announcements */
+.cls-dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.cls-dates-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-right: 4px;
+}
+.cls-date-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.cls-date-chip b {
+  color: var(--danger);
+  font-weight: 600;
+}
+.cls-date-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.cls-news {
+  margin-bottom: 16px;
+}
+.cls-news .ib-list {
+  margin-bottom: 6px;
+}

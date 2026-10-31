@@ -3,7 +3,7 @@
 // the class ticked is the class in curriculum order, one chapter at a time. Opened from a class's Study button, a
 // chapter, or a test (its chapters ticked already).
 import { useEffect, useMemo, useState } from 'react';
-import { Bookmark, Check, ChevronDown, ChevronRight, Image, Loader2, Minus, Play, Sparkles } from 'lucide-react';
+import { Bookmark, Check, Target, ChevronDown, ChevronRight, Image, Loader2, Minus, Play, Sparkles } from 'lucide-react';
 import { api, PoolItem, ReviewQueue, ScholarChapter } from '../../lib/api';
 import { toast } from '../../store';
 import { useScholar } from './scholarStore';
@@ -57,6 +57,26 @@ const SEP = String.fromCharCode(0);
 const topicOf = (p: PoolItem) => `${p.chapter || ''}${SEP}${p.section || 'Other'}`;
 /** The Bookmarked row's tick, kept with the topics'. */
 const BOOKMARKS = `${SEP}bookmarks`;
+/** The Weak spots row's tick. */
+const WEAK = `${SEP}weak`;
+
+/**
+ * Your weak spots: every question in a topic where under 70% of your latest answers were right (at least 3 answered),
+ * and any question you got wrong last time. Weakest topics first.
+ */
+function weakSpots(pool: PoolItem[]) {
+  const by = new Map<string, { seen: number; right: number; name: string }>();
+  for (const p of pool) {
+    if (p.lastRight == null) continue;
+    const t = by.get(topicOf(p)) || { seen: 0, right: 0, name: p.section || p.chapter || 'Other' };
+    t.seen++;
+    if (p.lastRight) t.right++;
+    by.set(topicOf(p), t);
+  }
+  const weak = [...by].filter(([, t]) => t.seen >= 3 && t.right / t.seen < 0.7).sort(([, a], [, b]) => a.right / a.seen - b.right / b.seen);
+  const topics = new Set(weak.map(([k]) => k));
+  return { keys: pool.filter((p) => topics.has(topicOf(p)) || p.lastRight === false).map((p) => p.k), names: weak.map(([, t]) => t.name) };
+}
 
 export function StudyHub({ scope }: { scope: StudyScope }) {
   const sets = useStudySets();
@@ -110,8 +130,9 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   }, [pool]);
 
   const sel = ticked || new Set<string>();
-  const inPick = (pool || []).filter((p) => sel.has(topicOf(p)) || (sel.has(BOOKMARKS) && p.starred));
+  const inPick = (pool || []).filter((p) => sel.has(topicOf(p)) || (sel.has(BOOKMARKS) && p.starred) || (sel.has(WEAK) && weak.keys.includes(p.k)));
   const bookmarked = (pool || []).filter((p) => p.starred).length;
+  const weak = useMemo(() => weakSpots(pool || []), [pool]);
   const c = q?.counts[scope.courseId];
   const days = c?.test ? Math.round((Date.parse(`${c.test.date}T12:00`) - Date.now()) / 864e5) : null;
   // The chapters ticked (by any of their topics, or the chapter itself when it has no questions yet).
@@ -143,7 +164,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   const chapterTitle = (ch: string) => titles.get(ch) || '';
   const keysOf = (ch: string, topics: Map<string, PoolItem[]>) => (topics.size ? [...topics.keys()].map((t) => `${ch}${SEP}${t}`) : [`${ch}${SEP}*`]);
   const allKeys = [...tree].flatMap(([ch, topics]) => keysOf(ch, topics));
-  const chapterKeys = [...sel].filter((k) => k !== BOOKMARKS);
+  const chapterKeys = [...sel].filter((k) => k !== BOOKMARKS && k !== WEAK);
 
   // Start: the stream on what's ticked. Every chapter of the class ticked (Select all, or one by one): the class in
   // curriculum order, one chapter at a time, the next once this one is learned.
@@ -158,6 +179,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
       chapters: order,
       ...(whole ? {} : { topics: chapterKeys }),
       ...(sel.has(BOOKMARKS) ? { bookmarks: true } : {}),
+      ...(sel.has(WEAK) && weak.keys.length ? { weak: weak.keys } : {}),
       ...(everyChapter ? { progression: true } : {})
     });
   };
@@ -199,6 +221,22 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
                     <Bookmark size={13} /> <b>Bookmarked ({bookmarked})</b>
                   </span>
                   <span className="hub-ch-sub muted">{bookmarked ? 'The questions you bookmarked' : 'Bookmark any question to keep it here'}</span>
+                </button>
+              </div>
+            </div>
+            {/* The questions you're weakest on, ticked like a chapter. */}
+            <div className={`hub-ch ${sel.has(WEAK) ? 'on' : ''} ${weak.keys.length ? '' : 'empty'}`}>
+              <div className="hub-ch-row">
+                <button className={`hub-tick ${sel.has(WEAK) ? 'all' : 'none'}`} disabled={!weak.keys.length} onClick={() => toggle([WEAK], !sel.has(WEAK))} aria-label="Tick your weak spots">
+                  {sel.has(WEAK) ? <Check size={13} /> : null}
+                </button>
+                <button className="hub-ch-main" disabled={!weak.keys.length} onClick={() => toggle([WEAK], !sel.has(WEAK))}>
+                  <span className="hub-ch-title">
+                    <Target size={13} /> <b>Weak spots ({weak.keys.length})</b>
+                  </span>
+                  <span className="hub-ch-sub muted">
+                    {weak.keys.length ? (weak.names.length ? weak.names.slice(0, 3).join(' · ') : 'Questions you got wrong last time') : 'They appear once you’ve answered some questions'}
+                  </span>
                 </button>
               </div>
             </div>
