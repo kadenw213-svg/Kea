@@ -104,6 +104,19 @@ export const setPages = (path: string, n: number) => {
 export const Kea: KeaNative = (globalThis as any).__keaMock || registerPlugin<KeaNative>('Kea');
 
 /** What Kea on the PC wrote to the cloud drive. */
+/** One message in the class site's mailbox, as the PC read it. `date` is the site's own wording; `first` is when Kea first saw it. */
+export interface PhoneMail {
+  id: string;
+  course: string;
+  subject: string;
+  from: string;
+  date: string;
+  first: string;
+  read: boolean;
+  url: string;
+  text: string;
+}
+
 export interface KeaData {
   synced: string;
   profile: string;
@@ -117,6 +130,8 @@ export interface KeaData {
   inbox: ScholarInboxItem[];
   /** Inbox messages deleted on the PC, by content, so the phone hides its own copies too. */
   inboxDeleted?: string[];
+  /** The class site's mailbox (newest first), for Messages. Older PCs don't send it. */
+  mail?: PhoneMail[];
   /** The PC's checkmark changes, with their times (for merging with the phone's). */
   doneLog?: Record<string, { on: boolean; at: string }>;
 }

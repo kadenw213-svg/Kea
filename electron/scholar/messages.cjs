@@ -313,4 +313,14 @@ function register({ browser, precheck, db }) {
   });
 }
 
-module.exports = { noteHint, register, syncMailbox, _test: { cleanMessage } };
+/** The class site's mailbox as the phone shows it, newest first: each message with its full text once Kea has read it. */
+function phoneMail() {
+  const m = read();
+  return (m.box.inbox || []).slice(0, 200).map((x) => {
+    const c = m.bodies[x.id]?.text ? cleanMessage(m.bodies[x.id].text) : null;
+    const preview = String(x.preview || '').startsWith(x.subject) ? '' : x.preview || '';
+    return { id: x.id, course: x.course || '', subject: x.subject || '', from: x.from || '', date: x.date || '', first: x.first || '', read: !x.unread, url: x.url || '', text: c?.body || preview };
+  });
+}
+
+module.exports = { noteHint, register, syncMailbox, phoneMail, _test: { cleanMessage } };

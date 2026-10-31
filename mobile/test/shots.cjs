@@ -128,6 +128,14 @@ const scenarios = [
   { name: '58-stress', cfg: { paired: true, data: 1 }, steps: [click('Classes'), `[...document.querySelectorAll('.card.class')].find((c) => c.innerText.includes('BIO1112'))?.click()`, click('Study'), wait(1500), click('Answers at the end'), `[...document.querySelectorAll('.hub-sizes button')].pop()?.click()`, click('Start'), wait(2500)] },
   { name: '58-stress-nowrap', cfg: { paired: true, data: 1 }, steps: [click('Classes'), `[...document.querySelectorAll('.card.class')].find((c) => c.innerText.includes('BIO1112'))?.click()`, click('Study'), wait(1500), click('Answers at the end'), `[...document.querySelectorAll('.hub-sizes button')].pop()?.click()`, click('Start'), wait(2500), `document.head.insertAdjacentHTML('beforeend', '<style>.st-stem, .st-choice, .st-explain { overflow-wrap: normal !important }</style>')`, wait(300)] },
   ...sampleFiles.map((f, i) => ({ name: `40-open-${String(i).padStart(2, '0')}-${f.name.replace(/[^a-z0-9.]+/gi, '_')}`, cfg: { welcomed: true, opened: f }, steps: [wait(3000)] })),
+  // Classes as on the PC: the calendar first, a class as its weeks, Messages and Notifications.
+  { name: '60-calendar-first', cfg: { paired: true, data: 1 }, steps: [`document.querySelector('.miss-fold')?.click()`] },
+  { name: '61-class-weeks', cfg: { paired: true, data: 1 }, steps: [click('Classes'), `[...document.querySelectorAll('.mcard')].find((c) => c.innerText.includes('BIO1112'))?.click()`] },
+  { name: '62-class-weeks-low', cfg: { paired: true, data: 1 }, steps: [click('Classes'), `[...document.querySelectorAll('.mcard')].find((c) => c.innerText.includes('BIO1112'))?.click()`, `document.querySelector('.pw.now')?.scrollIntoView()`] },
+  { name: '63-class-bottom', cfg: { paired: true, data: 1 }, steps: [click('Classes'), `[...document.querySelectorAll('.mcard')].find((c) => c.innerText.includes('CHE1011'))?.click()`, `[...document.querySelectorAll('h2')].pop()?.scrollIntoView()`] },
+  { name: '64-class-grades', cfg: { paired: true, data: 1 }, steps: [click('Classes'), `[...document.querySelectorAll('.mcard')].find((c) => c.innerText.includes('BIO1112'))?.click()`, `document.querySelector('button.bigrade')?.click()`] },
+  { name: '65-messages', cfg: { paired: true, data: 1 }, steps: [click('Messages')] },
+  { name: '66-notifications', cfg: { paired: true, data: 1 }, steps: [click('Notifications')] },
   { name: '21-update-banner', cfg: { paired: true, data: 1, update: 'v0.53.0' }, steps: [] }
 ];
 

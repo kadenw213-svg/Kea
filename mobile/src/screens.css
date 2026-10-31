@@ -1511,3 +1511,165 @@ input.range {
   font-weight: 600;
   color: var(--k, var(--accent));
 }
+
+/* The grade on a class page: tap for its grades */
+button.bigrade {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+}
+
+/* Missing work at the top of the calendar, folded to one line */
+.miss-fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.miss-fold svg:first-child {
+  color: var(--danger);
+}
+.miss-fold .muted {
+  flex: 1;
+  min-width: 0;
+}
+.flip-v {
+  transform: rotate(180deg);
+}
+
+/* A class's next tests, one line of chips */
+.m-dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 2px;
+}
+.m-dates-k {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  margin-right: 2px;
+}
+.m-dates button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font: inherit;
+  font-size: 13px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-dates b {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Week by week: this week open, the rest folded */
+.pws {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pw {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 0 12px;
+}
+.pw.now {
+  border-color: color-mix(in srgb, var(--k, var(--accent)) 60%, var(--border));
+}
+.pw > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 12px 0;
+  list-style: none;
+}
+.pw > summary::-webkit-details-marker {
+  display: none;
+}
+.pw-now {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--k, var(--accent));
+}
+.pw-tag {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger);
+}
+.pw-ch {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.pw-ch ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.pw-ch li + li {
+  margin-top: 3px;
+}
+.pw-ch-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.pw-ch-btns .btn {
+  flex: 1;
+  justify-content: center;
+}
+.pw-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 10px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.pw-test b {
+  color: var(--danger);
+}
+.pw-more {
+  display: block;
+  width: 100%;
+  padding: 10px 0 12px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+}
+.pw-earlier > summary {
+  padding: 8px 2px;
+  font-size: 13.5px;
+}
+.pw-earlier .pw {
+  margin-top: 8px;
+}

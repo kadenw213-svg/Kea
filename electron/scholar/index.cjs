@@ -176,10 +176,12 @@ async function snapshot() {
   };
   // What was deleted on the PC, so the phone also hides its own copies.
   const inboxDeleted = (precheck.readInbox().deletedKeys || []).slice(-1500);
+  // The class site's mailbox, for the phone's Messages tab.
+  const mail = require('./messages.cjs').phoneMail();
   return {
     // The theme (Settings → Appearance), so Kea on the phone looks the same; the newer choice wins either way.
     look: { theme: settings.get('appearance.theme', 'dark'), at: settings.get('appearance.themeAt', ''), classColors: settings.get('scholar.classColors', {}) },
-    ...fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, platform: browser.schoolInfo().platform, courses, items, details, grades, inbox, inboxDeleted, doneLog }),
+    ...fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, platform: browser.schoolInfo().platform, courses, items, details, grades, inbox, inboxDeleted, mail, doneLog }),
     // The study folder as it is here (sets, saved questions, progress), for the phone to study from; its pictures are in
     // the library zip. A set still being written stays out until it's ready.
     study: studyFiles()
