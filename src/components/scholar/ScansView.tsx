@@ -550,7 +550,7 @@ export function ScansView() {
       <StatusCard run={shown} queue={shownQueue} paused={shown ? null : shownPaused} dev={dev} lastRun={activity[0]} />
       {news.some((n) => !n.read) && (
         <p className="muted inbox-hint">
-          <Bell size={13} /> New messages, grades and announcements are in the Inbox.
+          <Bell size={13} /> New messages, grades and announcements are in Notifications.
         </p>
       )}
       <DevicesCard dev={dev} reload={loadDevices} />

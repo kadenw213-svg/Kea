@@ -22,7 +22,7 @@ import {
   Activity,
   Loader2,
   AlertTriangle,
-  Inbox,
+  Bell,
   MapPin,
   Mail,
   Palette,
@@ -31,13 +31,11 @@ import {
   RotateCcw,
   Clock,
   Award,
-  Layers,
   Trash2,
   Monitor,
   ClipboardCheck,
   ShieldAlert,
-  Reply,
-  Bookmark
+  Reply
 } from 'lucide-react';
 import { inboxParts, kindOf } from './inboxFormat';
 import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
@@ -291,18 +289,12 @@ export function ScholarScreen() {
             </span>
           )}
         </button>
-        <button className={`sch-link ${view.name === 'inbox' ? 'on' : ''}`} onClick={() => go({ name: 'inbox' })}>
-          <Inbox size={17} /> Inbox
-          {unread > 0 && <span className="sch-badge strong">{unread}</span>}
-        </button>
         <button className={`sch-link ${view.name === 'messages' ? 'on' : ''}`} onClick={() => go({ name: 'messages' })} disabled={!hasData}>
           <Mail size={17} /> Messages
         </button>
-        <button className={`sch-link ${view.name === 'resources' ? 'on' : ''}`} onClick={() => go({ name: 'resources' })} disabled={!hasData}>
-          <Layers size={17} /> Study
-        </button>
-        <button className="sch-link" onClick={() => set({ study: 'saved:all' })} disabled={!hasData}>
-          <Bookmark size={17} /> Saved
+        <button className={`sch-link ${view.name === 'inbox' ? 'on' : ''}`} onClick={() => go({ name: 'inbox' })}>
+          <Bell size={17} /> Notifications
+          {unread > 0 && <span className="sch-badge strong">{unread}</span>}
         </button>
         <div className="sch-head">Classes</div>
         {courses.map((c) => (
@@ -567,7 +559,7 @@ function AttentionBar({ ctx }: { ctx: Ctx }) {
   );
 }
 
-// ---------- Inbox ----------
+// ---------- Notifications ----------
 function InboxView({ ctx }: { ctx: Ctx }) {
   const version = useScholar((s) => s.version);
   const [items, setItems] = useState<ScholarInboxItem[] | null>(null);
@@ -588,10 +580,10 @@ function InboxView({ ctx }: { ctx: Ctx }) {
   if (!items && loadError)
     return (
       <div className="sch-page">
-        <h1 className="sch-title">Inbox</h1>
+        <h1 className="sch-title">Notifications</h1>
         <div className="sch-empty">
           <AlertTriangle size={26} />
-          <div>Kea couldn’t read your Inbox: {loadError}</div>
+          <div>Kea couldn’t read your notifications: {loadError}</div>
           <button className="btn sm" onClick={() => (setLoadError(''), load())}>
             <RefreshCw size={13} /> Try again
           </button>
@@ -635,7 +627,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
   return (
     <div className="sch-page">
       <div className="cal-bar">
-        <h1 className="sch-title">Inbox</h1>
+        <h1 className="sch-title">Notifications</h1>
         <div className="seg-mini wrap">
           {['all', 'unread', ...codes].map((f) => (
             <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>
@@ -649,7 +641,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
         </button>
         {confirmRead ? (
           <span className="ib-confirm">
-            Delete {readShown.length} read message{readShown.length === 1 ? '' : 's'}?
+            Delete {readShown.length} read notification{readShown.length === 1 ? '' : 's'}?
             <button className="btn sm danger" onClick={() => (remove(readShown.map((i) => i.id)), setConfirmRead(false))}>
               Delete
             </button>
@@ -677,7 +669,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
                   )}
                   {readShown.length > 0 && (
                     <button className="menu-item" onClick={() => (setConfirmRead(true), close())}>
-                      <Trash2 size={14} /> Delete read messages
+                      <Trash2 size={14} /> Delete read notifications
                     </button>
                   )}
                 </>
@@ -686,10 +678,10 @@ function InboxView({ ctx }: { ctx: Ctx }) {
           )
         )}
       </div>
-      <p className="sch-sub">Announcements, grades, feedback and class-site messages, as they happen, and anything that needs you.</p>
+      <p className="sch-sub">New messages, replies to your discussion posts, announcements, grades and feedback, as they happen, and anything that needs you.</p>
       {!shown.length ? (
         <div className="sch-empty">
-          <Inbox size={26} />
+          <Bell size={26} />
           <div>Nothing here yet.</div>
         </div>
       ) : (
@@ -738,7 +730,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
                       onClick={(e) => {
                         e.stopPropagation();
                         read(i);
-                        useScholar.getState().set({ view: { name: 'messages' } });
+                        useScholar.getState().set({ view: i.id.startsWith('mail:') ? { name: 'messages', id: i.id, reply: true } : { name: 'messages' } });
                       }}
                     >
                       <Reply size={12} /> Reply

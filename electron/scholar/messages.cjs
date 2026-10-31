@@ -85,6 +85,9 @@ async function syncMailbox(force = false) {
     changed();
     // New unread mail since the last read (not on the very first read, which would notify the whole mailbox).
     if (m.box.seeded && !keepOld) {
+      // Each one is also a notification in Scholar's Notifications list.
+      const who = (n) => String(n.from || '').replace(/<[^>]*>?.*$/, '').replace(/"/g, '').trim();
+      deps.precheck.addInboxItems(inbox.filter((x) => x.unread && !before.has(x.id)).map((n) => ({ id: n.id, kind: 'message', course: n.course, title: n.subject || 'New message', body: [who(n) && `From ${who(n)}`, n.preview && !String(n.subject).startsWith(n.preview) ? n.preview : ''].filter(Boolean).join('\n'), at: n.first, url: n.url || '' })));
       const { Notification } = require('electron');
       const notify = require('./notify.cjs');
       for (const n of inbox.filter((x) => x.unread && !before.has(x.id)).slice(0, 5)) {
@@ -213,7 +216,7 @@ function register({ browser, precheck, db }) {
     const urls = new Set(box.map((x) => x.url).filter(Boolean));
     const alerts = precheck
       .readInbox()
-      .items.filter((i) => i.kind === 'message' && !(i.url && urls.has(i.url)))
+      .items.filter((i) => i.kind === 'message' && !i.id.startsWith('mail:') && !(i.url && urls.has(i.url)))
       .map((i) => ({ id: i.id, course: i.course || '', title: i.title, from: '', preview: i.body || '', at: i.at, url: i.url || '', read: !!i.read }));
     // (A mailbox message without a link of its own is opened by clicking it in its folder: its `loc`.)
     return [...box.map((x) => ({ id: x.id, course: x.course, title: x.subject, from: x.from, preview: x.preview || '', at: x.date || x.first, sortAt: x.first, url: x.url, loc: { folder: x.folder || 'inbox', subject: x.subject, date: x.date }, read: !x.unread })), ...alerts];

@@ -180,7 +180,7 @@ export function MessagesView({ courses, openId, reply }: { courses: ScholarCours
   useEffect(() => {
     if (open && box === 'inbox') {
       readFull(open);
-      // (Then the unread counts, here and beside Inbox, go down.)
+      // (Then the unread counts, here and beside Notifications, go down.)
       api.scholar
         .markInboxRead([open])
         .then(() => {

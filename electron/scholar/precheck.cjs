@@ -1053,6 +1053,16 @@ function inboxNote(n) {
   if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: String(n.body || '').slice(0, 200) }).show();
 }
 
+/** Items into Notifications without a pop-up of their own (their sender already showed one), once per id. */
+function addInboxItems(list) {
+  const box = readInbox();
+  const gone = new Set(box.deleted || []);
+  const add = list.filter((n) => !gone.has(n.id) && !box.items.some((i) => i.id === n.id));
+  if (!add.length) return;
+  box.items = [...add.map((n) => ({ read: false, links: [], ...n })), ...box.items].sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 500);
+  writeInbox(box);
+}
+
 function markInboxRead(ids) {
   const box = readInbox();
   for (const i of box.items) if (!ids || ids.includes(i.id)) i.read = true;
@@ -1235,4 +1245,4 @@ function prune(workspaceDir, now = new Date()) {
   return removed;
 }
 
-module.exports = { prune, classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck, _test: { fetchAreaRetry, writeSafe, readSafe, prune, resetPrune: () => (prunedOn = null), AREAS, refreshSubmissions, saveD2lPlaces, classPlatforms, updateGrades, updateInbox, hiddenWork } };
+module.exports = { prune, classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, addInboxItems, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck, _test: { fetchAreaRetry, writeSafe, readSafe, prune, resetPrune: () => (prunedOn = null), AREAS, refreshSubmissions, saveD2lPlaces, classPlatforms, updateGrades, updateInbox, hiddenWork } };

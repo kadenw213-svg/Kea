@@ -501,7 +501,7 @@ export const SECTIONS: Section[] = [
         type: 'select',
         default: '30',
         options: [['15', '15 minutes'], ['30', '30 minutes'], ['60', 'Hour'], ['180', '3 hours'], ['720', '12 hours'], ['1440', 'Day'], ['0', 'Only with the class check']].map(([value, label]) => ({ value, label })),
-        help: 'A quick look done by Kea itself (no Claude usage). Each new thing shows in the Inbox as its own message, with a notification.'
+        help: 'A quick look done by Kea itself (no Claude usage). Each new thing shows in Notifications as its own item, with a notification.'
       },
       {
         key: 'scholar.weeklyDay',
@@ -523,7 +523,7 @@ export const SECTIONS: Section[] = [
       { key: 'scholar.notifyMessages', group: 'Notifications', label: 'Notify me of new messages', type: 'toggle', default: true, help: 'With who sent it and the whole message. Click it to answer in Kea with the reply box open.' },
       { key: 'scholar.notifyAnnouncements', label: 'Notify me of announcements', type: 'toggle', default: true },
       { key: 'scholar.notifyGrades', label: 'Notify me of new grades and feedback', type: 'toggle', default: true },
-      { key: 'scholar.notifyQuietClasses', label: 'Classes to keep quiet', type: 'text', default: '', advanced: true, help: 'Class codes, separated by commas (BIO1112, ENG1001). Their news still goes to the Inbox.' },
+      { key: 'scholar.notifyQuietClasses', label: 'Classes to keep quiet', type: 'text', default: '', advanced: true, help: 'Class codes, separated by commas (BIO1112, ENG1001). Their news still goes to Notifications.' },
       { key: 'scholar.notifyQuietFrom', label: 'Quiet hours from', type: 'text', default: '', advanced: true, help: 'Like 22:00. Notifications in the quiet hours come without a sound.' },
       { key: 'scholar.notifyQuietTo', label: 'Quiet hours until', type: 'text', default: '', advanced: true, help: 'Like 07:00.' },
       { key: 'scholar.background', label: 'Keep checking when Kea’s window is closed', type: 'toggle', default: true, help: 'Closing the window leaves Kea in the notification area (by the clock), so the class checks and paused scans still run. Quit from its icon there.' },
@@ -578,7 +578,7 @@ export const SECTIONS: Section[] = [
         type: 'toggle',
         default: true,
         advanced: true,
-        help: 'Kea on another computer with the same drive shows the same classes, checkmarks, Inbox and study sets. Only the primary device (Scans → Devices) ever checks the class site or uses your Claude plan.'
+        help: 'Kea on another computer with the same drive shows the same classes, checkmarks, notifications and study sets. Only the primary device (Scans → Devices) ever checks the class site or uses your Claude plan.'
       },
       { key: 'scholar.deviceName', label: 'This device’s name', type: 'text', default: '', advanced: true, help: 'Shown to your other devices. Empty: the computer’s own name.' },
       {
