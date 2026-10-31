@@ -1,4 +1,4 @@
-// The top of Home when School is on: one Scholar button that opens This week. Classes, grades and what's due live in
+// The top of Home when School is on: one Scholar button that opens the calendar. Classes, grades and what's due live in
 // Scholar itself; Home only says how much is waiting today.
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ChevronRight, GraduationCap, Sun } from 'lucide-react';
@@ -41,7 +41,7 @@ function useToday() {
 export function HomeToday() {
   const data = useToday();
   if (!data) return <section className="today-loading" />;
-  const go = () => openScholar({ name: 'week' });
+  const go = () => openScholar({ name: 'calendar' });
   if (!data.classes)
     return (
       <section className="today">
@@ -63,7 +63,7 @@ export function HomeToday() {
         <span>
           <b>Scholar</b>
           <span className="muted">
-            This week · {parts.join(' · ')}
+            {parts.join(' · ')}
             {data.missing > 0 && (
               <span className="today-miss">
                 {' · '}

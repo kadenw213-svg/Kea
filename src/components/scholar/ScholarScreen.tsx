@@ -209,7 +209,7 @@ export function ScholarScreen() {
 
   const switchProfile = async (id: string) => {
     await api.scholar.selectProfile(id);
-    go({ name: 'week' });
+    go({ name: 'calendar' });
     reloadScholar();
   };
   const newProfile = async () => {
@@ -232,8 +232,6 @@ export function ScholarScreen() {
       <MessagesView courses={ctx.courses} openId={view.id} reply={view.reply} />
     ) : view.name === 'inbox' ? (
       <InboxView ctx={ctx} />
-    ) : view.name === 'calendar' ? (
-      <CalendarView ctx={ctx} />
     ) : view.name === 'class' ? (
       <ClassView ctx={ctx} courseId={view.courseId} startTab={view.tab} />
     ) : view.name === 'library' ? (
@@ -249,7 +247,7 @@ export function ScholarScreen() {
         <AccountCard />
       </div>
     ) : (
-      <WeekView ctx={ctx} />
+      <CalendarView ctx={ctx} />
     );
 
   return (
@@ -285,8 +283,8 @@ export function ScholarScreen() {
           )}
         </MenuButton>
 
-        <button className={`sch-link ${view.name === 'week' ? 'on' : ''}`} onClick={() => go({ name: 'week' })} disabled={!hasData}>
-          <Sun size={17} /> This week
+        <button className={`sch-link ${view.name === 'calendar' ? 'on' : ''}`} onClick={() => go({ name: 'calendar' })} disabled={!hasData}>
+          <CalendarDays size={17} /> Calendar
           {missing > 0 && (
             <span className="sch-badge alert" title={`${missing} missing`}>
               {missing}
@@ -299,9 +297,6 @@ export function ScholarScreen() {
         </button>
         <button className={`sch-link ${view.name === 'messages' ? 'on' : ''}`} onClick={() => go({ name: 'messages' })} disabled={!hasData}>
           <Mail size={17} /> Messages
-        </button>
-        <button className={`sch-link ${view.name === 'calendar' ? 'on' : ''}`} onClick={() => go({ name: 'calendar' })} disabled={!hasData}>
-          <CalendarDays size={17} /> Calendar
         </button>
         <button className={`sch-link ${view.name === 'resources' ? 'on' : ''}`} onClick={() => go({ name: 'resources' })} disabled={!hasData}>
           <Layers size={17} /> Study
@@ -511,61 +506,28 @@ function useToday() {
   return day;
 }
 
-// ---------- This week ----------
-function WeekView({ ctx }: { ctx: Ctx }) {
-  const from = useToday();
-  const to = iso(addDays(parse(from), 13));
-  const items = useItems(from, to);
-  const past = useItems(iso(addDays(parse(from), -28)), iso(addDays(parse(from), -1)));
-  const [missOpen, setMissOpen] = useState(true);
+// ---------- What needs you (above the calendar) ----------
+/** Missing work across every class, past items to check off, and this week's calendar changes. Each folds to one line. */
+function AttentionBar({ ctx }: { ctx: Ctx }) {
+  const day = useToday();
+  const past = useItems(iso(addDays(parse(day), -28)), day);
+  const [missOpen, setMissOpen] = useState(false);
   const [uncOpen, setUncOpen] = useState(false);
-  if (!items || !past) return <Loading />;
-  const recent = [...past, ...items.filter((i) => i.date === from)];
-  const missing = recent.filter((i) => isMissing(i));
-  const unconfirmed = recent.filter((i) => isUnconfirmed(i));
+  if (!past) return null;
+  const missing = past.filter((i) => isMissing(i));
+  const unconfirmed = past.filter((i) => isUnconfirmed(i));
   const checkAllOff = async () => {
     for (const i of unconfirmed) await api.scholar.setDone(i.id, true);
     toast(`Checked off ${unconfirmed.length} item${unconfirmed.length === 1 ? '' : 's'}.`, 'success');
     reloadScholar();
   };
-  // Each class's current week (or its next one, between weeks).
-  const banners = ctx.courses
-    .map((c) => {
-      const mine = items.filter((i) => i.type === 'weekly_reading' && i.courseId === c.id);
-      return mine.find((b) => b.date <= from && (b.dateEnd || b.date) >= from) || mine.find((b) => b.date > from);
-    })
-    .filter((b): b is ScholarItem => !!b);
-  const due = items.filter((i) => i.type !== 'weekly_reading' && i.date >= from && !missing.includes(i) && !unconfirmed.includes(i));
-  const days = [...new Set(due.map((i) => i.date))];
-  const open = due.filter((i) => TODO.has(i.type) && !isDone(i)).length;
-  const next = due.find((i) => i.date === from && i.start && minutes(i.start) > new Date().getHours() * 60 + new Date().getMinutes());
-  const daySection = (d: string) => (
-    <section key={d}>
-      <h2 className="sch-h2">{dayName(d)}</h2>
-      <div className="sch-list">
-        {due
-          .filter((i) => i.date === d)
-          .map((i) => (
-            <ItemRow key={i.id} ctx={ctx} it={i} />
-          ))}
-      </div>
-    </section>
-  );
   return (
-    <div className="sch-page">
-      <h1 className="sch-title">This week</h1>
-      <p className="sch-sub">
-        {open ? `${open} thing${open === 1 ? '' : 's'} due in the next 14 days.` : 'Nothing due in the next 14 days.'}
-        {next ? ` Next: ${next.courseCode} ${TYPE_LABEL[next.type]?.toLowerCase() || ''} at ${clock(next.start)}${next.location && next.location !== 'Online' ? ` in ${shortRoom(next.location)}` : ''}.` : ''}
-      </p>
-      <ChangesBox />
+    <div className="cal-attention">
       {missing.length > 0 && (
         <section className="miss-box">
           <button className="miss-head" onClick={() => setMissOpen(!missOpen)}>
             <AlertTriangle size={16} />
-            <b>
-              {missing.length} missing
-            </b>
+            <b>{missing.length} missing</b>
             <span className="muted">Past due, and your class site shows nothing handed in. Hand them in if you still can.</span>
             <ChevronDown size={15} className={missOpen ? 'flip' : ''} />
           </button>
@@ -600,85 +562,7 @@ function WeekView({ ctx }: { ctx: Ctx }) {
           )}
         </section>
       )}
-      {days.filter((d) => d === from).map(daySection)}
-      {banners.length > 0 && (
-        <section>
-          <h2 className="sch-h2">Reading and topics</h2>
-          <div className="sch-banners">
-            {banners.map((b) => (
-              <ReadingCard key={b.id} ctx={ctx} b={b} />
-            ))}
-          </div>
-        </section>
-      )}
-      {days.filter((d) => d !== from).map(daySection)}
-    </div>
-  );
-}
-
-/** A class's reading for a week: its chapters, with the textbook chapter to open. */
-function ReadingCard({ ctx, b, showCourse = true }: { ctx: Ctx; b: ScholarItem; showCourse?: boolean }) {
-  const count = b.weeklyLinks.length;
-  return (
-    <div className="sch-banner" style={{ borderLeftColor: ctx.colors.course(b.courseId) }} onClick={() => ctx.open(b)}>
-      <div className="sch-banner-head">
-        {showCourse && <span className="sch-code">{b.courseCode}</span>}
-        {showCourse && (
-          <button
-            className="link-btn sm wbw-all"
-            title="Every week of this class: its topics and what's due"
-            onClick={(e) => {
-              e.stopPropagation();
-              useScholar.getState().set({ view: { name: 'class', courseId: b.courseId, tab: 'weeks' } });
-            }}
-          >
-            All weeks
-          </button>
-        )}
-        <span className="muted">
-          {shortDate(b.date)}
-          {b.dateEnd ? ` – ${shortDate(b.dateEnd)}` : ''}
-        </span>
-      </div>
-      {b.readings.length ? (
-        b.readings.map((r) => (
-          <div key={r.chapter} className="sch-chapter">
-            <span className="sch-chapter-name">
-              <span>
-                <b>{r.chapter}</b>
-                {r.title ? `: ${r.title}` : ''}
-              </span>
-              {!r.pdf && <span className="muted sch-nopdf">Textbook chapter being written</span>}
-            </span>
-            {r.pdf && (
-              <span className="sch-chapter-btns">
-                <button
-                  className="btn sm tonal"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openReading(r);
-                  }}
-                >
-                  <BookOpen size={14} /> Read
-                </button>
-                <button
-                  className="btn sm"
-                  title="Practice questions on this chapter"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openStudyHub({ courseId: b.courseId, code: b.courseCode, title: `${r.chapter}${r.title ? `: ${r.title}` : ''}`, chapters: [r.chapter] });
-                  }}
-                >
-                  <ClipboardCheck size={14} /> Study
-                </button>
-              </span>
-            )}
-          </div>
-        ))
-      ) : (
-        <div className="sch-chapter">{b.title}</div>
-      )}
-      {count > 0 && <div className="sch-banner-more">{count} videos, slides and handouts</div>}
+      <ChangesBox />
     </div>
   );
 }
@@ -974,6 +858,7 @@ function CalendarView({ ctx, courseId }: { ctx: Ctx; courseId?: string }) {
           </div>
         </div>
       </div>
+      {!courseId && <AttentionBar ctx={ctx} />}
       {!items ? (
         <Loading />
       ) : mode === 'week' ? (
@@ -1315,8 +1200,8 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
         <div className="sch-empty">
           <AlertTriangle size={26} />
           <div>{loadError ? `Kea couldn’t open this class: ${loadError}` : 'Class not found. It may have been removed, or it belongs to another profile.'}</div>
-          <button className="btn sm" onClick={() => ctx.go({ name: 'week' })}>
-            Back to This week
+          <button className="btn sm" onClick={() => ctx.go({ name: 'calendar' })}>
+            Back to the calendar
           </button>
         </div>
       </div>
@@ -1803,7 +1688,7 @@ function AddClass({ first }: { first: boolean }) {
     try {
       const r = await api.scholar.importExisting(folder);
       toast(`Classes brought in${r.pdfs ? `, with ${r.pdfs} textbook chapter file${r.pdfs === 1 ? '' : 's'}` : ''}.`, 'success');
-      useScholar.getState().set({ view: { name: 'week' } });
+      useScholar.getState().set({ view: { name: 'calendar' } });
       reloadScholar();
     } catch (err: any) {
       toast(err.message, 'error');
@@ -1835,7 +1720,7 @@ function AddClass({ first }: { first: boolean }) {
         <div className="gate">
           <h2>Bring in classes from another device</h2>
           <p>Kea looks in OneDrive and Google Drive on this computer for the classes your other device shares. Both need the same drive account, and Kea open on the other one.</p>
-          {account?.verified ? <FromAnotherDevice onDone={() => useScholar.getState().set({ view: { name: 'week' } })} /> : <AccountStep />}
+          {account?.verified ? <FromAnotherDevice onDone={() => useScholar.getState().set({ view: { name: 'calendar' } })} /> : <AccountStep />}
         </div>
       )}
       {gate && (

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { useTabs } from '../../store';
 
 /** What the Scholar tab shows. */
-export type ScholarView = { name: 'week' } | { name: 'inbox' } | { name: 'messages'; id?: string; reply?: boolean } | { name: 'calendar' } | { name: 'class'; courseId: string; tab?: 'weeks' | 'textbook' } | { name: 'library' } | { name: 'add' } | { name: 'scans' } | { name: 'resources' } | { name: 'account' };
+export type ScholarView = { name: 'inbox' } | { name: 'messages'; id?: string; reply?: boolean } | { name: 'calendar' } | { name: 'class'; courseId: string; tab?: 'weeks' | 'textbook' } | { name: 'library' } | { name: 'add' } | { name: 'scans' } | { name: 'resources' } | { name: 'account' };
 
 interface ScholarStore {
   view: ScholarView;
@@ -16,7 +16,7 @@ interface ScholarStore {
 }
 
 export const useScholar = create<ScholarStore>((set) => ({
-  view: { name: 'week' },
+  view: { name: 'calendar' },
   version: 0,
   inboxTick: 0,
   study: null,
@@ -38,7 +38,7 @@ export const reloadScholar = () => {
 export const bumpInbox = () => useScholar.getState().set({ inboxTick: useScholar.getState().inboxTick + 1 });
 
 /** Open the Scholar tab (one per window) at a view. */
-export function openScholar(view: ScholarView = { name: 'week' }) {
+export function openScholar(view: ScholarView = { name: 'calendar' }) {
   useScholar.getState().set({ view });
   const tabs = useTabs.getState();
   const existing = tabs.tabs.find((t) => t.kind === 'scholar');

@@ -2652,3 +2652,13 @@
   padding-left: 0;
   padding-right: 0;
 }
+
+/* Above the calendar: missing work, items to check off and calendar changes, each one folded line */
+.cal-attention {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.cal-attention > section {
+  margin: 0;
+}
