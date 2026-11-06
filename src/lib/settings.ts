@@ -133,6 +133,29 @@ export const SECTIONS: Section[] = [
     ]
   },
   {
+    id: 'keacloud',
+    label: 'Kea Cloud',
+    icon: 'Cloud',
+    blurb: 'Documents you save to Kea Cloud live in your Kea storage, so they’re on your other computers and your phone too.',
+    fields: [
+      { key: 'keaCloud.enabled', label: 'Use Kea Cloud for documents', type: 'toggle', default: true, help: 'Shows Kea Cloud on Home and keeps its documents in sync while you’re signed in to your Kea account.' },
+      {
+        key: 'keaCloud.saveTo',
+        label: 'Saving a new file',
+        type: 'select',
+        default: 'ask',
+        options: [
+          { value: 'ask', label: 'Ask: Kea Cloud or this PC' },
+          { value: 'cloud', label: 'Save to Kea Cloud' },
+          { value: 'pc', label: 'Choose a folder on this PC' }
+        ],
+        help: 'Only when you’re signed in. Save as… always lets you pick any folder.'
+      },
+      { key: 'keaCloud.showOnHome', label: 'Show Kea Cloud on Home', type: 'toggle', default: true, advanced: true },
+      { key: 'keaCloud.fileBadges', label: 'Show each file’s sync state on Home', type: 'toggle', default: true, advanced: true, help: 'A small mark on files still waiting to go up, or kept on this PC.' }
+    ]
+  },
+  {
     id: 'appearance',
     label: 'Appearance',
     icon: 'Palette',
@@ -240,10 +263,24 @@ export const SECTIONS: Section[] = [
       { key: 'scholar.enabled', label: 'School (classes, calendar, study and library)', type: 'toggle', default: true },
       { key: 'areas.auto', label: 'Turn areas on by themselves when I start using them', type: 'toggle', default: true, advanced: true, help: 'Joining a class turns on School.' },
       { key: 'areas.setupDone', label: 'First-run setup finished', type: 'toggle', default: false, advanced: true, help: 'Turn off to see the "What will you use Kea for?" screen again.' },
-      { key: 'home.showStart', label: 'Show "Start new" cards', type: 'toggle', default: true },
-      { key: 'home.showTools', label: 'Show quick tools (Combine PDFs, Images to PDF)', type: 'toggle', default: true },
-      { key: 'home.greeting', label: 'Show greeting', type: 'toggle', default: true },
-      { key: 'home.previews', label: 'Show previews of files', type: 'toggle', default: true },
+      { key: 'home.greeting', group: 'Today', label: 'Show greeting and date', type: 'toggle', default: true },
+      { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from Scholar and your Kea Hub classes.' },
+      { key: 'home.showClasses', label: 'Show my classes', type: 'toggle', default: true },
+      { key: 'home.showWork', label: 'Show Work (to-do and next shift)', type: 'toggle', default: true, when: (v) => v['modes.work'] === true },
+      {
+        key: 'home.todayDays',
+        label: 'Look ahead',
+        type: 'select',
+        default: 7,
+        advanced: true,
+        options: [1, 3, 7, 14].map((d) => ({ value: d, label: d === 1 ? 'Today only' : `${d} days` })),
+        help: 'How far ahead “Coming up” on Home lists things.'
+      },
+      { key: 'home.todayMax', label: 'Items listed under Coming up', type: 'number', default: 6, min: 2, max: 20, advanced: true },
+      { key: 'home.showHubClasses', label: 'Include Kea Hub classes', type: 'toggle', default: true, advanced: true, help: 'Never shown in a Personal profile.' },
+      { key: 'home.showStart', group: 'Create', label: 'Show Create (new document, spreadsheet, presentation…)', type: 'toggle', default: true },
+      { key: 'home.showTools', label: 'Include PDF tools and Open a file', type: 'toggle', default: true },
+      { key: 'home.previews', group: 'Files', label: 'Show previews of files', type: 'toggle', default: true },
       {
         key: 'home.cardSize',
         label: 'Card size',
@@ -255,7 +292,7 @@ export const SECTIONS: Section[] = [
           { value: 'large', label: 'Large' }
         ]
       },
-      { key: 'home.descriptions', label: 'Show descriptions on cards', type: 'toggle', default: true },
+      { key: 'home.descriptions', label: 'Show descriptions on cards', type: 'toggle', default: false },
       { key: 'home.previewOnline', label: 'Make previews of online-only cloud files', type: 'toggle', default: false, advanced: true, help: 'Downloads those files to this PC to draw their preview.' },
       { key: 'home.showAllTypes', label: 'Show every file type in folders', type: 'toggle', default: false, advanced: true, help: 'Normally Home only lists files Kea can open.' },
       { key: 'home.showHidden', label: 'Show hidden files and folders', type: 'toggle', default: false, advanced: true },
@@ -885,7 +922,7 @@ export const useSettings = create<SettingsStore>((set, get) => ({
   values: { ...DEFAULTS },
   loaded: false,
   open: false,
-  section: 'general',
+  section: 'start',
   set(patch) {
     set({ values: { ...get().values, ...patch } });
     // Store only differences from defaults, so changing a default later reaches everyone.
@@ -929,7 +966,7 @@ export function useSetting<T = any>(key: string): T {
   return useSettings((s) => (s.values[key] === undefined ? DEFAULTS[key] : s.values[key])) as T;
 }
 
-export function openSettings(section = 'general') {
+export function openSettings(section = 'start') {
   useSettings.getState().ui({ open: true, section });
 }
 

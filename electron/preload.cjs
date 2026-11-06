@@ -430,6 +430,17 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('update:state', fn);
     return () => ipcRenderer.removeListener('update:state', fn);
   },
+  // Kea Cloud: documents in the person's Kea storage (electron/keaCloud.cjs).
+  keaCloud: {
+    status: () => ipcRenderer.invoke('keaCloud:status'),
+    states: (paths) => ipcRenderer.invoke('keaCloud:states', { paths }),
+    newPath: (name) => ipcRenderer.invoke('keaCloud:newPath', { name }),
+    rename: (path, name) => ipcRenderer.invoke('keaCloud:rename', { path, name }),
+    remove: (path) => ipcRenderer.invoke('keaCloud:remove', { path }),
+    newFolder: (parent, name) => ipcRenderer.invoke('keaCloud:newFolder', { parent, name }),
+    syncNow: () => ipcRenderer.invoke('keaCloud:syncNow'),
+    open: () => ipcRenderer.invoke('keaCloud:open')
+  },
   // Work mode: organizations on the Kea Hub (electron/hubOrg.cjs).
   hubOrg: {
     call: (method, path, body) => ipcRenderer.invoke('hubOrg:call', { method, path, body }),

@@ -1,11 +1,14 @@
+// Settings: a calm first page that asks what the person is looking for and shows just those settings, a short list of
+// the everyday ones, and seven categories. Every setting is still reachable (Advanced shows the rest of each page).
 import { Logo } from '../Logo';
-import { Fragment, useEffect, useMemo, useState } from 'react';
-import { BookOpen, Circle, Clapperboard, Sparkles, Cloud, FileCode2, FileText, FileType2, GraduationCap, Home, Mic, Palette, Plug, Presentation, RefreshCw, Save, Settings, Sheet, Shield, SpellCheck, Wand2, UserCircle } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { BookOpen, Circle, Clapperboard, Sparkles, Cloud, FileCode2, FileText, FileType2, GraduationCap, Home, Info, Mic, Palette, Plug, Presentation, RefreshCw, Save, Settings, Sheet, Shield, SpellCheck, Wand2, UserCircle, ChevronRight, ArrowRight, Loader2 } from 'lucide-react';
 
 // Only the icons the sections use (importing the whole icon set put ~1,500 icons into Kea's start-up code).
-const Icons = { BookOpen, Circle, Clapperboard, Sparkles, Cloud, FileCode2, FileText, FileType2, GraduationCap, Home, Mic, Palette, Plug, Presentation, RefreshCw, Save, Settings, Sheet, Shield, SpellCheck, Wand2, UserCircle };
+const Icons = { BookOpen, Circle, Clapperboard, Sparkles, Cloud, FileCode2, FileText, FileType2, GraduationCap, Home, Info, Mic, Palette, Plug, Presentation, RefreshCw, Save, Settings, Sheet, Shield, SpellCheck, Wand2, UserCircle };
 import { X, Search, RotateCcw, FolderOpen, ExternalLink } from 'lucide-react';
-import { SECTIONS, Field, useSettings, DEFAULTS } from '../../lib/settings';
+import { SECTIONS, Field, Section, useSettings, DEFAULTS } from '../../lib/settings';
+import { CATEGORIES, POPULAR, Hit, categoryOf, sectionById, searchSettings, suggestChange, hintOf, modelAvailable, askModel } from '../../lib/settingsSearch';
 import { api } from '../../lib/api';
 import { ModelSettings } from '../lookup/ModelSettings';
 import { toast, ask, useTabs } from '../../store';
@@ -18,6 +21,7 @@ import { FeedbackPanel } from './FeedbackPanel';
 import { ControlPanel } from '../control/ControlPanel';
 import { AiModelsPanel } from './AiModelsPanel';
 import { KeaAccountSettings } from './KeaAccountSettings';
+import { KeaCloudPanel } from '../home/KeaCloud';
 
 function FieldControl({ f, value, onChange }: { f: Field; value: any; onChange: (v: any) => void }) {
   switch (f.type) {
@@ -87,33 +91,57 @@ function FieldControl({ f, value, onChange }: { f: Field; value: any; onChange: 
   }
 }
 
-function Row({ f }: { f: Field }) {
+const setValue = (f: Field, v: any) => {
+  useSettings.getState().set({ [f.key]: v });
+  if (f.restart) toast('This takes effect after you restart Kea.');
+};
+
+/**
+ * One setting: its name, a one-line hint (the whole help text on request) and its control. In search results it also
+ * says where it lives and may offer the change the request asked for, applied only when clicked.
+ */
+function Row({ f, where, onWhere, q, compact }: { f: Field; where?: string; onWhere?: () => void; q?: string; compact?: boolean }) {
   const value = useSettings((s) => (s.values[f.key] === undefined ? f.default : s.values[f.key]));
   const changed = JSON.stringify(value) !== JSON.stringify(DEFAULTS[f.key]);
+  const [open, setOpen] = useState(false);
+  const { hint, more } = compact ? { hint: '', more: false } : hintOf(f.help);
+  const sug = q ? suggestChange(q, f, value) : null;
   return (
     <div className={`srow ${f.advanced ? 'adv' : ''}`}>
       <div className="srow-text">
+        {where && (
+          <button className="srow-where" onClick={onWhere} title="Go to this page of Settings">
+            {where} <ChevronRight size={12} />
+          </button>
+        )}
         <div className="srow-label">
           {f.label}
           {f.restart && <span className="sbadge">restart</span>}
           {f.advanced && <span className="sbadge adv">advanced</span>}
         </div>
-        {f.help && <div className="srow-help">{f.help}</div>}
+        {hint && (
+          <div className={`srow-help ${open ? 'open' : ''}`}>
+            <span className="srow-hint">{open ? f.help : hint}</span>
+            {more && (
+              <button className="srow-more" onClick={() => setOpen(!open)}>
+                {open ? 'Less' : 'More'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <div className="srow-ctl">
+        {sug && (
+          <button className="btn sm sugg" title="Suggested from what you typed" onClick={() => setValue(f, sug.value)}>
+            {sug.label}
+          </button>
+        )}
         {changed && (
-          <button className="icon-btn sm reset" title="Reset to default" onClick={() => useSettings.getState().set({ [f.key]: f.default })}>
+          <button className="icon-btn sm reset" title="Reset to default" onClick={() => setValue(f, f.default)}>
             <RotateCcw size={13} />
           </button>
         )}
-        <FieldControl
-          f={f}
-          value={value}
-          onChange={(v) => {
-            useSettings.getState().set({ [f.key]: v });
-            if (f.restart) toast('This takes effect after you restart Kea.');
-          }}
-        />
+        <FieldControl f={f} value={value} onChange={(v) => setValue(f, v)} />
       </div>
     </div>
   );
@@ -254,13 +282,247 @@ function AboutPanel() {
   );
 }
 
+const where = (s: Section) => {
+  const c = categoryOf(s.id);
+  return c.sections.length > 1 && s.label !== c.label ? `${c.label} › ${s.label}` : c.label;
+};
+
+/** A search result that's a page or a panel rather than one setting. */
+function PanelRow({ hit, go }: { hit: Extract<Hit, { kind: 'panel' }>; go: (id: string) => void }) {
+  return (
+    <button className="srow srow-link" onClick={() => go(hit.section.id)}>
+      <div className="srow-text">
+        <span className="srow-where">{where(hit.section)}</span>
+        <div className="srow-label">{hit.panel.label}</div>
+      </div>
+      <ArrowRight size={16} className="muted" />
+    </button>
+  );
+}
+
+function HitRows({ hits, q, go, strong = 0 }: { hits: Hit[]; q: string; go: (id: string) => void; strong?: number }) {
+  // A suggested change only on the closest matches (a weak match saying "Turn off" would be noise).
+  return (
+    <>
+      {hits.map((h) =>
+        h.kind === 'field' ? (
+          <Row key={h.key} f={h.field} q={h.score >= strong ? q : undefined} where={where(h.section)} onWhere={() => go(h.section.id)} />
+        ) : (
+          <PanelRow key={h.key} hit={h} go={go} />
+        )
+      )}
+    </>
+  );
+}
+
+/** Settings' first page: "What are you looking for?", the everyday settings, and the categories. */
+function SettingsStart({ q, setQ, go }: { q: string; setQ: (q: string) => void; go: (id: string) => void }) {
+  const values = useSettings((s) => s.values);
+  const query = q.trim();
+  const hits = useMemo(() => (query ? searchSettings(query, { values }) : []), [query, values]);
+  const [all, setAll] = useState(false);
+  const [canAsk, setCanAsk] = useState(false);
+  const [ai, setAi] = useState<{ q: string; hits: Hit[] | null; busy: boolean } | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    modelAvailable().then(setCanAsk);
+  }, []);
+  useEffect(() => {
+    setAll(false);
+  }, [query]);
+
+  const askKea = async () => {
+    if (!query || !canAsk) return;
+    setAi({ q: query, hits: null, busy: true });
+    const picks = await askModel(query, values);
+    setAi((cur) => (cur && cur.q === query ? { q: query, hits: picks, busy: false } : cur));
+  };
+  const aiNow = ai && ai.q === query ? ai : null;
+  const aiKeys = new Set((aiNow?.hits || []).map((h) => h.key));
+  const shortcuts = query.length > 1 ? SHORTCUTS.flatMap((g) => g.items.filter(([k, d]) => (k + ' ' + d).toLowerCase().includes(query.toLowerCase()))).slice(0, 4) : [];
+  const rest = hits.filter((h) => !aiKeys.has(h.key));
+  const shown = all ? rest : rest.slice(0, 7);
+  const popular = POPULAR.map((k) => SECTIONS.flatMap((s) => s.fields).find((f) => f.key === k)).filter((f): f is Field => !!f && (!f.when || f.when(values)) && !(f.key.startsWith('scholar.') && values['scholar.enabled'] === false));
+
+  return (
+    <div className="sstart">
+      <div className="sstart-hero">
+        <h2>What are you looking for?</h2>
+        <div className="sstart-box">
+          <Search size={18} />
+          <input
+            ref={input}
+            autoFocus
+            placeholder="Try “dark mode”, “make text bigger” or “stop notifications”"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') askKea();
+            }}
+          />
+          {q && (
+            <button className="icon-btn sm" title="Clear" onClick={() => (setQ(''), input.current?.focus())}>
+              <X size={15} />
+            </button>
+          )}
+          {canAsk && query && (
+            <button className="btn sm sstart-ask" onClick={askKea} disabled={!!aiNow?.busy} title="Kea’s local model reads your request and points out the settings for it. Nothing changes until you click.">
+              {aiNow?.busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />} Ask
+            </button>
+          )}
+        </div>
+        {canAsk && query && !aiNow && <div className="sstart-tip">Press Enter to have Kea’s local model find it. Nothing changes until you click.</div>}
+      </div>
+
+      {query ? (
+        <div className="sstart-results">
+          {aiNow && !aiNow.busy && (
+            <>
+              <div className="sstart-sec">
+                <Sparkles size={13} /> For “{aiNow.q}”
+              </div>
+              {aiNow.hits && aiNow.hits.length ? (
+                <div className="sstart-list">
+                  <HitRows hits={aiNow.hits} q={query} go={go} />
+                </div>
+              ) : (
+                <div className="sstart-empty">{aiNow.hits ? 'The model didn’t find a setting for that. The closest word matches are below.' : 'The model didn’t answer in time. The closest word matches are below.'}</div>
+              )}
+            </>
+          )}
+          {rest.length > 0 && (
+            <>
+              {aiNow && <div className="sstart-sec">Other matches</div>}
+              <div className="sstart-list">
+                <HitRows hits={shown} q={query} go={go} strong={(rest[0]?.score ?? 0) * 0.6} />
+              </div>
+              {rest.length > shown.length && (
+                <button className="link-btn sstart-more" onClick={() => setAll(true)}>
+                  Show {rest.length - shown.length} more
+                </button>
+              )}
+            </>
+          )}
+          {shortcuts.length > 0 && (
+            <>
+              <div className="sstart-sec">Keyboard shortcuts</div>
+              <div className="sstart-list">
+                {shortcuts.map(([keys, desc]) => (
+                  <div key={keys + desc} className="srow">
+                    <div className="srow-text">
+                      <div className="srow-label">{desc}</div>
+                    </div>
+                    <span className="sc-keys">
+                      {keys.split(' / ')[0].split('+').map((k, j) => (
+                        <span key={j}>
+                          {j > 0 && '+'}
+                          <kbd>{k}</kbd>
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {!rest.length && !shortcuts.length && !aiNow?.hits?.length && !aiNow?.busy && (
+            <div className="sstart-empty">
+              Nothing matches “{query}”.{canAsk ? ' Press Enter to ask Kea’s local model, or pick a category.' : ' Try other words, or pick a category.'}
+              <div className="scat-mini">
+                {CATEGORIES.map((c) => (
+                  <button key={c.id} className="chip" onClick={() => go(c.sections[0])}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="sstart-sec">Most used</div>
+          <div className="sstart-list">
+            {popular.map((f) => {
+
+              return <Row key={f.key} f={f} compact />;
+            })}
+          </div>
+          <div className="sstart-sec">Everything else</div>
+          <div className="scat-grid">
+            {CATEGORIES.map((c) => {
+              const Icon = (Icons as any)[c.icon] || Icons.Circle;
+              return (
+                <button key={c.id} className="scat-card" onClick={() => go(c.sections[0])}>
+                  <span className="scat-icon">
+                    <Icon size={18} />
+                  </span>
+                  <span className="scat-text">
+                    <b>{c.label}</b>
+                    <span>{c.blurb}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One page of settings (a section), with its extra panels. */
+function SectionBody({ cur, showAdvanced }: { cur: Section; showAdvanced: boolean }) {
+  const values = useSettings((s) => s.values);
+  if (cur.id === 'shortcuts') return <ShortcutsPanel q="" />;
+  if (cur.id === 'about') return <AboutPanel />;
+  if (cur.id === 'feedback') return <FeedbackPanel />;
+  const visible = cur.fields.filter((f) => (showAdvanced || !f.advanced) && (!f.when || f.when(values)));
+  const advCount = cur.fields.filter((f) => f.advanced && (!f.when || f.when(values))).length;
+  // Each field belongs to the group heading above it; a heading shows above the first visible field of its group.
+  const groupOf = new Map<string, string>();
+  let g = '';
+  for (const f of cur.fields) groupOf.set(f.key, (g = f.group || g));
+  let last = '';
+  return (
+    <>
+      {cur.blurb && <p className="sblurb">{cur.blurb}</p>}
+      {cur.id === 'google' && <GooglePanel />}
+      {cur.id === 'control' && <ControlPanel />}
+      {cur.id === 'aimodels' && <AiModelsPanel />}
+      {cur.id === 'account' && <KeaAccountSettings />}
+      {cur.id === 'keacloud' && <KeaCloudPanel />}
+      {visible.map((f) => {
+        const head = groupOf.get(f.key) || '';
+        const show = head && head !== last;
+        last = head;
+        return (
+          <Fragment key={f.key}>
+            {show && <div className="sgroup-title sgroup-in">{head}</div>}
+            <Row f={f} />
+          </Fragment>
+        );
+      })}
+      {!showAdvanced && advCount > 0 && (
+        <button className="link-btn more-adv" onClick={() => useSettings.getState().set({ 'ui.showAdvanced': true })}>
+          Show {advCount} advanced setting{advCount === 1 ? '' : 's'}
+        </button>
+      )}
+      {cur.id === 'files' && <FilesExtras />}
+      {cur.id === 'voice' && <VoiceSettingsExtras />}
+      {cur.id === 'privacy' && <PrivacyExtras />}
+      {cur.id === 'lookup' && <ModelSettings />}
+    </>
+  );
+}
+
 export function SettingsDialog() {
   const { open, section } = useSettings();
   const showAdvanced = useSettings((s) => !!s.values['ui.showAdvanced']);
-  const values = useSettings((s) => s.values);
   const [q, setQ] = useState('');
+  const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
+    setQ('');
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
@@ -270,129 +532,94 @@ export function SettingsDialog() {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [open]);
-  const query = q.trim().toLowerCase();
-
-  const visibleFields = (fields: Field[]) =>
-    fields.filter((f) => (showAdvanced || !f.advanced || query) && (!f.when || f.when(values)) && (!query || (f.label + ' ' + (f.help || '')).toLowerCase().includes(query)));
-
-  const searchHits = useMemo(() => (query ? SECTIONS.map((s) => ({ s, fields: visibleFields(s.fields) })).filter((x) => x.fields.length) : []), [query, values, showAdvanced]);
+  useEffect(() => {
+    // (Braces: in newer Chromium, scrollTo returns a promise, which an effect must not return.)
+    body.current?.scrollTo(0, 0);
+  }, [section]);
 
   if (!open) return null;
   const close = () => useSettings.getState().ui({ open: false });
-  const cur = SECTIONS.find((s) => s.id === section) || SECTIONS[0];
-  const advCount = cur.fields.filter((f) => f.advanced).length;
-
-  const body = () => {
-    if (query)
-      return searchHits.length || 'shortcuts'.includes(query) ? (
-        <>
-          {searchHits.map(({ s, fields }) => (
-            <div key={s.id} className="sgroup">
-              <div className="sgroup-title">{s.label}</div>
-              {fields.map((f) => (
-                <Row key={f.key} f={f} />
-              ))}
-            </div>
-          ))}
-          <ShortcutsPanel q={query} />
-        </>
-      ) : (
-        <div className="muted" style={{ padding: 24 }}>
-          No settings match “{q}”.
-        </div>
-      );
-    if (cur.id === 'shortcuts') return <ShortcutsPanel q="" />;
-    if (cur.id === 'about') return <AboutPanel />;
-    if (cur.id === 'feedback') return <FeedbackPanel />;
-    return (
-      <>
-        {cur.blurb && <p className="sblurb">{cur.blurb}</p>}
-        {cur.id === 'google' && <GooglePanel />}
-        {cur.id === 'control' && <ControlPanel />}
-        {cur.id === 'aimodels' && <AiModelsPanel />}
-        {cur.id === 'account' && <KeaAccountSettings />}
-        {(() => {
-          // Each field belongs to the group heading above it; a heading shows above the first visible field of its group.
-          const groupOf = new Map<string, string>();
-          let g = '';
-          for (const f of cur.fields) groupOf.set(f.key, (g = f.group || g));
-          let last = '';
-          return visibleFields(cur.fields).map((f) => {
-            const head = groupOf.get(f.key) || '';
-            const show = head && head !== last;
-            last = head;
-            return (
-              <Fragment key={f.key}>
-                {show && <div className="sgroup-title sgroup-in">{head}</div>}
-                <Row f={f} />
-              </Fragment>
-            );
-          });
-        })()}
-        {!showAdvanced && advCount > 0 && (
-          <button className="link-btn more-adv" onClick={() => useSettings.getState().set({ 'ui.showAdvanced': true })}>
-            Show {advCount} advanced setting{advCount === 1 ? '' : 's'}
-          </button>
-        )}
-        {cur.id === 'files' && <FilesExtras />}
-        {cur.id === 'voice' && <VoiceSettingsExtras />}
-        {cur.id === 'privacy' && <PrivacyExtras />}
-        {cur.id === 'lookup' && <ModelSettings />}
-      </>
-    );
-  };
+  const go = (id: string) => useSettings.getState().ui({ section: id });
+  const start = section === 'start' || !sectionById(section);
+  const cur = start ? null : sectionById(section)!;
+  const cat = cur ? categoryOf(cur.id) : null;
 
   return (
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="dialog settings-dialog" role="dialog" aria-label="Settings">
         <nav className="snav">
           <div className="snav-title">Settings</div>
-          <div className="search-box snav-search">
-            <Search size={15} />
-            <input placeholder="Search settings" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
-          </div>
-          {SECTIONS.map((s) => {
-            const Icon = (Icons as any)[s.icon] || Icons.Circle;
+          <button className={`snav-item ${start ? 'on' : ''}`} onClick={() => go('start')}>
+            <Search size={16} />
+            Find a setting
+          </button>
+          <div className="snav-sep" />
+          {CATEGORIES.map((c) => {
+            const Icon = (Icons as any)[c.icon] || Icons.Circle;
             return (
-              <button key={s.id} className={`snav-item ${!query && s.id === cur.id ? 'on' : ''}`} onClick={() => (setQ(''), useSettings.getState().ui({ section: s.id }))}>
+              <button key={c.id} className={`snav-item ${cat?.id === c.id ? 'on' : ''}`} onClick={() => go(c.sections[0])}>
                 <Icon size={16} />
-                {s.label}
+                {c.label}
               </button>
             );
           })}
         </nav>
         <div className="smain">
-          <div className="shead">
-            <h2>{query ? 'Search results' : cur.label}</h2>
-            <label className="adv-toggle" title="Show every option">
-              <span>Advanced</span>
-              <button
-                role="switch"
-                aria-checked={showAdvanced}
-                className={`switch ${showAdvanced ? 'on' : ''}`}
-                onClick={() => useSettings.getState().set({ 'ui.showAdvanced': !showAdvanced })}
-              >
-                <span />
-              </button>
-            </label>
-            <button className="icon-btn sm" onClick={close} title="Close (Esc)">
-              <X size={16} />
-            </button>
-          </div>
-          <div className="sbody">{body()}</div>
-          {/* (Not on Kea account: "Reset kea account" would read like resetting the account itself.) */}
-          {!query && cur.fields.length > 0 && cur.id !== 'account' && (
-            <div className="sfoot">
-              <button
-                className="btn sm"
-                onClick={() => {
-                  useSettings.getState().set(Object.fromEntries(cur.fields.map((f) => [f.key, f.default])));
-                  toast(`${cur.label} reset to defaults`, 'success');
-                }}
-              >
-                <RotateCcw size={13} /> Reset {cur.label.toLowerCase()}
-              </button>
-            </div>
+          {start ? (
+            <>
+              <div className="shead shead-start">
+                <span style={{ flex: 1 }} />
+                <button className="icon-btn sm" onClick={close} title="Close (Esc)">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="sbody" ref={body}>
+                <SettingsStart q={q} setQ={setQ} go={go} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="shead">
+                <h2>{cat!.label}</h2>
+                {cur!.fields.some((f) => f.advanced) && (
+                  <label className="adv-toggle" title="Show every option">
+                    <span>Advanced</span>
+                    <button role="switch" aria-checked={showAdvanced} className={`switch ${showAdvanced ? 'on' : ''}`} onClick={() => useSettings.getState().set({ 'ui.showAdvanced': !showAdvanced })}>
+                      <span />
+                    </button>
+                  </label>
+                )}
+                <button className="icon-btn sm" onClick={close} title="Close (Esc)">
+                  <X size={16} />
+                </button>
+              </div>
+              {cat!.sections.length > 1 && (
+                <div className="stabs" role="tablist">
+                  {cat!.sections.map((id) => (
+                    <button key={id} role="tab" aria-selected={id === cur!.id} className={`stab ${id === cur!.id ? 'on' : ''}`} onClick={() => go(id)}>
+                      {sectionById(id)?.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="sbody" ref={body}>
+                <SectionBody cur={cur!} showAdvanced={showAdvanced} />
+              </div>
+              {/* (Not on Kea account: "Reset kea account" would read like resetting the account itself.) */}
+              {cur!.fields.length > 0 && cur!.id !== 'account' && (
+                <div className="sfoot">
+                  <button
+                    className="btn sm"
+                    onClick={() => {
+                      useSettings.getState().set(Object.fromEntries(cur!.fields.map((f) => [f.key, f.default])));
+                      toast(`${cur!.label} reset to defaults`, 'success');
+                    }}
+                  >
+                    <RotateCcw size={13} /> Reset this page
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -67,3 +67,18 @@
 :root[data-theme='light'] .slide-stage {
   background: var(--surface-3);
 }
+:root[data-theme='light'] .create-ic.doc {
+  color: #1a63c9;
+}
+:root[data-theme='light'] .create-ic.sheet {
+  color: #188038;
+}
+:root[data-theme='light'] .create-ic.slides {
+  color: #c25e00;
+}
+:root[data-theme='light'] .create-ic.pdf {
+  color: #c5221f;
+}
+:root[data-theme='light'] .create-ic.tpl {
+  color: #00796b;
+}
