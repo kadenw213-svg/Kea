@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Check, FileText, GraduationCap } from 'lucide-react';
 import { Logo } from './Logo';
-import { AREAS, AreaId, inferSetup, setAreas } from '../lib/areas';
+import { inferSetup, setAreas } from '../lib/areas';
 import { useSettings } from '../lib/settings';
-
-const ICONS = { FileText, GraduationCap };
+import { KeaMode, setModes } from '../lib/modes';
+import { ModeChoices } from './ModePicker';
+import { toast } from '../store';
 
 /**
- * First run: "What will you use Kea for?". Any mix of areas; the ones left off stay out of the
- * title bar, Home and menus until they're turned on (by hand or by starting to use them).
+ * First run: "How do you use Kea?", the same choices as after signing in to a Kea account (Personal, School, Work), so
+ * a new person is asked once. Documents, spreadsheets and slides are always there; School's areas stay out of the
+ * title bar, Home and menus until a mode that uses them is on.
  */
 export function Welcome() {
   const loaded = useSettings((s) => s.loaded);
   const [checking, setChecking] = useState(true);
-  const [picked, setPicked] = useState<Record<AreaId, boolean>>({ documents: true, school: false });
+  const [picked, setPicked] = useState<Record<KeaMode, boolean>>({ personal: false, school: true, work: false });
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!loaded) return;
@@ -23,41 +25,27 @@ export function Welcome() {
 
   if (!loaded || checking) return <div className="center-fill" />;
 
-  const toggle = (id: AreaId) =>
-    setPicked((p) => {
-      return { ...p, [id]: !p[id] };
-    });
-  const any = Object.values(picked).some(Boolean);
-  const start = () => {
-    setAreas(picked);
-    useSettings.getState().set({ 'areas.setupDone': true });
+  const any = picked.personal || picked.school || picked.work;
+  const start = async () => {
+    setBusy(true);
+    try {
+      setAreas({ documents: true, school: picked.personal || picked.school });
+      await setModes(picked);
+      useSettings.getState().set({ 'areas.setupDone': true });
+    } catch (e: any) {
+      toast(String(e?.message || e), 'error');
+    }
+    setBusy(false);
   };
 
   return (
     <div className="welcome">
       <div className="welcome-inner">
         <Logo size={40} />
-        <h1>What will you use Kea for?</h1>
-        <p className="welcome-sub">Pick any that apply. You can change this later in Settings, and School turns on by itself when you add a class.</p>
-        <div className="welcome-grid" role="group" aria-label="Areas of Kea">
-          {AREAS.map((a) => {
-            const Icon = ICONS[a.icon];
-            const on = picked[a.id];
-            return (
-              <button key={a.id} className={`welcome-card ${on ? 'on' : ''}`} aria-pressed={on} onClick={() => toggle(a.id)}>
-                <span className="welcome-icon">
-                  <Icon size={22} />
-                </span>
-                <span className="welcome-text">
-                  <strong>{a.label}</strong>
-                  <span>{a.blurb}</span>
-                </span>
-                <span className="welcome-check">{on && <Check size={16} />}</span>
-              </button>
-            );
-          })}
-        </div>
-        <button className="btn primary welcome-go" disabled={!any} onClick={start}>
+        <h1>How do you use Kea?</h1>
+        <p className="welcome-sub">Pick any that apply. Documents, spreadsheets, slides and PDFs are always included. You can change this later in Settings.</p>
+        <ModeChoices value={picked} onChange={setPicked} />
+        <button className="btn primary welcome-go" disabled={!any || busy} onClick={start}>
           Start using Kea
         </button>
       </div>
