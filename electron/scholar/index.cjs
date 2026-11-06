@@ -552,13 +552,14 @@ function register() {
 
   // Scans.
   // On a device that isn't the primary, the primary is asked to (through the drive), so nothing runs twice.
-  ipcMain.handle('scholar:run', (_e, task, arg) => {
+  // (Starting a Claude run answers only Kea's own page: ipcGuard.cjs.)
+  ipcMain.handle('scholar:run', require('../ipcGuard.cjs').appOnly((_e, task, arg) => {
     // School mode needs a Kea account with a verified email.
     if (!require('../account.cjs').verified()) throw new Error('Set up your Kea account with a verified email first (Scholar → your name → Your account).');
     if (task !== 'probe' && devices.follower()) return devices.relay({ task, arg: arg || '' });
     runner.run(task, arg || '', 'manual').then(() => task === 'study' && keepBanks());
     return true;
-  });
+  }));
   // Your devices: which one scans, the drive they sync through, and bringing classes in on a new one.
   const devicesChanged = () => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
   ipcMain.handle('scholar:devices', () => devices.status());
@@ -626,7 +627,7 @@ function register() {
     }
     return t;
   });
-  ipcMain.handle('scholar:handIn', (_e, ou, folderId, file) => browser.handIn(ou, folderId, file));
+  ipcMain.handle('scholar:handIn', require('../ipcGuard.cjs').appOnly((_e, ou, folderId, file) => browser.handIn(ou, folderId, file)));
   // Grades: Kea's own check of the class site, or what the daily checks recorded before that ran.
   ipcMain.handle('scholar:grades', async (_e, courseId, code) => precheck.readGrades().byCourse[code] || (await db.gradesFromChecks(p().db, courseId)));
   // Links: class-site pages open in Kea's signed-in window; everything else in the web browser.

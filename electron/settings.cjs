@@ -54,11 +54,40 @@ function set(patch) {
   return next;
 }
 
+// Settings the page may never change through settings:set: where Kea's secrets go and what it runs. Each has its own
+// checked IPC (hub:setUrl for the Hub's address) or is Kea's own bookkeeping.
+const PROTECTED = new Set(['hub.url', 'hub.ownerKeyFile', 'hub.ownerPort', 'hub.googleClientId', 'hub.googleClientSecret', 'scholar.pcId', 'scholar.lastPrimary', 'app.storageMoved']);
+const protectedKey = (k) => PROTECTED.has(k) || /^hub\.(owner|google)/.test(k) || k === '__proto__' || k === 'constructor' || k === 'prototype';
+// Settings the page may change, but only to a value of the right shape.
+const CHECKED = {
+  // The other sync folder: a folder on this PC, never a network share (\\server\share) or a web address.
+  'scholar.cloudPath': (v) => v === '' || (typeof v === 'string' && v.length < 1024 && !/[\x00-\x1f]/.test(v) && (/^[a-z]:[\\/]/i.test(v) || (process.platform !== 'win32' && v.startsWith('/') && !v.startsWith('//')))),
+  // The student's own Google client: a Google OAuth client id and its secret, nothing else.
+  'google.clientId': (v) => v === '' || (typeof v === 'string' && /^[\w-]{1,200}\.apps\.googleusercontent\.com$/.test(v.trim())),
+  'google.clientSecret': (v) => v === '' || (typeof v === 'string' && /^[\w-]{1,200}$/.test(v.trim()))
+};
+/**
+ * A change from the page (settings:set): protected keys and badly shaped values are left out (and logged), the rest
+ * saved. Refused keys don't fail the whole save, so a page saving many settings at once keeps working.
+ */
+function setFromRenderer(patch) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return all();
+  const ok = {};
+  const refused = [];
+  for (const [k, v] of Object.entries(patch)) {
+    if (protectedKey(k) || (CHECKED[k] && v !== null && v !== undefined && !CHECKED[k](v))) refused.push(k);
+    else ok[k] = v;
+  }
+  if (refused.length) console.warn(`settings: refused a change from the page to ${refused.join(', ')}`);
+  return Object.keys(ok).length ? set(ok) : all();
+}
+
 function register() {
+  const { appOnly } = require('./ipcGuard.cjs');
   ipcMain.handle('settings:get', () => all());
-  ipcMain.handle('settings:set', (_e, patch) => set(patch));
+  ipcMain.handle('settings:set', appOnly((_e, patch) => setFromRenderer(patch)));
 }
 
 const onChange = (fn) => listeners.add(fn);
 
-module.exports = { register, get, set, all, onChange };
+module.exports = { register, get, set, all, onChange, setFromRenderer };

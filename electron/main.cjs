@@ -2,8 +2,14 @@ const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, Menu, session
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
+// Kea's riskiest IPC (files, settings, opening programs) answers only Kea's own top-level page.
+const { appOnly } = require('./ipcGuard.cjs');
 
-const DEV_URL = process.env.VITE_DEV_SERVER_URL;
+// Developer aids, only in a development copy (never an installed Kea, where anything that can set an environment
+// variable could otherwise load another page into Kea's window or run a script in it): the Vite dev server, and
+// KEA_CAPTURE / KEA_EVAL (a screenshot after load, with a script run in the page first).
+const DEV_URL = app.isPackaged ? '' : process.env.VITE_DEV_SERVER_URL;
+const DEV_HOOKS = app.isPackaged ? {} : { capture: process.env.KEA_CAPTURE || '', eval: process.env.KEA_EVAL || '' };
 const DIST = path.join(__dirname, '..', 'dist');
 const RECENT_FILE = () => path.join(app.getPath('userData'), 'recent.json');
 const MAX_RECENT = () => Math.max(0, Number(require('./settings.cjs').get('files.recentMax', 30)) || 0);
@@ -236,7 +242,7 @@ function createWindow() {
   });
 
   // Developer aid: KEA_CAPTURE=path.png captures a screenshot after load, then exits.
-  if (process.env.KEA_CAPTURE) {
+  if (DEV_HOOKS.capture) {
     // (After the app's own page: not the empty one moveStorage passes through first.)
     const loaded = () => {
       if (mainWindow.webContents.getURL().includes('/__blank')) return;
@@ -248,16 +254,16 @@ function createWindow() {
       // Background windows don't run CSS animations, so turn them off for captures.
       mainWindow.webContents.insertCSS('*,*::before,*::after{transition:none!important;animation:none!important}');
       setTimeout(async () => {
-        if (process.env.KEA_EVAL) {
+        if (DEV_HOOKS.eval) {
           try {
-            const out = await mainWindow.webContents.executeJavaScript(fs.readFileSync(process.env.KEA_EVAL, 'utf8'));
+            const out = await mainWindow.webContents.executeJavaScript(fs.readFileSync(DEV_HOOKS.eval, 'utf8'));
             if (out !== undefined) console.log('[eval]', typeof out === 'string' ? out : JSON.stringify(out));
           } catch (err) {
             console.log('[eval error]', err.message);
           }
         }
         const img = await mainWindow.webContents.capturePage();
-        fs.writeFileSync(process.env.KEA_CAPTURE, img.toPNG());
+        fs.writeFileSync(DEV_HOOKS.capture, img.toPNG());
         allowClose = true;
         app.quit();
       }, Number(process.env.KEA_CAPTURE_DELAY || 4000));
@@ -270,12 +276,44 @@ function createWindow() {
   }
 }
 
+// ---------- What pages in Kea's own session may use ----------
+// Only Kea's own page (app://kea, or the dev server while developing), and only what it uses: the microphone (voice
+// typing), the clipboard (paste in the sheet and photo editors), full screen (presenting, focus mode), and opening a
+// mailto: or web link in the user's own apps. Everything else, and anything asked by another page in this session
+// (a Google sign-in window, a presenter page), is refused. (Without a handler, Electron grants everything.)
+const APP_PERMISSIONS = new Set(['media', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen', 'openExternal']);
+function isAppOrigin(url) {
+  const u = String(url || '');
+  return u.startsWith('app://kea/') || u === 'app://kea' || (!!DEV_URL && u.startsWith(new URL(DEV_URL).origin));
+}
+function appMayUse(permission, url, details = {}) {
+  if (!APP_PERMISSIONS.has(permission) || !isAppOrigin(url)) return false;
+  // Voice typing listens; it never films.
+  if (permission === 'media') {
+    const types = details.mediaTypes || (details.mediaType ? [details.mediaType] : []);
+    return types.length > 0 && types.every((t) => t === 'audio' || t === 'unknown');
+  }
+  if (permission === 'openExternal') return /^(https?|mailto):/i.test(String(details.externalURL || ''));
+  return true;
+}
+function guardDefaultSession(ses) {
+  ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+    // The window itself must be showing Kea's page too, not only the frame asking.
+    let top = '';
+    try {
+      top = wc ? wc.getURL() : '';
+    } catch {}
+    callback(appMayUse(permission, details?.requestingUrl || '', details || {}) && isAppOrigin(top));
+  });
+  ses.setPermissionCheckHandler((_wc, permission, origin, details) => appMayUse(permission, details?.requestingUrl || origin || '', details || {}));
+}
+
 // ---------- Running in the background (class checks while the window is closed) ----------
 let tray = null;
 const startHidden = process.argv.includes('--background');
 /** Stay running after the window closes: only when Scholar's checks are on and a class site is set up. */
 function backgroundWanted() {
-  if (process.env.KEA_CAPTURE || settings.get('scholar.background', true) === false || settings.get('scholar.enabled', true) === false) return false;
+  if (DEV_HOOKS.capture || settings.get('scholar.background', true) === false || settings.get('scholar.enabled', true) === false) return false;
   try {
     return !!require('./scholar/browser.cjs').schoolInfo().home;
   } catch {
@@ -360,6 +398,7 @@ app.whenReady().then(() => {
   require('./speech.cjs').register({ log, getWindow: () => mainWindow });
   require('./models.cjs').register({ log, getWindow: () => mainWindow });
   require('./engine.cjs').register({ log });
+  guardDefaultSession(session.defaultSession);
   const applySpell = () => session.defaultSession.setSpellCheckerEnabled(settings.get('general.spellcheck', true) !== false);
   applySpell();
   settings.onChange(applySpell);
@@ -494,9 +533,9 @@ ipcMain.handle('dialog:save', async (_e, opts = {}) => {
   return res.canceled ? null : res.filePath;
 });
 
-ipcMain.handle('file:read', (_e, p) => readFileEntry(p));
+ipcMain.handle('file:read', appOnly((_e, p) => readFileEntry(p)));
 
-ipcMain.handle('file:write', (_e, p, data) => {
+ipcMain.handle('file:write', appOnly((_e, p, data) => {
   // Keep the previous contents in version history before replacing them.
   try {
     require('./history.cjs').snapshot(p);
@@ -525,14 +564,14 @@ ipcMain.handle('file:write', (_e, p, data) => {
   } finally {
     fs.rm(tmp, { force: true }, () => {});
   }
-});
+}));
 
 // Renaming a file in place (a .txt turned into .md): never over another file.
-ipcMain.handle('file:rename', (_e, from, to) => {
+ipcMain.handle('file:rename', appOnly((_e, from, to) => {
   if (fs.existsSync(to)) throw new Error(`${path.basename(to)} already exists in that folder.`);
   fs.renameSync(from, to);
   return true;
-});
+}));
 
 ipcMain.handle('file:exists', (_e, p) => {
   try {
@@ -561,12 +600,59 @@ ipcMain.handle('recent:clear', () => {
   return [];
 });
 
+// Print and Export to PDF draw the page in a hidden window that can load nothing but the page itself and pictures
+// already inside it (data: and blob:): no web addresses, no files from this PC and no network shares (\\server\x,
+// which would hand the user's Windows sign-in to that server). Two locks: the page's own Content-Security-Policy,
+// and a session of its own that refuses every request except the page.
+const PRINT_CSP = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:";
+const printPages = new Set();
+// (Compared decoded and in one case: Chromium may spell the file's address a little differently.)
+const pageKey = (u) => {
+  try {
+    return decodeURIComponent(u).toLowerCase();
+  } catch {
+    return String(u).toLowerCase();
+  }
+};
+let printSession = null;
+function printSessionGet() {
+  if (printSession) return printSession;
+  printSession = session.fromPartition('kea-print');
+  printSession.webRequest.onBeforeRequest((details, callback) => {
+    const u = details.url;
+    callback({ cancel: !(printPages.has(pageKey(u)) || u.startsWith('data:') || u.startsWith('blob:')) });
+  });
+  printSession.setPermissionRequestHandler((_wc, _p, callback) => callback(false));
+  printSession.setPermissionCheckHandler(() => false);
+  return printSession;
+}
+/** The page's HTML with the policy as its first <head> element (before anything it could load). */
+function withPrintCsp(html) {
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${PRINT_CSP}">`;
+  const s = String(html);
+  if (/<head(\s[^>]*)?>/i.test(s)) return s.replace(/<head(\s[^>]*)?>/i, (m) => `${m}${meta}`);
+  if (/<html(\s[^>]*)?>/i.test(s)) return s.replace(/<html(\s[^>]*)?>/i, (m) => `${m}<head>${meta}</head>`);
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(s);
+  return doctype ? `${doctype[0]}<head>${meta}</head>${s.slice(doctype[0].length)}` : `<head>${meta}</head>${s}`;
+}
 function withHiddenWindow(html, fn) {
   return new Promise((resolve, reject) => {
-    const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
-    const tmp = path.join(app.getPath('temp'), `kea-print-${Date.now()}.html`);
-    fs.writeFileSync(tmp, html, 'utf8');
-    win.loadFile(tmp);
+    const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false, session: printSessionGet() } });
+    const tmp = path.join(app.getPath('temp'), `kea-print-${require('crypto').randomBytes(12).toString('hex')}.html`);
+    fs.writeFileSync(tmp, withPrintCsp(html), 'utf8');
+    const pageUrl = pathToFileURL(tmp).href;
+    printPages.add(pageKey(pageUrl));
+    // The page can't go anywhere else or open windows.
+    win.webContents.on('will-navigate', (e) => e.preventDefault());
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    win.loadURL(pageUrl).catch(() => {});
+    win.webContents.once('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+      if (isMainFrame === false) return;
+      reject(new Error(`The page to print didn’t load (${desc || code}).`));
+      if (!win.isDestroyed()) win.destroy();
+      printPages.delete(pageKey(pageUrl));
+      fs.rm(tmp, () => {});
+    });
     win.webContents.once('did-finish-load', async () => {
       try {
         resolve(await fn(win));
@@ -575,6 +661,7 @@ function withHiddenWindow(html, fn) {
       } finally {
         setTimeout(() => {
           if (!win.isDestroyed()) win.destroy();
+          printPages.delete(pageKey(pageUrl));
           fs.rm(tmp, () => {});
         }, 500);
       }

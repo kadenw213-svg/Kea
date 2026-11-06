@@ -7,6 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { Readable } = require('stream');
+// (Only Kea's own page may open a file for writing: ipcGuard.cjs.)
+const { appOnly } = require('./ipcGuard.cjs');
 
 const MIME = {
   mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska', avi: 'video/x-msvideo',
@@ -56,11 +58,11 @@ function register() {
     });
   });
 
-  ipcMain.handle('video:open-write', async (_e, p) => {
+  ipcMain.handle('video:open-write', appOnly(async (_e, p) => {
     const id = crypto.randomBytes(8).toString('hex');
     writers.set(id, { fd: await fs.promises.open(p, 'w'), path: p });
     return id;
-  });
+  }));
   ipcMain.handle('video:write-at', async (_e, id, position, data) => {
     const w = writers.get(id);
     if (!w) throw new Error('That export file is closed.');

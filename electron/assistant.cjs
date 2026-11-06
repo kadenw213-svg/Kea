@@ -46,7 +46,8 @@ function explain(err) {
 const running = new Map();
 // Developer aid: KEA_ASSISTANT_FAKE=script.cjs answers each turn from a script ({ messages, tools } → a message, with
 // events sent as it goes), so the panel and the editors' tools can be tested without an API key or any cost.
-const fake = process.env.KEA_ASSISTANT_FAKE ? require(path.resolve(process.env.KEA_ASSISTANT_FAKE)) : null;
+// Development copies only: an installed Kea never runs a script named by an environment variable.
+const fake = !app.isPackaged && process.env.KEA_ASSISTANT_FAKE ? require(path.resolve(process.env.KEA_ASSISTANT_FAKE)) : null;
 
 function register() {
   ipcMain.handle('assistant:status', () => {

@@ -5,6 +5,8 @@
 // web search and fetch when the student allows them (to find and check sources).
 // Claude Code reports the plan's 5-hour and weekly usage with every reply; the latest is kept for the usage bars.
 const { app, ipcMain } = require('electron');
+// Developer aid (development copies only): KEA_PLAN_LOG=file keeps the raw Claude events of each run.
+const PLAN_LOG = app.isPackaged ? '' : process.env.KEA_PLAN_LOG || '';
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -132,7 +134,7 @@ function register({ getWindow }) {
         } catch {
           return;
         }
-        if (process.env.KEA_PLAN_LOG) fs.appendFileSync(process.env.KEA_PLAN_LOG, `${l}
+        if (PLAN_LOG) fs.appendFileSync(PLAN_LOG, `${l}
 `); // developer aid
         if (ev.session_id) session = ev.session_id;
         if (ev.type === 'rate_limit_event') return noteUsage(ev.rate_limit_info, send);
@@ -150,7 +152,7 @@ function register({ getWindow }) {
       child.stderr.on('data', (d) => (errText += d));
       child.on('error', (err) => (errText += err.message));
       child.on('close', (code, signal) => {
-        if (process.env.KEA_PLAN_LOG) fs.appendFileSync(process.env.KEA_PLAN_LOG, `STDERR ${errText}
+        if (PLAN_LOG) fs.appendFileSync(PLAN_LOG, `STDERR ${errText}
 ARGS ${JSON.stringify(args)}
 `);
         line(buf);

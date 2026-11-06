@@ -1,5 +1,7 @@
 // Home screen backend: folder listing, file search, previews cache, descriptions and cloud drives.
 const { app, ipcMain, shell, net, dialog } = require('electron');
+// (Only Kea's own page may list, search or open files: ipcGuard.cjs.)
+const { appOnly } = require('./ipcGuard.cjs');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -373,8 +375,8 @@ async function connect(id, send) {
 function register({ log, getWindow }) {
   const send = (m) => getWindow()?.webContents.send('drives:progress', m);
 
-  ipcMain.handle('fs:list', (_e, dir, opts) => listDir(dir, opts));
-  ipcMain.handle('fs:search', (_e, dir, q, opts) => searchDir(dir, q, opts || {}));
+  ipcMain.handle('fs:list', appOnly((_e, dir, opts) => listDir(dir, opts)));
+  ipcMain.handle('fs:search', appOnly((_e, dir, q, opts) => searchDir(dir, q, opts || {})));
   ipcMain.handle('fs:stat-many', (_e, paths) =>
     (paths || []).map((p) => {
       try {
@@ -391,7 +393,7 @@ function register({ log, getWindow }) {
     return r.canceled ? null : r.filePaths[0] || null;
   });
   ipcMain.handle('fs:is-dir', (_e, p) => isDir(p));
-  ipcMain.handle('shell:open-path', (_e, p) => shell.openPath(p));
+  ipcMain.handle('shell:open-path', appOnly((_e, p) => shell.openPath(p)));
 
   ipcMain.handle('preview:get', (_e, p) => getPreview(p));
   ipcMain.handle('preview:clear', () => {

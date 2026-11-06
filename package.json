@@ -101,6 +101,7 @@
   },
   "build": {
     "appId": "com.kea.app",
+    "afterPack": "scripts/fuses.cjs",
     "productName": "Kea",
     "directories": {
       "output": "release",

@@ -36,7 +36,9 @@ function loadState() {
   if (!Array.isArray(state.clients)) state.clients = [];
 }
 // Test mode (KEA_CONTROL_TEST) never writes: its fixed token must not end up in the real client list.
-const testMode = !!process.env.KEA_CONTROL_TEST;
+// (Development copies only: an installed Kea never opens its control server to a token from the environment.)
+const testToken = app.isPackaged ? '' : process.env.KEA_CONTROL_TEST || '';
+const testMode = !!testToken;
 function saveState() {
   if (testMode) return;
   const json = JSON.stringify(state);
@@ -211,10 +213,11 @@ function register(opts) {
     else if (!internal.size) stopServer(); // (a Claude-tab run still needs it; outside apps are refused either way)
     return { enabled: state.enabled, url: server ? url : null };
   });
-  ipcMain.handle('control:add-client', async (_e, name) => {
+  // (Only Kea's own page may add a client that can control Kea: ipcGuard.cjs.)
+  ipcMain.handle('control:add-client', require('../ipcGuard.cjs').appOnly(async (_e, name) => {
     if (!server) await startServer();
     return mintClient(name);
-  });
+  }));
   ipcMain.handle('control:revoke-client', (_e, id) => {
     state.clients = state.clients.filter((c) => c.id !== id);
     saveState();
@@ -223,9 +226,9 @@ function register(opts) {
 
   // Test only (env-gated, like KEA_CAPTURE/KEA_DRY_RUN): auto-enable with a fixed token so a harness can connect
   // without the Settings UI. Never set in production.
-  if (process.env.KEA_CONTROL_TEST) {
+  if (testMode) {
     startServer().then(() => {
-      state.clients.push({ id: 'test', name: 'Test', token: process.env.KEA_CONTROL_TEST, createdAt: new Date().toISOString(), lastUsed: null });
+      state.clients.push({ id: 'test', name: 'Test', token: testToken, createdAt: new Date().toISOString(), lastUsed: null });
       state.enabled = true;
     });
   } else if (state.enabled) startServer();
