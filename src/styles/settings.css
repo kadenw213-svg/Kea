@@ -630,3 +630,325 @@
 .sgroup-title.sgroup-in:first-of-type {
   margin-top: 6px;
 }
+
+/* ---------- Settings: search-first start page, categories with page tabs, compact rows ---------- */
+.snav-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 12px;
+}
+.shead-start {
+  padding-bottom: 0;
+}
+.stabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 0 28px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.stab {
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.stab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.stab.on {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.stabs + .sbody {
+  padding-top: 8px;
+}
+.srow {
+  padding: 11px 0;
+  gap: 16px;
+}
+.srow-help {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.srow-hint {
+  min-width: 0;
+}
+.srow-help:not(.open) .srow-hint {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.srow-more {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.srow-more:hover {
+  text-decoration: underline;
+}
+.srow-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: none;
+  background: none;
+  padding: 0;
+  margin-bottom: 2px;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+button.srow-where:hover {
+  color: var(--accent);
+}
+.srow-link {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.srow-link:hover .srow-label {
+  color: var(--accent);
+}
+.btn.sugg {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.sstart {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 4px 0 12px;
+}
+.sstart-hero {
+  padding: 18px 0 8px;
+}
+.sstart-hero h2 {
+  margin: 0 0 16px;
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+.sstart-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 50px;
+  padding: 0 10px 0 18px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-3);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.sstart-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.sstart-box input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 15.5px;
+}
+.sstart-ask {
+  border-radius: 999px !important;
+}
+.sstart-tip {
+  margin: 10px 4px 0;
+  color: var(--text-3);
+  font-size: 12.5px;
+  text-align: center;
+}
+.sstart-sec {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 26px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.sstart-sec svg {
+  color: var(--accent);
+}
+.sstart-results .sstart-sec:first-child {
+  margin-top: 18px;
+}
+.sstart-list .srow:last-child {
+  border-bottom: none;
+}
+.sstart-more {
+  margin-top: 6px;
+}
+.sstart-empty {
+  margin: 22px 0 0;
+  color: var(--text-3);
+  font-size: 13.5px;
+}
+.scat-mini {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.scat-mini .chip {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.scat-mini .chip:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.scat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.scat-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.scat-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.scat-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.scat-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.scat-text b {
+  font-weight: 500;
+}
+.scat-text span {
+  font-size: 12.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Kea Cloud status (Settings and Home) ---------- */
+.kc-panel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  margin: 6px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.kc-panel-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+.kc-panel-main b {
+  font-size: 14px;
+  font-weight: 500;
+}
+.kc-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.kc-ok {
+  color: var(--good);
+}
+.kc-busy {
+  color: var(--accent);
+}
+.kc-off {
+  color: var(--text-3);
+}
+.kc-bad {
+  color: var(--danger);
+}
+.kc-storage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  min-width: 0;
+}
+.kc-bar {
+  width: 140px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--surface-4);
+  overflow: hidden;
+}
+.kc-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.kc-bar.warn > span {
+  background: var(--warning);
+}
+.kc-bar.bad > span {
+  background: var(--danger);
+}
