@@ -145,7 +145,8 @@ test('the Hub accepts what Kea makes: an imported set, a Jitsi session, and the 
     fetch(base + p, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body && JSON.stringify(body) }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
   const t = (await call('GET', '/v1/terms')).body.terms;
   const reg = await call('POST', '/v1/auth/register', null, { email: 'teach@example.com', password: 'lantern velvet orbit', displayName: 'Tia Teacher', age13: true, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) });
-  const token = reg.body.token;
+  assert.equal(reg.status, 202);
+  const token = (await call('POST', '/v1/auth/login', null, { email: 'teach@example.com', password: 'lantern velvet orbit' })).body.token;
   await fetch(`http://127.0.0.1:${ownerPort}/owner/accounts/teach@example.com`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: '{"canHost":true}' });
   const cls = (await call('POST', '/v1/classes', token, { title: 'Biology 101' })).body.class;
 

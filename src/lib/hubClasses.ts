@@ -94,8 +94,13 @@ export interface HubSetFull {
 }
 export interface HubAnswer {
   correct: boolean;
-  answer: number;
-  why: string | null;
+  /**
+   * The right choice and why. A leaderboard set leaves them out for a wrong answer while the question still scores
+   * (`again`: it comes back to try again), so the answer key can't be collected by answering wrong.
+   */
+  answer?: number;
+  why?: string | null;
+  again?: boolean;
   points: number;
   /** The question was due, so it could score. */
   scoring: boolean;

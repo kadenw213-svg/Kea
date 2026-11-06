@@ -901,7 +901,7 @@ export function HubPractice({ setId, onClose }: { setId: string; onClose(): void
                   {q.choices.map((c, i) => (
                     <button
                       key={i}
-                      className={`st-choice ${picked === i ? 'on' : ''} ${result && result.answer === i ? 'correct' : ''} ${result && picked === i && !result.correct ? 'incorrect' : ''}`}
+                      className={`st-choice ${picked === i ? 'on' : ''} ${result && result.answer != null && result.answer === i ? 'correct' : ''} ${result && picked === i && !result.correct ? 'incorrect' : ''}`}
                       onClick={() => answer(i)}
                       disabled={!!result || busy}
                     >
@@ -918,11 +918,14 @@ export function HubPractice({ setId, onClose }: { setId: string; onClose(): void
                       {result.correct ? <Check size={16} className="ex-check" /> : <X size={16} />}
                       <span>
                         <b>{result.correct ? 'Correct.' : 'Not quite.'}</b>{' '}
-                        {!result.correct && (
-                          <>
-                            The answer is {String.fromCharCode(65 + result.answer)}. <MathText text={q.choices[result.answer]} />
-                          </>
-                        )}
+                        {!result.correct &&
+                          (result.answer != null && q.choices[result.answer] != null ? (
+                            <>
+                              The answer is {String.fromCharCode(65 + result.answer)}. <MathText text={q.choices[result.answer]} />
+                            </>
+                          ) : (
+                            'Try it again when it comes back; the answer shows once you get it.'
+                          ))}
                       </span>
                     </div>
                     {result.why && (

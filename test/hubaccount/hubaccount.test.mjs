@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { registerAndSignIn } from '../hubRegister.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -108,7 +109,7 @@ const owner = (method, p, body) => fetch(ownerBase + p, { method, headers: { 'co
 test('with a real Kea Hub: the owner’s changes arrive once, read state round-trips, badge and phone come back', { skip: !HUB && 'KeaS repo not found (set KEAS_DIR)' }, async () => {
   const t = (await (await fetch(`${hubBase}/v1/terms`)).json()).terms;
   for (const id of ['phone-number', 'notifications', 'supporters']) assert.ok(t.sections.some((s) => s.id === id), `terms section ${id}`);
-  const reg = await (await fetch(`${hubBase}/v1/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'sam@example.com', password: 'lantern velvet orbit', displayName: 'Sam', age13: true, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) })).json();
+  const reg = await (await registerAndSignIn(hubBase, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'sam@example.com', password: 'lantern velvet orbit', displayName: 'Sam', age13: true, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) })).json();
   token = reg.token;
   account = { id: reg.account.id };
   // The standard storage is 5 GB.

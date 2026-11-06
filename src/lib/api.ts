@@ -499,6 +499,28 @@ export interface HubScanJob {
   position?: number;
   etaMinutes?: number;
 }
+/**
+ * What asking Kea's shared Claude gave. pending: the course section was started by someone else, and someone in it
+ * has to let this person in first (or they type the section's code); declined: someone in it said no.
+ */
+export interface HubScanAnswer {
+  status: 'queued' | 'joined' | 'shared' | 'pending' | 'declined';
+  message?: string;
+  job?: HubScanJob;
+  delivered?: number;
+  request?: HubSectionRequest;
+  allowance: HubAllowance;
+}
+/** A request to join a course section: incoming ones carry the asker's name. */
+export interface HubSectionRequest {
+  id: string;
+  course: string;
+  label: string | null;
+  status: 'pending' | 'approved' | 'declined' | 'cancelled';
+  createdAt: number;
+  decidedAt: number | null;
+  name?: string;
+}
 /** perDay / perWeek are null when Kea's creator lifted this person's limits (trusted). */
 export type HubAllowance = { unlimited: true } | { today: number; perDay: number | null; week: number; perWeek: number | null; batchSize: number; trusted?: boolean; blocked?: boolean };
 export interface HubSyncState {
@@ -528,12 +550,17 @@ export interface HubApi {
   syncStatus(): Promise<HubResult<HubSyncState>>;
   syncNow(): Promise<HubResult<HubSyncState>>;
   /** Ask Kea's shared Claude to set up this profile's classes (queued; runs through this Kea while it's open). */
-  requestScan(): Promise<HubResult<{ status: 'queued' | 'joined' | 'shared'; message?: string; job?: HubScanJob; allowance: HubAllowance }>>;
+  requestScan(): Promise<HubResult<HubScanAnswer>>;
   scanJobs(): Promise<HubResult<{ jobs: HubScanJob[]; allowance: HubAllowance | null; paused?: boolean }>>;
   /** Chapters (with a textbook) this profile can ask Kea's shared Claude for 25 more questions on. */
   questionChapters(): Promise<HubResult<HubQuestionChapter[]>>;
   /** One batch of new questions for a chapter; it arrives with a later sync. */
-  requestQuestions(a: { courseId: string; chapter: string }): Promise<HubResult<{ status: 'queued' | 'joined' | 'shared'; message?: string; job?: HubScanJob; allowance: HubAllowance }>>;
+  requestQuestions(a: { courseId: string; chapter: string; joinCode?: string }): Promise<HubResult<HubScanAnswer>>;
+  /** Requests to join course sections I'm in (to let in or say no to), and my own. */
+  sectionRequests(): Promise<HubResult<{ incoming: HubSectionRequest[]; mine: HubSectionRequest[] }>>;
+  sectionDecide(a: { id: string; approve: boolean }): Promise<HubResult<{ request: HubSectionRequest }>>;
+  /** The join code of the section one of my courses is in (only for people in it); reset makes a new one. */
+  sectionCode(a: { courseId: string; reset?: boolean }): Promise<HubResult<{ code: string; course: string }>>;
   /** Set once; under 18 then needs a parent's sign-off for Kea's shared Claude. */
   birthYear(year: number): Promise<HubResult<HubStatus>>;
   consent(): Promise<HubResult<HubConsent>>;

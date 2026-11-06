@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BadgeCheck, Bell, Check, ExternalLink, Heart, KeyRound, LogIn, LogOut, Phone, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { create } from 'zustand';
-import { api, HubConsent, HubNotification, HubNotifications, HubPhoneVisibility, HubQuestionChapter, HubResult, HubScanJob, HubStatus, HubTerms, HubTermsChanges, TermsSection } from '../../lib/api';
+import { api, HubConsent, HubNotification, HubNotifications, HubPhoneVisibility, HubQuestionChapter, HubResult, HubScanJob, HubSectionRequest, HubStatus, HubTerms, HubTermsChanges, TermsSection } from '../../lib/api';
 import { toast, ask } from '../../store';
 import { openScholar } from './scholarStore';
 
@@ -730,7 +730,7 @@ export function SharedClaude() {
                   setBusy(true);
                   const r = await api.hub.requestScan();
                   setBusy(false);
-                  if (r.ok) toast(r.value.status === 'queued' ? 'You’re in the queue. Keep Kea open.' : r.value.message || 'Done.', 'success');
+                  if (r.ok) toast(r.value.status === 'queued' ? 'You’re in the queue. Keep Kea open.' : r.value.message || 'Done.', r.value.status === 'pending' || r.value.status === 'declined' ? 'info' : 'success');
                   else toast(r.error, 'error');
                   load();
                 }}
@@ -741,9 +741,56 @@ export function SharedClaude() {
           </div>
         </div>
       )}
+      {status?.signedIn && <SectionRequests />}
       {status?.signedIn && status.me?.account.emailVerified && status.me.account.birthYear != null && (status.me.account.parentSignOff === 'approved' || status.me.account.parentSignOff === 'not_needed') && (
         <MoreQuestions jobs={jobs} onAsked={load} />
       )}
+    </div>
+  );
+}
+
+/**
+ * Classmates asking to join a course section you're in (its shared material and question batches). Knowing the course
+ * isn't enough to get in: someone in the section lets them in here, or shares the section's code.
+ */
+function SectionRequests() {
+  const [incoming, setIncoming] = useState<HubSectionRequest[]>([]);
+  const [busy, setBusy] = useState('');
+  const load = async () => {
+    const r = await api.hub.sectionRequests();
+    if (r.ok) setIncoming(r.value.incoming);
+  };
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
+  }, []);
+  if (!incoming.length) return null;
+  const decide = async (q: HubSectionRequest, approve: boolean) => {
+    setBusy(q.id);
+    const r = await api.hub.sectionDecide({ id: q.id, approve });
+    setBusy('');
+    if (r.ok) toast(approve ? `${q.name || 'They'} can use this section’s material now.` : 'Said no.', 'success');
+    else toast(r.error, 'error');
+    load();
+  };
+  return (
+    <div className="acct-form">
+      <h3 className="hub-title">Asking to join your course sections</h3>
+      <p className="muted acct-note">Only let in people you know are in the class. They get the section’s shared material and practice questions.</p>
+      {incoming.map((q) => (
+        <div key={q.id} className="acct-actions">
+          <span>
+            <b>{q.name || 'Someone'}</b> · {q.label || 'a course'}
+          </span>
+          <button className="btn sm primary" disabled={busy === q.id} onClick={() => decide(q, true)}>
+            Let in
+          </button>
+          <button className="btn sm" disabled={busy === q.id} onClick={() => decide(q, false)}>
+            Say no
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -860,6 +907,9 @@ function MoreQuestions({ jobs, onAsked }: { jobs: HubScanJob[]; onAsked(): void 
   const [chapters, setChapters] = useState<HubQuestionChapter[] | null>(null);
   const [pick, setPick] = useState('');
   const [busy, setBusy] = useState(false);
+  // The course section someone else started: waiting to be let in, or a section code typed in.
+  const [gate, setGate] = useState<{ status: 'pending' | 'declined'; message: string } | null>(null);
+  const [joinCode, setJoinCode] = useState('');
   useEffect(() => {
     api.hub.questionChapters().then((r) => setChapters(r.ok ? r.value : []));
   }, []);
@@ -895,16 +945,44 @@ function MoreQuestions({ jobs, onAsked }: { jobs: HubScanJob[]; onAsked(): void 
           disabled={busy || !chosen}
           onClick={async () => {
             setBusy(true);
-            const r = await api.hub.requestQuestions({ courseId: chosen!.courseId, chapter: chosen!.label });
+            const r = await api.hub.requestQuestions({ courseId: chosen!.courseId, chapter: chosen!.label, ...(joinCode.trim() ? { joinCode: joinCode.trim() } : {}) });
             setBusy(false);
-            if (r.ok) toast(r.value.status === 'queued' ? 'Asked for 25 more. They arrive with a sync once they’re written.' : r.value.message || 'Done.', 'success');
-            else toast(r.error, 'error');
+            if (r.ok && (r.value.status === 'pending' || r.value.status === 'declined')) setGate({ status: r.value.status, message: r.value.message || '' });
+            else if (r.ok) {
+              setGate(null);
+              setJoinCode('');
+              toast(r.value.status === 'queued' ? 'Asked for 25 more. They arrive with a sync once they’re written.' : r.value.message || 'Done.', 'success');
+            } else toast(r.error, 'error');
             onAsked();
           }}
         >
           Ask for 25 more questions
         </button>
+        {chosen && (
+          <button
+            className="btn"
+            title="For classmates: with it they get into this course section without waiting for you to let them in"
+            onClick={async () => {
+              const r = await api.hub.sectionCode({ courseId: chosen.courseId });
+              if (!r.ok) return toast(r.status === 404 ? 'You’re not in this course section on the Kea Hub yet. Ask for questions first.' : r.error, 'error');
+              await navigator.clipboard.writeText(r.value.code).catch(() => {});
+              toast(`Section code ${r.value.code} copied. Share it only with classmates.`, 'success');
+            }}
+          >
+            Copy the section code
+          </button>
+        )}
       </div>
+      {gate && (
+        <>
+          <p className="hub-warn">{gate.message || 'Someone in this course section has to let you in first.'}</p>
+          <label>
+            <span>Section code from a classmate (optional)</span>
+            <input value={joinCode} onChange={(e) => setJoinCode(e.target.value)} placeholder="10 letters and numbers" maxLength={20} />
+          </label>
+          <p className="muted acct-note">With the code, ask again and you’re in at once. Without it, ask again once someone lets you in.</p>
+        </>
+      )}
     </div>
   );
 }

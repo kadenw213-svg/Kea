@@ -246,7 +246,7 @@ async function questionChapters() {
  * Ask Kea's shared Claude for one batch of new practice questions on a chapter. Classmates (same school, course and
  * term) who ask for the same chapter share the batch. The questions arrive with a later sync (sharedMaterial.cjs).
  */
-async function requestQuestions({ courseId, chapter }) {
+async function requestQuestions({ courseId, chapter, joinCode }) {
   const me = cached();
   if (!me) throw new HubError('Sign in to your Kea account first.', 401);
   const c = (await questionChapters()).find((x) => x.courseId === courseId && x.label === chapter);
@@ -267,9 +267,22 @@ async function requestQuestions({ courseId, chapter }) {
     chapter,
     ...t,
     detail: { courseCode: c.code, chapter, profile },
+    ...(joinCode ? { joinCode: String(joinCode).trim() } : {}),
   });
   watchJobs();
   return r;
+}
+/** The Hub's course section for one of this profile's courses (as requestQuestions names it). */
+async function sectionOf(courseId) {
+  const c = (await questionChapters()).find((x) => x.courseId === courseId);
+  if (!c) throw new HubError('Pick a course that has a textbook in Kea.', 400);
+  const host = require('./scholar/browser.cjs').schoolInfo().host;
+  if (!host) throw new HubError('Set up your class site first (Add a class → From your school).', 400);
+  const profiles = require('./scholar/profiles.cjs');
+  const db = require('./scholar/db.cjs');
+  const P = profiles.paths();
+  const term = (await db.courses(P.db, P.textbooks, {}).catch(() => [])).find((x) => x.id === courseId)?.term || '';
+  return { school: host, code: c.code, term: term || 'current' };
 }
 
 // While one of this person's jobs runs, the worker's calls come here and are answered with this Kea's own signed-in
@@ -478,6 +491,10 @@ function register() {
   ipcMain.handle('hub:requestScan', wrap(() => requestScan()));
   ipcMain.handle('hub:questionChapters', wrap(() => questionChapters()));
   ipcMain.handle('hub:requestQuestions', wrap((a) => requestQuestions(a)));
+  // Getting into a course section someone else started: requests to let in (or my own), and the section's code.
+  ipcMain.handle('hub:sectionRequests', wrap(() => (isSignedIn() ? req('GET', '/v1/course-sections/requests') : { incoming: [], mine: [] })));
+  ipcMain.handle('hub:sectionDecide', wrap((a) => req('POST', `/v1/course-sections/requests/${encodeURIComponent(String(a.id))}/decide`, { approve: a.approve === true })));
+  ipcMain.handle('hub:sectionCode', wrap(async (a) => req('POST', '/v1/course-sections/code', { course: await sectionOf(a.courseId), ...(a.reset ? { reset: true } : {}) })));
   ipcMain.handle('hub:scanJobs', wrap(async () => (isSignedIn() ? { ...(await req('GET', '/v1/scan')), worker: workerState } : { jobs: [], allowance: null, worker: workerState })));
   // A worker copy (scholar/worker.cjs) does none of the background work below.
   if (process.env.KEA_WORKER_JOB) return;
@@ -499,7 +516,17 @@ function register() {
   }));
   ipcMain.handle('hub:changes', wrap(() => req('GET', '/v1/terms/changes')));
   ipcMain.handle('hub:openTerms', wrap(({ since }) => shell.openExternal(`${hubUrl()}/terms${since ? `?since=${Number(since)}` : ''}`)));
-  ipcMain.handle('hub:register', wrap(async (a) => signedIn(await req('POST', '/v1/auth/register', { email: a.email, password: a.password, displayName: a.name, age13: a.age13 === true, ...(a.birthYear ? { birthYear: Number(a.birthYear) } : {}), termsVersion: a.termsVersion, termsSections: a.termsSections }, { auth: false }))));
+  ipcMain.handle('hub:register', wrap(async (a) => {
+    await req('POST', '/v1/auth/register', { email: a.email, password: a.password, displayName: a.name, age13: a.age13 === true, ...(a.birthYear ? { birthYear: Number(a.birthYear) } : {}), termsVersion: a.termsVersion, termsSections: a.termsSections }, { auth: false });
+    // The Hub answers the same whether or not the email already had an account (so nobody can use it to find out who
+    // has one), and never signs in by itself: sign in now with what was just entered.
+    try {
+      return await signedIn(await req('POST', '/v1/auth/login', { email: a.email, password: a.password }, { auth: false }));
+    } catch (e) {
+      if (e.status === 401 || e.status === 429) throw new HubError('This email may already have a Kea account. Sign in instead, or use Forgot password.', 409, { exists: true });
+      throw e;
+    }
+  }));
   // Under 18: the birth year, and a parent's or guardian's sign-off before Kea's shared Claude.
   ipcMain.handle('hub:birthYear', wrap(async (a) => (await req('POST', '/v1/me/birth-year', { birthYear: Number(a.birthYear) }), refresh())));
   ipcMain.handle('hub:consent', wrap(() => req('GET', '/v1/me/consent')));

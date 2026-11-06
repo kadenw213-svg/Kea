@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { registerAndSignIn } from '../hubRegister.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -195,7 +196,7 @@ before(async () => {
   const p = await hub.listen({ port: 0, ownerPort: 0 });
   base = `http://127.0.0.1:${p.port}`;
   const t = (await (await fetch(`${base}/v1/terms`)).json()).terms;
-  const r = await fetch(`${base}/v1/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'phone@example.com', password: 'lantern velvet orbit', displayName: 'Me', age13: true, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) });
+  const r = await registerAndSignIn(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'phone@example.com', password: 'lantern velvet orbit', displayName: 'Me', age13: true, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) });
   token = (await r.json()).token;
 });
 after(async () => {

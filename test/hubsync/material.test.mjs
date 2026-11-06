@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { registerAndSignIn } from '../hubRegister.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +34,7 @@ before(async () => {
   ownerBase = `http://127.0.0.1:${p.ownerPort}`;
   const t = (await (await fetch(`${base}/v1/terms`)).json()).terms;
   for (const who of ['ana', 'ben']) {
-    const r = await fetch(`${base}/v1/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: `${who}@example.com`, password: 'lantern velvet orbit', displayName: who, age13: true, birthYear: 2001, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) });
+    const r = await registerAndSignIn(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: `${who}@example.com`, password: 'lantern velvet orbit', displayName: who, age13: true, birthYear: 2001, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) });
     tokens[who] = (await r.json()).token;
     await owner(`/owner/accounts/${who}@example.com`, { method: 'POST', body: '{"emailVerified":true}' });
   }
@@ -82,7 +83,13 @@ test('25 more questions: asked by two classmates, written once, taken in by both
   const a = http(tokens.ana), b = http(tokens.ben);
   const qa = await a('/v1/scan', { method: 'POST', body: JSON.stringify({ kind: 'more_questions', course, chapter: 'Chapter 4', target: 'kea/Kea/School/', detail: { courseCode: 'BIO 1010', chapter: 'Chapter 4', profile: 'School' } }) });
   assert.equal(qa.body.status, 'queued');
-  assert.equal((await b('/v1/scan', { method: 'POST', body: JSON.stringify({ kind: 'more_questions', course, chapter: 'Chapter 4', target: 'kea/Kea/Spring/' }) })).body.status, 'joined');
+  // Ben isn't in Ana's course section on the Hub yet: asking sends Ana a request; once she lets him in, he joins.
+  const askBen = () => b('/v1/scan', { method: 'POST', body: JSON.stringify({ kind: 'more_questions', course, chapter: 'Chapter 4', target: 'kea/Kea/Spring/' }) });
+  assert.equal((await askBen()).body.status, 'pending');
+  const incoming = (await a('/v1/course-sections/requests')).body.incoming;
+  assert.equal(incoming.length, 1);
+  await a(`/v1/course-sections/requests/${incoming[0].id}/decide`, { method: 'POST', body: JSON.stringify({ approve: true }) });
+  assert.equal((await askBen()).body.status, 'joined');
   const next = await owner('/owner/scan/next', { method: 'POST' });
   assert.equal(next.job.id, qa.body.job.id);
 

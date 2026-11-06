@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { registerAndSignIn } from '../hubRegister.mjs';
 
 const require = createRequire(import.meta.url);
 const HUB = [process.env.KEAS_DIR && path.join(process.env.KEAS_DIR, 'hub/index.mjs'), path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../KeaS/hub/index.mjs')].find((p) => p && fs.existsSync(p)) || '';
@@ -24,7 +25,7 @@ before(async () => {
   base = `http://127.0.0.1:${p.port}`;
   ownerPort = p.ownerPort;
   const t = (await (await fetch(`${base}/v1/terms`)).json()).terms;
-  const reg = await fetch(`${base}/v1/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'student@example.com', password: 'lantern velvet orbit', displayName: 'Stu', age13: true, birthYear: 1995, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) });
+  const reg = await registerAndSignIn(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'student@example.com', password: 'lantern velvet orbit', displayName: 'Stu', age13: true, birthYear: 1995, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) });
   student = (await reg.json()).token;
   await fetch(`http://127.0.0.1:${ownerPort}/owner/accounts/student@example.com`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: '{"emailVerified":true}' });
 

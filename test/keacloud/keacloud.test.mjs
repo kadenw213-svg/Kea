@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { registerAndSignIn } from '../hubRegister.mjs';
 
 const require = createRequire(import.meta.url);
 const kc = require('../../electron/keaCloud.cjs');
@@ -95,7 +96,7 @@ before(async () => {
   base = `http://127.0.0.1:${p.port}`;
   ownerBase = `http://127.0.0.1:${p.ownerPort}`;
   const t = (await (await fetch(`${base}/v1/terms`)).json()).terms;
-  const r = await (await fetch(`${base}/v1/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'doc@example.com', password: 'lantern velvet orbit', displayName: 'Doc', age13: true, birthYear: 1995, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) })).json();
+  const r = await (await registerAndSignIn(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'doc@example.com', password: 'lantern velvet orbit', displayName: 'Doc', age13: true, birthYear: 1995, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) })).json();
   token = r.token;
   accountId = r.account?.id;
 });
