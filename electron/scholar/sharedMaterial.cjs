@@ -56,7 +56,8 @@ function plan(files, taken, courses) {
     if (taken[f.rel] === sig) continue;
     const parts = f.rel.split('/');
     if (parts[0] === 'questions' && parts.length === 2 && parts[1].endsWith('.json')) out.push({ rel: f.rel, sig, action: 'questions' });
-    else if (parts[0] === 'Textbooks' && parts.length === 3) {
+    // (A textbook file's name is one plain file name, never a way out of the class's folder.)
+    else if (parts[0] === 'Textbooks' && parts.length === 3 && !/^\.\.?$|[\\/:]/.test(parts[2]) && !/[\\/:]|^\.\.?$/.test(parts[1])) {
       const course = matchCourse(courses, parts[1]);
       out.push(course ? { rel: f.rel, sig, action: 'textbook', folder: course.code, name: parts[2] } : { rel: f.rel, sig, action: 'wait' });
     } else out.push({ rel: f.rel, sig, action: 'skip' });

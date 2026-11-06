@@ -24,6 +24,29 @@ const encodeSeg = (s) => [...s].map((c) => (ALLOWED.test(c) ? c : `~${c.codePoin
 const decodeSeg = (s) => s.replace(/~([0-9a-f]+)~/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
 const toRemote = (rel) => `kea/${rel.split(/[\\/]/).map(encodeSeg).join('/')}`;
 const toLocal = (remote) => remote.slice(4).split('/').map(decodeSeg).join('/');
+// Windows' reserved device names, with or without an extension ("NUL", "con.txt").
+const RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$)(\..*)?$/i;
+/**
+ * A Hub path as a path inside the sync folder, or null when it isn't a plain one. The Hub's listing decides what is
+ * written here, so a name that could leave the folder ("..", "~2e~~2e~", a drive, a separator hidden in ~hex~, an
+ * alternate data stream, a device name) is never used, whatever the Hub sends.
+ */
+function safeLocal(remote) {
+  if (typeof remote !== 'string' || !remote.startsWith('kea/') || remote.length > 2048) return null;
+  const segs = remote.slice(4).split('/').map(decodeSeg);
+  if (!segs.length) return null;
+  for (const g of segs) {
+    if (!g || g === '.' || g === '..' || g.length > 255) return null;
+    if (/[\\/:*?"<>|\x00-\x1f\x7f]/.test(g) || /[. ]$/.test(g) || RESERVED.test(g)) return null;
+  }
+  return segs.join('/');
+}
+/** The file's place on disk, only when it's inside `root`. */
+function inside(root, rel) {
+  const base = path.resolve(root);
+  const abs = path.resolve(base, rel);
+  return abs.startsWith(base + path.sep) ? abs : null;
+}
 const MAX = 64 * 1024 * 1024;
 const FULL_EVERY = 5 * 60_000;
 const SETTLE = 1500;
@@ -77,7 +100,11 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now, s
     const seen = new Set();
     for (const f of list.files) {
       if (!f.path.startsWith('kea/')) continue;
-      const rel = toLocal(f.path);
+      const rel = safeLocal(f.path);
+      if (!rel || !inside(root, rel)) {
+        log(`Kea Hub sync: skipped a file with a name that isn't allowed here (${String(f.path).slice(0, 120)}).`);
+        continue;
+      }
       if (!inScope(rel)) continue;
       seen.add(rel);
       const rec = st.files[rel];
@@ -86,7 +113,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now, s
       // Changed here since it was last synced (or new here and not yet sent): this device's copy wins; push sends it.
       if (s && (!rec || !same(s, rec))) continue;
       const data = await client.get(f.path);
-      const file = path.join(root, rel);
+      const file = inside(root, rel);
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(`${file}.part`, data);
       fs.renameSync(`${file}.part`, file);
@@ -96,12 +123,26 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now, s
       counts.bytesDown += data.length;
     }
     if (full) {
-      // Gone from the Hub (another device deleted it) and unchanged here: delete it here too.
-      for (const rel of Object.keys(st.files)) {
-        if (seen.has(rel) || !inScope(rel)) continue;
+      // Gone from the Hub (another device deleted it) and unchanged here: delete it here too. Safety, as for sending:
+      // if most of the files seem gone from the Hub at once, the listing is wrong (or the Hub is), not a real
+      // deletion; nothing is deleted here then.
+      const tracked = Object.keys(st.files).filter((rel) => inScope(rel));
+      const gone = tracked.filter((rel) => !seen.has(rel));
+      if (gone.length > 20 && gone.length > tracked.length / 2) {
+        log(`Kea Hub sync: ${gone.length} of ${tracked.length} files are missing from the Hub at once, so none were deleted here.`);
+        st.fullAt = now();
+        st.since = Math.max(0, (list.now ?? now()) - 5000);
+        return;
+      }
+      for (const rel of gone) {
+        const file = inside(root, rel);
+        if (!file || safeLocal(toRemote(rel)) == null) {
+          delete st.files[rel];
+          continue;
+        }
         const s = statOf(rel);
         if (!s || same(s, st.files[rel])) {
-          if (s) fs.rmSync(path.join(root, rel), { force: true });
+          if (s) fs.rmSync(file, { force: true });
           delete st.files[rel];
           counts.deleted++;
         }
@@ -193,7 +234,8 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now, s
       throw e;
     }
     const to = conflictName(rel, (r) => !!statOf(r) || !!st.files[r]);
-    const file = path.join(root, to);
+    const file = inside(root, to);
+    if (!file) return;
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(`${file}.part`, data);
     fs.renameSync(`${file}.part`, file);
@@ -275,4 +317,4 @@ function conflictName(rel, taken) {
   }
 }
 
-module.exports = { createSync, httpClient, encodeSeg, decodeSeg, toRemote, toLocal, conflictName, skipName };
+module.exports = { createSync, httpClient, encodeSeg, decodeSeg, toRemote, toLocal, safeLocal, inside, conflictName, skipName };

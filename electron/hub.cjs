@@ -288,6 +288,9 @@ async function relayOp(op, a) {
   switch (op) {
     case 'request': {
       const res = await browser.request(allowedUrl(a.url));
+      // (Where it ended up after redirects must be allowed too: an open redirect on an allowed site never carries
+      // this person's signed-in page to another host.)
+      if (res.url && !allowed(res.url)) throw new Error('That page redirects to a site Kea doesn’t read for the scan.');
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.length > 30 * 1024 * 1024) throw new Error('That file is over 30 MB.');
       return { status: res.status, url: res.url, headers: { 'content-type': res.headers.get('content-type') || '', link: res.headers.get('link') || '' }, body64: buf.toString('base64') };
@@ -540,7 +543,9 @@ function register() {
     } catch {
       throw new HubError('That isn’t a web address. It looks like https://name.tailnet.ts.net', 400);
     }
-    if (!/^https?:$/.test(u.protocol)) throw new HubError('Use an http:// or https:// address.', 400);
+    if (!/^https?:$/.test(u.protocol)) throw new HubError('Use an https:// address.', 400);
+    // Plain http only to this computer itself: anywhere else, someone on the network could pose as the Hub.
+    if (u.protocol === 'http:' && !/^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u.hostname)) throw new HubError('Use the Hub’s https:// address (it looks like https://name.tailnet.ts.net). Plain http only works for a Hub on this computer.', 400);
     settings.set({ 'hub.url': u.origin });
     return status();
   }));
