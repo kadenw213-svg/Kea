@@ -63,7 +63,13 @@ async function runTask(task, arg) {
 /** The profile name from the Hub's "kea/Kea/<profile>/" (their Kea says where its folder is), else the fallback. */
 function profileFromTarget(target, fallback) {
   const m = /^kea\/Kea\/([^/]+)\/$/.exec(target || '');
-  return m ? require('./hubsync.cjs').decodeSeg(m[1]) : fallback;
+  if (!m) return fallback;
+  // (A name that can't be decoded, an impossible code point, falls back: decodeSeg answers null, or threw before.)
+  let name = null;
+  try {
+    name = require('./hubsync.cjs').decodeSeg(m[1]);
+  } catch {}
+  return typeof name === 'string' && name.trim() ? name : fallback;
 }
 
 /** Text a question is known by: the same question with different capitals or punctuation is still the same. */

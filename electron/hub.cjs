@@ -523,7 +523,7 @@ async function launcherTick() {
   workerState.running = { id: job.id, kind: job.kind, startedAt };
   // The worker copy gets only what it needs: no tokens or keys from this Kea's environment (the owner key is a file
   // path it reads; Claude's own runs get even less, see workspace.cjs).
-  const env = { ...minimalEnv(), KEA_WORKER_JOB: job.id, KEA_WORKER_TASK: task, KEA_USERDATA: dir, KEA_OWNER_KEY_FILE: keyFile, KEA_HUB_OWNER_PORT: String(port), KEA_WORKER_LIMIT_MS: String(limitMs), ...(process.env.KEA_DRY_RUN ? { KEA_DRY_RUN: process.env.KEA_DRY_RUN } : {}) };
+  const env = { ...minimalEnv(), KEA_WORKER_JOB: job.id, KEA_WORKER_TASK: task, KEA_USERDATA: dir, KEA_OWNER_KEY_FILE: keyFile, KEA_HUB_OWNER_PORT: String(port), KEA_WORKER_LIMIT_MS: String(limitMs), ...(process.env.KEA_DRY_RUN && !app.isPackaged ? { KEA_DRY_RUN: process.env.KEA_DRY_RUN } : {}) };
   const proc = spawn(process.execPath, app.isPackaged ? [] : [app.getAppPath()], { env, stdio: 'ignore', windowsHide: true });
   workerProc = proc;
   let killedForTime = false;

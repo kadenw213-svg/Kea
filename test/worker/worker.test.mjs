@@ -248,3 +248,16 @@ test('a finished worker folder is deleted, leaving a short summary', async () =>
   assert.match(summary, /ended with an error/);
   assert.doesNotMatch(summary, /student data/);
 });
+
+test('a profile name that can’t be decoded falls back instead of stopping the job', () => {
+  const { profileFromTarget } = require('../../electron/scholar/worker.cjs')._test;
+  assert.equal(profileFromTarget('kea/Kea/~110000~/', 'School'), 'School');
+  assert.equal(profileFromTarget('kea/Kea/My~3a~School/', 'School'), 'My:School');
+});
+
+test('the dry-run hook only works in a development build', () => {
+  const src = fs.readFileSync(new URL('../../electron/scholar/runner.cjs', import.meta.url), 'utf8');
+  assert.match(src, /process\.env\.KEA_DRY_RUN && !app\?\.isPackaged/);
+  const hub = fs.readFileSync(new URL('../../electron/hub.cjs', import.meta.url), 'utf8');
+  assert.match(hub, /process\.env\.KEA_DRY_RUN && !app\.isPackaged/);
+});

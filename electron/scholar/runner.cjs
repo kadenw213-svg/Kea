@@ -1,6 +1,6 @@
 // Runs a class scan: Claude Code, started hidden in the profile's workspace with Kea's guidelines and skills, the Kea
 // Connector's tools, and nothing else allowed. One run at a time; progress and news go to Kea as they happen.
-const { BrowserWindow, Notification } = require('electron');
+const { app, BrowserWindow, Notification } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -1123,7 +1123,8 @@ async function next() {
     // Kea started quitting during the pre-check: no Claude now (shutdown set this run aside to continue at next start).
     if (quitting) return;
     // Testing Kea's own checks: say what Claude would be asked, without starting it.
-    if (process.env.KEA_DRY_RUN) return finish(true, `Dry run, Claude not started. Prompt: ${prompt}`);
+    // (A development hook only: never in an installed Kea.)
+    if (process.env.KEA_DRY_RUN && !app?.isPackaged) return finish(true, `Dry run, Claude not started. Prompt: ${prompt}`);
     const server = await mcp.start({ progress: step, notify: (n) => addNews(n), docText: (file) => docText(uv, cwd, file) });
     slot.server = server;
     // One connection file per run: a finished run's cleanup must never delete the next run's file.
