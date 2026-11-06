@@ -1384,6 +1384,18 @@ function FindBar({ editor, mode, onClose }: { editor: Editor; mode: 'find' | 're
  * For print and PDF the document is cut into the same pages as on screen, each with its header,
  * footnotes and footer, so the output matches what you see.
  */
+/** The HTML with every picture that isn't embedded in it (a data: image) removed, and no srcset. */
+function onlyEmbeddedImages(html: string): string {
+  const t = document.createElement('template');
+  t.innerHTML = html;
+  for (const img of Array.from(t.content.querySelectorAll('img, source'))) {
+    const src = (img.getAttribute('src') || '').trim();
+    if (img.tagName.toLowerCase() === 'source' || !/^data:image\//i.test(src)) img.remove();
+    else img.removeAttribute('srcset');
+  }
+  return t.innerHTML;
+}
+
 function printableHtml(editor: Editor, title: string, forPrint: boolean, meta: DocMeta): string {
   const b = pageBox(meta);
   const D = meta.defaults;
@@ -1435,6 +1447,9 @@ function printableHtml(editor: Editor, title: string, forPrint: boolean, meta: D
     const notes = footnotesOf(editor.state.doc).map(({ n, text }) => ({ n, text }));
     body = `<div class="content">${inlineMathSvgs(editor.getHTML())}</div>${notes.length ? `<h3>Notes</h3>${notesBlock(notes)}` : ''}`;
   }
+  // Print and PDF: only pictures inside the document (data:) go to the print page, which loads nothing else. A picture
+  // linked from the web isn't shown in the editor either (Kea's window doesn't load web pictures), so it's left out.
+  if (forPrint) body = onlyEmbeddedImages(body);
   const embedded = btoa(unescape(encodeURIComponent(JSON.stringify(meta))));
   const pageW = (meta.page.landscape ? meta.page.height : meta.page.width).toFixed(3);
   const pageH = (meta.page.landscape ? meta.page.width : meta.page.height).toFixed(3);

@@ -203,11 +203,31 @@ export const PageBreak = Node.create({
   }
 });
 
+/**
+ * Where a document's picture may come from: inside the document (data:image), this page (blob:) or the web (https).
+ * Never a file on this PC or a network share (file:, \\server\share, //server/share): printing or exporting a document
+ * would otherwise read the file or hand the user's Windows sign-in to that server.
+ */
+export const safeImageSrc = (src: unknown): src is string => typeof src === 'string' && /^(data:image\/|blob:|https:\/\/[^/\\])/i.test(src.trim());
+
 /** Image with an adjustable width (percentage of the text column). */
 export const ResizableImage = Image.extend({
+  // Only pictures from a safe source are taken in (pasted, opened or imported HTML, Markdown and Word files).
+  parseHTML() {
+    return [{ tag: 'img[src]', getAttrs: (el) => (safeImageSrc((el as HTMLElement).getAttribute('src')) ? null : false) }];
+  },
   addAttributes() {
     return {
       ...this.parent?.(),
+      // (Written out only when safe, whatever put it there: a picture set by a command or a saved document.)
+      src: {
+        default: null,
+        parseHTML: (el) => {
+          const s = el.getAttribute('src');
+          return safeImageSrc(s) ? s.trim() : null;
+        },
+        renderHTML: (a) => (safeImageSrc(a.src) ? { src: a.src } : {})
+      },
       width: {
         default: null,
         parseHTML: (el) => el.getAttribute('width') || el.style.width || null,
