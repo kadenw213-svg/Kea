@@ -2,7 +2,7 @@
 // books as a page to read (in the student's font, size and colours, and read aloud); spreadsheets as tables; slides as
 // slides; code and text; pictures, sound and video. Each kind's reader is Kea on the PC's own, loaded only when that kind
 // is opened. Anything else opens in another app on the phone, and can always be shared.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ExternalLink, Headphones, Pause, Play, Share2, SkipBack, SkipForward, Square, Type, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Kea } from './kea';
@@ -10,6 +10,7 @@ import { Book } from './Book';
 import { setLook, useLook } from './theme';
 import { toast } from './ui';
 import { spoken } from './speech';
+import { safeFragment } from './sanitize';
 
 export type ViewTarget = { file: string; title: string; type?: string; chapter?: string; autoplay?: boolean };
 type Kind = 'pdf' | 'doc' | 'epub' | 'sheet' | 'slides' | 'text' | 'markdown' | 'image' | 'audio' | 'video' | 'other';
@@ -47,23 +48,6 @@ async function bytesOf(path: string) {
 }
 const textOf = (b: Uint8Array) => new TextDecoder('utf-8').decode(b);
 
-/** A document's HTML, made safe to show: no scripts, frames, event handlers or script links. */
-function safe(html: string) {
-  const d = new DOMParser().parseFromString(html, 'text/html');
-  d.querySelectorAll('script, iframe, frame, object, embed, link, meta, base, form, animate, set').forEach((e) => e.remove());
-  // URLs are checked the way the browser reads them (tabs, newlines and control characters dropped), so
-  // "java&#9;script:" can't slip through; only web, mail, phone, in-page and inline-image links are kept.
-  const unsafeUrl = (v: string) => {
-    const u = v.replace(/[\u0000- \u007f-\u009f]/g, '').toLowerCase();
-    const scheme = /^([a-z][a-z0-9+.-]*):/.exec(u)?.[1];
-    return !!scheme && !['http', 'https', 'mailto', 'tel'].includes(scheme) && !/^data:image\/(png|jpe?g|gif|webp);/.test(u);
-  };
-  d.querySelectorAll('*').forEach((e) => {
-    for (const a of [...e.attributes]) if (/^on/i.test(a.name) || (/^(href|src|xlink:href|action|formaction|srcset|poster|background)$/i.test(a.name) && unsafeUrl(a.value))) e.removeAttribute(a.name);
-  });
-  return d.body.innerHTML;
-}
-
 /** Open any file: the right reader for its kind. */
 export function Viewer({ target, onClose, onOpen }: { target: ViewTarget; onClose(): void; onOpen?(t: ViewTarget): void }) {
   // (A library chapter's title has no extension; its file does.)
@@ -74,13 +58,18 @@ export function Viewer({ target, onClose, onOpen }: { target: ViewTarget; onClos
 
 function FileView({ target, kind, onClose }: { target: ViewTarget; kind: Kind; onClose(): void }) {
   const look = useLook();
-  const [html, setHtml] = useState<string | null>(null);
+  // (The document as cleaned nodes: inserted as they are, never as an HTML string. See sanitize.ts.)
+  const [html, setHtml] = useState<DocumentFragment | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [sheets, setSheets] = useState<{ name: string; rows: string[][] }[] | null>(null);
   const [deck, setDeck] = useState<any>(null);
   const [error, setError] = useState('');
   const [opts, setOpts] = useState(false);
   const body = useRef<HTMLDivElement>(null);
+  // The cleaned document goes into the page as nodes (a copy, so a re-render can put it in again).
+  useLayoutEffect(() => {
+    if (html && body.current && !body.current.hasChildNodes()) body.current.replaceChildren(html.cloneNode(true));
+  });
   const name = target.title || target.file.split('/').pop() || 'File';
 
   useEffect(() => {
@@ -97,7 +86,7 @@ function FileView({ target, kind, onClose }: { target: ViewTarget; kind: Kind; o
         else if (ext === 'doc') h = (await import('../../src/editors/doc/otherFormats')).docToHtml(b);
         else if (/^(html?|xhtml)$/.test(ext)) h = textOf(b);
         else h = await (await import('../../src/editors/doc/docxImport')).docxToHtml(b);
-        if (live) setHtml(safe(h));
+        if (live) setHtml(safeFragment(h));
       } else if (kind === 'sheet') {
         const b = await bytesOf(target.file);
         const io = await import('../../src/editors/sheet/io');
@@ -183,7 +172,7 @@ function FileView({ target, kind, onClose }: { target: ViewTarget; kind: Kind; o
         ) : kind === 'other' && text == null ? (
           <Other target={target} name={name} />
         ) : readable && html != null ? (
-          <article ref={body} className="vw-doc" dangerouslySetInnerHTML={{ __html: html }} />
+          <article ref={body} className="vw-doc" />
         ) : text != null ? (
           <div ref={body} className="vw-doc">
             <pre className="vw-text">{text}</pre>
