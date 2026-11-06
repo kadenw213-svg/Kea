@@ -676,7 +676,7 @@ function register() {
   ipcMain.handle('hub:googleVerify', wrap(async () => (await req('POST', '/v1/me/verify/google', { idToken: await googleIdToken(cached()?.email) }), refresh())));
   ipcMain.handle('hub:googleSignIn', wrap(async (a) => signedIn(await req('POST', '/v1/auth/google', { idToken: await googleIdToken(a.email), code: a.code || undefined }, { auth: false }))));
   ipcMain.handle('hub:googleReset', wrap(async (a) => signedIn(await req('POST', '/v1/auth/reset/google', { idToken: await googleIdToken(a.email), password: a.password, code: a.code || undefined }, { auth: false }))));
-  ipcMain.handle('hub:totpSetup', wrap(() => req('POST', '/v1/me/totp/setup', {})));
+  ipcMain.handle('hub:totpSetup', wrap((a) => req('POST', '/v1/me/totp/setup', { password: a?.password })));
   ipcMain.handle('hub:totpEnable', wrap(async (a) => (await req('POST', '/v1/me/totp/enable', { code: a.code }), refresh())));
   ipcMain.handle('hub:logout', wrap(async () => {
     try {

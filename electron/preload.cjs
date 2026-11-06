@@ -68,7 +68,7 @@ contextBridge.exposeInMainWorld('api', {
     googleVerify: () => ipcRenderer.invoke('hub:googleVerify'),
     googleSignIn: (a) => ipcRenderer.invoke('hub:googleSignIn', a),
     googleReset: (a) => ipcRenderer.invoke('hub:googleReset', a),
-    totpSetup: () => ipcRenderer.invoke('hub:totpSetup'),
+    totpSetup: (a) => ipcRenderer.invoke('hub:totpSetup', a),
     totpEnable: (a) => ipcRenderer.invoke('hub:totpEnable', a),
     logout: () => ipcRenderer.invoke('hub:logout'),
     syncStatus: () => ipcRenderer.invoke('hub:syncStatus'),

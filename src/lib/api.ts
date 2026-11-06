@@ -550,7 +550,8 @@ export interface HubApi {
   googleVerify(): Promise<HubResult<HubStatus>>;
   googleSignIn(a: { email?: string; code?: string }): Promise<HubResult<HubStatus>>;
   googleReset(a: { email?: string; password: string; code?: string }): Promise<HubResult<HubStatus>>;
-  totpSetup(): Promise<HubResult<{ secret: string; uri: string }>>;
+  /** Needs the account's current password (the Hub asks for proof before changing sign-in). */
+  totpSetup(a: { password: string }): Promise<HubResult<{ secret: string; uri: string }>>;
   totpEnable(a: { code: string }): Promise<HubResult<HubStatus>>;
   logout(): Promise<HubResult<HubStatus>>;
   /** Syncing through the Hub: on, when it last finished, the last error, and what moved. */

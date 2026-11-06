@@ -505,6 +505,12 @@ function NoteItem({ n, onRead }: { n: HubNotification; onRead(): void }) {
       <span className="hub-note-dot" aria-hidden />
       <div className="hub-note-main">
         <div className="hub-note-title">{n.title}</div>
+        {/* (Who asked, shown as a plain labelled name, never mixed into the title where it could pose as Kea.) */}
+        {n.kind === 'course_join' && typeof n.data?.name === 'string' && n.data.name && (
+          <div className="hub-note-body">
+            From: <b>{n.data.name}</b>
+          </div>
+        )}
         {n.body && <div className="hub-note-body">{n.body}</div>}
         {n.note && <div className="hub-note-quote">“{n.note}” · Kea’s creator</div>}
       </div>
