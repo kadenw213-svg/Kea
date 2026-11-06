@@ -33,11 +33,23 @@ final class Hub {
         return Store.plain(ctx).getString("hubUrl", "");
     }
 
-    /** Only an https address (the session token goes with every request to it); anything else is ignored. */
+    /**
+     * Only an https address (the session token goes with every request to it); anything else is ignored. A different
+     * Hub (another scheme, host or port) signs this phone out first: the token and email are forgotten, so a session
+     * is never sent to an address it wasn't made for.
+     */
     static void setUrl(Context ctx, String url) {
         String u = url == null ? "" : url.trim();
-        if (!u.isEmpty() && !u.toLowerCase().startsWith("https://")) return;
-        Store.plain(ctx).edit().putString("hubUrl", u.replaceAll("/+$", "")).apply();
+        if (!u.isEmpty() && (!u.toLowerCase().startsWith("https://") || Domains.origin(u).isEmpty())) return;
+        u = u.replaceAll("/+$", "");
+        if (!sameHub(url(ctx), u)) forget(ctx);
+        Store.plain(ctx).edit().putString("hubUrl", u).apply();
+    }
+
+    /** Two Hub addresses are the same Hub: the same origin (scheme, host and port). */
+    static boolean sameHub(String a, String b) {
+        String oa = Domains.origin(a), ob = Domains.origin(b);
+        return !oa.isEmpty() && oa.equals(ob);
     }
 
     static String token(Context ctx) {
