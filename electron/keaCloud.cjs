@@ -116,6 +116,9 @@ function status() {
   const signedIn = h.signedIn();
   if (signedIn && enabled()) fs.mkdirSync(root(), { recursive: true });
   const st = readSyncState();
+  // Signed in with Kea Cloud on but the sync isn't running yet (just signed in, or terms just agreed to): start it.
+  const s0 = h.syncState();
+  if (signedIn && enabled() && !s0.on && (!s0.error || s0.offline)) h.startSync();
   const sync = h.syncState();
   const files = signedIn ? walk() : [];
   const pending = files.filter((p) => stateOf(p, st) === 'pending').length;

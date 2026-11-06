@@ -223,6 +223,12 @@ function left(ms: number | null, overdue: boolean) {
 function Work() {
   const data = useWorkData(true);
   if (!data) return null;
+  if (data.offline && !data.next && !data.todo.length)
+    return (
+      <Card icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
+        <div className="dempty">Can’t reach the Kea Hub right now. Your shifts show here when it’s back.</div>
+      </Card>
+    );
   return (
     <Card icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
       {data.next ? (

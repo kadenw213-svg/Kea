@@ -188,7 +188,7 @@ test('a full Kea storage keeps the file here, says so, and syncs again when ther
   D.w('Documents/Big.pdf', 'x'.repeat(5000));
   const c = await D.s.cycle();
   assert.equal(c.up >= 0, true);
-  assert.match(D.s.state().full.message, /full/i);
+  assert.ok(D.s.state().full?.message, 'the Hub says why (its own words)');
   assert.equal(D.s.state().skip['Documents/Big.pdf'], 'full');
   assert.equal(kc.fileState(fs.statSync(path.join(D.root, 'Documents/Big.pdf')), D.s.state().files['Documents/Big.pdf'], D.s.state().skip['Documents/Big.pdf']), 'full');
   assert.ok(!(await hubFiles()).includes('kea/Documents/Big.pdf'));

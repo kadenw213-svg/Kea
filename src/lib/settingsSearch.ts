@@ -355,7 +355,8 @@ export async function modelAvailable() {
   if (Date.now() - readyAt < 30000) return ready;
   const st = await api.ai?.state().catch(() => null);
   ready = !!st?.models.find((m) => m.tier === st.settings.tier)?.installed;
-  readyAt = Date.now();
+  // (Only a yes is remembered: a model still loading or just downloaded is checked again next time.)
+  readyAt = ready ? Date.now() : 0;
   return ready;
 }
 

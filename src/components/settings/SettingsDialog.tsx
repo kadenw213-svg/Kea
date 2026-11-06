@@ -371,7 +371,7 @@ function SettingsStart({ q, setQ, go }: { q: string; setQ: (q: string) => void; 
             </button>
           )}
         </div>
-        {canAsk && query && !aiNow && <div className="sstart-tip">Describe it in your own words and press Enter: Kea’s local model finds the setting. Nothing changes until you click.</div>}
+        {canAsk && query && !aiNow && <div className="sstart-tip">Press Enter to have Kea’s local model find it. Nothing changes until you click.</div>}
       </div>
 
       {query ? (
