@@ -86,7 +86,17 @@ public class KeaPlugin extends Plugin {
         if (Intent.ACTION_VIEW.equals(intent.getAction())) uri = intent.getData();
         else if (Intent.ACTION_SEND.equals(intent.getAction())) uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
         if (uri == null) return false;
-        try {
+        // Only a file another app shares (content://), never a path (file://) or one of Kea's own files: any app can
+        // send this, and must not be able to make Kea copy its private files (cookies, settings) where it can see them.
+        if (!"content".equalsIgnoreCase(uri.getScheme()) || ownProvider(uri)) {
+            intent.setAction(Intent.ACTION_MAIN);
+            return false;
+        }
+        try (android.content.res.AssetFileDescriptor afd = getContext().getContentResolver().openAssetFileDescriptor(uri, "r")) {
+            if (afd == null || insidePrivate(afd.getParcelFileDescriptor())) {
+                intent.setAction(Intent.ACTION_MAIN);
+                return false;
+            }
             String name = displayName(uri);
             if (name == null) name = uri.getLastPathSegment() == null ? "File" : uri.getLastPathSegment();
             String type = getContext().getContentResolver().getType(uri);
@@ -94,7 +104,7 @@ public class KeaPlugin extends Plugin {
             File dir = docsDir();
             dir.mkdirs();
             File out = freeName(dir, name);
-            try (InputStream in = getContext().getContentResolver().openInputStream(uri); OutputStream os = new FileOutputStream(out)) {
+            try (InputStream in = afd.createInputStream(); OutputStream os = new FileOutputStream(out)) {
                 byte[] buf = new byte[65536];
                 int n;
                 while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
@@ -111,7 +121,63 @@ public class KeaPlugin extends Plugin {
         }
     }
 
-    /** The file Kea was opened with, if any (once). */
+    /** A content address served by Kea itself (its file provider, or any other provider in Kea's own package). */
+    private boolean ownProvider(Uri uri) {
+        String auth = uri.getAuthority();
+        if (auth == null) return true;
+        if (auth.equalsIgnoreCase(getContext().getPackageName() + ".fileprovider")) return true;
+        try {
+            for (String a : auth.split(";")) {
+                android.content.pm.ProviderInfo p = getContext().getPackageManager().resolveContentProvider(a, 0);
+                if (p != null && getContext().getPackageName().equals(p.packageName)) return true;
+            }
+        } catch (Exception e) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether an opened file is really one of Kea's private files (in its data folder, or its own folders on shared
+     * storage), however the address was dressed up: the file the descriptor points at is checked, not the address.
+     */
+    private boolean insidePrivate(android.os.ParcelFileDescriptor pfd) {
+        if (pfd == null) return true;
+        String real;
+        try {
+            real = android.system.Os.readlink("/proc/self/fd/" + pfd.getFd());
+        } catch (Exception e) {
+            return false;
+        }
+        // (A pipe or socket from another app's provider isn't a file at all.)
+        if (real == null || !real.startsWith("/")) return false;
+        String pkg = getContext().getPackageName();
+        java.util.List<String> roots = new java.util.ArrayList<>();
+        roots.add(getContext().getApplicationInfo().dataDir);
+        if (Build.VERSION.SDK_INT >= 24 && getContext().getApplicationInfo().deviceProtectedDataDir != null) roots.add(getContext().getApplicationInfo().deviceProtectedDataDir);
+        roots.add("/data/data/" + pkg);
+        File ext = getContext().getExternalFilesDir(null);
+        if (ext != null && ext.getParentFile() != null) roots.add(ext.getParentFile().getPath());
+        String canon;
+        try {
+            canon = new File(real).getCanonicalPath();
+        } catch (java.io.IOException e) {
+            canon = real;
+        }
+        for (String r : roots) {
+            if (r == null) continue;
+            String root;
+            try {
+                root = new File(r).getCanonicalPath();
+            } catch (java.io.IOException e) {
+                root = r;
+            }
+            if (canon.equals(root) || canon.startsWith(root + File.separator) || real.startsWith(r + File.separator)) return true;
+        }
+        // (Any user's or profile's copy of Kea's data: /data/user/<n>/<package>, /data/user_de/<n>/<package>.)
+        return canon.matches("^/data/(user|user_de)/\\d+/" + java.util.regex.Pattern.quote(pkg) + "(/.*)?$") || canon.matches("^/mnt/expand/[^/]+/(user|user_de)/\\d+/" + java.util.regex.Pattern.quote(pkg) + "(/.*)?$");
+    }
+
     /** Kea's colours for class sites (see SiteActivity.theme), kept for the next page opened. */
     @PluginMethod
     public void siteTheme(PluginCall call) {
@@ -133,8 +199,15 @@ public class KeaPlugin extends Plugin {
         String home = call.getString("home", "");
         String user = call.getString("user");
         String pass = call.getString("pass");
+        boolean newSchool = !ClassSite.host(home).equals(ClassSite.host(Store.home(getContext())));
         Store.plain(getContext()).edit().putString("home", home).apply();
-        if (pass != null && !pass.isEmpty()) Store.secure(getContext()).edit().putString("user", user == null ? "" : user).putString("pass", pass).apply();
+        android.content.SharedPreferences.Editor sec = Store.secure(getContext()).edit();
+        // A new school or a new login: the sign-in page is learned again, from the page where this login works (the
+        // sign-in that follows: ClassSite.signIn, or the sign-in window), never from a page merely visited.
+        if (newSchool || (pass != null && !pass.isEmpty())) sec.remove("loginHost");
+        if (pass != null && !pass.isEmpty()) sec.putString("user", user == null ? "" : user).putString("pass", pass);
+        else if (newSchool) sec.remove("user").remove("pass");
+        sec.apply();
         call.resolve();
     }
 
@@ -179,10 +252,17 @@ public class KeaPlugin extends Plugin {
         });
     }
 
-    /** GET a class-site address with the session (signing in by itself when needed). */
+    /**
+     * GET a class-site address with the session (signing in by itself when needed). Only the class site itself or its
+     * sign-in page, over https: the school's cookies go with it, so no other address is ever fetched.
+     */
     @PluginMethod
     public void get(PluginCall call) {
         String url = call.getString("url");
+        if (!ClassSite.mayRequest(getContext(), url)) {
+            call.reject("Kea only reads your class site.");
+            return;
+        }
         new Thread(() -> {
             try {
                 ClassSite.Answer a = ClassSite.get(getContext(), url);
@@ -203,10 +283,25 @@ public class KeaPlugin extends Plugin {
             call.reject("No address");
             return;
         }
-        if (ClassSite.host(url).equals(ClassSite.host(Store.home(getContext())))) {
+        // The class site (https) opens in Kea's class-site window, signed in; any other web, mail or phone address in
+        // the phone's own apps. Nothing else (file:, content:, intent: addresses) is opened.
+        Uri u = Uri.parse(url);
+        String scheme = u.getScheme() == null ? "" : u.getScheme().toLowerCase();
+        if (Domains.httpsOn(url, ClassSite.host(Store.home(getContext())))) {
             getActivity().startActivity(new Intent(getContext(), SiteActivity.class).putExtra("mode", "open").putExtra("url", url));
+        } else if (scheme.equals("https") || scheme.equals("http") || scheme.equals("mailto") || scheme.equals("tel")) {
+            Intent view = new Intent(Intent.ACTION_VIEW, u).addCategory(Intent.CATEGORY_BROWSABLE);
+            view.setSelector(null);
+            view.setComponent(null);
+            try {
+                getActivity().startActivity(view);
+            } catch (Exception e) {
+                call.reject("No app on this phone opens that address.");
+                return;
+            }
         } else {
-            getActivity().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            call.reject("Kea doesn't open that kind of address.");
+            return;
         }
         call.resolve();
     }
@@ -216,20 +311,76 @@ public class KeaPlugin extends Plugin {
     public void handIn(PluginCall call) {
         String url = call.getString("url");
         String file = call.getString("file");
-        getActivity().startActivity(new Intent(getContext(), SiteActivity.class).putExtra("mode", "handin").putExtra("url", url).putExtra("file", file == null ? null : uriOf(file).toString()));
+        // Only a page on the class site, and only one of Kea's own scans or files for its upload box.
+        Uri given = file == null ? null : ownUri(file);
+        if (!Domains.httpsOn(url, ClassSite.host(Store.home(getContext()))) || (file != null && given == null)) {
+            call.reject("Kea only hands in its own files on your class site.");
+            return;
+        }
+        getActivity().startActivity(new Intent(getContext(), SiteActivity.class).putExtra("mode", "handin").putExtra("url", url).putExtra("file", given == null ? null : given.toString()));
         call.resolve();
     }
 
-    /** Share a scan (or any Kea file) through Android's share sheet: email, Messages, Drive, anything. */
-    /** A file Kea holds: a content address as it is, or a path on the phone through Kea's file provider. */
-    private Uri uriOf(String file) {
-        if (file != null && file.startsWith("/")) return FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", new File(file));
-        return Uri.parse(file == null ? "" : file);
+    /** Where Kea's own files are: scans, documents opened in Kea, and the library (textbooks). */
+    private File[] ownDirs() {
+        return new File[] { scansDir(), docsDir(), libraryDir() };
     }
 
+    /** One of Kea's own files (scans, documents, the library), by its path; null for anything else on the phone. */
+    private File ownAny(String path) {
+        if (path == null || path.isEmpty()) return null;
+        try {
+            File f = new File(path).getCanonicalFile();
+            for (File d : ownDirs()) if (f.getPath().startsWith(d.getCanonicalPath() + File.separator)) return f;
+        } catch (java.io.IOException ignored) {
+        }
+        return null;
+    }
+
+    /** The file-provider folder names (res/xml/file_paths.xml) for Kea's own folders. */
+    private File providerDir(String name) {
+        switch (name) {
+            case "kea_scans": return scansDir();
+            case "kea_docs": return docsDir();
+            case "kea_library": return libraryDir();
+            default: return null;
+        }
+    }
+
+    /**
+     * One of Kea's own files as a content address to hand to another app or a hand-in page: a path to a file in Kea's
+     * own folders, or Kea's file-provider address for one. Null for anything else (another path, another app's
+     * address, Kea's private settings): nothing else of Kea's can be shared from the app.
+     */
+    private Uri ownUri(String file) {
+        if (file == null || file.isEmpty()) return null;
+        String fp = getContext().getPackageName() + ".fileprovider";
+        try {
+            if (file.startsWith("/")) {
+                File f = ownAny(file);
+                return f == null || !f.isFile() ? null : FileProvider.getUriForFile(getContext(), fp, f);
+            }
+            Uri u = Uri.parse(file);
+            if (!"content".equalsIgnoreCase(u.getScheme()) || !fp.equals(u.getAuthority())) return null;
+            List<String> seg = u.getPathSegments();
+            if (seg.size() < 2) return null;
+            File dir = providerDir(seg.get(0));
+            if (dir == null) return null;
+            File f = ownAny(new File(dir, android.text.TextUtils.join("/", seg.subList(1, seg.size()))).getPath());
+            return f == null || !f.isFile() ? null : FileProvider.getUriForFile(getContext(), fp, f);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Share a scan (or any Kea file) through Android's share sheet: email, Messages, Drive, anything. */
     @PluginMethod
     public void share(PluginCall call) {
-        Uri uri = uriOf(call.getString("file", ""));
+        Uri uri = ownUri(call.getString("file", ""));
+        if (uri == null) {
+            call.reject("Only Kea's own files can be shared from here.");
+            return;
+        }
         Intent send = new Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         String title = call.getString("name", "");
         if (!title.isEmpty()) send.putExtra(Intent.EXTRA_SUBJECT, title);
@@ -240,7 +391,11 @@ public class KeaPlugin extends Plugin {
     /** Save a copy of a scan in the phone's Downloads, under a name the student chose. */
     @PluginMethod
     public void saveCopy(PluginCall call) {
-        Uri from = uriOf(call.getString("file", ""));
+        Uri from = ownUri(call.getString("file", ""));
+        if (from == null) {
+            call.reject("Only Kea's own files can be saved from here.");
+            return;
+        }
         String name = call.getString("name", "Scan").replaceAll("[^A-Za-z0-9 ._()#-]", "").trim();
         if (!name.toLowerCase().endsWith(".pdf")) name += ".pdf";
         final String fileName = name;
@@ -291,7 +446,8 @@ public class KeaPlugin extends Plugin {
     @PluginMethod
     public void reply(PluginCall call) {
         String conv = call.getString("conv", ""), text = call.getString("text", "");
-        if (conv.isEmpty() || text.trim().isEmpty()) {
+        // (A conversation is a number: nothing else is put into the class-site address the reply is posted to.)
+        if (!conv.matches("\\d{1,20}") || text.trim().isEmpty()) {
             call.reject("Nothing to send.");
             return;
         }
@@ -625,6 +781,13 @@ public class KeaPlugin extends Plugin {
         return "";
     }
 
+    /** A relative path inside a folder: no empty, "." or ".." parts, not absolute, no backslashes. */
+    static boolean plainRel(String rel) {
+        if (rel == null || rel.isEmpty() || rel.startsWith("/") || rel.contains("\\") || rel.indexOf(0) >= 0) return false;
+        for (String part : rel.split("/", -1)) if (part.isEmpty() || part.equals(".") || part.equals("..")) return false;
+        return true;
+    }
+
     /** A file inside the chosen folder by its path ("kea-data.json", "Textbooks/BIO1112/x.pdf"). */
     private DocumentFile find(String rel) {
         String tree = Store.plain(getContext()).getString("tree", "");
@@ -651,6 +814,10 @@ public class KeaPlugin extends Plugin {
     @PluginMethod
     public void readFile(PluginCall call) {
         String rel = call.getString("path", "kea-data.json");
+        if (!plainRel(rel)) {
+            call.reject("not found");
+            return;
+        }
         new Thread(() -> {
             try {
                 Uri uri = fileUri(rel);
@@ -681,6 +848,11 @@ public class KeaPlugin extends Plugin {
     public void writeFile(PluginCall call) {
         String name = call.getString("path", "phone.json");
         String text = call.getString("text", "");
+        // (The phone only ever writes its own file into the Kea folder.)
+        if (!"phone.json".equals(name)) {
+            call.reject("Kea only writes phone.json.");
+            return;
+        }
         new Thread(() -> {
             try {
                 Uri uri = fileUri(name);
@@ -824,14 +996,16 @@ public class KeaPlugin extends Plugin {
     @PluginMethod
     public void openWith(PluginCall call) {
         String path = call.getString("path", "");
-        File f = new File(path);
-        if (!f.exists()) {
+        // (Only Kea's own files: scans, documents and the library. Never its settings or anything else it keeps.)
+        File f = ownAny(path);
+        Uri uri = f == null ? null : ownUri(f.getPath());
+        if (f == null || !f.exists() || uri == null) {
             call.reject("That file isn't on the phone.");
             return;
         }
         String ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(Uri.fromFile(f).toString()).toLowerCase();
         String type = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
-        Intent i = new Intent(Intent.ACTION_VIEW).setDataAndType(uriOf(path), type == null ? "*/*" : type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        Intent i = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, type == null ? "*/*" : type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try {
             getActivity().startActivity(Intent.createChooser(i, "Open with"));
             call.resolve();
@@ -843,11 +1017,19 @@ public class KeaPlugin extends Plugin {
     @PluginMethod
     public void openFile(PluginCall call) {
         String rel = call.getString("path", "");
+        if (!plainRel(rel)) {
+            call.reject("That file isn't on the phone yet.");
+            return;
+        }
         DocumentFile f = find(rel);
         Uri uri = f != null && f.exists() ? f.getUri() : null;
         if (uri == null) {
-            File local = new File(libraryDir(), rel);
-            if (local.exists()) uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", local);
+            try {
+                File local = Hub.inside(libraryDir(), rel);
+                if (local.exists()) uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", local);
+            } catch (Exception ignored) {
+                // (Not inside the library.)
+            }
         }
         if (uri == null) {
             call.reject("That file isn't on the phone yet.");

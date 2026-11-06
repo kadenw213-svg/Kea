@@ -65,24 +65,62 @@ final class ClassSite {
         return !home.isEmpty() && host(url).equals(host(home)) && !url.matches("(?i).*(/d2l/login|/login).*");
     }
 
-    /**
-     * Whether the saved login may be typed into this page: only the sign-in page it was saved on (its exact host, over
-     * https). A login saved before Kea kept that host is only filled on the school's own domain or a well-known
-     * sign-in service, and the host is then remembered. Never on any other page, so a lookalike page linked from a
-     * course can't collect the password.
-     */
+    /** The public suffix list, loaded once (Domains). */
+    static void domains(Context ctx) {
+        if (Domains.loaded()) return;
+        try (InputStream in = ctx.getResources().openRawResource(R.raw.public_suffixes)) {
+            Domains.load(in);
+        } catch (Exception e) {
+            // (Without it, every host is its own site: nothing but the school's exact host and the sign-in services match.)
+        }
+    }
+
+    /** The sign-in page's host Kea learned (where the saved login worked, or where the student typed it), or "". */
+    static String loginHost(Context ctx) {
+        String saved = Store.secure(ctx).getString("loginHost", "");
+        if (saved.isEmpty()) return "";
+        // (One remembered by an older Kea under a looser rule, which this one wouldn't accept, is forgotten.)
+        domains(ctx);
+        if (!Domains.maySignInAt(saved, host(Store.home(ctx)), true)) {
+            Store.secure(ctx).edit().remove("loginHost").apply();
+            return "";
+        }
+        return saved;
+    }
+
+    /** Remember the sign-in page's host (once it's known to be the real one). */
+    static void learnLoginHost(Context ctx, String h) {
+        if (h == null || h.isEmpty() || !loginHost(ctx).isEmpty()) return;
+        domains(ctx);
+        if (Domains.maySignInAt(h, host(Store.home(ctx)), true)) Store.secure(ctx).edit().putString("loginHost", h.toLowerCase()).apply();
+    }
+
     static boolean mayFill(Context ctx, String url) {
+        return mayFill(ctx, url, false);
+    }
+
+    /**
+     * Whether the saved login may be typed into this page (over https only). Once Kea knows the school's sign-in page,
+     * only that exact host. Before then: the school's own domain (by the public suffix list, so "k12.co.us" or
+     * "instructure.com" never count as one school), a well-known sign-in service, or, only when Kea reached the page by
+     * itself from the school's home page (`fromHome`: the hidden sign-in, the sign-in window), the school's own Okta,
+     * OneLogin or Duo. Never any other page, so a lookalike page linked from a course can't collect the password. The
+     * host is remembered when the sign-in works (signIn, SiteActivity), not merely because a page was visited.
+     */
+    static boolean mayFill(Context ctx, String url, boolean fromHome) {
         if (url == null || !url.toLowerCase().startsWith("https://")) return false;
         String h = host(url).toLowerCase();
-        String saved = Store.secure(ctx).getString("loginHost", "");
+        String saved = loginHost(ctx);
         if (!saved.isEmpty()) return h.equals(saved);
-        String[] parts = host(Store.home(ctx)).toLowerCase().split("\\.");
-        String school = parts.length >= 2 ? parts[parts.length - 2] + "." + parts[parts.length - 1] : "";
-        boolean known = (!school.isEmpty() && (h.equals(school) || h.endsWith("." + school)))
-            || h.equals("login.microsoftonline.com") || h.equals("login.live.com") || h.equals("accounts.google.com")
-            || h.endsWith(".okta.com") || h.endsWith(".onelogin.com") || h.endsWith(".duosecurity.com");
-        if (known) Store.secure(ctx).edit().putString("loginHost", h).apply();
-        return known;
+        domains(ctx);
+        return Domains.maySignInAt(h, host(Store.home(ctx)), fromHome);
+    }
+
+    /** Only the class site itself, or its sign-in page, over https: where the school session may be sent. */
+    static boolean mayRequest(Context ctx, String url) {
+        String home = Store.home(ctx);
+        if (home.isEmpty()) return false;
+        return Domains.httpsOn(url, Domains.host(home), loginHost(ctx));
     }
 
     // ---------- Requests with the signed-in session ----------
@@ -153,6 +191,7 @@ final class ClassSite {
 
     /** GET with the session, signing in once (hidden) when the session has run out. Call off the main thread. */
     static Answer get(Context ctx, String url) throws Exception {
+        if (!mayRequest(ctx, url)) throw new SecurityException("Kea only reads your class site.");
         Answer a = request(url);
         if (needsSignIn(a)) {
             if (signInBlocking(ctx, 60)) a = request(url);
@@ -206,7 +245,8 @@ final class ClassSite {
             s.setDomStorageEnabled(true);
             final boolean[] finished = {false};
             final int[] tries = {0};
-            Runnable end = () -> {};
+            // The last page the login was typed into: once the class site opens after it, that's the real sign-in page.
+            final String[] filledOn = {null};
             Done finish = (r) -> {
                 if (finished[0]) return;
                 finished[0] = true;
@@ -220,13 +260,18 @@ final class ClassSite {
                 public void onPageFinished(WebView view, String url) {
                     if (finished[0]) return;
                     if (onSite(app, url)) {
+                        if (filledOn[0] != null) learnLoginHost(app, filledOn[0]);
                         finish.run(true);
                         return;
                     }
-                    if (tries[0]++ >= 4 || !mayFill(app, url)) return;
+                    // (This hidden window only ever starts at the school's home page: fromHome.)
+                    if (tries[0]++ >= 4 || !mayFill(app, url, true)) return;
                     // Give the sign-in page a moment to draw its fields, then fill and press its own button.
                     MAIN.postDelayed(() -> {
-                        if (!finished[0]) view.evaluateJavascript(fillScript(user, pass), null);
+                        // (Only if that page is still the one showing.)
+                        if (finished[0] || !mayFill(app, view.getUrl(), true)) return;
+                        filledOn[0] = host(view.getUrl());
+                        view.evaluateJavascript(fillScript(user, pass), null);
                     }, 900);
                 }
             });
