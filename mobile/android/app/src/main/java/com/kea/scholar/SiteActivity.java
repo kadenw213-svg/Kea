@@ -265,7 +265,9 @@ public class SiteActivity extends Activity {
             // Only from a sign-in page over https (not the class site itself), and only a real password. The page's
             // own claim about where it is isn't trusted: the address shown in the WebView is what's saved with it.
             String at = currentUrl;
-            if (pass == null || pass.isEmpty() || at == null || !at.toLowerCase().startsWith("https://") || ClassSite.onSite(SiteActivity.this, at)) return;
+            // Only on the school's own sign-in page or a known sign-in service (the same rule as filling it in), so a
+            // page linked from a course can't replace the saved login with its own.
+            if (pass == null || pass.isEmpty() || at == null || !at.toLowerCase().startsWith("https://") || ClassSite.onSite(SiteActivity.this, at) || !ClassSite.mayFill(SiteActivity.this, at)) return;
             android.content.SharedPreferences.Editor e = Store.secure(SiteActivity.this).edit().putString("pass", pass).putString("loginHost", ClassSite.host(at).toLowerCase());
             if (user != null && !user.isEmpty()) e.putString("user", user);
             e.apply();

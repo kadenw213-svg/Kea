@@ -33,8 +33,11 @@ final class Hub {
         return Store.plain(ctx).getString("hubUrl", "");
     }
 
+    /** Only an https address (the session token goes with every request to it); anything else is ignored. */
     static void setUrl(Context ctx, String url) {
-        Store.plain(ctx).edit().putString("hubUrl", url).apply();
+        String u = url == null ? "" : url.trim();
+        if (!u.isEmpty() && !u.toLowerCase().startsWith("https://")) return;
+        Store.plain(ctx).edit().putString("hubUrl", u.replaceAll("/+$", "")).apply();
     }
 
     static String token(Context ctx) {
