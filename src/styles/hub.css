@@ -222,3 +222,157 @@
   font-size: 12.5px;
   margin: 0;
 }
+
+/* The supporter badge: a thank-you next to someone's name (classes, leaderboards, organizations). Cosmetic only. */
+.hub-supporter {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 7px 1px 5px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.hub-supporter svg {
+  fill: currentColor;
+}
+.hub-supporter.compact {
+  padding: 2px 4px;
+}
+.hub-supporter-note {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.hub-supporter-note svg {
+  color: var(--accent);
+  fill: currentColor;
+  flex: none;
+  margin-top: 3px;
+}
+
+/* The optional phone number. */
+.hub-phone,
+.hub-notes {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.hub-phone .hub-title,
+.hub-notes .hub-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.hub-optional {
+  font-weight: 400;
+  font-size: 12px;
+}
+.hub-phone-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+@media (max-width: 560px) {
+  .hub-phone-row {
+    grid-template-columns: 1fr;
+  }
+}
+.hub-phone-chip {
+  margin-left: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 8px;
+  cursor: copy;
+}
+.hub-phone-chip:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+/* Account notifications. */
+.hub-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hub-notes-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hub-notes-head .hub-title {
+  margin-right: auto;
+}
+.hub-count {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+.hub-note-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hub-note {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+.hub-note.unread {
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.hub-note-dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+.hub-note.unread .hub-note-dot {
+  background: var(--accent);
+}
+.hub-note-title {
+  font-weight: 600;
+}
+.hub-note:not(.unread) .hub-note-title {
+  font-weight: 500;
+  color: var(--text-2);
+}
+.hub-note-body {
+  color: var(--text-2);
+  white-space: pre-line;
+  margin-top: 2px;
+}
+.hub-note-quote {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-style: italic;
+}
+.hub-note-time {
+  font-size: 12px;
+  white-space: nowrap;
+}

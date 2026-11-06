@@ -36,6 +36,10 @@ export interface Member {
   positionIds: string[];
   joinedAt: number;
   you: boolean;
+  /** A Kea supporter (a badge, nothing more). */
+  supporter?: boolean;
+  /** Only when they share it with coworkers. */
+  phone?: string;
   email?: string;
   desiredMin?: number | null;
   desiredMax?: number | null;

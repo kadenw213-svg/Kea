@@ -238,3 +238,26 @@ export async function hubSyncLibrary(progress?: (p: { files: number; name: strin
 }
 /** The Hub path of this profile's folder (for messages). */
 export const hubFolder = () => toRemote(`Kea/${hubProfile()}`);
+
+// ---------- the account: notifications, storage, supporter ----------
+export interface HubNote {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  note: string | null;
+  createdAt: number;
+  readAt: number | null;
+}
+export interface HubMeSummary {
+  name: string;
+  supporter: { active: boolean; until: number | null } | null;
+  storage: { used: number; quota: number; over?: boolean };
+}
+export async function hubMe(): Promise<HubMeSummary> {
+  const r = await hubCall<{ account: { displayName: string; supporter?: { active: boolean; until: number | null } }; storage: HubMeSummary['storage'] }>('GET', '/v1/me');
+  return { name: r.account.displayName, supporter: r.account.supporter ?? null, storage: r.storage };
+}
+/** This account's notifications, newest first, and how many are unread. */
+export const hubNotes = () => hubCall<{ notifications: HubNote[]; unread: number }>('GET', '/v1/me/notifications?limit=50');
+export const hubNotesRead = (a: { ids?: number[]; all?: boolean }) => hubCall<{ unread: number }>('POST', '/v1/me/notifications/read', a.all ? { all: true } : { ids: a.ids || [] });

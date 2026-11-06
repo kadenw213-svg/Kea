@@ -7,6 +7,7 @@ import { act, bump, get, wantText, fmtDay, fmtWhen, money, useHub, useWork, toda
 import { Advanced, Card, Check, Empty, Field, Loading, Num, Problem, Seg } from './ui';
 import { RANK } from './types';
 import type { BudgetRow, Department, JoinCode, Member, Org, OrgSettings, Policy, Role, Structure, Swap } from './types';
+import { SupporterBadge } from '../scholar/HubAccount';
 
 const ROLE: Record<Role, string> = { owner: 'Owner', admin: 'Admin', manager: 'Manager', member: 'Member' };
 const isAdmin = (o: Org) => RANK[o.role] >= RANK.admin;
@@ -54,8 +55,12 @@ function People({ org }: { org: Org }) {
             <tr key={m.id}>
               <td>
                 {m.name}
+                {m.supporter && <SupporterBadge />}
                 {m.minor && <span className="wk-pill sm">Under 18</span>}
-                <div className="muted af-small">{m.email}</div>
+                <div className="muted af-small">
+                  {m.email}
+                  {m.phone && <> · {m.phone}</>}
+                </div>
               </td>
               <td>{ROLE[m.role]}</td>
               <td>{s?.departments.find((d) => d.id === m.departmentId)?.name ?? '—'}</td>
@@ -752,7 +757,9 @@ export function OrgInfo({ org }: { org: Org }) {
           {members.data?.members.map((m) => (
             <span key={m.id} className="wk-person">
               {m.name}
+              {m.supporter && <SupporterBadge compact />}
               {m.role !== 'member' && <span className="muted"> · {ROLE[m.role]}</span>}
+              {m.phone && <span className="muted"> · {m.phone}</span>}
             </span>
           ))}
         </div>

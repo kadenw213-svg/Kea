@@ -81,7 +81,21 @@ contextBridge.exposeInMainWorld('api', {
     consentRequest: (parentEmail) => ipcRenderer.invoke('hub:consentRequest', { parentEmail }),
     consentGoogle: () => ipcRenderer.invoke('hub:consentGoogle'),
     scanJobs: () => ipcRenderer.invoke('hub:scanJobs'),
-    setUrl: (url) => ipcRenderer.invoke('hub:setUrl', { url })
+    setUrl: (url) => ipcRenderer.invoke('hub:setUrl', { url }),
+    notifications: () => ipcRenderer.invoke('hub:notifications'),
+    notificationsRead: (a) => ipcRenderer.invoke('hub:notificationsRead', a),
+    notificationsDelete: (a) => ipcRenderer.invoke('hub:notificationsDelete', a),
+    onNotifications: (cb) => {
+      const h = (_e, n) => cb(n);
+      ipcRenderer.on('hub:notifications', h);
+      return () => ipcRenderer.removeListener('hub:notifications', h);
+    },
+    onOpenAccount: (cb) => {
+      const h = () => cb();
+      ipcRenderer.on('hub:openAccount', h);
+      return () => ipcRenderer.removeListener('hub:openAccount', h);
+    },
+    setPhone: (a) => ipcRenderer.invoke('hub:setPhone', a)
   },
   // Kea Hub classes (electron/hubClasses.cjs): each call takes one object and resolves to { ok, value } or { ok: false, error }.
   hubClasses: {

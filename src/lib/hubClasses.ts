@@ -45,6 +45,10 @@ export interface HubMember {
   role: HubRole;
   joinedAt: number;
   you: boolean;
+  /** A Kea supporter (a badge, nothing more). */
+  supporter?: boolean;
+  /** Only when they share it with classmates. */
+  phone?: string;
 }
 export interface HubInvite {
   code: string;
@@ -106,6 +110,7 @@ export interface HubBoardEntry {
   name: string;
   points: number;
   you: boolean;
+  supporter?: boolean;
 }
 export interface HubBoard {
   period: 'week' | 'all';

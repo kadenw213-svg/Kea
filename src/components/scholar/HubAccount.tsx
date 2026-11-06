@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { BadgeCheck, ExternalLink, KeyRound, LogIn, LogOut, ShieldCheck, UserPlus } from 'lucide-react';
+import { BadgeCheck, Bell, Check, ExternalLink, Heart, KeyRound, LogIn, LogOut, Phone, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { create } from 'zustand';
-import { api, HubConsent, HubQuestionChapter, HubResult, HubScanJob, HubStatus, HubTerms, HubTermsChanges, TermsSection } from '../../lib/api';
+import { api, HubConsent, HubNotification, HubNotifications, HubPhoneVisibility, HubQuestionChapter, HubResult, HubScanJob, HubStatus, HubTerms, HubTermsChanges, TermsSection } from '../../lib/api';
 import { toast, ask } from '../../store';
+import { openScholar } from './scholarStore';
 
 // The Kea Hub account: one sign-in for Kea and KeaS. Shared state, so the account page and the terms gate agree.
 const useHub = create<{ status: HubStatus | null; set(s: HubStatus | null): void }>((set) => ({ status: null, set: (status) => set({ status }) }));
@@ -13,6 +14,42 @@ export function refreshHub() {
   });
 }
 export const useHubStatus = () => useHub((s) => s.status);
+
+// Notifications for this account: kept here so the account panel, wherever it shows, and the global listener agree.
+const useNotes = create<{ notes: HubNotifications | null; set(n: HubNotifications | null): void }>((set) => ({ notes: null, set: (notes) => set({ notes }) }));
+export const useHubNotifications = () => useNotes((s) => s.notes);
+export function refreshNotifications() {
+  return api.hub.notifications().then((r) => {
+    if (r.ok) useNotes.getState().set(r.value);
+    return r;
+  });
+}
+
+/** A Kea supporter's badge next to their name: a thank-you, nothing more. `compact`: the heart only. */
+export function SupporterBadge({ compact = false }: { compact?: boolean }) {
+  return (
+    <span className={`hub-supporter ${compact ? 'compact' : ''}`} title="Kea supporter" aria-label="Kea supporter">
+      <Heart size={11} />
+      {!compact && 'Supporter'}
+    </span>
+  );
+}
+
+/** 5 GB, 5,000 GB, 300 MB, 3 KB (the way the Hub writes sizes in its notices). */
+const sizeText = (b: number) => {
+  const at = (unit: string, size: number) => `${(Math.round((b / size) * 10) / 10).toLocaleString()} ${unit}`;
+  return b >= 1024 ** 3 ? at('GB', 1024 ** 3) : b >= 1024 ** 2 ? at('MB', 1024 ** 2) : b >= 1024 ? at('KB', 1024) : `${Math.max(0, b)} bytes`;
+};
+const usedText = (b: number) => (b >= 1024 ** 3 || b < 1024 ** 2 ? sizeText(b) : `${(b / 1024 ** 2).toFixed(1)} MB`);
+// (In UTC, the way the Hub writes dates in its notices, so both say the same day.)
+const dayText = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+function agoText(ms: number) {
+  const m = Math.round((Date.now() - ms) / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  if (m < 24 * 60) return `${Math.round(m / 60)} h ago`;
+  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
 
 /** Shows a Hub error as a toast; returns the value or null. */
 async function run<T>(p: Promise<HubResult<T>>): Promise<T | null> {
@@ -254,6 +291,7 @@ function CreateAccount({ onDone }: { onDone(): void }) {
 /** The Kea account section of the account page. */
 export function HubPanel() {
   const status = useHubStatus();
+  const notes = useHubNotifications();
   const [mode, setMode] = useState<'signin' | 'create'>('signin');
   const [busy, setBusy] = useState(false);
   const [advanced, setAdvanced] = useState(false);
@@ -296,6 +334,7 @@ export function HubPanel() {
   const me = status.me;
   // Offline: what Kea last saw.
   const c = status.cached;
+  const supporter = me?.account.supporter ?? c?.supporter ?? null;
   const who = me?.account ?? (c ? { displayName: c.name, email: c.email, emailVerified: c.emailVerified, verifiedBy: c.verifiedBy ?? null, owner: !!c.owner } : null);
   return (
     <div className="acct-card hub-card">
@@ -305,7 +344,7 @@ export function HubPanel() {
         <>
           <div className="acct-who">
             <div className="acct-name">
-              {who.displayName} {who.emailVerified && <BadgeCheck size={16} className="hub-ok" />}
+              {who.displayName} {who.emailVerified && <BadgeCheck size={16} className="hub-ok" />} {supporter?.active && <SupporterBadge />}
             </div>
             <div className="muted">{who.email}</div>
             <div className={`acct-status ${who.emailVerified ? 'ok' : 'bad'}`}>
@@ -318,9 +357,19 @@ export function HubPanel() {
               <span>{me.progress.xp} XP</span>
               <span>{me.progress.streak}-day streak</span>
               <span>
-                Storage {(me.storage.used / 1024 ** 2).toFixed(1)} MB of {Math.round(me.storage.quota / 1024 ** 3)} GB
+                Storage {usedText(me.storage.used)} of {sizeText(me.storage.quota)}
               </span>
             </div>
+          )}
+          {me?.storage.over && (
+            <p className="hub-warn">
+              Your Kea storage is over its limit: you’re using {usedText(me.storage.used)} of {sizeText(me.storage.quota)}. Nothing has been deleted, and you can still open, change and delete your files. New files wait until you’re under the limit, so delete some to make room.
+            </p>
+          )}
+          {supporter?.active && supporter.until && (
+            <p className="muted acct-note hub-supporter-note">
+              <Heart size={13} /> Thank you for supporting Kea. Until {dayText(supporter.until)} your storage is {me ? sizeText(me.storage.quota) : 'bigger'} and a supporter badge shows next to your name in classes and organizations.
+            </p>
           )}
         </>
       )}
@@ -344,8 +393,123 @@ export function HubPanel() {
           <LogOut size={13} /> Sign out
         </button>
       </div>
+      {me && <PhoneSetting status={status} />}
+      {(me || notes) && <NotificationList />}
       {advancedBox}
     </div>
+  );
+}
+
+/** The optional phone number, and who sees it. Never on leaderboards; nobody sees it unless chosen here. */
+function PhoneSetting({ status }: { status: HubStatus }) {
+  const cur = status.me?.account.phone ?? { number: null, visibility: 'nobody' as HubPhoneVisibility };
+  const [number, setNumber] = useState(cur.number || '');
+  const [visibility, setVisibility] = useState<HubPhoneVisibility>(cur.visibility);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setNumber(cur.number || '');
+    setVisibility(cur.visibility);
+  }, [cur.number, cur.visibility]);
+  const save = async (patch: { phone?: string | null; visibility?: HubPhoneVisibility }, done: string) => {
+    setBusy(true);
+    const s = await run(api.hub.setPhone(patch));
+    setBusy(false);
+    if (s) (useHub.getState().set(s), toast(done, 'success'));
+  };
+  const changed = number.trim() !== (cur.number || '') || visibility !== cur.visibility;
+  return (
+    <div className="acct-form hub-phone">
+      <h3 className="hub-title">
+        <Phone size={14} /> Phone number <span className="muted hub-optional">optional</span>
+      </h3>
+      <div className="hub-phone-row">
+        <label>
+          <span>Number</span>
+          <input value={number} onChange={(e) => setNumber(e.target.value)} type="tel" inputMode="tel" autoComplete="tel" placeholder="+1 719 555 0100" />
+        </label>
+        <label>
+          <span>Who sees it</span>
+          <select value={visibility} onChange={(e) => setVisibility(e.target.value as HubPhoneVisibility)} disabled={!number.trim()}>
+            <option value="nobody">Nobody</option>
+            <option value="classes">Classmates in my classes</option>
+            <option value="orgs">Coworkers in my organizations</option>
+            <option value="both">Classmates and coworkers</option>
+          </select>
+        </label>
+      </div>
+      <p className="muted acct-note">It shows in class and organization member lists only for the people you pick, never on leaderboards and never publicly.</p>
+      <div className="acct-actions">
+        <button className="btn sm primary" disabled={busy || !changed || !number.trim()} onClick={() => save({ phone: number.trim(), visibility }, 'Phone number saved.')}>
+          Save
+        </button>
+        {cur.number && (
+          <button className="btn sm" disabled={busy} onClick={() => save({ phone: null }, 'Phone number removed.')}>
+            Remove
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** This account's notifications, newest first, with the unread count. Opening one marks it read. */
+function NotificationList() {
+  const notes = useHubNotifications();
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    refreshNotifications();
+  }, []);
+  if (!notes) return null;
+  const list = all ? notes.notifications : notes.notifications.slice(0, 5);
+  const act = async (p: Promise<HubResult<HubNotifications>>) => {
+    const r = await run(p);
+    if (r) useNotes.getState().set(r);
+  };
+  return (
+    <div className="hub-notes">
+      <div className="hub-notes-head">
+        <h3 className="hub-title">
+          <Bell size={14} /> Notifications {notes.unread > 0 && <span className="hub-count">{notes.unread}</span>}
+        </h3>
+        {notes.unread > 0 && (
+          <button className="btn link sm" onClick={() => act(api.hub.notificationsRead({ all: true }))}>
+            <Check size={13} /> Mark all read
+          </button>
+        )}
+        {notes.notifications.some((n) => n.readAt) && (
+          <button className="btn link sm" onClick={() => act(api.hub.notificationsDelete({ all: true }))}>
+            <Trash2 size={13} /> Clear read
+          </button>
+        )}
+      </div>
+      {!notes.notifications.length ? (
+        <p className="muted acct-note">Nothing yet. Changes to your account, approvals and finished requests show up here.</p>
+      ) : (
+        <ul className="hub-note-list">
+          {list.map((n) => (
+            <NoteItem key={n.id} n={n} onRead={() => act(api.hub.notificationsRead({ ids: [n.id] }))} />
+          ))}
+        </ul>
+      )}
+      {notes.notifications.length > 5 && (
+        <button className="btn link sm" onClick={() => setAll(!all)}>
+          {all ? 'Show fewer' : `Show all ${notes.notifications.length}`}
+        </button>
+      )}
+    </div>
+  );
+}
+function NoteItem({ n, onRead }: { n: HubNotification; onRead(): void }) {
+  return (
+    <li className={`hub-note ${n.readAt ? '' : 'unread'}`} onClick={() => !n.readAt && onRead()} title={n.readAt ? undefined : 'Mark as read'}>
+      <span className="hub-note-dot" aria-hidden />
+      <div className="hub-note-main">
+        <div className="hub-note-title">{n.title}</div>
+        {n.body && <div className="hub-note-body">{n.body}</div>}
+        {n.note && <div className="hub-note-quote">“{n.note}” · Kea’s creator</div>}
+      </div>
+      <span className="muted hub-note-time">{agoText(n.createdAt)}</span>
+    </li>
   );
 }
 
@@ -431,7 +595,11 @@ export function TermsGate() {
   useEffect(() => {
     refreshHub();
     const t = setInterval(refreshHub, 30 * 60_000);
-    return () => clearInterval(t);
+    // (Mounted once for the whole app, so these live here: account notifications from the main process, and a
+    // clicked Windows notification opening the account page.)
+    const offNotes = api.hub.onNotifications((n) => useNotes.getState().set(n));
+    const offOpen = api.hub.onOpenAccount(() => openScholar({ name: 'account' }));
+    return () => (clearInterval(t), offNotes(), offOpen());
   }, []);
   useEffect(() => {
     if (!needs) return setChanges(null);

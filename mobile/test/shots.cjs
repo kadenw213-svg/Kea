@@ -46,6 +46,18 @@ const mock = (cfg) => `(() => {
   const realFetch = window.fetch;
   window.fetch = (u, o) => (String(u).includes('api.github.com') ? Promise.resolve(new Response(JSON.stringify({ tag_name: cfg.update || 'v0.52.0', assets: [{ name: 'Kea-Android.apk', browser_download_url: 'x' }] }))) : realFetch(u, o));
   if (cfg.update) window.__keaMock.downloadUpdate = async () => ({ path: '/x', version: cfg.update });
+  // A real Kea Hub (KEA_HUB=<url> KEA_HUB_TOKEN=<session token>, for example a scratch one): the native Hub client,
+  // stood in for with plain requests that carry the token.
+  if (cfg.hub) {
+    Object.assign(window.__keaMock, {
+      hubState: async () => ({ url: cfg.hub.url, signedIn: true, email: cfg.hub.email || '', root: '' }),
+      hubSetUrl: async () => {}, hubForget: async () => {},
+      hubRequest: async (o) => {
+        const r = await realFetch(cfg.hub.url + o.path, { method: o.method, headers: { 'content-type': o.contentType || 'application/json', authorization: 'Bearer ' + cfg.hub.token }, body: o.body });
+        return { status: r.status, body: await r.text(), version: (r.headers.get('etag') || '').replace(/"/g, '') };
+      },
+    });
+  }
 })();`;
 
 const files = [
@@ -168,7 +180,9 @@ const scenarios = [
   { name: '87-extended-row', cfg: { paired: true, data: 1 }, steps: [`document.querySelector('.miss-fold')?.click()`, wait(400)] },
   { name: '88-extended-sheet', cfg: { paired: true, data: 1 }, steps: [openItem('Lab report #7'), wait(800)] },
   { name: '86-guide-wide', cfg: { paired: true, data: 1, size: [1280, 800] }, steps: [openItem('Lab report #7'), wait(800), `document.querySelectorAll('.gd-step-head:not(:disabled)')[1]?.click()`, wait(300)] },
-  { name: '21-update-banner', cfg: { paired: true, data: 1, update: 'v0.53.0' }, steps: [] }
+  { name: '21-update-banner', cfg: { paired: true, data: 1, update: 'v0.53.0' }, steps: [] },
+  // The Kea account in Settings with a real Hub (KEA_HUB, KEA_HUB_TOKEN): the supporter badge, storage, notifications.
+  ...(process.env.KEA_HUB ? [{ name: '90-account-hub', cfg: { welcomed: true, hub: { url: process.env.KEA_HUB, token: process.env.KEA_HUB_TOKEN, email: process.env.KEA_HUB_EMAIL } }, steps: [`document.querySelector('[aria-label=Settings]').click()`, wait(2500)] }] : [])
 ];
 
 // (Software drawing: capturing pages fails on some GPUs with "UnknownVizError". KEA_OFFSCREEN=1 draws without a

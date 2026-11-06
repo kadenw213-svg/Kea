@@ -113,7 +113,23 @@ export const SECTIONS: Section[] = [
         options: [0, 5, 10, 15, 30, 60, 120].map((m) => ({ value: m, label: m === 0 ? 'Don’t remind me' : m < 60 ? `${m} minutes before` : `${m / 60} hour${m > 60 ? 's' : ''} before` })),
         help: 'A notification on this computer, with the meeting link one click away. Quiet hours from Scholar’s notifications apply.'
       },
-      { key: 'hub.onCalendar', label: 'Show Kea Hub class sessions on my calendar', type: 'toggle', default: true, advanced: true, help: 'They stay on each class’s page either way.' }
+      { key: 'hub.onCalendar', label: 'Show Kea Hub class sessions on my calendar', type: 'toggle', default: true, advanced: true, help: 'They stay on each class’s page either way.' },
+      {
+        key: 'hub.notifyDesktop',
+        group: 'Kea account notifications',
+        label: 'Show account notifications on this computer',
+        type: 'toggle',
+        default: true,
+        help: 'For example when your storage changes or an organization approves you. They always stay in the list under Your account. Quiet hours from Scholar’s notifications apply.'
+      },
+      {
+        key: 'hub.notifyEveryMinutes',
+        label: 'Check for new account notifications',
+        type: 'select',
+        default: 2,
+        advanced: true,
+        options: [1, 2, 5, 15, 60].map((m) => ({ value: m, label: m < 60 ? `Every ${m} minute${m === 1 ? '' : 's'}` : 'Every hour' }))
+      }
     ]
   },
   {

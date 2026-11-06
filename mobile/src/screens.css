@@ -1681,3 +1681,66 @@ button.bigrade {
 .terms-sec p {
   margin: 0;
 }
+
+/* The account screen: notices from the Kea Hub and the supporter badge. */
+.acct-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+.supporter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 7px 1px 5px;
+  border-radius: 999px;
+  background: var(--accent-soft, rgba(127, 127, 127, 0.15));
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+.supporter-badge svg {
+  fill: currentColor;
+}
+.notes-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.notes-head b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+.notes-head .count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.small-btn {
+  min-height: 32px;
+  padding: 4px 10px;
+}
+.acct-note {
+  text-align: left;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.acct-note.unread {
+  border-color: var(--accent);
+  background: var(--accent-soft, rgba(127, 127, 127, 0.1));
+}

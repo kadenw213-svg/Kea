@@ -27,7 +27,7 @@ import { hubc, useHubClasses, HubClass, HubClassDetail, HubSession, HubSetInfo, 
 import { HubResult, api } from '../../lib/api';
 import { toast, ask } from '../../store';
 import { useScholar } from './scholarStore';
-import { useHubStatus, refreshHub } from './HubAccount';
+import { useHubStatus, refreshHub, SupporterBadge } from './HubAccount';
 import { openLink } from './kinds';
 import { MathText } from './MathText';
 import { BoardChoice } from './BoardName';
@@ -993,6 +993,7 @@ function Board({ d }: { d: HubClassDetail }) {
               <span className={`hubc-rank r${e.rank}`}>{e.rank}</span>
               <span className="grow">
                 {e.name}
+                {e.supporter && <SupporterBadge compact />}
                 {e.you && <span className="muted"> (you)</span>}
               </span>
               <span className="hubc-pts">{e.points} XP</span>
@@ -1063,7 +1064,13 @@ function People({ d, instructor, reload }: { d: HubClassDetail; instructor: bool
                   <span className="sch-avatar">{(m.name || '?')[0]}</span>
                   <span className="sch-row-main">
                     {m.name || 'Hidden'}
+                    {m.supporter && <SupporterBadge />}
                     {m.you && <span className="muted"> (you)</span>}
+                    {m.phone && (
+                      <button className="hub-phone-chip" title="Copy the phone number" onClick={() => copy(m.phone!, 'Phone number')}>
+                        {m.phone}
+                      </button>
+                    )}
                   </span>
                   {instructor && m.id && !m.you && m.role !== 'instructor' && !d.offline && (
                     <button

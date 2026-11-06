@@ -2,9 +2,9 @@
 // what changed in the terms, choose which profile's classes to show, and sign out. Signed in, the classes and
 // textbooks come through the Kea Hub instead of a drive's files.
 import { useEffect, useState } from 'react';
-import { Check, CheckCircle2, ExternalLink, KeyRound, Loader2, LogOut, RefreshCw, UserRound } from 'lucide-react';
+import { Bell, Check, CheckCircle2, ExternalLink, Heart, KeyRound, Loader2, LogOut, RefreshCw, UserRound } from 'lucide-react';
 import { Kea } from './kea';
-import { HubError, HubInfo, TermsGate, acceptTerms, hubInfo, hubProfiles, hubSignIn, hubSignOut, setHubProfile, termsGate, termsUrl } from './hub';
+import { HubError, HubInfo, HubMeSummary, HubNote, TermsGate, acceptTerms, hubInfo, hubMe, hubNotes, hubNotesRead, hubProfiles, hubSignIn, hubSignOut, setHubProfile, termsGate, termsUrl } from './hub';
 
 type View = 'loading' | 'signin' | 'terms' | 'profile' | 'ready';
 
@@ -218,6 +218,7 @@ export function HubAccount({ onChange, compact = false }: { onChange(): void; co
           <RefreshCw size={16} /> Check again
         </button>
         {msg && <p className="note warn">{msg}</p>}
+        {!compact && <AccountNotes />}
         <button className="btn ghost danger-text" disabled={busy} onClick={signOut}>
           <LogOut size={16} /> Sign out
         </button>
@@ -237,6 +238,7 @@ export function HubAccount({ onChange, compact = false }: { onChange(): void; co
         </span>
       </div>
       {msg && <p className="note warn">{msg}</p>}
+      {!compact && <AccountNotes />}
       <div className="actions">
         {(profiles?.length || 0) > 1 && (
           <button className="btn" onClick={() => setView('profile')}>
@@ -248,6 +250,84 @@ export function HubAccount({ onChange, compact = false }: { onChange(): void; co
         </button>
       </div>
     </>
+  );
+}
+
+const size = (b: number) => (b >= 1024 ** 3 ? `${(Math.round((b / 1024 ** 3) * 10) / 10).toLocaleString()} GB` : `${(b / 1024 ** 2).toFixed(1)} MB`);
+const when = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+/** The account's notices (storage, supporter, approvals, finished requests), the supporter badge, and storage. */
+function AccountNotes() {
+  const [me, setMe] = useState<HubMeSummary | null>(null);
+  const [notes, setNotes] = useState<{ notifications: HubNote[]; unread: number } | null>(null);
+  const [all, setAll] = useState(false);
+  const load = async () => {
+    try {
+      const [m, n] = await Promise.all([hubMe(), hubNotes()]);
+      setMe(m);
+      setNotes(n);
+    } catch {
+      // (Offline, or the terms gate: the account screen says so above.)
+    }
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  const read = async (a: { ids?: number[]; all?: boolean }) => {
+    try {
+      await hubNotesRead(a);
+    } catch {}
+    load();
+  };
+  if (!me && !notes) return null;
+  const list = notes ? (all ? notes.notifications : notes.notifications.slice(0, 5)) : [];
+  return (
+    <div className="acct-notes">
+      {me && (
+        <p className="small">
+          {me.name}
+          {me.supporter?.active && (
+            <span className="supporter-badge">
+              <Heart size={11} /> Supporter
+            </span>
+          )}
+          <span className="muted block">
+            Kea storage: {size(me.storage.used)} of {size(me.storage.quota)}
+            {me.supporter?.active && me.supporter.until ? ` · supporter until ${new Date(me.supporter.until).toLocaleDateString(undefined, { timeZone: 'UTC' })}, thank you!` : ''}
+          </span>
+        </p>
+      )}
+      {me?.storage.over && <p className="note warn small">Your Kea storage is over its limit. Nothing has been deleted; new files wait until you’re under it. Delete some files in Kea on your computer to make room.</p>}
+      {notes && (
+        <>
+          <div className="notes-head">
+            <b>
+              <Bell size={14} /> Notifications
+            </b>
+            {notes.unread > 0 && <span className="count">{notes.unread}</span>}
+            {notes.unread > 0 && (
+              <button className="btn ghost small-btn" onClick={() => read({ all: true })}>
+                <Check size={14} /> Mark all read
+              </button>
+            )}
+          </div>
+          {!notes.notifications.length && <p className="muted small">Nothing yet. Changes to your account, approvals and finished requests show up here.</p>}
+          {list.map((n) => (
+            <button key={n.id} className={`acct-note ${n.readAt ? '' : 'unread'}`} onClick={() => !n.readAt && read({ ids: [n.id] })}>
+              <b className="block">{n.title}</b>
+              {n.body && <span className="small block">{n.body}</span>}
+              {n.note && <span className="muted small block">“{n.note}” · Kea’s creator</span>}
+              <span className="muted small block">{when(n.createdAt)}</span>
+            </button>
+          ))}
+          {notes.notifications.length > 5 && (
+            <button className="btn ghost" onClick={() => setAll(!all)}>
+              {all ? 'Show fewer' : `Show all ${notes.notifications.length}`}
+            </button>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

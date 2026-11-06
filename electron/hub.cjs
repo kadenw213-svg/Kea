@@ -45,7 +45,7 @@ function saveCache(me) {
   // No account on this computer yet: the Hub account becomes it (school mode, the badge, the name Kea shows).
   const local = path.join(app.getPath('userData'), 'account.json');
   if (!fs.existsSync(local)) fs.writeFileSync(local, JSON.stringify({ email: a.email, name: a.displayName }, null, 1));
-  fs.writeFileSync(cacheFile(), JSON.stringify({ id: a.id, email: a.email, name: a.displayName, emailVerified: a.emailVerified, verifiedBy: a.verifiedBy, owner: a.owner, canHost: a.canHost, identityVerified: a.identityVerified, totpEnabled: a.totpEnabled, leaderboard: a.leaderboard ?? null, progress: me.progress ?? null, terms: me.terms ?? null, at: Date.now() }, null, 1));
+  fs.writeFileSync(cacheFile(), JSON.stringify({ id: a.id, email: a.email, name: a.displayName, emailVerified: a.emailVerified, verifiedBy: a.verifiedBy, owner: a.owner, canHost: a.canHost, identityVerified: a.identityVerified, totpEnabled: a.totpEnabled, leaderboard: a.leaderboard ?? null, supporter: a.supporter ?? null, progress: me.progress ?? null, terms: me.terms ?? null, at: Date.now() }, null, 1));
 }
 
 class HubError extends Error {
@@ -88,6 +88,8 @@ async function refresh() {
   if (!readToken()) return status();
   const me = await req('GET', '/v1/me');
   saveCache(me);
+  // A newer notification than Kea has seen: fetch it now instead of at the next poll.
+  if (!process.env.KEA_WORKER_JOB) require('./hubNotes.cjs').seen(me.notifications?.latest);
   return { ...base(), signedIn: true, reachable: true, me };
 }
 const base = () => ({ url: hubUrl(), defaultUrl: DEFAULT_HUB_URL, cached: cached() });
@@ -495,6 +497,14 @@ function register() {
   // Under 18: the birth year, and a parent's or guardian's sign-off before Kea's shared Claude.
   ipcMain.handle('hub:birthYear', wrap(async (a) => (await req('POST', '/v1/me/birth-year', { birthYear: Number(a.birthYear) }), refresh())));
   ipcMain.handle('hub:consent', wrap(() => req('GET', '/v1/me/consent')));
+  // The optional phone number and who sees it (classmates, coworkers, both, nobody).
+  ipcMain.handle('hub:setPhone', wrap(async (a) => {
+    const body = {};
+    if ('phone' in a) body.phone = a.phone == null || a.phone === '' ? null : String(a.phone);
+    if (a.visibility) body.visibility = a.visibility;
+    await req('POST', '/v1/me/phone', body);
+    return refresh();
+  }));
   ipcMain.handle('hub:consentRequest', wrap((a) => req('POST', '/v1/me/consent', { parentEmail: a.parentEmail })));
   ipcMain.handle('hub:consentGoogle', wrap(async () => {
     const c = await req('GET', '/v1/me/consent');
@@ -533,6 +543,8 @@ function register() {
   }));
   // Hub classes, study sets, leaderboards and class sessions on the calendar.
   require('./hubClasses.cjs').register();
+  // Notifications for this account (a list in the account panel, and Windows notifications).
+  require('./hubNotes.cjs').register();
 }
 
 module.exports = { register, cached, req, signedIn: isSignedIn, syncRoot, syncNow, url: hubUrl, refreshStatus: status, DEFAULT_HUB_URL };

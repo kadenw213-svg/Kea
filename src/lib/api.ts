@@ -406,6 +406,27 @@ export interface HubAccount {
   parentEmail?: string | null;
   /** How they show on class leaderboards (the default for every class). */
   leaderboard?: { show: 'name' | 'nickname' | 'hidden'; nickname: string | null };
+  /** Supporter (set by Kea's creator as a thank-you): more storage and a badge, until a date. */
+  supporter?: { active: boolean; until: number | null; since: number | null };
+  /** The optional phone number, and who sees it. */
+  phone?: { number: string | null; visibility: HubPhoneVisibility };
+}
+export type HubPhoneVisibility = 'nobody' | 'classes' | 'orgs' | 'both';
+/** A notice for this account from the Kea Hub (the owner changed something, an org was approved, a scan finished...). */
+export interface HubNotification {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  /** A line from Kea's creator, when they added one. */
+  note: string | null;
+  data: any;
+  createdAt: number;
+  readAt: number | null;
+}
+export interface HubNotifications {
+  notifications: HubNotification[];
+  unread: number;
 }
 export type HubParentSignOff = 'not_needed' | 'needed' | 'pending' | 'approved';
 export interface HubConsent {
@@ -434,7 +455,9 @@ export interface HubMe {
   account: HubAccount;
   progress: { level: number; xp: number; floor: number; next: number; today: number; streak: number };
   terms: HubTermsStatus;
-  storage: { used: number; quota: number };
+  /** over: using more than the limit (after it went down). Nothing is deleted; new files wait. */
+  storage: { used: number; quota: number; over?: boolean; custom?: boolean; supporter?: boolean; standard?: number; supporterQuota?: number };
+  notifications?: { unread: number; latest: number };
 }
 export interface HubStatus {
   url: string;
@@ -444,7 +467,7 @@ export interface HubStatus {
   reachable: boolean;
   me: HubMe | null;
   /** What Kea last saw (shown while the Hub is offline). */
-  cached: { email: string; name: string; emailVerified: boolean; verifiedBy?: string | null; owner?: boolean; canHost?: boolean; leaderboard?: HubAccount['leaderboard'] | null; progress?: HubMe['progress'] | null; terms: HubTermsStatus | null; at?: number } | null;
+  cached: { email: string; name: string; emailVerified: boolean; verifiedBy?: string | null; owner?: boolean; canHost?: boolean; leaderboard?: HubAccount['leaderboard'] | null; supporter?: HubAccount['supporter'] | null; progress?: HubMe['progress'] | null; terms: HubTermsStatus | null; at?: number } | null;
 }
 export interface TermsSection {
   id: string;
@@ -476,7 +499,8 @@ export interface HubScanJob {
   position?: number;
   etaMinutes?: number;
 }
-export type HubAllowance = { unlimited: true } | { today: number; perDay: number; week: number; perWeek: number; batchSize: number };
+/** perDay / perWeek are null when Kea's creator lifted this person's limits (trusted). */
+export type HubAllowance = { unlimited: true } | { today: number; perDay: number | null; week: number; perWeek: number | null; batchSize: number; trusted?: boolean; blocked?: boolean };
 export interface HubSyncState {
   on: boolean;
   last: number | null;
@@ -517,6 +541,18 @@ export interface HubApi {
   /** The parent signs in to Google here, as the email given. */
   consentGoogle(): Promise<HubResult<HubStatus>>;
   setUrl(url: string): Promise<HubResult<HubStatus>>;
+  /** This account's notifications (newest first). */
+  notifications(): Promise<HubResult<HubNotifications>>;
+  /** Marks some (ids) or all read. */
+  notificationsRead(a: { ids?: number[]; all?: boolean }): Promise<HubResult<HubNotifications>>;
+  /** Deletes some (ids), or every read one (all). */
+  notificationsDelete(a: { ids?: number[]; all?: boolean }): Promise<HubResult<HubNotifications>>;
+  /** New notifications arrived (the main process polls the Hub). */
+  onNotifications(cb: (n: HubNotifications) => void): () => void;
+  /** A Windows notification from the Hub was clicked: show the account page. */
+  onOpenAccount(cb: () => void): () => void;
+  /** The optional phone number (null clears it) and who sees it. */
+  setPhone(a: { phone?: string | null; visibility?: HubPhoneVisibility }): Promise<HubResult<HubStatus>>;
 }
 
 export type AiTier = 'light' | 'balanced' | 'best';
