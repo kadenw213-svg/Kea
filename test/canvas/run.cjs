@@ -72,6 +72,13 @@ const check = (what, ok, detail) => {
 };
 
 (async () => {
+  // ---------- D2L's alert menus: only https links are kept (they open in Kea's window) ----------
+  {
+    const home = 'https://learn.school.edu/d2l/home/6606';
+    const li = (href) => `<li><a href="${href}">New message from Professor Smith</a></li>`;
+    const urls = precheck._test.parseAlerts(['/d2l/le/email/1', 'JavaScript:alert(1)', ' javascript:x', 'jAvAsCrIpT:void(0)', 'file:///C:/Windows/win.ini', 'file://evil/share/x', 'http://learn.school.edu/x', 'ms-msdt:/id', 'data:text/html,x'].map(li).join(''), home).map((a) => a.url);
+    check('alerts: only https links are kept (javascript: in any case, file:, http:, other schemes dropped)', urls[0] === 'https://learn.school.edu/d2l/le/email/1' && urls.slice(1).every((u) => u === ''), urls);
+  }
   // ---------- Each area, as D2L would answer it ----------
   const data = {};
   for (const area of Object.keys(precheck._test.AREAS)) {

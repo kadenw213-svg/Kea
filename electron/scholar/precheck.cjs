@@ -921,9 +921,11 @@ function parseAlerts(html, home) {
     if (!text || text.length < 4 || /no (new )?(alerts|messages|updates)/i.test(text)) continue;
     const href = (inner.match(/href="([^"]+)"/i) || [])[1] || '';
     const at = (inner.match(/data-date="([^"]+)"|title="([^"]*\d{4}[^"]*)"/i) || []).slice(1).find(Boolean) || '';
+    // Only an https link (any case of "JavaScript:", file: or another scheme is dropped): it's opened in Kea's window.
     let url = '';
     try {
-      url = href && !href.startsWith('javascript') ? new URL(href.replace(/&amp;/g, '&'), home).href : '';
+      const u = href ? new URL(href.replace(/&amp;/g, '&'), home) : null;
+      url = u && u.protocol === 'https:' ? u.href : '';
     } catch {}
     out.push({ text, url, at });
   }
@@ -1276,4 +1278,4 @@ function prune(workspaceDir, now = new Date()) {
   return removed;
 }
 
-module.exports = { versions, whoami, prune, classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, addInboxItems, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck, _test: { fetchAreaRetry, writeSafe, readSafe, prune, resetPrune: () => (prunedOn = null), AREAS, refreshSubmissions, saveD2lPlaces, classPlatforms, updateGrades, updateInbox, hiddenWork } };
+module.exports = { versions, whoami, prune, classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, addInboxItems, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck, _test: { parseAlerts, fetchAreaRetry, writeSafe, readSafe, prune, resetPrune: () => (prunedOn = null), AREAS, refreshSubmissions, saveD2lPlaces, classPlatforms, updateGrades, updateInbox, hiddenWork } };

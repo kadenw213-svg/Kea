@@ -5,10 +5,12 @@
 // (and may let Kea remember the login, encrypted with Windows' own protection). Later, when a scan hits the sign-in
 // page, Kea fills in that saved login itself, like a password manager. If that doesn't get through (a new prompt, a
 // code from a phone), Kea shows its window and waits for the user. The tools Claude uses never see a password.
-const { BrowserWindow, session, safeStorage, Notification, ipcMain } = require('electron');
+const { BrowserWindow, session, safeStorage, Notification, ipcMain, dialog, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const profiles = require('./profiles.cjs');
+const policy = require('./sitePolicy.cjs');
+const { SCHOOL_PLATFORMS } = policy;
 
 const PAGE_TIMEOUT = 45000;
 
@@ -63,7 +65,12 @@ function schoolInfo() {
 }
 function setHome(home, platform) {
   const s = readSchool();
-  s.home = String(home || '').trim();
+  const next = String(home || '').trim();
+  // Only an https class site: everything Kea's window loads and fetches for it must be https.
+  if (next && !/^https:\/\/[^/\s]+/i.test(next)) throw new Error('Enter your class site’s https address (it starts with https://).');
+  // A different class site: the sign-in host found for the old one isn't this school's.
+  if (next && s.home && policy.hostOf(next) !== policy.hostOf(s.home)) delete s.schoolLoginHost;
+  s.home = next;
   s.platform = platform === 'canvas' || platform === 'd2l' ? platform : guessPlatform(s.home);
   writeSchool(s);
   return schoolInfo();
@@ -76,6 +83,8 @@ function forgetLogin() {
   // Forgetting also means "don't save it again" until the user ticks the box on a new sign-in.
   s.remember = false;
   writeSchool(s);
+  // And the answers about the camera, microphone and screen: each site asks again.
+  fs.rm(sitePermsFile(), { force: true }, () => {});
   return schoolInfo();
 }
 /** Save the login the user signs in with in Kea's window: when they said so at setup (the default), any time. */
@@ -108,11 +117,8 @@ function getWindow() {
     webPreferences: { partition: partition(), sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'browser-preload.cjs') }
   });
   prepareSession(session.fromPartition(partition()));
-  // Pages can't open more windows: links that would, load here instead.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    win.loadURL(url).catch(() => {});
-    return { action: 'deny' };
-  });
+  // Pages can't open more windows: links that would, load here instead (http and https only).
+  guardWindow(win);
   win.webContents.on('context-menu', (_e, params) => contextMenu(win, params));
   win.on('close', (e) => {
     // Closing the sign-in window just hides it again (the session stays), unless Kea is quitting.
@@ -137,53 +143,155 @@ function prepareSession(ses) {
   prepared.add(ses);
   ses.setUserAgent(chromeAgent());
   require('./adblock.cjs').enable(ses);
-  // What pages may ask for (camera, microphone, full screen…): nothing by default. School platforms get what their
-  // work needs: the class site, the school's sign-in, its own domain, and known course, publisher and proctoring
-  // platforms (a recorded video assignment, a proctored exam, a full-screen quiz). (Choosing a file to upload and
-  // downloads aren't permissions: they always work.)
-  ses.setPermissionRequestHandler((_wc, permission, callback, details) => callback(permitted(permission, details?.requestingUrl || '')));
-  ses.setPermissionCheckHandler((_wc, permission, origin, details) => permitted(permission, details?.requestingUrl || origin || details?.securityOrigin || ''));
+  // What pages may ask for: nothing by default (sitePolicy.cjs). School platforms get what course work needs (full
+  // screen for a quiz, a video's keys); the camera, microphone and screen only on the class site, the school's sign-in
+  // and a proctoring service, and only once the student says yes for that site. Opening another program (a link to a
+  // Windows protocol handler) is never granted: a mailto: or https link goes through Kea's own question instead.
+  // (Choosing a file to upload and downloads aren't permissions: they always work.)
+  ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+    if (permission === 'openExternal') {
+      callback(false);
+      if (details?.externalURL) confirmExternal(details.externalURL, wc);
+      return;
+    }
+    let d;
+    try {
+      d = policy.decide(permission, details?.requestingUrl || '', schoolCtx());
+    } catch {
+      d = 'deny';
+    }
+    if (typeof d !== 'object') return callback(d === 'allow');
+    askSite(wc, d.origin, d.ask).then(callback, () => callback(false));
+  });
+  ses.setPermissionCheckHandler((_wc, permission, origin, details) => {
+    try {
+      const d = policy.decide(permission, details?.requestingUrl || origin || details?.securityOrigin || '', schoolCtx());
+      return typeof d === 'object' ? siteAnswer(d.origin, d.ask) === true : d === 'allow';
+    } catch {
+      return false;
+    }
+  });
 }
 
-// Course, publisher, video and proctoring platforms a class sends students to (the same family as the MCP's list in
-// mcp.cjs, plus the proctoring and live-class tools that need a camera or the screen).
-const SCHOOL_PLATFORMS = /(^|\.)(aleks\.com|mheducation\.com|mcgraw-hill\.com|pearson\.com|pearsoned\.com|pearsoncmg\.com|mylabmastering\.com|masteringchemistry\.com|cengage\.com|webassign\.net|cengagenow\.com|holscience\.com|scienceinteractive\.com|macmillanlearning\.com|wiley\.com|wileyplus\.com|zybooks\.com|perusall\.com|instructure\.com|brightspace\.com|d2l\.com|desire2learn\.com|openstax\.org|libretexts\.org|simplesyllabus\.com|kaltura\.com|panopto\.com|youtube\.com|youtube-nocookie\.com|vimeo\.com|turnitin\.com|labster\.com|knewton\.com|hawkeslearning\.com|yuja\.com|readspeaker\.com|respondus\.com|proctorio\.com|honorlock\.com|proctoru\.com|examity\.com|meazurelearning\.com|proctortrack\.com|examsoft\.com|bbcollab\.com|blackboard\.com|zoom\.us|webex\.com|teams\.microsoft\.com|flipgrid\.com|flip\.com|voicethread\.com|vidgrid\.com|screencast-o-matic\.com|loom\.com)$/i;
-// Allowed for those: what course work uses. Everything else (location, USB, MIDI, notifications…) is refused.
-const PLATFORM_PERMISSIONS = new Set(['media', 'fullscreen', 'pointerLock', 'keyboardLock', 'display-capture', 'clipboard-read', 'mediaKeySystem', 'openExternal', 'storage-access', 'top-level-storage-access', 'window-management', 'speaker-selection', 'fileSystem', 'persistent-storage', 'idle-detection']);
-// Allowed anywhere: a page copying text the student asked it to copy.
-const ANY_PERMISSIONS = new Set(['clipboard-sanitized-write']);
 // (Permission checks come often: the school's address is read from its encrypted file at most every few seconds.)
 let schoolCache = { at: 0, home: '', sso: '' };
-function trustedHost(host) {
-  if (!host) return false;
+function schoolCtx() {
   if (Date.now() - schoolCache.at > 5000) {
     const s = readSchool();
-    schoolCache = { at: Date.now(), home: s.home ? new URL(s.home).hostname.toLowerCase() : '', sso: String(schoolLoginHost(s) || '').replace(/:\d+$/, '') };
+    schoolCache = { at: Date.now(), home: s.home || '', sso: String(schoolLoginHost(s) || '').replace(/:\d+$/, '') };
   }
-  const { home, sso } = schoolCache;
-  const school = home.split('.').slice(-2).join('.');
-  if (home && (host === home || (school.includes('.') && (host === school || host.endsWith(`.${school}`))))) return true;
-  // The school's own sign-in page (single sign-on), and any .edu.
-  if (sso && host === sso) return true;
-  if (/\.edu$/i.test(host)) return true;
-  return SCHOOL_PLATFORMS.test(host);
+  return schoolCache;
 }
-function permitted(permission, url) {
-  if (ANY_PERMISSIONS.has(permission)) return true;
-  if (!PLATFORM_PERMISSIONS.has(permission)) return false;
-  let host = '';
+
+// The student's answers about the camera, microphone and screen, per site (profile site-permissions.json:
+// { origin: { media: true|false, screen: true|false } }). Asked once; Settings can't change them yet, so forgetting the
+// class site's login forgets these too.
+const sitePermsFile = () => path.join(profiles.paths().dir, 'site-permissions.json');
+function readSitePerms() {
   try {
-    const u = new URL(url);
-    if (u.protocol !== 'https:') return false;
-    host = u.hostname.toLowerCase();
+    const j = JSON.parse(fs.readFileSync(sitePermsFile(), 'utf8'));
+    return j && typeof j === 'object' ? j : {};
+  } catch {
+    return {};
+  }
+}
+const siteAnswer = (origin, kind) => {
+  const o = readSitePerms()[origin];
+  return o && Object.prototype.hasOwnProperty.call(o, kind) ? o[kind] === true : undefined;
+};
+const asking = new Map();
+/** Ask the student (once per site and kind) whether a page may use the camera and microphone, or the screen. */
+function askSite(wc, origin, kind) {
+  const known = siteAnswer(origin, kind);
+  if (known !== undefined) return Promise.resolve(known);
+  const w = wc && BrowserWindow.fromWebContents(wc);
+  // A page in the hidden scan window never gets them (and never asks).
+  if (!w || w.isDestroyed() || !w.isVisible()) return Promise.resolve(false);
+  const key = `${origin} ${kind}`;
+  if (asking.has(key)) return asking.get(key);
+  const host = policy.hostOf(origin);
+  const what = kind === 'screen' ? 'see your screen' : 'use your camera and microphone';
+  const p = dialog
+    .showMessageBox(w, {
+      type: 'question',
+      buttons: ['Allow', 'Don’t allow'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: 'Kea',
+      message: `${host} wants to ${what}.`,
+      detail: kind === 'screen' ? 'Allow this only for a proctored exam or class tool you started. Kea remembers your answer for this site.' : 'Allow this for a recorded assignment, a live class or a proctored exam. Kea remembers your answer for this site.'
+    })
+    .then(({ response }) => {
+      const yes = response === 0;
+      try {
+        const all = readSitePerms();
+        all[origin] = { ...(all[origin] || {}), [kind]: yes };
+        fs.mkdirSync(path.dirname(sitePermsFile()), { recursive: true });
+        fs.writeFileSync(sitePermsFile(), JSON.stringify(all, null, 1));
+      } catch {}
+      return yes;
+    })
+    .finally(() => asking.delete(key));
+  asking.set(key, p);
+  return p;
+}
+
+/**
+ * A link the class-site window can't open itself (mailto:, or a page asking to open another program): only mailto: and
+ * https are offered, and only after the student says so; https opens in their own browser. Every other scheme is
+ * refused without asking. One question at a time, and never from the hidden scan window.
+ */
+let confirming = false;
+async function confirmExternal(url, wc) {
+  if (!policy.externalAllowed(url) || confirming) return false;
+  const w = wc && BrowserWindow.fromWebContents(wc);
+  if (!w || w.isDestroyed() || !w.isVisible()) return false;
+  confirming = true;
+  try {
+    const mail = /^mailto:/i.test(url);
+    const shown = url.length > 300 ? `${url.slice(0, 300)}…` : url;
+    const { response } = await dialog.showMessageBox(w, {
+      type: 'question',
+      buttons: [mail ? 'Open in my email app' : 'Open in my browser', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: 'Kea',
+      message: mail ? 'Write this email in your email app?' : 'Open this page in your browser?',
+      detail: shown
+    });
+    if (response !== 0) return false;
+    await shell.openExternal(url);
+    return true;
   } catch {
     return false;
+  } finally {
+    confirming = false;
   }
-  try {
-    return trustedHost(host);
-  } catch {
-    return false;
-  }
+}
+
+/**
+ * Where a class-site window may go: http and https only. Links that would open a new window load in this one; a
+ * mailto: link is offered to the student's email app; every other scheme (file:, a Windows protocol handler) is refused.
+ */
+function guardWindow(w) {
+  const wc = w.webContents;
+  wc.setWindowOpenHandler(({ url }) => {
+    const to = policy.navigation(url);
+    if (to === 'load') w.loadURL(url).catch(() => {});
+    else if (to === 'confirm') confirmExternal(url, wc);
+    return { action: 'deny' };
+  });
+  const onNav = (e, url) => {
+    const to = policy.navigation(url);
+    if (to === 'load') return;
+    e.preventDefault();
+    if (to === 'confirm') confirmExternal(url, wc);
+  };
+  // (Newer Electron passes one details event with the address; older ones passed it as an argument.)
+  wc.on('will-navigate', (e, url) => onNav(e, e?.url || url));
+  wc.on('will-redirect', (e, url, _inPlace, isMainFrame) => (e?.isMainFrame ?? isMainFrame) !== false && onNav(e, e?.url || url));
 }
 
 /** Dark mode for class sites, from Kea's settings (Settings → Class sites). */
@@ -276,6 +384,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Load a page and wait for it (and its scripts) to settle. */
 async function load(url) {
+  // https only (the class site, its sign-in and the platforms it links to): never file:, javascript: or another scheme.
+  if (!/^https:\/\//i.test(String(url || ''))) throw new Error('Only https pages can be opened in Kea’s class-site window.');
   const w = getWindow();
   const done = new Promise((resolve) => {
     const t = setTimeout(resolve, PAGE_TIMEOUT);
@@ -349,11 +459,15 @@ async function ensureSignedIn(w, waitMs = 5 * 60000) {
 // While the user signs in to the class site: the hosts whose logins they submitted on the way. The one that got them
 // back to the class site (the last) is the school's sign-in, the host Kea treats as the class site's own sign-in page.
 let signingIn = null;
+// True while the student sets up (or redoes) the class site's sign-in from Kea's setup.
+let settingUp = false;
 function markSchoolLogin(hosts) {
   const host = hosts[hosts.length - 1];
   if (!host) return;
   const s = readSchool();
   if (!loginFor(s, host) || s.schoolLoginHost === host) return;
+  // Set at setup (Kea's first sign-in, or "Sign in again"); a later sign-in never moves it to another host.
+  if (s.schoolLoginHost && !settingUp) return;
   s.schoolLoginHost = host;
   writeSchool(s);
 }
@@ -582,7 +696,8 @@ async function request(url) {
   if (remote.active()) return remote.request(url);
   const s = readSchool();
   if (!s.home) throw new Error('No class site is set up yet.');
-  if (hostOf(url) && hostOf(url) !== hostOf(s.home) && !/^https:\/\//i.test(url)) throw new Error('Only https addresses can be fetched.');
+  // https only, for every address (never file:, data: or plain http, even on the class site's own host).
+  if (!/^https:\/\/[^/]/i.test(String(url || ''))) throw new Error('Only https addresses can be fetched.');
   const ses = session.fromPartition(partition());
   prepareSession(ses);
   let res = await ses.fetch(url, { redirect: 'follow' });
@@ -626,6 +741,9 @@ async function fetchText(url, offset = 0, raw = false) {
 
 /** Show a class-site page in Kea's own window, already signed in (for links the student opens). */
 async function show(url) {
+  // Only the class site (its host or the school's own domain), over https.
+  const home = readSchool().home || '';
+  if (!/^https:\/\//i.test(String(url || '')) || !home || !policy.inSchoolDomain(policy.hostOf(url), policy.hostOf(home))) throw new Error('Only the class site’s own https pages open in Kea’s window.');
   const w = await load(url);
   w.setTitle('Kea: class site');
   w.show();
@@ -653,10 +771,7 @@ function mailWindow() {
     webPreferences: { partition: partition(), sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'browser-preload.cjs') }
   });
   prepareSession(session.fromPartition(partition()));
-  mailWin.webContents.setWindowOpenHandler(({ url }) => {
-    mailWin.loadURL(url).catch(() => {});
-    return { action: 'deny' };
-  });
+  guardWindow(mailWin);
   mailWin.on('close', (e) => {
     if (global.keaQuitting) return;
     e.preventDefault();
@@ -1177,10 +1292,15 @@ async function signIn(remember) {
   rememberNext = !!remember;
   s.remember = !!remember;
   writeSchool(s);
-  const w = await load(s.home);
-  const ok = await ensureSignedIn(w, 10 * 60000);
-  rememberNext = false;
-  return { signedIn: ok, ...schoolInfo() };
+  settingUp = true;
+  try {
+    const w = await load(s.home);
+    const ok = await ensureSignedIn(w, 10 * 60000);
+    return { signedIn: ok, ...schoolInfo() };
+  } finally {
+    rememberNext = false;
+    settingUp = false;
+  }
 }
 
 // The window's preload reports the login form the user submitted. It's kept only while they asked Kea to remember
@@ -1190,9 +1310,19 @@ let pendingUser = null;
 // Each login is kept under its own host, so a platform's login (ALEKS, Pearson) never replaces the school's. Only the
 // window's own page counts: a frame inside it (an ad, an embedded tool) can't report a login.
 const fromMainFrame = (e) => !!(win && !win.isDestroyed() && e.sender === win.webContents && e.senderFrame && e.senderFrame === win.webContents.mainFrame);
+// Only the class site's own sign-in page or a known sign-in service may have a login saved (the phone's
+// ClassSite.mayFill rule, with the Public Suffix List): once the school's sign-in host is known, only that one. The page's
+// address is the frame's real one, never what the page says it is.
+const mayRemember = (e) => {
+  const s = readSchool();
+  // (While setting up, the school's sign-in may be on another host than last time: the school's domain or a known
+  // sign-in service.)
+  return policy.mayRememberLogin(e.senderFrame?.url || '', { home: s.home || '', schoolLoginHost: settingUp ? '' : s.schoolLoginHost || '' });
+};
 function onLoginSubmitted(e, form) {
   if (!wantsRemember() || !fromMainFrame(e) || !form || typeof form !== 'object') return;
-  const host = hostOf(form.url);
+  if (!mayRemember(e)) return;
+  const host = hostOf(e.senderFrame.url);
   if (!host) return;
   if (!form.pass) {
     if (form.user) pendingUser = { host, user: String(form.user), userField: String(form.userField || '') };
@@ -1212,6 +1342,6 @@ function onLoginSubmitted(e, form) {
   pendingUser = null;
 }
 
-const remembering = (e) => (e.returnValue = !!(wantsRemember() && fromMainFrame(e)));
+const remembering = (e) => (e.returnValue = !!(wantsRemember() && fromMainFrame(e) && mayRemember(e)));
 
 module.exports = { request, SCHOOL_PLATFORMS, open, click, platformsRead, show, reply, readMessage, readMailbox, sendMessage, handIn, isClassSite, fetchText, getJson, pageHtml, postForm, platformOf, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
