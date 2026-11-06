@@ -502,7 +502,8 @@ async function launcherTick() {
   if (workerProc) return;
   const port = Number(settings.get('hub.ownerPort', 4861)) || 4861;
   const key = fs.readFileSync(keyFile, 'utf8').trim();
-  const call = (p, body) => net.fetch(`http://127.0.0.1:${port}${p}`, { method: 'POST', headers: { 'x-kea-owner-key': key, 'content-type': 'application/json' }, body: JSON.stringify(body || {}) }).then((r) => r.json());
+  // (Signed with the key, never sending it: electron/ownerauth.cjs.)
+  const call = (p, body) => require('./ownerauth.cjs').ownerFetch(`http://127.0.0.1:${port}`, key, 'POST', p, { body: JSON.stringify(body || {}), headers: { 'content-type': 'application/json' }, fetchFn: net.fetch }).then((r) => r.json());
   let job;
   try {
     job = (await call('/owner/scan/next')).job;

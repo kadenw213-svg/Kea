@@ -8,6 +8,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerAndSignIn } from '../hubRegister.mjs';
+import { ofetch } from '../ownerFetch.mjs';
 
 const require = createRequire(import.meta.url);
 const HUB = [process.env.KEAS_DIR && path.join(process.env.KEAS_DIR, 'hub/index.mjs'), path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../KeaS/hub/index.mjs')].find((p) => p && fs.existsSync(p)) || '';
@@ -27,14 +28,14 @@ before(async () => {
   const t = (await (await fetch(`${base}/v1/terms`)).json()).terms;
   const reg = await registerAndSignIn(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'student@example.com', password: 'lantern velvet orbit', displayName: 'Stu', age13: true, birthYear: 1995, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) });
   student = (await reg.json()).token;
-  await fetch(`http://127.0.0.1:${ownerPort}/owner/accounts/student@example.com`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: '{"emailVerified":true}' });
+  await ofetch(`http://127.0.0.1:${ownerPort}/owner/accounts/student@example.com`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: '{"emailVerified":true}' });
 
   // What hub.cjs requestScan() does: queue, upload job.json (address + profile name, no login), say it's ready.
   const q = await api('/v1/scan', { method: 'POST', body: JSON.stringify({ kind: 'initial_scan', course: { school: 'd2l.example.edu', code: 'all-classes', term: '2027-01', section: 'me' } }) });
   jobId = q.body.job.id;
   await fetch(`${base}/v1/files/${q.body.uploadTo}job.json`, { method: 'PUT', headers: { authorization: `Bearer ${student}` }, body: JSON.stringify({ home: 'https://d2l.example.edu/d2l/home', platform: 'd2l', profile: 'School' }) });
   await api(`/v1/scan/${jobId}/ready`, { method: 'POST', body: '{}' });
-  const next = await (await fetch(`http://127.0.0.1:${ownerPort}/owner/scan/next`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey } })).json();
+  const next = await (await ofetch(`http://127.0.0.1:${ownerPort}/owner/scan/next`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey } })).json();
   assert.equal(next.job.id, jobId);
 
   // The worker copy's environment, as the launcher sets it.

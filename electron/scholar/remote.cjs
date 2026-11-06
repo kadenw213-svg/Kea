@@ -12,10 +12,10 @@ let keyCache = null;
 const key = () => (keyCache ??= fs.readFileSync(process.env.KEA_OWNER_KEY_FILE, 'utf8').trim());
 const base = () => `http://127.0.0.1:${port()}/owner/scan/${encodeURIComponent(JOB)}`;
 
+// Each call answers a fresh challenge from the owner console; the key itself is never sent (../ownerauth.cjs).
 async function owner(method, p, { body, raw } = {}) {
-  const r = await fetch(base() + p, {
-    method,
-    headers: { 'x-kea-owner-key': key(), ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
+  const r = await require('../ownerauth.cjs').ownerFetch(`http://127.0.0.1:${port()}`, key(), method, base() + p, {
+    headers: body !== undefined ? { 'content-type': 'application/json' } : {},
     body: body !== undefined ? JSON.stringify(body) : raw,
   });
   if (!r.ok) {
