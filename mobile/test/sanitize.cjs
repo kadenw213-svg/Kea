@@ -36,6 +36,22 @@ const cases = {
   metaRefresh: '<meta http-equiv="refresh" content="0;url=javascript:window.__pwn=12"><base href="javascript:/">',
   overlay: '<a href="https://example.invalid" style="position:fixed;inset:0;z-index:9999">overlay</a>',
   cssUrl: '<p style="background:url(https://evil.example/t.png)">x</p>',
+  // The same two in CSS escapes, comments and other spellings the browser still reads as the real thing.
+  escFixed: '<a id="e1" href="https://example.invalid" style="position:fi\\78 ed;inset:0;z-index:9999">a</a>',
+  escFixed2: '<a id="e2" href="https://example.invalid" style="position:fixe\\64 ;top:0">a</a>',
+  escFixed3: '<a id="e3" href="https://example.invalid" style="position:\\000066ixed;top:0">a</a>',
+  escName: '<a id="e4" href="https://example.invalid" style="p\\6Fsition:fixed;top:0">a</a>',
+  escNewline: '<a id="e5" href="https://example.invalid" style="position:fi\\78\ned;top:0">a</a>',
+  comment: '<a id="e6" href="https://example.invalid" style="position:/**/fixed;top:0">a</a>',
+  commentName: '<a id="e7" href="https://example.invalid" style="position/*x*/:fixed;top:0">a</a>',
+  important: '<a id="e8" href="https://example.invalid" style="POSITION:FIXED!important;top:0">a</a>',
+  sticky: '<a id="e9" href="https://example.invalid" style="position:sticky;top:0">a</a>',
+  escUrl: '<p id="e10" style="background:\\75 rl(https://evil.example/t.png)">x</p>',
+  escUrl2: '<p id="e11" style="background-image:u\\72l(https://evil.example/t.png)">x</p>',
+  colorUrl: '<p id="e12" style="background-color:var(--x);color:expression(alert(1))">x</p>',
+  transform: '<p id="e13" style="transform:translate(0,0);z-index:9;inset:0;top:0;width:100vw">x</p>',
+  negative: '<p id="e14" style="margin-top:-9999px;margin-left:-100px;padding:calc(1px + 1px)">x</p>',
+  safeStyles: '<p id="s1" style="color:#f00;background-color:rgb(1, 2, 3);font-weight:700;font-style:italic;text-decoration:underline;text-align:center;margin:1px 2em;padding:4px;position:fixed">x</p>',
   fileImg: '<img src="/_capacitor_file_/data/user/0/com.kea.scholar/shared_prefs/kea.xml">',
   dataSvgImg: '<img src="data:image/svg+xml,<svg onload=alert(1)>">',
   svgShapes: '<svg viewBox="0 0 10 10"><rect x="1" y="2" width="3" height="4" fill="red"/><text x="1" y="20">t</text></svg>',
@@ -73,8 +89,15 @@ app.whenReady().then(async () => {
     if (/_capacitor_file_|data:image\/svg/.test(h)) fails.push(`${k}: unsafe picture kept`);
   }
   const keep = out.keep.html;
-  for (const want of ['<h1>Title</h1>', '<b>Bold</b>', 'href="https://example.com/x"', 'href="mailto:a@b.c"', 'style="color:red"', 'src="data:image/png;base64,', 'src="blob:https://localhost/1234"', '<td>1</td>'])
+  for (const want of ['<h1>Title</h1>', '<b>Bold</b>', 'href="https://example.com/x"', 'href="mailto:a@b.c"', 'style="color: red"', 'src="data:image/png;base64,', 'src="blob:https://localhost/1234"', '<td>1</td>'])
     if (!keep.includes(want)) fails.push(`keep: lost ${want} (${keep})`);
+  // Whatever the spelling, nothing of a page's layout or addresses survives; the browser's computed position says so.
+  for (const k of ['escFixed', 'escFixed2', 'escFixed3', 'escName', 'escNewline', 'comment', 'commentName', 'important', 'sticky', 'escUrl', 'escUrl2', 'colorUrl', 'transform', 'negative'])
+    if (/\sstyle=/.test(out[k].html)) fails.push(`${k}: style kept: ${out[k].html}`);
+  const safe = out.safeStyles.html;
+  for (const want of ['color: rgb(255, 0, 0)', 'background-color: rgb(1, 2, 3)', 'font-weight: 700', 'font-style: italic', 'text-decoration-line: underline', 'text-align: center', 'margin-top: 1px', 'margin-left: 2em', 'padding-top: 4px'])
+    if (!safe.includes(want)) fails.push(`safeStyles: lost ${want} (${safe})`);
+  if (/position/.test(safe)) fails.push(`safeStyles: position kept (${safe})`);
   // (Drawings keep their shapes.)
   if (!out.svgShapes.html.includes('<rect x="1" y="2" width="3" height="4" fill="red"></rect>') || !out.svgShapes.html.includes('viewBox="0 0 10 10"')) fails.push(`svgShapes: lost attributes (${out.svgShapes.html})`);
   for (const [k, r] of Object.entries(out)) console.log(`${r.fired || fails.some((f) => f.startsWith(k + ':')) ? 'FAIL' : 'ok  '} ${k}: ${r.html.slice(0, 110)}`);

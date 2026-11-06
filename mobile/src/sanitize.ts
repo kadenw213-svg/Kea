@@ -22,6 +22,57 @@ const PICTURE = /^(?:https?:|blob:|data:image\/(?:png|jpe?g|gif|webp|bmp|avif);)
 // is still a script address.)
 const squash = (v: string) => v.replace(/[\u0000- \u007f-\u009f]/g, '');
 
+// A style attribute is read by the browser's own CSS parser (on an element of an inert document, so nothing loads), and
+// only these properties, read back from what it parsed, are kept: a page's text can have color, weight and spacing, but
+// can't lay itself over Kea's screens or load anything. Reading the parsed result means CSS escapes ("fi\78 ed"),
+// comments and odd spacing are already undone: there's no spelling of position:fixed that gets past this.
+const COLOR = /^(?:#[0-9a-f]{3,8}|rgba?\([\d.,\s%/]+\)|[a-z]+)$/i;
+const WORD = /^[a-z]+(?: [a-z]+)*$/i;
+const WEIGHT = /^(?:[a-z]+|\d{1,4})$/i;
+const LENGTH = /^(?:0|\d{1,4}(?:\.\d+)?(?:px|pt|pc|em|rem|ex|ch|cm|mm|in|%))$/i;
+const SPACE = (v: string) => v === 'auto' || LENGTH.test(v);
+const test = (re: RegExp) => (v: string) => re.test(v);
+const SAFE_STYLE: Record<string, (v: string) => boolean> = {
+  color: test(COLOR),
+  'background-color': test(COLOR),
+  'font-weight': test(WEIGHT),
+  'font-style': test(WORD),
+  'text-decoration': test(WORD),
+  'text-decoration-line': test(WORD),
+  'text-decoration-style': test(WORD),
+  'text-decoration-color': test(COLOR),
+  'text-align': test(WORD),
+  'margin-top': SPACE,
+  'margin-right': SPACE,
+  'margin-bottom': SPACE,
+  'margin-left': SPACE,
+  'padding-top': test(LENGTH),
+  'padding-right': test(LENGTH),
+  'padding-bottom': test(LENGTH),
+  'padding-left': test(LENGTH),
+  // (A drawing's own colors.)
+  fill: test(COLOR),
+  stroke: test(COLOR),
+  'stroke-width': test(LENGTH)
+};
+let parser: HTMLElement | null = null;
+/** The style attribute's safe part, as CSS the browser itself wrote out; '' when nothing in it is safe. */
+function safeStyle(value: string): string {
+  parser ??= document.implementation.createHTMLDocument('').createElement('div');
+  parser.setAttribute('style', value);
+  const parsed = parser.style;
+  const kept: string[] = [];
+  for (let i = 0; i < parsed.length; i++) {
+    const name = parsed[i].toLowerCase();
+    const v = parsed.getPropertyValue(name).trim();
+    // (A shorthand like `background: url(...)` also sets its other parts to `initial`: nothing worth keeping.)
+    if (/^(?:initial|unset|revert|revert-layer)$/i.test(v) || !Object.prototype.hasOwnProperty.call(SAFE_STYLE, name) || !SAFE_STYLE[name](v)) continue;
+    kept.push(`${name}: ${v}`);
+  }
+  parser.removeAttribute('style');
+  return kept.join('; ');
+}
+
 let hooked = false;
 function hook() {
   if (hooked) return;
@@ -38,8 +89,9 @@ function hook() {
       data.keepAttr = (tag === 'img' || tag === 'image') && PICTURE.test(squash(data.attrValue));
     } else if (name === 'style') {
       // Formatting stays; a page can't lay itself over Kea's own screens or load things through CSS.
-      const v = squash(data.attrValue.toLowerCase()).replace(/\\/g, '');
-      if (/position:(fixed|sticky)|expression\(|url\(|@import|behavior:|-moz-binding/.test(v)) data.keepAttr = false;
+      const css = safeStyle(data.attrValue);
+      if (css) data.attrValue = css;
+      else data.keepAttr = false;
     }
   });
   DOMPurify.addHook('afterSanitizeAttributes', (node) => {
