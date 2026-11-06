@@ -3,6 +3,7 @@ import { extOf, baseName } from './fileTypes';
 import { useTabs, toast, editSeq } from '../store';
 import { setting } from './settings';
 import { saveToGoogle } from './google';
+import { chooseSaveTarget } from './keaCloud';
 
 let silentDepth = 0;
 /** True while an autosave is running: saves must not show dialogs or toasts. */
@@ -59,7 +60,10 @@ export async function saveTabFile(tabId: string, formats: SaveFormat[], saveAs: 
     if (isSilentSave()) return false;
     const suggested = `${baseName(tab.name)}.${(format || formats[0]).ext}`;
     const dir = tab.path ? tab.path.replace(/[\\/][^\\/]*$/, '') : '';
-    const chosen = await api.saveDialog({
+    // A file with no place yet: Kea Cloud or this PC (asked only when signed in to a Kea account).
+    const where = !tab.path ? await chooseSaveTarget(suggested) : 'pc';
+    if (where === null) return false;
+    const chosen = where !== 'pc' ? where : await api.saveDialog({
       title: 'Save as',
       defaultPath: dir ? `${dir}${tab.path!.includes('\\') ? '\\' : '/'}${suggested}` : suggested,
       filters: formats.map((f) => ({ name: f.name, extensions: [f.ext] }))

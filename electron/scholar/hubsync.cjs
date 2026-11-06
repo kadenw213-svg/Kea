@@ -9,6 +9,13 @@
 // - A file still being written (changed in the last 1.5 s) waits for the next pass.
 //
 // Paths on the Hub are "kea/<path in the folder>". Characters the Hub doesn't allow in names become ~<hex>~.
+//
+// Kea Cloud (keaCloud.cjs) keeps the person's documents in "Documents/" inside this folder:
+// - `scope()` (asked once per pass) says which files this pass syncs: only Documents/ when Scholar syncs through
+//   another drive, everything when it syncs through the Kea Hub.
+// - `keepBoth(rel)`: for documents a clash keeps both: the Hub's copy is saved beside this one as
+//   "<name> (from another device).<ext>" before this device's change is sent, so nobody's edits are lost.
+// - A full Kea storage (the Hub answers 507) skips that file and says so in `state().full`; the rest still syncs.
 const fs = require('fs');
 const path = require('path');
 
@@ -26,8 +33,8 @@ const SETTLE = 1500;
  *           put(path, data, { ifMatch, ifNoneMatch }) -> { version } (throws { status, data } on 412/400/413/507),
  *           del(path, { ifMatch }) }
  */
-function createSync({ root, stateFile, client, log = () => {}, now = Date.now }) {
-  let st = { files: {}, since: 0, fullAt: 0, skip: {} };
+function createSync({ root, stateFile, client, log = () => {}, now = Date.now, scope = () => () => true, keepBoth = () => false }) {
+  let st = { files: {}, since: 0, fullAt: 0, skip: {}, storage: null, full: null, conflicts: [] };
   try {
     st = { ...st, ...JSON.parse(fs.readFileSync(stateFile, 'utf8')) };
   } catch {}
@@ -46,6 +53,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now })
   };
   const same = (s, rec) => s && rec && s.size === rec.size && Math.abs(s.mtimeMs - rec.mtime) < 1;
   const counts = { up: 0, down: 0, deleted: 0, bytesUp: 0, bytesDown: 0 };
+  let inScope = () => true;
 
   function walk(dir = root, prefix = '', out = []) {
     let entries = [];
@@ -57,7 +65,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now })
     for (const e of entries) {
       const rel = prefix ? `${prefix}/${e.name}` : e.name;
       if (e.isDirectory()) walk(path.join(dir, e.name), rel, out);
-      else if (!/\.(tmp|part)$/i.test(e.name)) out.push(rel);
+      else if (!skipName(e.name) && inScope(rel)) out.push(rel);
     }
     return out;
   }
@@ -65,10 +73,12 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now })
   async function pull() {
     const full = now() - st.fullAt > FULL_EVERY;
     const list = await client.list(full ? 0 : st.since);
+    if (list.quota != null) st.storage = { used: list.used, quota: list.quota };
     const seen = new Set();
     for (const f of list.files) {
       if (!f.path.startsWith('kea/')) continue;
       const rel = toLocal(f.path);
+      if (!inScope(rel)) continue;
       seen.add(rel);
       const rec = st.files[rel];
       if (rec && rec.v === f.version) continue;
@@ -88,7 +98,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now })
     if (full) {
       // Gone from the Hub (another device deleted it) and unchanged here: delete it here too.
       for (const rel of Object.keys(st.files)) {
-        if (seen.has(rel)) continue;
+        if (seen.has(rel) || !inScope(rel)) continue;
         const s = statOf(rel);
         if (!s || same(s, st.files[rel])) {
           if (s) fs.rmSync(path.join(root, rel), { force: true });
@@ -105,6 +115,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now })
   async function push() {
     const t = now();
     const here = new Set();
+    let full = null;
     for (const rel of walk()) {
       here.add(rel);
       const s = statOf(rel);
@@ -122,23 +133,38 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now })
         r = await send(rec ? { ifMatch: rec.v } : { ifNoneMatch: true });
       } catch (e) {
         if (e.status === 412) {
-          // Changed on the Hub too: this device's change wins, sent over whatever is there now.
+          // Changed on the Hub too: this device's change wins, sent over whatever is there now. A document keeps the
+          // Hub's copy beside it first.
           const v = e.data?.version;
-          r = await send(v ? { ifMatch: v } : { ifNoneMatch: true });
+          if (v && keepBoth(rel)) await keepTheirs(rel);
+          try {
+            r = await send(v ? { ifMatch: v } : { ifNoneMatch: true });
+          } catch (e2) {
+            if (e2.status !== 507) throw e2;
+            full = noteFull(rel, e2);
+            continue;
+          }
+        } else if (e.status === 507) {
+          full = noteFull(rel, e);
+          continue;
         } else if (e.status === 400) {
           if (st.skip[rel] !== 'name') log(`Kea Hub sync: ${rel} has a name the Hub can't store, so it stays on this computer.`);
           st.skip[rel] = 'name';
           continue;
         } else throw e;
       }
+      // (The storage used, kept current between listings: the Hub counts each file's size.)
+      if (st.storage) st.storage.used = Math.max(0, st.storage.used + data.length - (rec?.size || 0));
       st.files[rel] = { v: r.version, size: s.size, mtime: s.mtimeMs };
+      if (st.skip[rel] === 'full') delete st.skip[rel];
       counts.up++;
       counts.bytesUp += data.length;
     }
+    st.full = full;
     // Deleted here (for example a request the primary took in): delete it on the Hub. Safety: if most of the files
     // seem to have vanished at once, the folder is probably unreadable (a moved profile, a drive hiccup), not
     // deleted; nothing is deleted on the Hub then.
-    const tracked = Object.keys(st.files);
+    const tracked = Object.keys(st.files).filter((rel) => inScope(rel));
     const missing = tracked.filter((rel) => !here.has(rel));
     if (missing.length > 20 && missing.length > tracked.length / 2) {
       log(`Kea Hub sync: ${missing.length} of ${tracked.length} files are missing here at once, so none were deleted on the Hub.`);
@@ -151,9 +177,34 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now })
       } catch (e) {
         if (e.status !== 404 && e.status !== 412) throw e;
       }
+      if (st.storage) st.storage.used = Math.max(0, st.storage.used - (st.files[rel].size || 0));
       delete st.files[rel];
       counts.deleted++;
     }
+  }
+
+  /** The Hub's copy of a clashing document, saved beside this device's as "<name> (from another device).<ext>". */
+  async function keepTheirs(rel) {
+    let data;
+    try {
+      data = await client.get(toRemote(rel));
+    } catch (e) {
+      if (e.status === 404) return;
+      throw e;
+    }
+    const to = conflictName(rel, (r) => !!statOf(r) || !!st.files[r]);
+    const file = path.join(root, to);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(`${file}.part`, data);
+    fs.renameSync(`${file}.part`, file);
+    st.conflicts = [...(st.conflicts || []), { rel, copy: to, at: now() }].slice(-20);
+    log(`Kea Hub sync: ${rel} changed on another device too; that version is kept as ${to}.`);
+  }
+  function noteFull(rel, e) {
+    if (st.skip[rel] !== 'full') log(`Kea Hub sync: Kea storage is full, so ${rel} stays on this computer for now.`);
+    st.skip[rel] = 'full';
+    if (e.data?.quota != null) st.storage = { used: e.data.used, quota: e.data.quota };
+    return { at: now(), message: e.message || 'Your Kea storage is full.' };
   }
 
   let running = null;
@@ -163,6 +214,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now })
     running = (async () => {
       try {
         fs.mkdirSync(root, { recursive: true });
+        inScope = scope() || (() => true);
         await pull();
         await push();
       } finally {
@@ -208,4 +260,19 @@ function httpClient({ base, token, fetchFn, client = 'Kea' }) {
   };
 }
 
-module.exports = { createSync, httpClient, encodeSeg, decodeSeg, toRemote, toLocal };
+/** Files never synced: half-written saves (Kea's own .kea-tmp, .tmp, .part) and Office's "~$" lock files. */
+const skipName = (name) => /\.(tmp|part|kea-tmp)$/i.test(name) || name.startsWith('~$');
+
+/** "Essay.docx" -> "Essay (from another device).docx", or "... 2" and up when that's taken. */
+function conflictName(rel, taken) {
+  const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/') + 1) : '';
+  const file = rel.slice(dir.length);
+  const dot = file.lastIndexOf('.');
+  const [base, ext] = dot > 0 ? [file.slice(0, dot), file.slice(dot)] : [file, ''];
+  for (let n = 1; ; n++) {
+    const cand = `${dir}${base} (from another device${n > 1 ? ` ${n}` : ''})${ext}`;
+    if (!taken(cand)) return cand;
+  }
+}
+
+module.exports = { createSync, httpClient, encodeSeg, decodeSeg, toRemote, toLocal, conflictName, skipName };

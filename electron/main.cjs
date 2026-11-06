@@ -347,6 +347,7 @@ app.whenReady().then(() => {
   require('./mcp/server.cjs').register({ getWindow: () => mainWindow });
   require('./account.cjs').register();
   require('./hub.cjs').register();
+  require('./keaCloud.cjs').register();
   require('./hubOrg.cjs').register();
   require('./scholar/index.cjs').register();
   require('./dict.cjs').register();

@@ -412,7 +412,7 @@ function syncNow() {
   return syncer
     .cycle()
     .then((c) => {
-      Object.assign(syncState, { last: Date.now(), error: null, counts: c });
+      Object.assign(syncState, { last: Date.now(), error: null, offline: false, counts: c });
       // Course material from Kea's shared Claude that came down (or is still waiting for its class): take it in.
       if (c.down > lastDown || !materialChecked) {
         materialChecked = true;
@@ -423,6 +423,7 @@ function syncNow() {
     })
     .catch((e) => {
       syncState.error = e.message;
+      syncState.offline = !e.status; // (Kea Cloud shows "offline" rather than an error)
       // Signed out elsewhere, or new terms to agree to: stop until that's sorted (status() and the terms gate show it).
       if (e.status === 401 || e.status === 428) stopSync();
     });
@@ -434,7 +435,8 @@ function startSync() {
   } catch {
     return;
   }
-  const want = isSignedIn() && cloud.drive()?.id === 'kea-hub';
+  // Kea Cloud (keaCloud.cjs): documents sync whenever the person is signed in, even when Scholar uses another drive.
+  const want = isSignedIn() && (cloud.drive()?.id === 'kea-hub' || require('./keaCloud.cjs').enabled());
   if (!want) return stopSync();
   if (syncer) return;
   const { createSync, httpClient } = require('./scholar/hubsync.cjs');
@@ -444,6 +446,7 @@ function startSync() {
     stateFile: path.join(app.getPath('userData'), 'hub-sync-state.json'),
     client: httpClient({ base: hubUrl, token: readToken, fetchFn: net.fetch, client: `Kea/${app.getVersion()}` }),
     log: (m) => console.log(m),
+    ...require('./keaCloud.cjs').syncOptions(() => cloud.drive()?.id === 'kea-hub'),
   });
   syncState.on = true;
   // Others' changes every 15 s (a tiny "what changed" request); this device's changes 2 s after they happen.
@@ -535,4 +538,4 @@ function register() {
   require('./hubClasses.cjs').register();
 }
 
-module.exports = { register, cached, req, signedIn: isSignedIn, syncRoot, syncNow, url: hubUrl, refreshStatus: status, DEFAULT_HUB_URL };
+module.exports = { register, cached, req, signedIn: isSignedIn, syncRoot, syncNow, url: hubUrl, refreshStatus: status, DEFAULT_HUB_URL, syncState: () => ({ ...syncState }), startSync };

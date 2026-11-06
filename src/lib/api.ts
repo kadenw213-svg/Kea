@@ -1260,3 +1260,36 @@ export interface HubOrgApi {
 export interface KeaApi {
   hubOrg: HubOrgApi;
 }
+
+// ---------- Kea Cloud: documents in the person's Kea storage (electron/keaCloud.cjs) ----------
+export type KeaCloudState = 'signedOut' | 'off' | 'offline' | 'full' | 'error' | 'syncing' | 'synced';
+export type KeaCloudFileState = 'synced' | 'pending' | 'full' | 'local';
+export interface KeaCloudStatus {
+  signedIn: boolean;
+  enabled: boolean;
+  email: string | null;
+  /** The folder on this PC that mirrors the person's Kea storage. */
+  root: string;
+  state: KeaCloudState;
+  message: string | null;
+  last: number | null;
+  pending: number;
+  files: number;
+  storage: { used: number; quota: number } | null;
+  /** Recent clashes: the other device's version was kept as `copy`. */
+  conflicts: { rel: string; copy: string; at: number }[];
+}
+export interface KeaCloudApi {
+  status(): Promise<HubResult<KeaCloudStatus>>;
+  states(paths: string[]): Promise<HubResult<Record<string, KeaCloudFileState>>>;
+  /** Where a new document called `name` goes (a free name in Kea Cloud's folder). */
+  newPath(name: string): Promise<HubResult<string>>;
+  rename(path: string, name: string): Promise<HubResult<string>>;
+  remove(path: string): Promise<HubResult<boolean>>;
+  newFolder(parent: string | null, name: string): Promise<HubResult<string>>;
+  syncNow(): Promise<HubResult<KeaCloudStatus>>;
+  open(): Promise<HubResult<string>>;
+}
+export interface KeaApi {
+  keaCloud: KeaCloudApi;
+}
