@@ -125,6 +125,8 @@ public class SiteActivity extends Activity {
                 view.evaluateJavascript(ClassSite.CAPTURE_SCRIPT, null);
                 if (ClassSite.onSite(SiteActivity.this, u)) {
                     if ("signin".equals(mode)) {
+                        // Signed in after Kea typed the login into a page: that page was the real sign-in page.
+                        if (filledOn != null) ClassSite.learnLoginHost(SiteActivity.this, filledOn);
                         notifySignIn(true);
                         finish();
                         return;
@@ -135,11 +137,15 @@ public class SiteActivity extends Activity {
                         uploadPressed = true;
                         view.postDelayed(() -> view.evaluateJavascript(ClassSite.canvas(SiteActivity.this) ? PRESS_UPLOAD_CANVAS : PRESS_UPLOAD, null), 1200);
                     }
-                } else if (tries++ < 3 && ClassSite.mayFill(SiteActivity.this, u)) {
-                    // The sign-in page the login was saved on: try it first.
+                } else if (tries++ < 3 && ClassSite.mayFill(SiteActivity.this, u, signingIn())) {
+                    // The sign-in page the login was saved on: try it first (if that page is still the one showing).
                     String user = Store.secure(SiteActivity.this).getString("user", "");
                     String pass = Store.secure(SiteActivity.this).getString("pass", "");
-                    if (!pass.isEmpty()) view.postDelayed(() -> view.evaluateJavascript(ClassSite.fillScript(user, pass), null), 900);
+                    if (!pass.isEmpty()) view.postDelayed(() -> {
+                        if (!ClassSite.mayFill(SiteActivity.this, view.getUrl(), signingIn())) return;
+                        filledOn = ClassSite.host(view.getUrl());
+                        view.evaluateJavascript(ClassSite.fillScript(user, pass), null);
+                    }, 900);
                 }
             }
         });
@@ -256,6 +262,17 @@ public class SiteActivity extends Activity {
         }).start();
     }
 
+    /** The host of the last page Kea typed the saved login into. */
+    private String filledOn;
+
+    /**
+     * Signing in: this window started at the school's home page to finish signing in (not a page a course linked to),
+     * so the school's own tenant on a sign-in service (Okta, OneLogin, Duo) counts as its sign-in page.
+     */
+    private boolean signingIn() {
+        return "signin".equals(mode);
+    }
+
     /** The page actually showing (from the WebView, not from anything a page says about itself). */
     volatile String currentUrl = "";
 
@@ -267,10 +284,11 @@ public class SiteActivity extends Activity {
             String at = currentUrl;
             // Only on the school's own sign-in page or a known sign-in service (the same rule as filling it in), so a
             // page linked from a course can't replace the saved login with its own.
-            if (pass == null || pass.isEmpty() || at == null || !at.toLowerCase().startsWith("https://") || ClassSite.onSite(SiteActivity.this, at) || !ClassSite.mayFill(SiteActivity.this, at)) return;
-            android.content.SharedPreferences.Editor e = Store.secure(SiteActivity.this).edit().putString("pass", pass).putString("loginHost", ClassSite.host(at).toLowerCase());
+            if (pass == null || pass.isEmpty() || at == null || !at.toLowerCase().startsWith("https://") || ClassSite.onSite(SiteActivity.this, at) || !ClassSite.mayFill(SiteActivity.this, at, signingIn())) return;
+            android.content.SharedPreferences.Editor e = Store.secure(SiteActivity.this).edit().putString("pass", pass);
             if (user != null && !user.isEmpty()) e.putString("user", user);
             e.apply();
+            ClassSite.learnLoginHost(SiteActivity.this, ClassSite.host(at));
         }
     }
 }
