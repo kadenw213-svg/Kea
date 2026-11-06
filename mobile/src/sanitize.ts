@@ -37,6 +37,9 @@ const SAFE_STYLE: Record<string, (v: string) => boolean> = {
   'background-color': test(COLOR),
   'font-weight': test(WEIGHT),
   'font-style': test(WORD),
+  // (Headings keep their size, within reason; neither of these can lift text out of the page.)
+  'font-size': test(/^(?:\d{1,2}(?:\.\d+)?(?:px|pt)|[0-5](?:\.\d+)?r?em|\d{1,3}(?:\.\d+)?%)$/i),
+  'line-height': test(/^(?:normal|[0-3](?:\.\d+)?|\d{1,2}(?:\.\d+)?(?:px|pt)|[0-3](?:\.\d+)?r?em|\d{1,3}(?:\.\d+)?%)$/i),
   'text-decoration': test(WORD),
   'text-decoration-line': test(WORD),
   'text-decoration-style': test(WORD),

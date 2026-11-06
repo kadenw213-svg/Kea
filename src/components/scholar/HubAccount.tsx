@@ -531,11 +531,14 @@ export function HubAddress() {
   if (!status) return null;
   const save = async (to: string) => {
     setBusy(true);
+    const wasSignedIn = !!status.signedIn;
     const s = await run(api.hub.setUrl(to));
     setBusy(false);
     if (!s) return;
     useHub.getState().set(s);
-    toast(s.reachable ? 'Connected to the Kea Hub.' : 'Saved, but the Kea Hub doesn’t answer at that address yet.', s.reachable ? 'success' : 'error');
+    // (A different Hub never gets this one's sign-in: Kea signs out when the address changes.)
+    const signedOut = wasSignedIn && !s.signedIn ? ' You’re signed out: sign in to your account on this Hub.' : '';
+    toast(`${s.reachable ? 'Connected to the Kea Hub.' : 'Saved, but the Kea Hub doesn’t answer at that address yet.'}${signedOut}`, s.reachable ? 'success' : 'error');
   };
   return (
     <form
