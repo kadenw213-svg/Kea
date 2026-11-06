@@ -95,7 +95,8 @@ let hub, ownerBase;
 before(async () => {
   if (!HUB) return;
   const { createHub } = await import(pathToFileURL(HUB).href);
-  hub = createHub({ dataDir: path.join(dir, 'hub'), log: false, minFreeBytes: 0 });
+  // (Unverified accounts get a small size on a real Hub; this test's account isn't verified.)
+  hub = createHub({ dataDir: path.join(dir, 'hub'), log: false, minFreeBytes: 0, unverifiedQuotaBytes: 5 * 1024 ** 3 });
   const p = await hub.listen({ port: 0, ownerPort: 0 });
   hubBase = `http://127.0.0.1:${p.port}`;
   ownerBase = `http://127.0.0.1:${p.ownerPort}`;
