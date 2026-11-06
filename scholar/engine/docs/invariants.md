@@ -14,7 +14,7 @@ can't detect), then reply with the short skill list below and nothing else:
    astral-sh.uv` (fallback `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`);
    macOS/Linux `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 2. `uv python install` (reads `.python-version`), then `uv sync --extra dev`.
-3. `.env` missing -> copy `.env.example` to `.env` (all values optional).
+3. Settings come from the process environment only (all optional): the engine never reads a `.env` file.
 4. `config/personal.local.md` missing -> copy `config/personal.example.md`,
    then ask once for: institution name, D2L home URL. Save the D2L URL with
    `uv run academic-sync prefs set d2l_base_url <url>`.

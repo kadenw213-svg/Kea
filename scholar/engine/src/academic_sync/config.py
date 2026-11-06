@@ -77,9 +77,13 @@ class AppConfig(BaseModel):
 
 
 class Settings(BaseSettings):
-    """Environment-derived paths. See .env.example for the full list."""
+    """Environment-derived paths, from the process environment only.
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    Never from a `.env` file: the engine is run by a scan whose Claude can write files under data/, and a `.env` read
+    from the current folder (`cd data && uv run academic-sync ...`) would let it point the database (and with it where
+    the engine reads and writes) anywhere on the computer."""
+
+    model_config = SettingsConfigDict(env_file=None, extra="ignore")
 
     academic_sync_db_path: str | None = None
     academic_sync_config_path: str | None = None

@@ -26,6 +26,9 @@ const { validCode, safeCode, within } = require('../../electron/scholar/safePath
 test('course codes that can be folder names, and ones that can’t', () => {
   for (const ok of ['BIO1010', 'BIO 1010', 'CHEM 1110-002', 'MAT1340.01', 'ENG_1022']) assert.equal(validCode(ok), true, ok);
   for (const bad of [EVIL, 'BIO1010/../../x', '..', 'a..b', '', ' ', '.', 'x'.repeat(41), 'BIO:1010', `C:${B}Windows`, null, 42]) assert.equal(validCode(bad), false, String(bad));
+  // Windows device names (any case, with or without an extension) and a final dot or space, which Windows drops.
+  for (const bad of ['CON', 'con', 'Prn', 'AUX', 'nul', 'COM1', 'com9', 'LPT1', 'lpt9', 'CON.txt', 'nul.tar.gz', 'Aux.', 'CON .txt', 'BIO1010.', 'BIO1010 ']) assert.equal(validCode(bad), false, bad);
+  for (const ok of ['CON 101', 'CONX', 'COM10', 'NULL1', 'AUX1010', 'PRN.101'.replace('.', '')]) assert.equal(validCode(ok), true, ok);
   assert.throws(() => safeCode(EVIL), /can’t be used as a folder name/);
   const root = path.join(dir, 'data', 'downloads');
   assert.equal(within(root, 'BIO1010', 'review'), path.join(root, 'BIO1010', 'review'));

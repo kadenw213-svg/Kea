@@ -38,11 +38,15 @@ const COMMANDS = {
   guides: ['courses', 'doc-text']
 };
 const BASE = FILES;
+// Files that decide what `uv run` starts and how the engine is set up (the project and its lock, uv's own settings, the
+// Python version, a virtual environment), and Python code itself. A run may write under data/, and `cd data` then
+// `uv run` would otherwise take them from there. (runEnv below also ties uv to the workspace, whatever the folder.)
+const ENGINE_CONFIG = ['**/.env', '**/.env.*', '**/pyproject.toml', '**/*.py', '**/uv.lock', '**/uv.toml', '**/.python-version', '**/.python-versions', '**/pylock.toml', '**/pyvenv.cfg', '**/.venv/**'];
 // Never, in any run, whatever a settings file says: other programs, other engine entry points, or commands that would
 // change how the engine itself runs. (dontAsk already refuses anything not allowed; these are the explicit backstop.)
 const DENY = [
   'Read(**/*.pdf)', 'Read(./src/**/*.py)', 'Edit(data/*.db)', 'Write(data/*.db)', 'Edit(data/logs/**)', 'Write(data/logs/**)', 'Edit(data/backups/**)', 'Write(data/backups/**)',
-  'Edit(./.claude/**)', 'Write(./.claude/**)', 'PowerShell', 'NotebookEdit',
+  'Edit(./.claude/**)', 'Write(./.claude/**)', ...ENGINE_CONFIG.flatMap((f) => [`Edit(${f})`, `Write(${f})`]), 'PowerShell', 'NotebookEdit',
   'Bash(uv run academic-sync study-pdf-plot:*)', 'Bash(uv run academic-sync db-init:*)', 'Bash(uv run academic-sync prefs unset:*)',
   'Bash(uv run python:*)', 'Bash(uv run --:*)', 'Bash(uv pip:*)', 'Bash(uv add:*)', 'Bash(uv tool:*)', 'Bash(uvx:*)', 'Bash(python:*)', 'Bash(python3:*)', 'Bash(py:*)',
   'Bash(node:*)', 'Bash(npm:*)', 'Bash(npx:*)', 'Bash(pnpm:*)', 'Bash(yarn:*)', 'Bash(git:*)', 'Bash(gh:*)', 'Bash(curl:*)', 'Bash(wget:*)', 'Bash(powershell:*)',
@@ -1288,8 +1292,12 @@ async function next() {
 function claudeArgs(how, task, t, extraTools, cfg) {
   return [...how, '--model', t.model ? t.model() : 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', ...isolationArgs(), '--permission-mode', 'dontAsk', '--allowedTools', ...allowedTools(task, t, extraTools), '--disallowedTools', ...DENY];
 }
-/** A run's environment: the engine's minimal one (no tokens, keys or Kea's own variables) and the run's id and task. */
-const runEnv = (uv, id, task) => ({ ...workspace.engineEnv(uv), KEA_RUN_ID: String(id), KEA_TASK: task });
+/**
+ * A run's environment: the engine's minimal one (no tokens, keys or Kea's own variables, and uv tied to the workspace's
+ * project) and the run's id and task. In a run, uv also reads no settings files and no .env at all: nothing in a folder
+ * Claude can write changes what `uv run academic-sync` starts.
+ */
+const runEnv = (uv, id, task) => ({ ...workspace.engineEnv(uv), UV_NO_CONFIG: '1', UV_NO_ENV_FILE: '1', KEA_RUN_ID: String(id), KEA_TASK: task });
 
 /**
  * Stop the run (the student's choice, or a shared-Claude job's time limit: it isn't continued later) and clear the

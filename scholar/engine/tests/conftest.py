@@ -12,6 +12,13 @@ from academic_sync.models.domain import Course
 from academic_sync.models.enums import CourseStatus
 
 
+@pytest.fixture(autouse=True)
+def _data_folder(tmp_path, monkeypatch):
+    """Each test's temporary folder stands in for the workspace's data folder (what Kea can name in KEA_ENGINE_DATA_DIR):
+    where the database is never decides that."""
+    monkeypatch.setenv("KEA_ENGINE_DATA_DIR", str(tmp_path))
+
+
 @pytest.fixture()
 def session():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})

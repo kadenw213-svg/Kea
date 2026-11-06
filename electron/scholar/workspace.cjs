@@ -172,6 +172,9 @@ function engineEnv(uv) {
   return {
     ...base,
     PATH: [uv ? path.dirname(uv) : '', sysPath].filter(Boolean).join(path.delimiter),
+    // uv's --project: the engine is always this workspace's, never a project found from the current folder (a run's
+    // `cd data` would otherwise have uv look for one there, along with its Python version and settings).
+    UV_PROJECT: p.workspace,
     KEA_TEXTBOOK_DIR: p.textbooks,
     // The class site's name in what the engine writes ("From Canvas (…)", the "Canvas" link label).
     KEA_SITE_NAME: require('./browser.cjs').platformOf() === 'canvas' ? 'Canvas' : 'D2L',

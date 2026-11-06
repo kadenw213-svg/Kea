@@ -5,11 +5,15 @@
 const path = require('path');
 
 const CODE_RE = /^[A-Za-z0-9 ._-]{1,40}$/;
+// Windows device names, in any case, with or without an extension: "CON" or "nul.txt" as a folder or file name reaches
+// the device, not a file.
+const RESERVED_RE = /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9]) *(\..*)?$/i;
 
 /** Whether a course code is safe to use in a folder or file name. */
 function validCode(code) {
   const c = typeof code === 'string' ? code : '';
-  return CODE_RE.test(c) && !c.includes('..') && c.replace(/[ .]/g, '') !== '';
+  // (Windows drops a final dot or space, so "BIO1010." would be the folder "BIO1010".)
+  return CODE_RE.test(c) && !c.includes('..') && c.replace(/[ .]/g, '') !== '' && !/[ .]$/.test(c) && !RESERVED_RE.test(c.trim());
 }
 
 /** The course code, or an error when it can't be used in a path. */

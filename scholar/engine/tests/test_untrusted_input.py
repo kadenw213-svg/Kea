@@ -34,6 +34,7 @@ def data(tmp_path, monkeypatch):
     d.mkdir()
     reset_engine_cache()
     monkeypatch.setenv("ACADEMIC_SYNC_DB_PATH", str(d / "test.db"))
+    monkeypatch.setenv("KEA_ENGINE_DATA_DIR", str(d))
     clear_caches()
     run_migrations(get_engine(f"sqlite:///{(d / 'test.db').as_posix()}"))
     monkeypatch.setattr(study_pdf, "WORK_ROOT", d / "study_pdfs")
@@ -297,7 +298,7 @@ def test_study_pdf_image_get_name_is_sanitized(data, monkeypatch):
 @pytest.mark.parametrize("code,ok", [
     ("BIO1010", True), ("BIO 1010", True), ("MAT-1340.01_A", True),
     ("BIO1010\\..\\..\\x", False), ("BIO1010/../../x", False), ("..", False), ("a..b", False), ("", False),
-    ("x" * 41, False), ("BIO:1010", False), (" . ", False), ("CON", True),
+    ("x" * 41, False), ("BIO:1010", False), (" . ", False), ("CON", False),
 ])
 def test_course_codes_used_in_paths(code, ok):
     assert safe_paths.valid_code(code) is ok

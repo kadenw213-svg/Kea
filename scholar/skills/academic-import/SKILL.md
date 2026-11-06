@@ -70,15 +70,15 @@ defaults.
 do **not** reuse the owner's database -- their courses, preferences, and sync
 history must not mix in the same SQLite file. Before the first
 `academic-sync` command of the session, set `ACADEMIC_SYNC_DB_PATH` (env
-var, e.g. `ACADEMIC_SYNC_DB_PATH=data/academic_sync_<name>.db`, or add it to
-a `.env` file -- see `.env.example`) to a path that doesn't exist yet; the
+var, e.g. `ACADEMIC_SYNC_DB_PATH=data/academic_sync_<name>.db`; the engine
+never reads a `.env` file) to a path that doesn't exist yet; the
 schema and migrations are created automatically on first use, giving that
 person a completely separate, empty set of courses/preferences/sync
 records. Two more things fall out of that automatically and need no further
 setup: the Calendar connector's authenticated account (see above) already
 targets *their* calendar as long as this chat session is signed into their
 Google account, not the owner's; and if `D2L_BASE_URL` is set in their
-environment (or `.env`) it pre-fills the `d2l_base_url` preference on first
+environment it pre-fills the `d2l_base_url` preference on first
 read, so `academic-sync prefs get d2l_base_url` doesn't come back empty
 before their first SCAN -- otherwise just ask them for their institution's
 D2L/Brightspace base URL once and save it with

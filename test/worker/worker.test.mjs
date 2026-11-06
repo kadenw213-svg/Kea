@@ -60,9 +60,18 @@ test('Bash is only the engine commands each task needs, never the whole engine',
   assert.equal(listAfter(argsFor('probe'), '--allowedTools').filter((t) => t.startsWith('Bash')).length, 0);
   const denied = listAfter(argsFor('daily'), '--disallowedTools');
   for (const d of ['PowerShell', 'Bash(npm:*)', 'Bash(node:*)', 'Bash(uv run python:*)', 'Bash(uv run academic-sync study-pdf-plot:*)', 'Write(./.claude/**)', 'Edit(data/*.db)']) assert.ok(denied.includes(d), d);
-  // (No deny that would also cover data/**, where every run writes: denies win over allows.)
+  // (No deny that would also cover data/** as a whole, where every run writes: denies win over allows. Under it, only the
+  // database, logs, backups and the files that configure uv and the engine, by name.)
   assert.ok(listAfter(argsFor('daily'), '--allowedTools').includes('Write(data/**)'));
-  for (const d of denied.filter((x) => /^(Edit|Write)\(/.test(x))) assert.match(d, /^(Edit|Write)\((data\/(\*\.db|logs\/\*\*|backups\/\*\*)|\.\/\.claude\/\*\*)\)$/, d);
+  for (const d of denied.filter((x) => /^(Edit|Write)\(/.test(x))) assert.match(d, /^(Edit|Write)\((data\/(\*\.db|logs\/\*\*|backups\/\*\*)|\.\/\.claude\/\*\*|\*\*\/(\.env|\.env\.\*|pyproject\.toml|\*\.py|uv\.lock|uv\.toml|\.python-version|\.python-versions|pylock\.toml|pyvenv\.cfg|\.venv\/\*\*))\)$/, d);
+});
+
+test('no run can write what configures uv or the engine, wherever it is', () => {
+  for (const task of Object.keys(TASKS)) {
+    const denied = listAfter(argsFor(task), '--disallowedTools');
+    for (const f of ['**/.env', '**/pyproject.toml', '**/*.py', '**/uv.lock', '**/uv.toml', '**/.python-version', '**/.venv/**', '**/pyvenv.cfg'])
+      for (const tool of ['Write', 'Edit']) assert.ok(denied.includes(`${tool}(${f})`), `${task}: ${tool}(${f})`);
+  }
 });
 
 test('a worker run (the owner’s Claude, someone else’s class) never searches the web or reads college sites', () => {
@@ -96,6 +105,10 @@ test('Claude’s environment has no tokens, keys, secrets or Kea’s own variabl
     assert.equal(env.KEA_RUN_ID, '7');
     assert.equal(env.KEA_TASK, 'study');
     assert.ok(env.KEA_TEXTBOOK_DIR && env.PYTHONUTF8 === '1');
+    // uv's project is the workspace, whatever folder a command runs in, and uv reads no settings file or .env.
+    assert.equal(env.UV_PROJECT, require('../../electron/scholar/profiles.cjs').paths().workspace);
+    assert.equal(env.UV_NO_CONFIG, '1');
+    assert.equal(env.UV_NO_ENV_FILE, '1');
     assert.ok(env.PATH.startsWith('C:/uv'));
     const sysRoot = Object.keys(before).find((k) => k.toUpperCase() === 'SYSTEMROOT');
     if (sysRoot) assert.equal(env[sysRoot], before[sysRoot]);

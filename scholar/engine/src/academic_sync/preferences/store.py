@@ -133,7 +133,7 @@ def set_pref(
 def get_pref(session: Session, key: str, course_id: str | None = None) -> object:
     spec = KNOWN_PREFERENCES.get(key)
     default = spec.default if spec else None
-    # .env.example documents D2L_BASE_URL as pre-filling this preference for
+    # The D2L_BASE_URL environment variable pre-fills this preference for
     # a fresh install/new user -- honor that here rather than falling
     # straight through to the hardcoded None default, so a new user (a
     # different D2L institution entirely, e.g. a friend running this skill
