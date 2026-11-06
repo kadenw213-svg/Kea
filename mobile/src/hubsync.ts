@@ -18,10 +18,29 @@
 
 const ALLOWED = /[\p{L}\p{N} ._()+@,'&!-]/u;
 export const encodeSeg = (s: string) => [...s].map((c) => (ALLOWED.test(c) ? c : `~${c.codePointAt(0)!.toString(16)}~`)).join('');
-export const decodeSeg = (s: string) => s.replace(/~([0-9a-f]+)~/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
+/**
+ * A name as the PC wrote it, or null when it can't be one: a ~hex~ that isn't a code point (more than 6 hex digits, or
+ * past U+10FFFF). Such a file is skipped and the sync goes on (the same as Kea on the PC), instead of stopping on it.
+ */
+export const decodeSeg = (s: string): string | null => {
+  let bad = false;
+  const out = s.replace(/~([0-9a-f]+)~/g, (_, h: string) => {
+    const n = h.length <= 6 ? parseInt(h, 16) : Infinity;
+    if (!(n <= 0x10ffff)) {
+      bad = true;
+      return '';
+    }
+    return String.fromCodePoint(n);
+  });
+  return bad ? null : out;
+};
 /** "Kea/School/kea-data.json" → "kea/Kea/School/kea-data.json" (encoded the way the PC's sync does). */
 export const toRemote = (rel: string) => `kea/${rel.split(/[\\/]/).map(encodeSeg).join('/')}`;
-export const toLocal = (remote: string) => remote.slice(4).split('/').map(decodeSeg).join('/');
+/** A Hub path as a path in the Kea folder, or null when one of its names can't be decoded (see decodeSeg). */
+export const toLocal = (remote: string): string | null => {
+  const segs = remote.slice(4).split('/').map(decodeSeg);
+  return segs.includes(null) ? null : segs.join('/');
+};
 
 export const FULL_EVERY = 5 * 60_000;
 /** Files the phone keeps from the PC's folder: the textbooks (and question pictures, if the PC sends them). */
@@ -69,7 +88,8 @@ export function profilesIn(files: Pick<HubFile, 'path'>[]): string[] {
   const out = new Set<string>();
   for (const f of files) {
     const m = /^kea\/Kea\/([^/]+)\/kea-data\.json$/.exec(f.path);
-    if (m) out.add(decodeSeg(m[1]));
+    const name = m ? decodeSeg(m[1]) : null;
+    if (name != null) out.add(name);
   }
   return [...out].sort((a, b) => a.localeCompare(b));
 }
@@ -102,7 +122,11 @@ export function createPhoneSync({
   let st: SyncState = load() || emptyState();
   const keep = () => save(st);
   const base = () => toRemote(`Kea/${st.profile}`) + '/';
-  const relOf = (remote: string) => toLocal(remote).slice(`Kea/${st.profile}/`.length);
+  /** The path inside the profile's folder, or null for a name that can't be decoded (skipped). */
+  const relOf = (remote: string) => {
+    const local = toLocal(remote);
+    return local == null ? null : local.slice(`Kea/${st.profile}/`.length);
+  };
 
   /** Switch to another profile (or the first one): everything is read again from scratch. */
   function use(profile: string) {
@@ -125,6 +149,10 @@ export function createPhoneSync({
     for (const f of list.files) {
       if (!f.path.startsWith(base())) continue;
       const rel = relOf(f.path);
+      if (rel == null) {
+        log(`Skipped a file with a name that can't be read: ${f.path.slice(0, 120)}`);
+        continue;
+      }
       if (rel === 'kea-data.json') dataFile = f;
       else if (rel === 'phone.json') {
         // (Written by this phone; another copy of it may have written it since: the next send goes over that version.)

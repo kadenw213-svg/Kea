@@ -127,6 +127,27 @@ test('only what changed moves; textbooks queue until the library step', async ()
   assert.equal(hub.local.get('Textbooks/BIO/ch2.pdf'), 'pdf2');
 });
 
+test('a name with an impossible code point is skipped, and the sync goes on', async () => {
+  // (Past U+10FFFF, or more than 6 hex digits: String.fromCodePoint would throw and stop the whole sync.)
+  assert.equal(P.decodeSeg('a~110000~b'), null);
+  assert.equal(P.decodeSeg('a~0000041~b'), null);
+  assert.equal(P.decodeSeg('a~10ffff~b'), 'a\u{10ffff}b');
+  assert.equal(P.toLocal('kea/Kea/School/Textbooks/x~ffffffff~.pdf'), null);
+  assert.deepEqual(P.profilesIn([{ path: 'kea/Kea/Bad~110000~/kea-data.json' }, { path: 'kea/Kea/School/kea-data.json' }]), ['School']);
+  const hub = fakeHub();
+  hub.write('kea/Kea/School/kea-data.json', '{"v":1}');
+  hub.write('kea/Kea/School/Textbooks/BIO/bad~110000~.pdf', 'bad');
+  hub.write('kea/Kea/School/Textbooks/BIO/ch1.pdf', 'pdf1');
+  const s = phone(hub);
+  s.use('School');
+  const r = await s.pull();
+  assert.equal(r.data, '{"v":1}');
+  assert.deepEqual(Object.keys(s.state().todo), ['Textbooks/BIO/ch1.pdf']);
+  assert.equal((await s.library()).files, 1);
+  assert.equal(hub.local.get('Textbooks/BIO/ch1.pdf'), 'pdf1');
+  assert.ok(s.logs.some((m) => /Skipped/.test(m)));
+});
+
 test('deletions arrive with the full listing; a mass disappearance deletes nothing', async () => {
   const hub = fakeHub();
   hub.write('kea/Kea/School/kea-data.json', '{}');
