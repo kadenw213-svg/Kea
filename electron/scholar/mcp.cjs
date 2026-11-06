@@ -147,6 +147,30 @@ function allowedUrl(url) {
   throw new Error(`${host} isn't the class site or a platform the class links to (or that exact address isn't one the teacher linked), so it can't be opened here.`);
 }
 
+// The file servers class sites hand their own files out from (Canvas's): a scan's own fetch may be redirected there, but
+// never asked to go there itself.
+const FILE_SERVERS = /(^|\.)(inscloudgate\.net|canvas-user-content\.com)$|^instructure-uploads\.s3\.amazonaws\.com$/i;
+/**
+ * Whether a redirect a scan's fetch was given may be followed: an address a scan may read, a class site's file server,
+ * or the same site it's already on (a link's "www." or its trailing slash). So an open redirect on an allowed host can
+ * neither read another site nor carry what the scan read to one.
+ */
+function allowedHop(next, from) {
+  if (!browser.publicHttps(next)) return false;
+  try {
+    allowedUrl(next);
+    return true;
+  } catch {}
+  const host = new URL(next).hostname.toLowerCase();
+  if (FILE_SERVERS.test(host)) return true;
+  try {
+    const site = schoolDomain(host);
+    return !!site && site === schoolDomain(new URL(from).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 function start(hooks) {
   const token = crypto.randomBytes(24).toString('hex');
   const call = async (name, a = {}) => {
@@ -162,9 +186,9 @@ function start(hooks) {
           }
         });
       case 'd2l_fetch':
-        return browser.fetchText(allowedUrl(a.url), a.offset || 0);
+        return browser.fetchText(allowedUrl(a.url), a.offset || 0, false, allowedHop);
       case 'd2l_download': {
-        const saved = await browser.download(allowedUrl(a.url), a.path);
+        const saved = await browser.download(allowedUrl(a.url), a.path, allowedHop);
         // PDFs and Word files come with their text, so the file itself never has to be read as page pictures.
         if (/\.(pdf|docx|pptx)$/i.test(saved.saved) && hooks.docText) {
           try {
@@ -260,4 +284,4 @@ function start(hooks) {
   });
 }
 
-module.exports = { start, TOOLS, allowedUrl, schoolDomain, _test: { linkedUrls, reset: () => (linked = { at: 0, urls: new Set() }) } };
+module.exports = { start, TOOLS, allowedUrl, allowedHop, schoolDomain, _test: { linkedUrls, reset: () => (linked = { at: 0, urls: new Set() }) } };

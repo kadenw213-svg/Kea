@@ -10,12 +10,20 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const settings = require('./settings.cjs');
+const { appOnly } = require('./ipcGuard.cjs');
 
 // Where Kea finds the Kea Hub unless the person sets another address (Settings → Kea account → Kea Hub address).
 // This is the one place to change it: the Hub owner's public https://….ts.net address goes here for releases, so
 // every device reaches it. 127.0.0.1 only works on the Hub's own PC.
 const DEFAULT_HUB_URL = 'http://127.0.0.1:4860';
 const hubUrl = () => String(settings.get('hub.url', '') || process.env.KEA_HUB_URL || DEFAULT_HUB_URL).replace(/\/+$/, '');
+const originOf = (u) => {
+  try {
+    return new URL(u).origin;
+  } catch {
+    return String(u);
+  }
+};
 const tokenFile = () => path.join(app.getPath('userData'), 'hub-session.bin');
 // What the rest of Kea needs to know without asking the Hub (school mode's verified check, the badge): no secrets.
 const cacheFile = () => path.join(app.getPath('userData'), 'hub-account.json');
@@ -338,7 +346,7 @@ async function relayOp(op, a, kind = 'initial_scan') {
   };
   switch (op) {
     case 'request': {
-      const res = await browser.request(allowedUrl(a.url));
+      const res = await browser.request(allowedUrl(a.url), allowed);
       // (Where it ended up after redirects must be allowed too: an open redirect on an allowed site never carries
       // this person's signed-in page to another host.)
       if (res.url && !allowed(res.url)) throw new Error('That page redirects to a site Kea doesn’t read for the scan.');
@@ -687,9 +695,19 @@ function register() {
     stopSync();
     return status();
   }));
-  ipcMain.handle('hub:setUrl', wrap(async ({ url }) => {
+  // (Only Kea's own page may move Kea to another Hub: ipcGuard.cjs.) This account's sign-in belongs to the Hub it was made
+  // on, so it never goes to a different address: moving there signs out here, and what's cached about the account goes.
+  const moveHub = (next) => {
+    const from = hubUrl();
+    settings.set({ 'hub.url': next });
+    if (originOf(hubUrl()) === originOf(from)) return;
+    writeToken(null);
+    saveCache(null);
+    stopSync();
+  };
+  ipcMain.handle('hub:setUrl', appOnly(wrap(async ({ url }) => {
     // Empty: back to the address this copy of Kea came with.
-    if (!String(url || '').trim()) return settings.set({ 'hub.url': null }), status();
+    if (!String(url || '').trim()) return moveHub(null), status();
     let u;
     try {
       u = new URL(/^[a-z]+:\/\//i.test(String(url).trim()) ? String(url).trim() : `https://${String(url).trim()}`);
@@ -699,9 +717,9 @@ function register() {
     if (!/^https?:$/.test(u.protocol)) throw new HubError('Use an https:// address.', 400);
     // Plain http only to this computer itself: anywhere else, someone on the network could pose as the Hub.
     if (u.protocol === 'http:' && !/^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u.hostname)) throw new HubError('Use the Hub’s https:// address (it looks like https://name.tailnet.ts.net). Plain http only works for a Hub on this computer.', 400);
-    settings.set({ 'hub.url': u.origin });
+    moveHub(u.origin);
     return status();
-  }));
+  })));
   // Hub classes, study sets, leaderboards and class sessions on the calendar.
   require('./hubClasses.cjs').register();
   // Notifications for this account (a list in the account panel, and Windows notifications).

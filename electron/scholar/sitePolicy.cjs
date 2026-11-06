@@ -44,13 +44,16 @@ function inSchoolDomain(host, homeHost) {
 // Sign-in services schools use for single sign-on (the same list as the phone's ClassSite.mayFill).
 const IDENTITY_PROVIDERS = /^(login\.microsoftonline\.com|login\.live\.com|accounts\.google\.com)$|\.(okta\.com|onelogin\.com|duosecurity\.com)$/i;
 const knownIdentityProvider = (host) => IDENTITY_PROVIDERS.test(String(host || ''));
+// Services where anyone can make a tenant of their own (evil.okta.com), so being on one says nothing about the school.
+const SIGN_IN_TENANTS = /\.(okta\.com|onelogin\.com|duosecurity\.com)$/i;
 
 /**
  * Whether Kea may save a login submitted on this page (the same rule as the phone's ClassSite.mayFill): https only;
- * once the school's sign-in host is known, that host or the class site itself; before then, the school's own domain
- * or a known sign-in service.
+ * once the school's sign-in host is known, that host or the class site itself; before then, the school's own domain, a
+ * shared sign-in service, or, only when Kea reached the page from the school's own pages while signing in (`fromHome`),
+ * the school's tenant on Okta, OneLogin or Duo.
  */
-function mayRememberLogin(url, { home = '', schoolLoginHost = '' } = {}) {
+function mayRememberLogin(url, { home = '', schoolLoginHost = '', fromHome = false } = {}) {
   let u;
   try {
     u = new URL(url);
@@ -64,7 +67,9 @@ function mayRememberLogin(url, { home = '', schoolLoginHost = '' } = {}) {
   if (host === homeHost) return true;
   const saved = String(schoolLoginHost || '').toLowerCase().replace(/:\d+$/, '');
   if (saved) return host === saved;
-  return inSchoolDomain(host, homeHost) || knownIdentityProvider(host);
+  if (inSchoolDomain(host, homeHost)) return true;
+  if (SIGN_IN_TENANTS.test(host)) return fromHome === true;
+  return knownIdentityProvider(host);
 }
 
 // Course, publisher, video and proctoring platforms a class sends students to (the same family as the MCP's list in

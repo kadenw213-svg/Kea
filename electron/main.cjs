@@ -581,7 +581,7 @@ ipcMain.handle('file:exists', (_e, p) => {
   }
 });
 
-ipcMain.handle('shell:show-in-folder', (_e, p) => shell.showItemInFolder(p));
+ipcMain.handle('shell:show-in-folder', appOnly((_e, p) => shell.showItemInFolder(p)));
 
 ipcMain.handle('recent:get', () => readRecent());
 ipcMain.handle('recent:add', (_e, p) => {
@@ -669,7 +669,7 @@ function withHiddenWindow(html, fn) {
   });
 }
 
-ipcMain.handle('print:html', (_e, html, opts = {}) =>
+ipcMain.handle('print:html', appOnly((_e, html, opts = {}) =>
   withHiddenWindow(
     html,
     (win) =>
@@ -678,9 +678,9 @@ ipcMain.handle('print:html', (_e, html, opts = {}) =>
         win.webContents.print({ silent: false, printBackground: true, ...(opts.noMargins ? { margins: { marginType: 'none' } } : {}) }, (ok) => resolve(ok));
       })
   )
-);
+));
 
-ipcMain.handle('export:pdf-from-html', (_e, html, opts = {}) =>
+ipcMain.handle('export:pdf-from-html', appOnly((_e, html, opts = {}) =>
   withHiddenWindow(html, async (win) => {
     const buf = await win.webContents.printToPDF({
       printBackground: true,
@@ -690,7 +690,7 @@ ipcMain.handle('export:pdf-from-html', (_e, html, opts = {}) =>
     });
     return new Uint8Array(buf);
   })
-);
+));
 
 ipcMain.on('app:confirm-close', () => {
   allowClose = true;

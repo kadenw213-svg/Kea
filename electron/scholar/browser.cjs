@@ -5,12 +5,13 @@
 // (and may let Kea remember the login, encrypted with Windows' own protection). Later, when a scan hits the sign-in
 // page, Kea fills in that saved login itself, like a password manager. If that doesn't get through (a new prompt, a
 // code from a phone), Kea shows its window and waits for the user. The tools Claude uses never see a password.
-const { BrowserWindow, session, safeStorage, Notification, ipcMain, dialog, shell } = require('electron');
+const { BrowserWindow, session, safeStorage, Notification, ipcMain, dialog, shell, net } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const profiles = require('./profiles.cjs');
 const policy = require('./sitePolicy.cjs');
 const { SCHOOL_PLATFORMS } = policy;
+const { fetchHops, publicHttps } = require('./hopFetch.cjs');
 
 const PAGE_TIMEOUT = 45000;
 
@@ -382,11 +383,14 @@ require('../settings.cjs').onChange(() => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The last address Kea itself sent the window to: a page there may lead to the school's own sign-in.
+let loadedTarget = '';
 /** Load a page and wait for it (and its scripts) to settle. */
 async function load(url) {
   // https only (the class site, its sign-in and the platforms it links to): never file:, javascript: or another scheme.
   if (!/^https:\/\//i.test(String(url || ''))) throw new Error('Only https pages can be opened in Kea’s class-site window.');
   const w = getWindow();
+  loadedTarget = String(url);
   const done = new Promise((resolve) => {
     const t = setTimeout(resolve, PAGE_TIMEOUT);
     w.webContents.once('did-stop-loading', () => (clearTimeout(t), resolve()));
@@ -692,7 +696,9 @@ function extract() {
 // Worker mode (remote.cjs): every class-site read goes to the student's own Kea through the Hub's relay.
 const remote = require('./remote.cjs');
 
-async function request(url) {
+// Every redirect is checked before it's followed: `allowHop(next, from)` for a caller with its own rules (a scan's tools:
+// mcp.cjs), https on a public host otherwise.
+async function request(url, allowHop = publicHttps) {
   if (remote.active()) return remote.request(url);
   const s = readSchool();
   if (!s.home) throw new Error('No class site is set up yet.');
@@ -700,23 +706,31 @@ async function request(url) {
   if (!/^https:\/\/[^/]/i.test(String(url || ''))) throw new Error('Only https addresses can be fetched.');
   const ses = session.fromPartition(partition());
   prepareSession(ses);
-  let res = await ses.fetch(url, { redirect: 'follow' });
+  const get = () => fetchHops(net, ses, url, allowHop);
+  let res = null;
+  try {
+    res = await get();
+  } catch (err) {
+    // The class site sending someone who isn't signed in to the school's sign-in (a host a scan may not read) only
+    // means signing in. Any other refused redirect stays refused.
+    if (!err.refusedHop || hostOf(url) !== hostOf(s.home) || (await status()).signedIn) throw err;
+  }
   // Refused while signed in: a page students can't see, not a sign-in problem.
-  if (res.status === 403 && (await status()).signedIn) return res;
+  if (res && res.status === 403 && (await status()).signedIn) return res;
   // Sent to sign in (or refused): sign in through the window, then try once more.
   // (A file can come from another host: Canvas sends its files from a separate file server. Only a page there is a
   // sign-in.)
-  const offSite = res.url && !onSite(res.url) && hostOf(url) === hostOf(s.home) && (hostOf(res.url) === hostOf(s.home) || /html/i.test(res.headers.get('content-type') || ''));
-  if (res.status === 401 || res.status === 403 || offSite) {
+  const offSite = res && res.url && !onSite(res.url) && hostOf(url) === hostOf(s.home) && (hostOf(res.url) === hostOf(s.home) || /html/i.test(res.headers.get('content-type') || ''));
+  if (!res || res.status === 401 || res.status === 403 || offSite) {
     const w = await load(s.home);
     if (!(await ensureSignedIn(w))) throw new Error('Not signed in to the class site (the user did not finish signing in).');
-    res = await ses.fetch(url, { redirect: 'follow' });
+    res = await get();
   }
   return res;
 }
 
-async function fetchText(url, offset = 0, raw = false) {
-  const res = await request(url);
+async function fetchText(url, offset = 0, raw = false, allowHop) {
+  const res = await request(url, allowHop);
   const type = res.headers.get('content-type') || '';
   if (!/json|text|xml|html|javascript/i.test(type)) return { status: res.status, contentType: type, text: '', note: 'Not text: use d2l_download to save it.' };
   let body = unguard(await res.text());
@@ -1255,11 +1269,11 @@ async function postForm(rel, form) {
 }
 
 /** Save a file from the class site into the profile's workspace (only under data/downloads). */
-async function download(url, rel) {
+async function download(url, rel, allowHop) {
   const base = path.join(profiles.paths().workspace, 'data', 'downloads');
   const dest = path.resolve(base, String(rel || '').replace(/^[\\/]+/, ''));
   if (!dest.startsWith(path.resolve(base) + path.sep)) throw new Error('Files can only be saved under data/downloads.');
-  const res = await request(url);
+  const res = await request(url, allowHop);
   if (!res.ok) throw new Error(`The class site answered ${res.status}.`);
   const buf = Buffer.from(await res.arrayBuffer());
   fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -1316,8 +1330,10 @@ const fromMainFrame = (e) => !!(win && !win.isDestroyed() && e.sender === win.we
 const mayRemember = (e) => {
   const s = readSchool();
   // (While setting up, the school's sign-in may be on another host than last time: the school's domain or a known
-  // sign-in service.)
-  return policy.mayRememberLogin(e.senderFrame?.url || '', { home: s.home || '', schoolLoginHost: settingUp ? '' : s.schoolLoginHost || '' });
+  // sign-in service.) A tenant on Okta, OneLogin or Duo counts only when Kea is signing in and started from the school's
+  // own pages (the phone's fromHome): anyone can make a tenant, so a course's link to one can't collect a login.
+  const fromHome = (settingUp || !!signingIn) && !!s.home && policy.inSchoolDomain(policy.hostOf(loadedTarget), policy.hostOf(s.home));
+  return policy.mayRememberLogin(e.senderFrame?.url || '', { home: s.home || '', schoolLoginHost: settingUp ? '' : s.schoolLoginHost || '', fromHome });
 };
 function onLoginSubmitted(e, form) {
   if (!wantsRemember() || !fromMainFrame(e) || !form || typeof form !== 'object') return;
@@ -1344,4 +1360,4 @@ function onLoginSubmitted(e, form) {
 
 const remembering = (e) => (e.returnValue = !!(wantsRemember() && fromMainFrame(e) && mayRemember(e)));
 
-module.exports = { request, SCHOOL_PLATFORMS, open, click, platformsRead, show, reply, readMessage, readMailbox, sendMessage, handIn, isClassSite, fetchText, getJson, pageHtml, postForm, platformOf, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
+module.exports = { request, publicHttps, SCHOOL_PLATFORMS, open, click, platformsRead, show, reply, readMessage, readMailbox, sendMessage, handIn, isClassSite, fetchText, getJson, pageHtml, postForm, platformOf, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };

@@ -66,7 +66,16 @@ test('the window only goes to http(s); mailto is offered after asking; every oth
 test('a login is saved only from the class site’s own sign-in or a known sign-in service (the phone’s mayFill rule)', () => {
   const home = 'https://learn.colostate.edu/d2l/home';
   // Before the school's sign-in host is known: the school's domain or a known sign-in service.
-  for (const u of ['https://learn.colostate.edu/d2l/login', 'https://login.colostate.edu/idp', 'https://login.microsoftonline.com/x', 'https://colostate.okta.com/', 'https://accounts.google.com/']) assert.equal(P.mayRememberLogin(u, { home }), true, u);
+  for (const u of ['https://learn.colostate.edu/d2l/login', 'https://login.colostate.edu/idp', 'https://login.microsoftonline.com/x', 'https://accounts.google.com/']) assert.equal(P.mayRememberLogin(u, { home }), true, u);
+  // A tenant anyone can make: only when Kea got there from the school's own pages while signing in.
+  for (const u of ['https://colostate.okta.com/', 'https://evil.okta.com/login', 'https://evil.onelogin.com/', 'https://evil.duosecurity.com/']) {
+    assert.equal(P.mayRememberLogin(u, { home }), false, u);
+    assert.equal(P.mayRememberLogin(u, { home, fromHome: true }), true, u);
+  }
+  // (Not over http, and not any other host because of it; and once the host is known, that decides.)
+  assert.equal(P.mayRememberLogin('http://colostate.okta.com/', { home, fromHome: true }), false);
+  assert.equal(P.mayRememberLogin('https://www.aleks.com/login', { home, fromHome: true }), false);
+  assert.equal(P.mayRememberLogin('https://evil.okta.com/', { home, schoolLoginHost: 'colostate.okta.com', fromHome: true }), false);
   for (const u of ['https://www.aleks.com/login', 'https://evil.edu/login', 'https://colostate.edu.evil.com/', 'http://learn.colostate.edu/d2l/login', 'https://login.microsoftonline.com.evil.net/', 'https://evilokta.com/']) assert.equal(P.mayRememberLogin(u, { home }), false, u);
   // Once known: only that host (and the class site itself).
   const known = { home, schoolLoginHost: 'login.microsoftonline.com' };
