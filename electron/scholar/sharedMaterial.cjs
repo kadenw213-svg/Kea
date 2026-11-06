@@ -13,13 +13,23 @@
 const fs = require('fs');
 const path = require('path');
 
-const norm = (code) => String(code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const { validCode } = require('./safePaths.cjs');
 
-/** The class here with this course code ("BIO 1010", "bio-1010" and "BIO1010-002" for section 002 all match BIO 1010). */
+const norm = (code) => String(code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+/** The code without a section number written after it ("CHEM 1110-002", "CHEM 1110 002", "CHEM1110.01" → "CHEM 1110"). */
+const unsectioned = (code) => String(code || '').replace(/^(.*\d)[\s.-]+[A-Za-z]?\d{1,3}$/, '$1');
+
+/**
+ * The class here with this course code: the same code however it's written ("BIO 1010" and "bio-1010"), else the same
+ * code with or without a section number ("CHEM1110" and "CHEM 1110-002"). Whole codes are compared, never one code
+ * starting with another, and a code that can't be a folder name ("BIO1010\..\..\x") never matches anything.
+ */
 function matchCourse(courses, code) {
+  if (!validCode(code)) return null;
+  const mine = courses.filter((c) => validCode(c.code));
   const want = norm(code);
   if (!want) return null;
-  return courses.find((c) => norm(c.code) === want) || courses.find((c) => want.startsWith(norm(c.code)) || norm(c.code).startsWith(want)) || null;
+  return mine.find((c) => norm(c.code) === want) || mine.find((c) => norm(unsectioned(c.code)) === norm(unsectioned(code))) || null;
 }
 
 /** Every file under Shared/, relative to it (forward slashes), with its size and time. */
@@ -89,7 +99,7 @@ async function takeIn(deps) {
         const entry = { ...doc.entry, courseId: course.id, courseCode: course.code, sharedClaude: true };
         if (deps.addSet(entry, doc.set)) counts.questions++;
       } else if (step.action === 'textbook') {
-        const dest = path.join(deps.textbooks, step.folder, step.name);
+        const dest = require('./safePaths.cjs').within(deps.textbooks, step.folder, step.name);
         let same = false;
         try {
           same = fs.statSync(dest).size === fs.statSync(src).size;

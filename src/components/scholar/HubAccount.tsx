@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BadgeCheck, Bell, Check, ExternalLink, Heart, KeyRound, LogIn, LogOut, Phone, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { create } from 'zustand';
-import { api, HubConsent, HubNotification, HubNotifications, HubPhoneVisibility, HubQuestionChapter, HubResult, HubScanJob, HubSectionRequest, HubStatus, HubTerms, HubTermsChanges, TermsSection } from '../../lib/api';
+import { api, HubConsent, HubNotification, HubNotifications, HubPhoneVisibility, HubQuestionChapter, HubResult, HubScanJob, HubSectionRequest, HubServing, HubStatus, HubTerms, HubTermsChanges, TermsSection } from '../../lib/api';
 import { toast, ask } from '../../store';
 import { openScholar } from './scholarStore';
 
@@ -671,12 +671,16 @@ export function SharedClaude() {
   const [home, setHome] = useState('');
   const [site, setSite] = useState<{ home: string; signedIn: boolean } | null>(null);
   const [jobs, setJobs] = useState<HubScanJob[]>([]);
+  const [serving, setServing] = useState<HubServing[]>([]);
   const [busy, setBusy] = useState(false);
   const load = async () => {
     const s = await api.scholar.siteStatus().catch(() => null);
     if (s) setSite({ home: s.home || '', signedIn: s.signedIn });
     const j = await api.hub.scanJobs();
-    if (j.ok) setJobs(j.value.jobs);
+    if (j.ok) {
+      setJobs(j.value.jobs);
+      setServing(j.value.serving || []);
+    }
   };
   useEffect(() => {
     refreshHub();
@@ -701,7 +705,9 @@ export function SharedClaude() {
       ) : open ? (
         <p className="hub-warn">
           {open.status === 'running'
-            ? 'Your scan is running now. Keep Kea open.'
+            ? serving.length
+              ? `Kea’s shared Claude is reading your class site through this Kea now (read-only, ${serving[0].calls} page${serving[0].calls === 1 ? '' : 's'} so far, until ${new Date(serving[0].until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} at most). Keep Kea open.`
+              : 'Your scan is running now. Keep Kea open.'
             : `You’re in line${open.position != null ? `: ${open.position} ahead of you, about ${Math.max(1, open.etaMinutes ?? 0)} min` : ''}. Keep Kea open around then.`}
         </p>
       ) : (

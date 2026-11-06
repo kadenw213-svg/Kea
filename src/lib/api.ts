@@ -487,6 +487,13 @@ export interface HubTermsChanges {
   removed: { id: string; title: string }[];
 }
 type Agreement = { termsVersion: number; termsSections: string[] };
+/** A shared-Claude scan reading this person's class site through this Kea right now (until: when Kea stops answering). */
+export interface HubServing {
+  id: string;
+  since: number;
+  until: number;
+  calls: number;
+}
 export interface HubScanJob {
   id: string;
   kind: 'initial_scan' | 'update_scan' | 'more_questions';
@@ -551,7 +558,8 @@ export interface HubApi {
   syncNow(): Promise<HubResult<HubSyncState>>;
   /** Ask Kea's shared Claude to set up this profile's classes (queued; runs through this Kea while it's open). */
   requestScan(): Promise<HubResult<HubScanAnswer>>;
-  scanJobs(): Promise<HubResult<{ jobs: HubScanJob[]; allowance: HubAllowance | null; paused?: boolean }>>;
+  /** `serving`: this device's own scan jobs whose class-site reads it's answering right now. */
+  scanJobs(): Promise<HubResult<{ jobs: HubScanJob[]; allowance: HubAllowance | null; paused?: boolean; serving?: HubServing[] }>>;
   /** Chapters (with a textbook) this profile can ask Kea's shared Claude for 25 more questions on. */
   questionChapters(): Promise<HubResult<HubQuestionChapter[]>>;
   /** One batch of new questions for a chapter; it arrives with a later sync. */

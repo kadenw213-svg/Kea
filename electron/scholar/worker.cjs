@@ -30,8 +30,12 @@ const log = (...a) => {
   } catch {}
 };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const LIMIT_MS = Number(process.env.KEA_WORKER_LIMIT_MS) || 2 * 3600e3;
+// The longest one job may take (the owner's launcher passes Settings → Kea's shared Claude → longest job), then Claude
+// and everything it started are ended and the job is reported as over time.
+const LIMIT_MS = Number(process.env.KEA_WORKER_LIMIT_MS) || 45 * 60e3;
 const TASK = process.env.KEA_WORKER_TASK || 'import';
+const OVER_TIME = 'The job ran over its time limit.';
+let overTime = false;
 
 /** This copy's account and profile, and a sync of their Kea folder through the owner console. */
 function setUp(profileName) {
@@ -47,7 +51,11 @@ async function runTask(task, arg) {
   const runner = require('./runner.cjs');
   log('running', task, arg || '');
   await runner.run(task, arg || '', 'worker');
-  while (runner.status().running || runner.status().queued.length) await wait(5000);
+  while (runner.status().running || runner.status().queued.length) {
+    if (overTime) throw new Error(OVER_TIME);
+    await wait(5000);
+  }
+  if (overTime) throw new Error(OVER_TIME);
   const last = runner.activity?.()?.[0];
   if (last && last.ok === false) throw new Error(last.error || 'The run didn’t finish.');
 }
@@ -55,7 +63,13 @@ async function runTask(task, arg) {
 /** The profile name from the Hub's "kea/Kea/<profile>/" (their Kea says where its folder is), else the fallback. */
 function profileFromTarget(target, fallback) {
   const m = /^kea\/Kea\/([^/]+)\/$/.exec(target || '');
-  return m ? require('./hubsync.cjs').decodeSeg(m[1]) : fallback;
+  if (!m) return fallback;
+  // (A name that can't be decoded, an impossible code point, falls back: decodeSeg answers null, or threw before.)
+  let name = null;
+  try {
+    name = require('./hubsync.cjs').decodeSeg(m[1]);
+  } catch {}
+  return typeof name === 'string' && name.trim() ? name : fallback;
 }
 
 /** Text a question is known by: the same question with different capitals or punctuation is still the same. */
@@ -208,17 +222,27 @@ async function moreQuestions(info) {
 
 async function run() {
   let ok = false, note = '';
+  let backstop = null;
   const deadline = setTimeout(() => {
-    log('over the time limit');
-    remote.finish(false, 'The job ran over its time limit.').finally(() => app.exit(2));
+    overTime = true;
+    log('over the time limit: ending Claude and everything it started');
+    require('./runner.cjs').stop().catch((e) => log('stopping:', e.message));
+    // The job then ends the usual way (reported, then this copy quits). If something hangs (a relayed call that never
+    // comes back), report it and quit anyway; Claude's process tree is already gone.
+    backstop = setTimeout(() => {
+      log('still running a minute after the time limit: quitting');
+      remote.finish(false, OVER_TIME).catch(() => {}).finally(() => app.exit(2));
+    }, 60_000);
   }, LIMIT_MS);
   try {
     const info = await remote.jobInfo();
+    if (overTime) throw new Error(OVER_TIME);
     note = TASK === 'more_questions' ? await moreQuestions(info) : await scan(info);
+    if (overTime) throw new Error(OVER_TIME);
     ok = true;
   } catch (e) {
-    note = e.message;
-    log('failed:', e.message);
+    note = overTime ? OVER_TIME : e.message;
+    log('failed:', note);
   } finally {
     clearTimeout(deadline);
   }
@@ -228,6 +252,7 @@ async function run() {
     log('finish failed:', e.message);
   }
   log(ok ? 'done' : 'ended with an error');
+  clearTimeout(backstop);
   app.exit(ok ? 0 : 1);
 }
 

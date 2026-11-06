@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from academic_sync.chapter_topics import canonicalize_chapter_label, split_chapter_segments
 from academic_sync.config import REPO_ROOT
+from academic_sync.safe_paths import safe_code, safe_stem
 from academic_sync.db import repository
 from academic_sync.db.orm import AcademicItemRow, CourseRow, StudyPdfRow
 from academic_sync.models.domain import AcademicItem, ChapterTopic, Course
@@ -380,7 +381,7 @@ def earlier_pdfs(session: Session, course_id: str, before: date) -> list[StudyPd
 
 def work_dir(course: Course, banner: AcademicItem) -> Path:
     assert banner.date is not None
-    return WORK_ROOT / course.course_code / banner.date.isoformat()
+    return WORK_ROOT / safe_code(course.course_code) / banner.date.isoformat()
 
 
 def week_display(banner: AcademicItem) -> str:
@@ -449,7 +450,7 @@ def build_bundle(session: Session, banner: AcademicItem,
         "due_this_week": [_item_dict(i) for i in _week_items(session, banner)],
         "tests_next_3_weeks": [_item_dict(i) for i in _upcoming_tests(session, banner)],
         "pdf_title": filename[:-4],
-        "output_path": str(default_output_dir() / course.course_code / filename),
+        "output_path": str(default_output_dir() / safe_code(course.course_code) / filename),
         "work_dir": str(wd),
         "source_path": str(wd / "main.typ"),
         # Kea: a week already over gets no "This Week" section (its dates are history).
@@ -615,10 +616,13 @@ def commons_fetch(file_title: str, dest_dir: Path, name: str | None = None) -> d
     info = _image_info(page)
     if info is None or not info.get("thumb_url"):
         raise ValueError(f"{file_title}: not found or not freely licensed")
-    ext = Path(urllib.parse.urlparse(info["thumb_url"]).path).suffix.lower() or ".png"
-    stem = name or re.sub(r"[^a-z0-9]+", "-", file_title[5:].rsplit(".", 1)[0].lower()).strip("-")
+    ext = Path(urllib.parse.urlparse(info["thumb_url"]).path).suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".tif", ".tiff"):
+        ext = ".png"
+    # (A plain file name in dest_dir, whatever name or title it was given: never a way out of the folder.)
+    stem = safe_stem(name or file_title[5:].rsplit(".", 1)[0], fallback="image")
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / f"{stem[:60]}{ext}"
+    dest = dest_dir / f"{stem}{ext}"
     dest.write_bytes(_open(info["thumb_url"], 60))
     info["path"] = str(dest)
     return info
