@@ -332,5 +332,8 @@
     "tesseract.js",
     "xlsx",
     "zustand"
-  ]
+  ],
+  "overrides": {
+    "adm-zip": "^0.6.1"
+  }
 }
