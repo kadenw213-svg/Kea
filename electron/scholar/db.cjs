@@ -22,8 +22,39 @@ async function open(file) {
   if (cache.db && cache.file === file && cache.mtime === mtime) return cache.db;
   const S = await engine();
   cache.db?.close();
-  cache = { file, mtime, db: new S.Database(fs.readFileSync(file)) };
+  cache = { file, mtime, db: guardCodes(new S.Database(fs.readFileSync(file))) };
   return cache.db;
+}
+
+/**
+ * Hide every class whose course code can't be a folder name ("BIO1010\..\..\x"): Kea builds paths from course codes
+ * (downloads, notes, textbooks), and a class database can come from someone else's Kea folder. A temporary view named
+ * `courses` shadows the table for every query on this (read-only, in-memory) copy; the file itself is never changed.
+ */
+function guardCodes(db) {
+  const { validCode } = require('./safePaths.cjs');
+  try {
+    db.create_function('kea_valid_code', (c) => (validCode(c) ? 1 : 0));
+    const has = rows(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'courses'").length;
+    if (has) db.run('CREATE TEMP VIEW courses AS SELECT * FROM main.courses WHERE kea_valid_code(course_code) = 1');
+  } catch (err) {
+    console.error('Course code guard', err.message);
+  }
+  return db;
+}
+
+/** The course codes in a class database file that can't be folder names (empty when it's fine, or has no classes). */
+async function badCourseCodes(file) {
+  const { validCode } = require('./safePaths.cjs');
+  const S = await engine();
+  const db = new S.Database(fs.readFileSync(file));
+  try {
+    return rows(db, 'SELECT course_code FROM courses').map((r) => r.course_code).filter((c) => !validCode(c));
+  } catch {
+    return [];
+  } finally {
+    db.close();
+  }
 }
 
 function rows(db, sql, params = []) {
@@ -853,4 +884,4 @@ async function sourceText(file, id) {
   return r || null;
 }
 
-module.exports = { searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, _test: { handIn, norm } };
+module.exports = { searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { handIn, norm } };

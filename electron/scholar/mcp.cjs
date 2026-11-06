@@ -71,22 +71,59 @@ const TOOLS = [
 // platform, or an address the class site itself links to (from Kea's own reading of the course content). Never a
 // file on this computer, and never anywhere else, so nothing can be sent out through a crafted address.
 const PLATFORMS = /(^|\.)(aleks\.com|mheducation\.com|mcgraw-hill\.com|pearson\.com|pearsoned\.com|pearsoncmg\.com|mylabmastering\.com|masteringchemistry\.com|cengage\.com|webassign\.net|cengagenow\.com|holscience\.com|scienceinteractive\.com|macmillanlearning\.com|achieve\.macmillanlearning\.com|wiley\.com|wileyplus\.com|zybooks\.com|perusall\.com|instructure\.com|brightspace\.com|d2l\.com|desire2learn\.com|openstax\.org|libretexts\.org|simplesyllabus\.com|kaltura\.com|panopto\.com|youtube\.com|vimeo\.com|turnitin\.com|respondus\.com|labster\.com|knewton\.com|hawkeslearning\.com|chegg\.com|youtu\.be|yuja\.com|evaluationkit\.com|castlebranch\.com|readspeaker\.com)$/i;
-let linked = { at: 0, hosts: new Set() };
-function linkedHosts() {
-  if (Date.now() - linked.at < 5 * 60e3) return linked.hosts;
-  const hosts = new Set();
+/**
+ * The school's own registrable domain for a host ("d2l.school.edu" → "school.edu", "learn.ox.ac.uk" → "ox.ac.uk"), from
+ * the Public Suffix List (tldts, which Kea already ships with its ad blocker), never "the last two labels" (which makes
+ * "ac.uk" a school). '' for an address, a bare suffix or anything it can't tell.
+ */
+function schoolDomain(host) {
+  try {
+    return require('tldts-experimental').getDomain(String(host || ''), { allowPrivateDomains: true }) || '';
+  } catch {
+    return '';
+  }
+}
+
+// Links the teacher put in the class: the course content, assignment folders, quizzes and the calendar, as Kea's own
+// pre-check saved them. Never discussions or news, which classmates can write into. Only these exact addresses are
+// opened on a host that's allowed for no other reason, so nothing can be added to one (a query string carrying what
+// the scan read).
+const TEACHER_AREAS = /-(content|dropbox|quizzes|calendar)\.json$/;
+const exact = (u) => {
+  const x = new URL(u);
+  x.hash = '';
+  return x.href;
+};
+let linked = { at: 0, urls: new Set() };
+function linkedUrls() {
+  if (Date.now() - linked.at < 5 * 60e3) return linked.urls;
+  const urls = new Set();
+  const add = (s) => {
+    for (const m of String(s).matchAll(/https:\/\/[^\s"'<>()[\]{}\\|^`]+/gi)) {
+      const raw = m[0].replace(/&amp;/gi, '&').replace(/[.,;:!?]+$/, '');
+      try {
+        urls.add(exact(raw));
+      } catch {}
+    }
+  };
+  const walk = (v, depth = 0) => {
+    if (depth > 40 || urls.size > 20000) return;
+    if (typeof v === 'string') add(v);
+    else if (Array.isArray(v)) for (const x of v) walk(x, depth + 1);
+    else if (v && typeof v === 'object') for (const x of Object.values(v)) walk(x, depth + 1);
+  };
   try {
     const dir = path.join(profiles.paths().workspace, 'data', 'digests', 'kea-precheck');
     const days = fs.readdirSync(dir).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().slice(-3);
     for (const d of days)
-      // (Links in content, announcements, assignments and discussions: a platform's address can be anywhere.)
-      for (const f of fs.readdirSync(path.join(dir, d)).filter((f) => /-(content|news|dropbox|discussions|quizzes|calendar)\.json$/.test(f))) {
-        const text = fs.readFileSync(path.join(dir, d, f), 'utf8');
-        for (const m of text.matchAll(/https:\/\/([a-z0-9.-]+)/gi)) hosts.add(m[1].toLowerCase());
+      for (const f of fs.readdirSync(path.join(dir, d)).filter((f) => TEACHER_AREAS.test(f))) {
+        try {
+          walk(JSON.parse(fs.readFileSync(path.join(dir, d, f), 'utf8')));
+        } catch {}
       }
   } catch {}
-  linked = { at: Date.now(), hosts };
-  return hosts;
+  linked = { at: Date.now(), urls };
+  return urls;
 }
 function allowedUrl(url) {
   let u;
@@ -104,9 +141,10 @@ function allowedUrl(url) {
       return '';
     }
   })();
-  const school = home.split('.').slice(-2).join('.');
-  if (host === home || (school && (host === school || host.endsWith(`.${school}`))) || PLATFORMS.test(host) || linkedHosts().has(host)) return u.href;
-  throw new Error(`${host} isn't the class site or a platform the class links to, so it can't be opened here.`);
+  const school = schoolDomain(home);
+  if (host === home || (school && (host === school || host.endsWith(`.${school}`))) || PLATFORMS.test(host)) return u.href;
+  if (linkedUrls().has(exact(u.href))) return u.href;
+  throw new Error(`${host} isn't the class site or a platform the class links to (or that exact address isn't one the teacher linked), so it can't be opened here.`);
 }
 
 function start(hooks) {
@@ -222,4 +260,4 @@ function start(hooks) {
   });
 }
 
-module.exports = { start, TOOLS, allowedUrl };
+module.exports = { start, TOOLS, allowedUrl, schoolDomain, _test: { linkedUrls, reset: () => (linked = { at: 0, urls: new Set() }) } };

@@ -34,6 +34,7 @@ const path = require('path');
 const crypto = require('crypto');
 const profiles = require('./profiles.cjs');
 const db = require('./db.cjs');
+const { validCode, safeCode, within } = require('./safePaths.cjs');
 
 const dir = () => path.join(profiles.paths().dir, 'study');
 const file = (...p) => path.join(dir(), ...p);
@@ -356,7 +357,9 @@ function classFiles(code) {
       else if (/\.(pdf|docx|pptx)$/i.test(f.name) && !fs.existsSync(`${full}.txt`)) files.push({ path: path.relative(ws, full).replace(/\\/g, '/'), bytes: fs.statSync(full).size, needs_text: true });
     }
   };
-  walk(path.join(ws, 'data', 'downloads', code));
+  // (A course code that isn't a plain folder name has no files: it never reaches a path.)
+  if (!validCode(code)) return files;
+  walk(within(path.join(ws, 'data', 'downloads'), code));
   return files;
 }
 
@@ -534,7 +537,7 @@ const directUrl = (url) =>
  */
 async function fetchSheets(req, nums, docText, step) {
   const ws = profiles.paths().workspace;
-  const dir = path.join(ws, 'data', 'downloads', req.course.code, 'review');
+  const dir = within(path.join(ws, 'data', 'downloads'), safeCode(req.course.code), 'review');
   const seen = new Map();
   for (const t of [...(req.tests || []), ...(req.chapters || [])])
     for (const l of t.review_links || []) {
@@ -647,7 +650,7 @@ async function chapterNotes(req, docText, step = () => {}) {
   // are what the exams are built from.
   const sources = [...sheets, ...classTexts];
   const general = sources.filter((f) => !chapterNum(path.basename(f)));
-  const notesDir = path.join(ws, 'data', 'study', 'notes', req.course.code);
+  const notesDir = within(path.join(ws, 'data', 'study', 'notes'), safeCode(req.course.code));
   fs.mkdirSync(notesDir, { recursive: true });
   const dbTime = mtime(profiles.paths().db);
   const notes = req.chapters.map((c) => {
@@ -1282,7 +1285,7 @@ function stepsNeed(chapters) {
  */
 function stepsBrief(courseId, code, label) {
   const ws = profiles.paths().workspace;
-  const dir = path.join(ws, 'data', 'study', 'steps', code);
+  const dir = within(path.join(ws, 'data', 'study', 'steps'), safeCode(code));
   fs.mkdirSync(dir, { recursive: true });
   // (A calculation whose steps are only short lines of text gets a full walkthrough too.)
   const qs = catalog('exam', courseId, [label]).filter(needsSteps);

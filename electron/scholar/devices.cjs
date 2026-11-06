@@ -488,17 +488,28 @@ async function follow(dir) {
   const shared = path.join(dir, 'classes.db');
   // The class database, once it has fully arrived (the drive may still be bringing it down).
   st.waiting = null;
-  if (p?.db?.sha && p.db.sha !== st.pulledSha) {
+  if (p?.db?.sha && p.db.sha !== st.pulledSha && p.db.sha !== st.refusedDb?.sha) {
     const size = fs.existsSync(shared) ? fs.statSync(shared).size : -1;
     if (size === p.db.size && sha(shared) === p.db.sha) {
       fs.mkdirSync(path.dirname(P.db), { recursive: true });
-      // The first time, this device's own database is kept aside in case it's wanted back.
-      if (!st.pulledSha && fs.existsSync(P.db)) fs.copyFileSync(P.db, P.db.replace(/\.db$/, '.before-device-sync.db'));
+      // (The copy is what's checked and used, so the file can't change in between.)
       fs.copyFileSync(shared, P.db + '.tmp');
-      fs.renameSync(P.db + '.tmp', P.db);
-      st.pulledSha = p.db.sha;
-      st.pulledAt = new Date().toISOString();
-      any = true;
+      // A class whose course code isn't a plain folder name ("BIO1010\..\..\x") would send Kea's and the engine's
+      // paths out of the workspace: such a database is never taken in.
+      const bad = await require('./db.cjs').badCourseCodes(P.db + '.tmp').catch(() => ['(unreadable)']);
+      if (bad.length) {
+        fs.rmSync(P.db + '.tmp', { force: true });
+        st.refusedDb = { sha: p.db.sha, codes: bad.slice(0, 5).map((c) => String(c).slice(0, 60)), at: new Date().toISOString() };
+        console.error('Devices: not taking in the class database, its course codes can’t be folder names:', st.refusedDb.codes.join(', '));
+      } else {
+        // The first time, this device's own database is kept aside in case it's wanted back.
+        if (!st.pulledSha && fs.existsSync(P.db)) fs.copyFileSync(P.db, P.db.replace(/\.db$/, '.before-device-sync.db'));
+        fs.renameSync(P.db + '.tmp', P.db);
+        st.pulledSha = p.db.sha;
+        st.pulledAt = new Date().toISOString();
+        st.refusedDb = null;
+        any = true;
+      }
     } else st.waiting = { since: st.waiting?.since || new Date().toISOString(), have: Math.max(0, size), of: p.db.size };
   }
   st.pulled = st.pulled || {};

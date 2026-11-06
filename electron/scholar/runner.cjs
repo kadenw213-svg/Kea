@@ -7,11 +7,65 @@ const path = require('path');
 const profiles = require('./profiles.cjs');
 const workspace = require('./workspace.cjs');
 const mcp = require('./mcp.cjs');
+const { killTree } = require('./procTree.cjs');
+const { within, safeCode } = require('./safePaths.cjs');
 
 const KEA_TOOLS = ['d2l_open', 'd2l_fetch', 'd2l_download', 'd2l_status', 'kea_progress', 'kea_notify'].map((t) => `mcp__kea__${t}`);
 // Reading and searching stay inside this scan folder: course pages can carry planted instructions, and a scan must
 // never be able to read the rest of the computer.
-const BASE = ['Bash(uv run academic-sync:*)', 'Read(./**)', 'Glob(./**)', 'Grep(./**)', 'Skill', 'ToolSearch', 'Edit(data/**)', 'Write(data/**)'];
+const FILES = ['Read(./**)', 'Glob(./**)', 'Grep(./**)', 'Skill', 'ToolSearch', 'Edit(data/**)', 'Write(data/**)'];
+// The engine commands each kind of run may use (its skill's and Kea's CLAUDE.md's), never the whole engine: Bash is
+// only ever these. (The owner's own Claude Code settings never load in a run: see isolation below.)
+const engine = (...names) => names.map((n) => `Bash(uv run academic-sync ${n}:*)`);
+const LOOKUPS = ['courses', 'course list', 'status', 'prefs get', 'plan', 'completeness', 'unresolved', 'needs-link-refresh', 'item-history', 'changes', 'portal-link-list', 'course-rules'];
+const CALENDAR = [
+  ...LOOKUPS, 'course add', 'prefs set', 'render', 'record-sync', 'extract', 'export', 'coverage', 'coverage-dismiss', 'unresolved-add', 'unresolved-resolve',
+  'weekly-reading-add', 'chapter-topic-add', 'd2l-reconcile', 'item-retype', 'item-supersede', 'item-cancel', 'item-restore', 'kea-brief', 'portal-link-set',
+  'shells-check', 'doc-text', 'audit', 'grade-snapshot-add', 'course-grade-snapshot-add'
+];
+const DIGEST = ['digest-deadlines', 'digest-ingest', 'digest-render', 'digest-record-sent', 'diagnostic-compute', 'diagnostic-render', 'diagnostic-record-sync'];
+const COMMANDS = {
+  daily: [...CALENDAR, ...DIGEST],
+  import: CALENDAR,
+  sync: [...CALENDAR, 'digest-ingest'],
+  probe: [],
+  study: ['courses', 'status', 'record-sync', 'chapter-summary-set', 'study-pdf-due', 'study-pdf-check', 'study-pdf-build', 'study-pdf-skip', 'study-pdf-image', 'study-pdf-figure', 'study-pdf-preview', 'study-pdf-list'],
+  practice: ['courses', 'practice-check', 'study-image'],
+  steps: ['courses', 'practice-check'],
+  transcribe: ['courses', 'doc-text', 'coverage'],
+  curriculum: ['courses', 'status', 'coverage', 'doc-text', 'chapter-topic-add', 'curriculum', 'outcome-add', 'guideline-add', 'guideline-remove', 'course-textbook', 'curriculum-dismiss', 'depth-due', 'depth-review', 'chapter-summary-set'],
+  lookup: ['courses', 'doc-text'],
+  guides: ['courses', 'doc-text']
+};
+const BASE = FILES;
+// Never, in any run, whatever a settings file says: other programs, other engine entry points, or commands that would
+// change how the engine itself runs. (dontAsk already refuses anything not allowed; these are the explicit backstop.)
+const DENY = [
+  'Read(**/*.pdf)', 'Read(./src/**/*.py)', 'Edit(data/*.db)', 'Write(data/*.db)', 'Edit(data/logs/**)', 'Write(data/logs/**)', 'Edit(data/backups/**)', 'Write(data/backups/**)',
+  'Edit(./.claude/**)', 'Write(./.claude/**)', 'PowerShell', 'NotebookEdit',
+  'Bash(uv run academic-sync study-pdf-plot:*)', 'Bash(uv run academic-sync db-init:*)', 'Bash(uv run academic-sync prefs unset:*)',
+  'Bash(uv run python:*)', 'Bash(uv run --:*)', 'Bash(uv pip:*)', 'Bash(uv add:*)', 'Bash(uv tool:*)', 'Bash(uvx:*)', 'Bash(python:*)', 'Bash(python3:*)', 'Bash(py:*)',
+  'Bash(node:*)', 'Bash(npm:*)', 'Bash(npx:*)', 'Bash(pnpm:*)', 'Bash(yarn:*)', 'Bash(git:*)', 'Bash(gh:*)', 'Bash(curl:*)', 'Bash(wget:*)', 'Bash(powershell:*)',
+  'Bash(pwsh:*)', 'Bash(cmd:*)', 'Bash(start:*)', 'Bash(explorer:*)', 'Bash(rundll32:*)', 'Bash(certutil:*)', 'Bash(bitsadmin:*)', 'Bash(mshta:*)', 'Bash(wscript:*)', 'Bash(cscript:*)',
+  'Bash(regsvr32:*)', 'Bash(schtasks:*)', 'Bash(reg:*)', 'Bash(sc:*)', 'Bash(claude:*)'
+];
+const inWorker = () => !!process.env.KEA_WORKER_JOB;
+/**
+ * How Claude Code is started for every run, so only Kea's own rules apply: only the workspace's project settings load
+ * (its skills and CLAUDE.md, written by Kea), never the computer owner's own ~/.claude settings (their allow rules,
+ * hooks, plugins and skills); no hooks at all; and a cap on how many steps one run takes.
+ */
+function isolationArgs() {
+  const turns = inWorker() ? Number(settings().get('hub.workerMaxTurns', 200)) : Number(settings().get('scholar.maxTurns', 400));
+  return ['--setting-sources', 'project', '--settings', JSON.stringify({ disableAllHooks: true, enableAllProjectMcpServers: false }), '--max-turns', String(Math.max(10, Math.min(2000, Math.round(turns) || 200)))];
+}
+/** What a run may use: its task's tools, its engine commands, and the extra tools a pre-check gave it. A worker run (the
+ * owner's Claude, for someone else's class) never searches the web or reads any college site: nothing it reads can be
+ * sent anywhere through a crafted address. */
+function allowedTools(task, t, extra = []) {
+  const list = [...t.tools, ...engine(...(COMMANDS[task] || [])), ...extra];
+  return inWorker() ? list.filter((x) => x !== 'WebSearch' && x !== 'WebFetch(domain:*.edu)') : list;
+}
 // The textbook writer may look things up only on reference sites (nothing it reads can be posted anywhere else).
 // (Claude Code matches a domain exactly: "openstax.org" doesn't cover "www.openstax.org", so each site is allowed with
 // its subdomains too.)
@@ -284,7 +338,7 @@ async function depthPre(job, step, code) {
   step(`Gathering ${code}'s chapter notes and questions…`);
   await study.notesFor(code, (file) => docText(uv, cwd, file), step).catch((err) => console.error('Chapter notes', err));
   const course = (await db().courses(profiles.paths().db, profiles.paths().textbooks, {}).catch(() => [])).find((c) => c.code === code);
-  const dir = path.join(cwd, 'data', 'study', 'depth', code);
+  const dir = within(path.join(cwd, 'data', 'study', 'depth'), safeCode(code));
   fs.mkdirSync(dir, { recursive: true });
   const rel = (f) => path.relative(cwd, f).replace(/\\/g, '/');
   const lines = [];
@@ -325,7 +379,7 @@ async function depthPre(job, step, code) {
         )
       ].join('\n')
     );
-    const notes = path.join(cwd, 'data', 'study', 'notes', code, `${c.label}.md`);
+    const notes = within(path.join(cwd, 'data', 'study', 'notes'), safeCode(code), `${c.label}.md`);
     lines.push(`- ${c.label}${c.title ? `: ${c.title}` : ''} (next test: ${c.next_test.title} on ${c.next_test.date})\n  new from the teacher since the last review (what this review is for):\n${c.fresh.map((f) => `    - ${f.text}`).join('\n')}\n  notes: ${fs.existsSync(notes) ? rel(notes) : '(none)'}\n  textbook: ${c.textbook_source ? rel(c.textbook_source) : '(none)'}\n  questions: ${rel(file)} (${qs.length}, ${weak.size} WEAK)\n  explanation fixes go in: ${rel(path.join(dir, `${c.label}.fixes.json`))}`);
   }
   const started = localStamp();
@@ -419,7 +473,7 @@ function curriculumTools() {
   const site = require('./browser.cjs').schoolInfo().home || '';
   const root = (() => {
     try {
-      return new URL(site).hostname.split('.').slice(-2).join('.');
+      return mcp.schoolDomain(new URL(site).hostname);
     } catch {
       return '';
     }
@@ -892,9 +946,7 @@ function shutdown() {
     }
   }
   for (const x of slots())
-    try {
-      x.child?.kill();
-    } catch {}
+    if (x.child) killTree(x.child.pid).then((ok) => ok || x.child.kill()).catch(() => {});
 }
 let quitting = false;
 
@@ -1090,7 +1142,7 @@ async function next() {
     const how = job.session
       ? ['-p', `Kea stopped this run partway (${{ limit: 'your Claude usage limit', error: 'a server or connection problem', closed: 'Kea closed' }[job.stopReason] || 'it was interrupted'}) and is continuing it now. Carry on exactly where you stopped: everything you saved is still saved, so don't start over or re-read what you already have. Call mcp__kea__kea_progress first if you have it (the connection to Kea is new).`, '--resume', job.session]
       : ['-p', prompt];
-    const args = [...how, '--model', t.model ? t.model() : 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', '--permission-mode', 'dontAsk', '--allowedTools', ...t.tools, ...extraTools, '--disallowedTools', 'Read(**/*.pdf)', 'Read(./src/**/*.py)', 'Edit(data/*.db)', 'Write(data/*.db)', 'Edit(data/logs/**)', 'Write(data/logs/**)', 'Edit(data/backups/**)', 'Write(data/backups/**)'];
+    const args = claudeArgs(how, job.task, t, extraTools, cfg);
     // A copy of the database before every run that can change it (the newest 30 are kept), and the run's id for the
     // item history, so every change can be traced to this run and undone from its copy.
     if (['import', 'sync', 'daily', 'study'].includes(job.task)) {
@@ -1120,7 +1172,7 @@ async function next() {
     };
     inflight();
     step(`${job.session ? 'Continuing: ' : ''}${t.label}…`);
-    const child = spawn(claude, args, { cwd, env: { ...workspace.engineEnv(uv), KEA_RUN_ID: String(entry.id), KEA_TASK: job.task }, windowsHide: true });
+    const child = spawn(claude, args, { cwd, env: runEnv(uv, entry.id, job.task), windowsHide: true });
     slot.child = child;
     let buf = '';
     let result = null;
@@ -1231,14 +1283,27 @@ async function next() {
   }
 }
 
-/** Stop the run (the student's choice: it isn't continued later) and clear the queue. */
+/** Claude Code's command line for a run (isolated, its own tools only, no prompts). */
+function claudeArgs(how, task, t, extraTools, cfg) {
+  return [...how, '--model', t.model ? t.model() : 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', ...isolationArgs(), '--permission-mode', 'dontAsk', '--allowedTools', ...allowedTools(task, t, extraTools), '--disallowedTools', ...DENY];
+}
+/** A run's environment: the engine's minimal one (no tokens, keys or Kea's own variables) and the run's id and task. */
+const runEnv = (uv, id, task) => ({ ...workspace.engineEnv(uv), KEA_RUN_ID: String(id), KEA_TASK: task });
+
+/**
+ * Stop the run (the student's choice, or a shared-Claude job's time limit: it isn't continued later) and clear the
+ * queue. Claude Code ends with everything it started (Bash, uv, Python). Resolves once each has been told to end.
+ */
 function stop() {
   for (const j of queue.splice(0)) j.resolve(null);
+  const ending = [];
   for (const x of slots())
     if (x.child) {
       x.job.stopping = true;
-      x.child.kill();
+      const child = x.child;
+      ending.push(killTree(child.pid).then((ok) => ok || child.kill()));
     }
+  return Promise.all(ending);
 }
 
 // Waiting runs carry their own estimate, so the time left covers the whole queue.
@@ -1263,4 +1328,4 @@ function deleteNews(ids = [], keys = []) {
   return gone.map((n) => inboxKey({ course: n.course || '', title: n.title, body: n.body }));
 }
 
-module.exports = { run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS, _test: { depthRows, transientError, eachOnce, queue: () => queue, current: () => current, side: () => side } };
+module.exports = { run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS, _test: { claudeArgs, runEnv, allowedTools, COMMANDS, DENY, depthRows, transientError, eachOnce, queue: () => queue, current: () => current, side: () => side } };

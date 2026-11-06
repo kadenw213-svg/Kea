@@ -213,6 +213,7 @@ async function requestScan() {
     await putFile(`${r.uploadTo}job.json`, JSON.stringify({ home: info.home, platform: info.platform, profile }));
     await req('POST', `/v1/scan/${r.job.id}/ready`, {});
   }
+  if (r.job?.id) myJobs.add(r.job.id, r.job.kind || 'initial_scan');
   watchJobs();
   return r;
 }
@@ -269,6 +270,7 @@ async function requestQuestions({ courseId, chapter, joinCode }) {
     detail: { courseCode: c.code, chapter, profile },
     ...(joinCode ? { joinCode: String(joinCode).trim() } : {}),
   });
+  if (r.job?.id) myJobs.add(r.job.id, r.job.kind || 'more_questions');
   watchJobs();
   return r;
 }
@@ -286,9 +288,45 @@ async function sectionOf(courseId) {
 }
 
 // While one of this person's jobs runs, the worker's calls come here and are answered with this Kea's own signed-in
-// browser, limited to the class site and the platforms it links to (mcp.cjs allowedUrl), and read-only.
-const serving = new Set();
-async function relayOp(op, a) {
+// browser, limited to the class site and the platforms it links to (mcp.cjs allowedUrl), and read-only. Only for a job
+// THIS device asked for (myJobs: never one the Hub merely says is running), only the operations that kind of job needs,
+// and only for a limited time; a notification and the shared-Claude panel say while it's happening.
+const RELAY_OPS = { initial_scan: ['request', 'open', 'click', 'status'], update_scan: ['request', 'open', 'click', 'status'] };
+const relayMinutes = () => Math.max(10, Math.min(480, Number(settings.get('hub.relayMinutes', 60)) || 60));
+/** The shared-Claude jobs this device asked for (userData/hub-my-jobs.json): { [id]: { kind, at, servedFrom } }. */
+const myJobs = {
+  file: () => path.join(app.getPath('userData'), 'hub-my-jobs.json'),
+  read() {
+    try {
+      const j = JSON.parse(fs.readFileSync(this.file(), 'utf8'));
+      return j && typeof j === 'object' && !Array.isArray(j) ? j : {};
+    } catch {
+      return {};
+    }
+  },
+  write(all) {
+    // (Jobs from more than 30 days ago are forgotten.)
+    const keep = Object.fromEntries(Object.entries(all).filter(([, v]) => Date.now() - (v.at || 0) < 30 * 864e5));
+    fs.writeFileSync(this.file(), JSON.stringify(keep));
+  },
+  add(id, kind) {
+    const all = this.read();
+    if (!all[id]) all[id] = { kind, at: Date.now() };
+    this.write(all);
+  },
+  get(id) {
+    return this.read()[id] || null;
+  },
+  /** When this device first served the job's calls (kept, so a restart doesn't start the time limit over). */
+  servedFrom(id) {
+    const all = this.read();
+    if (!all[id]) return null;
+    if (!all[id].servedFrom) (all[id].servedFrom = Date.now()), this.write(all);
+    return all[id].servedFrom;
+  },
+};
+async function relayOp(op, a, kind = 'initial_scan') {
+  if (!(RELAY_OPS[kind] || []).includes(op)) throw new Error(`Not allowed: ${op}`);
   const browser = require('./scholar/browser.cjs');
   const { allowedUrl } = require('./scholar/mcp.cjs');
   const allowed = (u) => {
@@ -318,31 +356,58 @@ async function relayOp(op, a) {
       throw new Error(`Not allowed: ${op}`);
   }
 }
-async function answerCalls(jobId) {
+/** Jobs being served now: { id, since, until, calls } (for the shared-Claude panel). */
+const serving = new Map();
+function servingNow() {
+  return [...serving.values()].map((x) => ({ ...x }));
+}
+async function answerCalls(jobId, kind) {
   if (serving.has(jobId)) return;
-  serving.add(jobId);
+  const mine = myJobs.get(jobId);
+  // A job this device never asked for, or a kind that needs no class site: never served.
+  if (!mine || !RELAY_OPS[kind] || (mine.kind && mine.kind !== kind)) return;
+  const since = myJobs.servedFrom(jobId);
+  const until = since + relayMinutes() * 60e3;
+  if (Date.now() >= until) return;
+  const state = { id: jobId, kind, since, until, calls: 0 };
+  serving.set(jobId, state);
+  let note = null;
+  try {
+    const { Notification } = require('electron');
+    if (Notification.isSupported()) {
+      note = new Notification({ title: 'Kea’s shared Claude is reading your class site', body: 'Your scan is running and reads your class site through this Kea, read-only. Keep Kea open until it finishes.', silent: true });
+      note.show();
+    }
+  } catch {}
   try {
     for (;;) {
+      if (Date.now() >= until) break; // its time is up: the worker's calls go unanswered and the job ends
       let r;
       try {
         r = await req('GET', `/v1/scan/${jobId}/calls`);
       } catch (e) {
-        if (e.status === 404 || e.status === 401 || e.status === 428) break; // finished, or not ours
+        if (e.status === 404 || e.status === 401 || e.status === 403 || e.status === 428) break; // finished, or not ours
         await sleep(5000);
         continue;
       }
       for (const c of r.calls || []) {
         let body;
-        try {
-          body = { ok: true, result: await relayOp(c.op, c.args || {}) };
-        } catch (e) {
-          body = { ok: false, error: String(e.message || e) };
-        }
+        if (Date.now() >= until) body = { ok: false, error: 'This Kea stopped answering: the scan reached its time limit.' };
+        else
+          try {
+            state.calls++;
+            body = { ok: true, result: await relayOp(c.op, c.args || {}, kind) };
+          } catch (e) {
+            body = { ok: false, error: String(e.message || e) };
+          }
         await req('POST', `/v1/scan/${jobId}/calls/${c.id}/result`, body).catch(() => {});
       }
     }
   } finally {
     serving.delete(jobId);
+    try {
+      note?.close();
+    } catch {}
   }
 }
 let jobsTimer = null;
@@ -356,7 +421,8 @@ function watchJobs(delay = 1000) {
       try {
         const r = await req('GET', '/v1/scan');
         Object.assign(jobsState, { jobs: r.jobs, allowance: r.allowance, at: Date.now() });
-        for (const j of r.jobs) if (j.status === 'running' && j.kind !== 'more_questions') answerCalls(j.id);
+        // (Only this device's own scan jobs: answerCalls checks.)
+        for (const j of r.jobs) if (j.status === 'running' && RELAY_OPS[j.kind]) answerCalls(j.id, j.kind);
         busy = r.jobs.some((j) => j.status === 'queued' || j.status === 'running');
       } catch {}
     }
@@ -380,6 +446,47 @@ function ownerKeyFile() {
 }
 let workerProc = null;
 const workerState = { running: null, last: null };
+const workersDir = () => path.join(app.getPath('userData'), 'workers');
+/** The longest a shared-Claude job may take, in minutes (Settings → Kea's shared Claude). */
+const workerMinutes = () => Math.max(10, Math.min(240, Number(settings.get('hub.workerMinutes', 45)) || 45));
+/**
+ * A finished job's folder (that student's class database, downloads, logs and Claude's transcript) is deleted; only a
+ * few lines about it stay, in workers/summary.log.
+ */
+async function endWorkerFolder(dir, line) {
+  let tail = [];
+  try {
+    tail = fs.readFileSync(path.join(dir, 'worker.log'), 'utf8').trim().split(/\r?\n/).slice(-3).map((l) => l.slice(0, 300));
+  } catch {}
+  try {
+    fs.mkdirSync(workersDir(), { recursive: true });
+    const log = path.join(workersDir(), 'summary.log');
+    const old = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split(/\r?\n/).filter(Boolean).slice(-1000) : [];
+    fs.writeFileSync(log, [...old, line, ...tail.map((l) => `    ${l}`)].join('\n') + '\n');
+  } catch (e) {
+    console.error('Worker summary', e.message);
+  }
+  // (Windows can hold a file for a moment after the program using it ends.)
+  for (let i = 0; i < 10; i++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      if (!fs.existsSync(dir)) return true;
+    } catch {}
+    await sleep(1000 * (i + 1));
+  }
+  console.error('Couldn’t delete the worker folder', dir);
+  return false;
+}
+/** Worker folders left from a job that didn't end cleanly (Kea closed or crashed mid-job). */
+async function sweepWorkerFolders() {
+  let entries = [];
+  try {
+    entries = fs.readdirSync(workersDir(), { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) if (e.isDirectory()) await endWorkerFolder(path.join(workersDir(), e.name), `${new Date().toISOString()} job ${e.name}: left over from an earlier start, deleted`);
+}
 async function launcherTick() {
   if (workerProc || process.env.KEA_WORKER_JOB) return;
   if (!cached()?.owner) return;
@@ -391,6 +498,8 @@ async function launcherTick() {
   } catch {
     return;
   }
+  await sweepWorkerFolders();
+  if (workerProc) return;
   const port = Number(settings.get('hub.ownerPort', 4861)) || 4861;
   const key = fs.readFileSync(keyFile, 'utf8').trim();
   const call = (p, body) => net.fetch(`http://127.0.0.1:${port}${p}`, { method: 'POST', headers: { 'x-kea-owner-key': key, 'content-type': 'application/json' }, body: JSON.stringify(body || {}) }).then((r) => r.json());
@@ -403,20 +512,36 @@ async function launcherTick() {
   if (!job) return;
   const task = { initial_scan: 'import', update_scan: 'sync', more_questions: 'more_questions' }[job.kind];
   if (!task) return void call(`/owner/scan/${job.id}/finish`, { ok: false, note: `Kea can't run "${job.kind}" jobs yet.` });
-  const dir = path.join(app.getPath('userData'), 'workers', job.id);
+  // (The Hub makes job ids; one that isn't a plain name never becomes a folder.)
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(job.id))) return void call(`/owner/scan/${encodeURIComponent(job.id)}/finish`, { ok: false, note: 'Bad job id.' });
+  const dir = path.join(workersDir(), job.id);
   const { spawn } = require('child_process');
-  workerState.running = { id: job.id, kind: job.kind, startedAt: Date.now() };
-  workerProc = spawn(process.execPath, app.isPackaged ? [] : [app.getAppPath()], {
-    env: { ...process.env, KEA_WORKER_JOB: job.id, KEA_WORKER_TASK: task, KEA_USERDATA: dir, KEA_OWNER_KEY_FILE: keyFile, KEA_HUB_OWNER_PORT: String(port) },
-    stdio: 'ignore',
-    windowsHide: true,
-  });
-  workerProc.on('exit', async (code) => {
+  const { killTree } = require('./scholar/procTree.cjs');
+  const { minimalEnv } = require('./scholar/workspace.cjs');
+  const limitMs = workerMinutes() * 60e3;
+  const startedAt = Date.now();
+  workerState.running = { id: job.id, kind: job.kind, startedAt };
+  // The worker copy gets only what it needs: no tokens or keys from this Kea's environment (the owner key is a file
+  // path it reads; Claude's own runs get even less, see workspace.cjs).
+  const env = { ...minimalEnv(), KEA_WORKER_JOB: job.id, KEA_WORKER_TASK: task, KEA_USERDATA: dir, KEA_OWNER_KEY_FILE: keyFile, KEA_HUB_OWNER_PORT: String(port), KEA_WORKER_LIMIT_MS: String(limitMs), ...(process.env.KEA_DRY_RUN ? { KEA_DRY_RUN: process.env.KEA_DRY_RUN } : {}) };
+  const proc = spawn(process.execPath, app.isPackaged ? [] : [app.getAppPath()], { env, stdio: 'ignore', windowsHide: true });
+  workerProc = proc;
+  let killedForTime = false;
+  // The worker ends Claude at its own limit; if the worker itself is still there a few minutes later, it and
+  // everything under it (Claude, Bash, uv, Python) are ended here.
+  const backstop = setTimeout(() => {
+    killedForTime = true;
+    killTree(proc.pid).catch(() => {});
+  }, limitMs + 5 * 60e3);
+  proc.on('exit', async (code) => {
+    clearTimeout(backstop);
     workerProc = null;
     workerState.last = { id: job.id, code, at: Date.now() };
     workerState.running = null;
-    // A worker that crashed before reporting: mark the job failed so the queue moves on.
-    if (code !== 0) await call(`/owner/scan/${job.id}/finish`, { ok: false, note: `The worker stopped (code ${code}).` }).catch(() => {});
+    // A worker that crashed (or was ended) before reporting: mark the job failed so the queue moves on.
+    if (code !== 0) await call(`/owner/scan/${job.id}/finish`, { ok: false, note: killedForTime ? 'The job ran over its time limit.' : `The worker stopped (code ${code}).` }).catch(() => {});
+    const mins = Math.round((Date.now() - startedAt) / 60e3);
+    await endWorkerFolder(dir, `${new Date().toISOString()} job ${job.id} ${job.kind}: ${code === 0 ? 'done' : killedForTime ? 'ended at the time limit' : `ended (code ${code})`} after ${mins} min`);
   });
 }
 
@@ -495,7 +620,7 @@ function register() {
   ipcMain.handle('hub:sectionRequests', wrap(() => (isSignedIn() ? req('GET', '/v1/course-sections/requests') : { incoming: [], mine: [] })));
   ipcMain.handle('hub:sectionDecide', wrap((a) => req('POST', `/v1/course-sections/requests/${encodeURIComponent(String(a.id))}/decide`, { approve: a.approve === true })));
   ipcMain.handle('hub:sectionCode', wrap(async (a) => req('POST', '/v1/course-sections/code', { course: await sectionOf(a.courseId), ...(a.reset ? { reset: true } : {}) })));
-  ipcMain.handle('hub:scanJobs', wrap(async () => (isSignedIn() ? { ...(await req('GET', '/v1/scan')), worker: workerState } : { jobs: [], allowance: null, worker: workerState })));
+  ipcMain.handle('hub:scanJobs', wrap(async () => (isSignedIn() ? { ...(await req('GET', '/v1/scan')), worker: workerState, serving: servingNow() } : { jobs: [], allowance: null, worker: workerState, serving: servingNow() })));
   // A worker copy (scholar/worker.cjs) does none of the background work below.
   if (process.env.KEA_WORKER_JOB) return;
   // Start (or stop) syncing through the Hub when Kea starts, and whenever sign-in or the chosen drive may have changed.
@@ -582,4 +707,4 @@ function register() {
   require('./hubNotes.cjs').register();
 }
 
-module.exports = { register, cached, req, signedIn: isSignedIn, syncRoot, syncNow, url: hubUrl, refreshStatus: status, DEFAULT_HUB_URL, syncState: () => ({ ...syncState }), startSync };
+module.exports = { _relay: { relayOp, answerCalls, myJobs, servingNow, RELAY_OPS, endWorkerFolder }, register, cached, req, signedIn: isSignedIn, syncRoot, syncNow, url: hubUrl, refreshStatus: status, DEFAULT_HUB_URL, syncState: () => ({ ...syncState }), startSync };

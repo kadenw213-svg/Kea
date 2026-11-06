@@ -138,12 +138,40 @@ async function setupEngine(home, onLine) {
   return true;
 }
 
-/** The environment class scans and the engine run with. */
+// What Claude Code, uv and Python need from Kea's own environment to run on Windows (where things are, the network
+// proxy, Claude Code's own config folder for its sign-in), and nothing else: Kea's own variables (the Hub owner key's
+// path, the worker's job), tokens, keys and secrets never reach a class scan, which reads content anyone in a class
+// can write.
+const PASS_ENV = new Set(
+  [
+    'SystemRoot', 'SystemDrive', 'windir', 'ComSpec', 'PATHEXT', 'PATH', 'TEMP', 'TMP', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'HOME',
+    'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432', 'CommonProgramFiles',
+    'CommonProgramFiles(x86)', 'CommonProgramW6432', 'USERNAME', 'USERDOMAIN', 'COMPUTERNAME', 'OS', 'NUMBER_OF_PROCESSORS',
+    'PROCESSOR_ARCHITECTURE', 'PROCESSOR_IDENTIFIER', 'LANG', 'LC_ALL', 'TZ', 'TERM',
+    'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE',
+    'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_GIT_BASH_PATH', 'UV_CACHE_DIR', 'UV_PYTHON_INSTALL_DIR', 'UV_TOOL_DIR', 'UV_NATIVE_TLS'
+  ].map((k) => k.toUpperCase())
+);
+// (Belt and braces: even an allowed name is dropped if it looks like a secret.)
+const SECRET_ENV = /TOKEN|KEY|SECRET|PASSW|CREDENTIAL|COOKIE|SESSION|^GH_|^GITHUB_|^KEA_|^ANTHROPIC_|^AWS_|^AZURE_|^NPM_/i;
+
+/** Only the PASS_ENV variables of `env`, by any capitalization (Windows names aren't case-sensitive). */
+function minimalEnv(env = process.env) {
+  const out = {};
+  for (const [k, v] of Object.entries(env)) if (v != null && PASS_ENV.has(k.toUpperCase()) && !SECRET_ENV.test(k)) out[k] = v;
+  return out;
+}
+
+/** The environment class scans and the engine run with: minimalEnv, plus uv on the PATH and the engine's settings. */
 function engineEnv(uv) {
   const p = profiles.paths();
+  const base = minimalEnv();
+  const pathKey = Object.keys(base).find((k) => k.toUpperCase() === 'PATH');
+  const sysPath = pathKey ? base[pathKey] : '';
+  if (pathKey) delete base[pathKey];
   return {
-    ...process.env,
-    PATH: [uv ? path.dirname(uv) : '', process.env.PATH || ''].filter(Boolean).join(path.delimiter),
+    ...base,
+    PATH: [uv ? path.dirname(uv) : '', sysPath].filter(Boolean).join(path.delimiter),
     KEA_TEXTBOOK_DIR: p.textbooks,
     // The class site's name in what the engine writes ("From Canvas (…)", the "Canvas" link label).
     KEA_SITE_NAME: require('./browser.cjs').platformOf() === 'canvas' ? 'Canvas' : 'D2L',
@@ -152,4 +180,4 @@ function engineEnv(uv) {
   };
 }
 
-module.exports = { prepare, check, findUv, findClaude, claudeAccount, installUv, installClaude, signInClaude, setupEngine, engineEnv, runHidden };
+module.exports = { prepare, check, findUv, findClaude, claudeAccount, installUv, installClaude, signInClaude, setupEngine, engineEnv, minimalEnv, runHidden };
