@@ -9,6 +9,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerAndSignIn } from '../hubRegister.mjs';
+import { ofetch } from '../ownerFetch.mjs';
 
 const require = createRequire(import.meta.url);
 const kc = require('../../electron/keaCloud.cjs');
@@ -181,7 +182,7 @@ test('narrowing the scope never deletes the files left out', { skip: !haveHub &&
 });
 
 test('a full Kea storage keeps the file here, says so, and syncs again when there is room', { skip: !haveHub && 'KeaS repo not next to this one' }, async () => {
-  const owner = (p, body) => fetch(ownerBase + p, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+  const owner = (p, body) => ofetch(ownerBase + p, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
   const id = accountId || 'doc@example.com';
   const D = device('D');
   await D.s.cycle();

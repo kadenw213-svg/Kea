@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ofetch } from '../ownerFetch.mjs';
 
 const require = createRequire(import.meta.url);
 const { _test: hc } = require('../../electron/hubClasses.cjs');
@@ -147,7 +148,7 @@ test('the Hub accepts what Kea makes: an imported set, a Jitsi session, and the 
   const reg = await call('POST', '/v1/auth/register', null, { email: 'teach@example.com', password: 'lantern velvet orbit', displayName: 'Tia Teacher', age13: true, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) });
   assert.equal(reg.status, 202);
   const token = (await call('POST', '/v1/auth/login', null, { email: 'teach@example.com', password: 'lantern velvet orbit' })).body.token;
-  await fetch(`http://127.0.0.1:${ownerPort}/owner/accounts/teach@example.com`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: '{"canHost":true}' });
+  await ofetch(`http://127.0.0.1:${ownerPort}/owner/accounts/teach@example.com`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: '{"canHost":true}' });
   const cls = (await call('POST', '/v1/classes', token, { title: 'Biology 101' })).body.class;
 
   const set = hc.toHubQuestions({ questions: [{ type: 'mc', q: 'Q1', choices: ['a', 'b'], answer: 0, explain: 'why' }, { type: 'tf', q: 'Q2', answer: true }], cards: [{ front: 'F1', back: 'B1' }, { front: 'F2', back: 'B2' }] });

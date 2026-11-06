@@ -10,6 +10,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerAndSignIn } from '../hubRegister.mjs';
+import { ofetch } from '../ownerFetch.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -22,7 +23,7 @@ const worker = require('../../electron/scholar/worker.cjs')._test;
 let hub, base, ownerBase, dir;
 const tokens = {};
 const http = (t) => (p, init = {}) => fetch(base + p, { ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${t}`, ...(init.headers || {}) } }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
-const owner = (p, init = {}) => fetch(ownerBase + p, { ...init, headers: { 'content-type': 'application/json', 'x-kea-owner-key': hub.ownerKey, ...(init.headers || {}) } }).then((r) => r.json());
+const owner = (p, init = {}) => ofetch(ownerBase + p, { ...init, headers: { 'content-type': 'application/json', 'x-kea-owner-key': hub.ownerKey, ...(init.headers || {}) } }).then((r) => r.json());
 
 before(async () => {
   if (!haveHub) return;

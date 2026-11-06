@@ -8,6 +8,7 @@ import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerAndSignIn } from '../hubRegister.mjs';
+import { ofetch } from '../ownerFetch.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -80,7 +81,7 @@ test('live: make an org, join it with a code, see it in the to-do box', { skip: 
   const t = (await (await fetch(`${base}/v1/terms`)).json()).terms;
   const reg = async (email) => {
     const r = await (await registerAndSignIn(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'lantern velvet orbit', displayName: email.split('@')[0], age13: true, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) })).json();
-    await fetch(`http://127.0.0.1:${p.ownerPort}/owner/accounts/${email}`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: '{"emailVerified":true}' });
+    await ofetch(`http://127.0.0.1:${p.ownerPort}/owner/accounts/${email}`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: '{"emailVerified":true}' });
     return r.token;
   };
   const tokens = { mgr: await reg('mgr@example.com'), emp: await reg('emp@example.com') };
@@ -92,7 +93,7 @@ test('live: make an org, join it with a code, see it in the to-do box', { skip: 
     if (!r.ok) throw Object.assign(new Error(j.error), { status: r.status, data: j });
     return j;
   };
-  await fetch(`http://127.0.0.1:${p.ownerPort}/owner/orgs/settings`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: '{"autoApprove":true}' });
+  await ofetch(`http://127.0.0.1:${p.ownerPort}/owner/orgs/settings`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: '{"autoApprove":true}' });
   const org = (await call('POST', '/v1/orgs', { name: 'Pine Hollow Camp', tz: 'America/Chicago', state: 'TX' })).value.org;
   assert.equal(org.status, 'active');
   const code = (await call('POST', `/v1/orgs/${org.id}/codes`, { role: 'member' })).value.code.code;

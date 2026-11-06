@@ -10,6 +10,7 @@ import path from 'node:path';
 import Module, { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerAndSignIn } from '../hubRegister.mjs';
+import { ofetch } from '../ownerFetch.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -104,7 +105,7 @@ after(async () => {
   if (hub) await hub.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
-const owner = (method, p, body) => fetch(ownerBase + p, { method, headers: { 'content-type': 'application/json', 'x-kea-owner-key': hub.ownerKey }, body: body && JSON.stringify(body) }).then((r) => r.json());
+const owner = (method, p, body) => ofetch(ownerBase + p, { method, headers: { 'content-type': 'application/json', 'x-kea-owner-key': hub.ownerKey }, body: body && JSON.stringify(body) }).then((r) => r.json());
 
 test('with a real Kea Hub: the owner’s changes arrive once, read state round-trips, badge and phone come back', { skip: !HUB && 'KeaS repo not found (set KEAS_DIR)' }, async () => {
   const t = (await (await fetch(`${hubBase}/v1/terms`)).json()).terms;
