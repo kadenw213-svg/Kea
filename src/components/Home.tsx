@@ -2,16 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SupportLink } from './scholar/HubAccount';
 import {
   FileText,
-  Sheet,
-  FileCode2,
   FolderOpen,
-  Combine,
-  Images,
   Search,
   X,
   FolderSearch,
-  FileType2,
-  Presentation,
   MoreVertical,
   Clock,
   Monitor,
@@ -30,25 +24,25 @@ import {
   Check,
   Loader2,
   ExternalLink,
-  GraduationCap,
 } from 'lucide-react';
-import { api, DirEntry, DriveInfo, FileMeta, HomeSettings, KnownFolder } from '../lib/api';
-import { newFile, openPaths, openWithDialog } from '../lib/open';
+import { api, DirEntry, DriveInfo, FileMeta, HomeSettings, KeaCloudFileState, KnownFolder } from '../lib/api';
+import { openPaths } from '../lib/open';
 import { FileIcon } from './FileIcon';
 import { timeAgo, formatBytes } from '../lib/util';
-import { useTabs, toast, prompt } from '../store';
-import { mergePdfs, imagesToPdf } from '../lib/pdfTools';
+import { toast, prompt, ask } from '../store';
 import { MenuButton } from './Popover';
 import { kindFor, extOf } from '../lib/fileTypes';
-import { openScholar } from './scholar/scholarStore';
 import { Preview } from './home/Preview';
 import { ConnectDrives } from './home/ConnectDrives';
 import { DriveLogo } from './home/DriveLogo';
 import { TemplateGallery } from './home/Templates';
-import { HomeToday } from './home/Today';
-import { LayoutTemplate, Clapperboard, ImagePlus } from 'lucide-react';
+import { Dashboard } from './home/Dashboard';
+import { CreateBar } from './home/Create';
+import { KeaCloudHeader, KeaCloudMark } from './home/KeaCloud';
+import { Trash2, Upload, AlertTriangle, CloudUpload, HardDrive } from 'lucide-react';
 import { useSetting } from '../lib/settings';
 import { useAreas } from '../lib/areas';
+import { cloudUsable, inKeaCloud, useKeaCloud, watchKeaCloud } from '../lib/keaCloud';
 
 function greeting() {
   const h = new Date().getHours();
@@ -56,6 +50,28 @@ function greeting() {
   if (h < 12) return 'Good morning';
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
+}
+
+/** A file's Kea Cloud state, when it isn't simply up to date. */
+function SyncMark({ state }: { state?: KeaCloudFileState }) {
+  if (!state || state === 'synced') return null;
+  if (state === 'pending')
+    return (
+      <span className="sync-mark" title="Waiting to sync">
+        <CloudUpload size={13} />
+      </span>
+    );
+  if (state === 'full')
+    return (
+      <span className="sync-mark bad" title="Not synced: your Kea storage is full">
+        <AlertTriangle size={13} />
+      </span>
+    );
+  return (
+    <span className="sync-mark" title="Kept on this PC only (too big, or a name Kea storage can’t hold)">
+      <HardDrive size={13} />
+    </span>
+  );
 }
 
 interface Item extends Partial<DirEntry> {
@@ -109,6 +125,10 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   const [filter, setFilter] = useState<FilterId>('all');
   const [showDrives, setShowDrives] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [syncStates, setSyncStates] = useState<Record<string, KeaCloudFileState>>({});
+  const cloud = useKeaCloud((s) => s.status);
+  const cloudOn = useSetting<boolean>('keaCloud.enabled') !== false && useSetting<boolean>('keaCloud.showOnHome') !== false;
+  const badges = useSetting<boolean>('keaCloud.fileBadges') !== false;
   const loadSeq = useRef(0);
   const showStart = useSetting<boolean>('home.showStart');
   const areas = useAreas();
@@ -122,6 +142,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   const previewOnline = useSetting<boolean>('home.previewOnline');
   const allTypes = useSetting<boolean>('home.showAllTypes');
   const hidden = useSetting<boolean>('home.showHidden');
+  const userName = useSetting<string>('user.name');
 
   const view = settings.view || 'grid';
   const tone = settings.tone || 'dark';
@@ -143,7 +164,8 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     refreshDrives();
     const onFocus = () => refreshDrives();
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    const unwatch = watchKeaCloud();
+    return () => (window.removeEventListener('focus', onFocus), unwatch());
   }, []);
 
   const sources = useMemo<Source[]>(() => {
@@ -151,13 +173,17 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     const list: Source[] = [{ id: 'recent', label: 'Recent', icon: <Clock size={17} /> }];
     for (const k of known) list.push({ id: k.id, label: k.label, path: k.path, icon: icon(k.id) });
     for (const f of settings.folders || []) list.push({ id: 'folder:' + f, label: f.split(/[\\/]/).filter(Boolean).pop() || f, path: f, icon: <Folder size={17} />, removable: true });
+    // Kea Cloud: the person's Kea storage, first among the cloud drives.
+    if (cloudOn && cloud) list.push({ id: 'keacloud', label: 'Kea Cloud', path: cloud.root, icon: <KeaCloudMark />, cloud: 'kea' });
     for (const d of drives)
       for (const a of d.accounts)
         list.push({ id: `${d.id}:${a.path}`, label: d.accounts.length > 1 || a.label !== d.label ? `${d.label === a.label ? '' : d.label + ' · '}${a.label}` : d.label, path: a.path, icon: <DriveLogo id={d.id} size={17} />, cloud: d.id });
     return list;
-  }, [known, drives, settings.folders]);
+  }, [known, drives, settings.folders, cloudOn, cloud?.root]);
 
   const source = sources.find((s) => s.id === sourceId) || sources[0];
+  const isCloud = source.id === 'keacloud';
+  const cloudLocked = isCloud && !cloudUsable(cloud);
   const dir = source.id === 'recent' ? null : subPath || source.path!;
   // Is this folder synced by a cloud drive? (Desktop/Documents often are, through OneDrive.)
   const cloudOf = (p: string) => {
@@ -171,7 +197,8 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     setLoading(true);
     try {
       let next: Item[];
-      if (!dir) {
+      if (cloudLocked) next = [];
+      else if (!dir) {
         const recent = await api.getRecent();
         const stats = await api.statMany(recent.map((r) => r.path));
         next = recent.map((r, i) => ({ ...r, size: stats[i]?.size, mtime: stats[i]?.mtime, missing: !stats[i]?.exists }) as Item).filter((r: any) => !r.missing);
@@ -188,11 +215,57 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
-  }, [dir, drives, previewOnline, allTypes, hidden]);
+  }, [dir, drives, previewOnline, allTypes, hidden, cloudLocked]);
 
   useEffect(() => {
     if (visible) load();
   }, [visible, load]);
+
+  // Kea Cloud: reload when a sync brings changes, and keep each file's sync state current.
+  const cloudTick = `${cloud?.last}:${cloud?.pending}:${cloud?.files}`;
+  useEffect(() => {
+    if (visible && isCloud && !cloudLocked) load();
+  }, [cloudTick]);
+  useEffect(() => {
+    if (!isCloud || cloudLocked || !badges || !items.length) return setSyncStates({});
+    api.keaCloud.states(items.filter((i) => !i.dir).map((i) => i.path)).then((r) => r.ok && setSyncStates(r.value));
+  }, [items, isCloud, cloudLocked, badges, cloudTick]);
+
+  const renameCloud = async (it: Item) => {
+    const name = await prompt('Rename', 'New name', it.name);
+    if (name === null || !name.trim() || name.trim() === it.name) return;
+    const r = await api.keaCloud.rename(it.path, name.trim());
+    if (!r.ok) return toast(r.error, 'error');
+    load();
+  };
+  const deleteCloud = async (it: Item) => {
+    const ok = await ask(`Delete ${it.name}?`, 'It’s removed from Kea Cloud on all your devices. This PC keeps a copy in the Recycle Bin.', [
+      { id: 'cancel', label: 'Cancel' },
+      { id: 'del', label: 'Delete', danger: true, primary: true },
+    ]);
+    if (ok !== 'del') return;
+    const r = await api.keaCloud.remove(it.path);
+    if (!r.ok) return toast(r.error, 'error');
+    setItems((l) => l.filter((x) => x.path !== it.path));
+  };
+  const addToCloud = async () => {
+    const picked = await api.openDialog({ title: 'Add files to Kea Cloud', multi: true });
+    if (!picked.length) return;
+    let n = 0;
+    for (const f of picked) {
+      const target = await api.keaCloud.newPath(f.name);
+      if (!target.ok) {
+        toast(target.error, 'error');
+        continue;
+      }
+      // (Video and audio come back from the dialog without their bytes: read them first.)
+      const data = f.data?.length ? f.data : (await api.readFile(f.path)).data;
+      await api.writeFile(target.value, data);
+      n++;
+    }
+    if (n) toast(`Added ${n} file${n === 1 ? '' : 's'} to Kea Cloud`, 'success');
+    load();
+  };
 
   // Search: filter Recent in place; search inside folders (and their subfolders) on disk.
   useEffect(() => {
@@ -272,31 +345,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     return out;
   }, [dir, source, subPath]);
 
-  // ---------- Quick actions ----------
-  const merge = async () => {
-    const picked = await api.openDialog({ title: 'Choose PDFs to combine', multi: true, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
-    if (picked.length < 1) return;
-    try {
-      const bytes = await mergePdfs(picked.map((f) => f.data));
-      useTabs.getState().addTab({ kind: 'pdf', name: 'Combined.pdf', path: null, data: bytes });
-      toast(`Combined ${picked.length} PDFs. Reorder pages in the sidebar, then save.`, 'success');
-    } catch (e: any) {
-      toast(`Couldn't combine: ${e.message}`, 'error');
-    }
-  };
-  const imgToPdf = async () => {
-    const picked = await api.openDialog({ title: 'Choose images', multi: true, filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }] });
-    if (!picked.length) return;
-    try {
-      useTabs.getState().addTab({ kind: 'pdf', name: 'Images.pdf', path: null, data: await imagesToPdf(picked) });
-    } catch (e: any) {
-      toast(`Couldn't convert: ${e.message}`, 'error');
-    }
-  };
-  const openPdf = async () => {
-    const picked = await api.openDialog({ title: 'Open PDF', multi: true, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
-    if (picked.length) openPaths(picked.map((f) => f.path));
-  };
+  const cloudFile = (it: Item) => cloudUsable(cloud) && inKeaCloud(it.path, cloud);
 
   const fileMenu = (it: Item) => (close: () => void) => (
     <>
@@ -317,6 +366,16 @@ export function HomeScreen({ visible }: { visible: boolean }) {
       <button className="menu-item" onClick={() => (navigator.clipboard.writeText(it.path), toast('Path copied', 'success'), close())}>
         <Copy size={16} /> Copy path
       </button>
+      {cloudFile(it) && (
+        <>
+          <button className="menu-item" onClick={() => (close(), renameCloud(it))}>
+            <Pencil size={16} /> Rename
+          </button>
+          <button className="menu-item danger" onClick={() => (close(), deleteCloud(it))}>
+            <Trash2 size={16} /> Delete
+          </button>
+        </>
+      )}
       {!dir && (
         <button
           className="menu-item"
@@ -356,95 +415,43 @@ export function HomeScreen({ visible }: { visible: boolean }) {
       ? 'No files match your search.'
       : filter !== 'all' && files.length
         ? `No ${FILTERS.find((f) => f.id === filter)!.label.toLowerCase()} here.`
-        : !dir
+        : !dir || (isCloud && !subPath)
           ? null
           : 'No documents in this folder.';
+
+  const firstName = String(userName || '').trim().split(/\s+/)[0];
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
     <div className="home">
       <div className="home-inner">
         {showGreeting && (
-          <>
-            <h1 className="home-title">{greeting()}</h1>
-            <p className="home-sub">{homeSub(areas)}</p>
-          </>
+          <header className="home-head">
+            <h1 className="home-title">
+              {greeting()}
+              {firstName ? `, ${firstName}` : ''}
+            </h1>
+            <p className="home-sub">{today}</p>
+          </header>
         )}
 
-        {showScholar && <HomeToday />}
+        <Dashboard showSchool={showScholar} />
 
-        {showDocs && (showStart || showTools) && (
-        <section className={`home-start ${showScholar ? 'compact' : ''}`}>
-          {showScholar && <div className="section-head"><h2>Documents</h2></div>}
-          {showStart && (
-          <div className="start-row">
-            <button className="start-card" onClick={() => newFile('doc')}>
-              <div className="start-thumb doc">
-                <FileText size={28} />
-              </div>
-              <span>Document</span>
-            </button>
-            <button className="start-card" onClick={() => newFile('sheet')}>
-              <div className="start-thumb sheet">
-                <Sheet size={28} />
-              </div>
-              <span>Spreadsheet</span>
-            </button>
-            <button className="start-card" onClick={() => newFile('slides')}>
-              <div className="start-thumb slides">
-                <Presentation size={28} />
-              </div>
-              <span>Presentation</span>
-            </button>
-            <button className="start-card" onClick={() => newFile('code')}>
-              <div className="start-thumb code">
-                <FileCode2 size={28} />
-              </div>
-              <span>Text file</span>
-            </button>
-            <button className="start-card" onClick={() => newFile('image')}>
-              <div className="start-thumb image">
-                <ImagePlus size={28} />
-              </div>
-              <span>Image</span>
-            </button>
-            <button className="start-card" onClick={() => newFile('video')}>
-              <div className="start-thumb video">
-                <Clapperboard size={28} />
-              </div>
-              <span>Video</span>
-            </button>
-            <button className="start-card" onClick={openPdf}>
-              <div className="start-thumb pdf">
-                <FileType2 size={28} />
-              </div>
-              <span>Edit a PDF</span>
-            </button>
-            <button className="start-card" onClick={() => setShowTemplates(true)}>
-              <div className="start-thumb tpl">
-                <LayoutTemplate size={28} />
-              </div>
-              <span>Templates</span>
-            </button>
-          </div>
-          )}
-          {showTools && (
-          <div className="tool-row">
-            <button className="tool-chip" onClick={openWithDialog}>
-              <FolderOpen size={16} /> Open a file
-            </button>
-            <button className="tool-chip" onClick={merge}>
-              <Combine size={16} /> Combine PDFs
-            </button>
-            <button className="tool-chip" onClick={imgToPdf}>
-              <Images size={16} /> Images to PDF
-            </button>
-          </div>
-          )}
-        </section>
+        {showDocs && showStart && (
+          <section className="home-create">
+            <div className="section-head">
+              <h2>Create</h2>
+            </div>
+            <CreateBar tools={showTools} onTemplates={() => setShowTemplates(true)} />
+          </section>
         )}
 
         {showDocs && (
-        <section className="files-area">
+        <section className="home-docs">
+          <div className="section-head">
+            <h2>Documents</h2>
+          </div>
+          <div className="files-area">
           <nav className="sources">
             <div className="src-group">
               {sources
@@ -472,7 +479,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                 <span>Add a folder</span>
               </button>
             </div>
-            <div className="src-head">Cloud drives</div>
+            <div className="src-head">Cloud</div>
             <div className="src-group">
               {sources
                 .filter((s) => s.cloud)
@@ -490,6 +497,9 @@ export function HomeScreen({ visible }: { visible: boolean }) {
           </nav>
 
           <div className="files-main">
+            {isCloud && <KeaCloudHeader />}
+            {!cloudLocked && (
+            <>
             <div className="files-toolbar">
               <div className="crumbs">
                 {crumbs.length ? (
@@ -542,6 +552,11 @@ export function HomeScreen({ visible }: { visible: boolean }) {
               <button className="icon-btn" title={tone === 'dark' ? 'Previews: dark (click for light)' : 'Previews: light (click for dark)'} onClick={() => saveSettings({ tone: tone === 'dark' ? 'light' : 'dark' })}>
                 {tone === 'dark' ? <Moon size={17} /> : <Sun size={17} />}
               </button>
+              {isCloud && (
+                <button className="icon-btn" title="Add files to Kea Cloud" onClick={addToCloud}>
+                  <Upload size={17} />
+                </button>
+              )}
               <div className="seg-toggle">
                 <button className={view === 'grid' ? 'on' : ''} title="Grid" onClick={() => saveSettings({ view: 'grid' })}>
                   <LayoutGrid size={16} />
@@ -579,9 +594,15 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                   {emptyText ?? (
                     <>
                       <FolderOpen size={40} strokeWidth={1.4} />
-                      <div>No recent files yet</div>
+                      <div>{isCloud ? 'Nothing in Kea Cloud yet' : 'No recent files yet'}</div>
                       <div className="muted">
-                        Press <span className="kbd-chip">Ctrl</span> + <span className="kbd-chip">O</span>, drop files on this window, or pick a folder on the left
+                        {isCloud ? (
+                          <>Save a document and choose Kea Cloud, or add files with the upload button above.</>
+                        ) : (
+                          <>
+                            Press <span className="kbd-chip">Ctrl</span> + <span className="kbd-chip">O</span>, drop files on this window, or pick a folder on the left
+                          </>
+                        )}
                       </div>
                     </>
                   )}
@@ -600,6 +621,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                         <div className="fcard-title">
                           <FileIcon kind={kindOf(it.name)} size={16} />
                           <span className="fcard-name">{it.name}</span>
+                          <SyncMark state={syncStates[it.path]} />
                           {more(it)}
                         </div>
                         {!showDesc ? null : desc ? (
@@ -640,7 +662,9 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                       <span className="flist-name">
                         <FileIcon kind={kindOf(it.name)} size={20} />
                         <span>
-                          <span className="nm">{it.name}</span>
+                          <span className="nm">
+                            {it.name} <SyncMark state={syncStates[it.path]} />
+                          </span>
                           {desc && <span className="ds">{desc}</span>}
                         </span>
                       </span>
@@ -653,22 +677,17 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                 })}
               </div>
             )}
+            </>
+            )}
+          </div>
           </div>
         </section>
         )}
-        {areas.length === 0 && <p className="home-sub">Every area of Kea is turned off. Turn one on in Settings → Home.</p>}
+        {areas.length === 0 && <p className="home-sub">Every area of Kea is turned off. Turn one on in Settings → General → Home.</p>}
         <SupportLink />
       </div>
       {showTemplates && <TemplateGallery onClose={() => setShowTemplates(false)} />}
       {showDrives && <ConnectDrives drives={drives} onClose={() => (setShowDrives(false), refreshDrives())} onChange={setDrives} />}
     </div>
   );
-}
-
-/** The line under the greeting names only the parts of Kea this person uses. */
-function homeSub(areas: string[]) {
-  const parts = [areas.includes('school') && 'your classes and readings', areas.includes('documents') && 'your files'].filter(Boolean) as string[];
-  if (!parts.length) return '';
-  const list = parts.length === 1 ? parts[0] : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
-  return list.charAt(0).toUpperCase() + list.slice(1) + ' in one place.';
 }
