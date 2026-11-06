@@ -1,0 +1,61 @@
+# academic-sync default configuration.
+# User-specific overrides belong in preferences (see `academic-sync prefs`),
+# not here -- this file is engineering defaults, checked into git.
+
+timezone: "America/Denver"
+
+calendar:
+  # "primary" targets the account's main calendar. Any other value must be
+  # a real calendar id (see `academic-sync prefs get target_calendar_id`).
+  target_calendar_id: "primary"
+  color_id: "10"          # Google Calendar colorId 10 = Basil (dark green)
+  default_reminders_enabled: false
+  invite_guests: false
+  create_meet_links: false
+
+deadlines:
+  default_due_time: "23:59"      # used only when a source gives a date but no time
+  no_meaningful_duration_minutes: 1
+
+administrative_dates:
+  calendarize: true
+
+readings:
+  calendarize_standalone: false  # only calendarize a reading if it has its own due date
+
+titles:
+  include_topic_in_class_titles: true
+  tentative_label_only_if_source_uses_it: true
+
+completeness:
+  # Phrases that indicate the syllabus is pointing at another source of truth.
+  # Case-insensitive substring/regex match against extracted text.
+  reference_phrases:
+    - "see d2l"
+    - "found on d2l"
+    - "see course calendar"
+    - "see lecture schedule"
+    - "see lab schedule"
+    - "see assignment sheet"
+    - "see handout"
+    - "see module"
+    - "additional details will be provided"
+    - "details will be posted"
+    - "announced in class"
+    - "available under quizzes"
+    - "available under assignments"
+    - "complete discussions"
+    - "pre-lab quiz"
+    - "see lms"
+    - "see content"
+    - "see announcement"
+    - "subject to change"
+    - "tba"
+    - "to be announced"
+
+extraction:
+  llm_assist_enabled: false   # optional adapter, off by default -- see docs/security.md
+
+logging:
+  level: "INFO"
+  audit_log_path: "data/audit.log"

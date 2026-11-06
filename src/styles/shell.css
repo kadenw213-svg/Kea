@@ -1,0 +1,135 @@
+/* The adaptive shell: first-run "What will you use Kea for?" and the title-bar area buttons. Loaded at start-up (not lazily), because Home and the title bar use it.
+   Colours come from theme tokens only, so every theme (dark, black, dim, light, sepia) works. */
+
+/* ---------- First run ---------- */
+.welcome {
+  height: 100%;
+  overflow-y: auto;
+  display: grid;
+  place-items: center;
+  padding: 40px 24px;
+}
+.welcome-inner {
+  width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  animation: shell-rise var(--dur-3, 500ms) var(--ease, ease-out);
+}
+.welcome h1 {
+  margin: 14px 0 0;
+  font-size: 28px;
+  font-weight: 500;
+}
+.welcome-sub {
+  margin: 0 0 18px;
+  max-width: 540px;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+.welcome-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.welcome-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color var(--dur-1, 160ms) var(--ease, ease), background var(--dur-1, 160ms) var(--ease, ease);
+}
+.welcome-card:hover {
+  background: var(--surface-2);
+}
+.welcome-card.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.welcome-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--surface-3);
+  color: var(--accent);
+}
+.welcome-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+.welcome-text strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.welcome-text span {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.welcome-check {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  color: var(--on-accent);
+}
+.welcome-card.on .welcome-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.welcome-go {
+  margin-top: 20px;
+  min-width: 220px;
+}
+@media (max-width: 640px) {
+  .welcome-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Title bar area buttons ---------- */
+.area-buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 2px;
+  margin-right: 4px;
+  border-right: 1px solid var(--border);
+  -webkit-app-region: no-drag;
+}
+.area-btn.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+@keyframes shell-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-inner {
+    animation: none;
+  }
+}
+.reduce-motion .welcome-inner {
+  animation: none;
+}

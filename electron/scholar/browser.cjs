@@ -1,0 +1,1217 @@
+// Kea's own browser for class sites (D2L Brightspace or Canvas): a hidden window with its own saved session per profile.
+// Class scans read pages through it, so nothing opens in the user's browser.
+//
+// Signing in is Kea's job, never Claude's: the first time, the user signs in themselves in a visible Kea window
+// (and may let Kea remember the login, encrypted with Windows' own protection). Later, when a scan hits the sign-in
+// page, Kea fills in that saved login itself, like a password manager. If that doesn't get through (a new prompt, a
+// code from a phone), Kea shows its window and waits for the user. The tools Claude uses never see a password.
+const { BrowserWindow, session, safeStorage, Notification, ipcMain } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const profiles = require('./profiles.cjs');
+
+const PAGE_TIMEOUT = 45000;
+
+// ---------- The saved class site and login (per profile) ----------
+const schoolFile = () => path.join(profiles.paths().dir, 'school.bin');
+function readSchool() {
+  let s;
+  try {
+    const buf = fs.readFileSync(schoolFile());
+    s = JSON.parse(safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(buf) : buf.toString('utf8'));
+  } catch {
+    return {};
+  }
+  // Logins are kept per host (the school's sign-in, and any platform the student signed in to in Kea's window), so
+  // signing in to ALEKS never replaces the school's login. A file from before that kept one `login`: it becomes the
+  // school's (it was saved from the class site's sign-in, the only one there was).
+  if (s && s.login && !s.logins) {
+    if (s.login.host) {
+      s.logins = { [s.login.host]: s.login };
+      s.schoolLoginHost = s.login.host;
+    }
+    delete s.login;
+  }
+  if (s && (!s.logins || typeof s.logins !== 'object')) s.logins = {};
+  return s || {};
+}
+/** The saved login for a host, if any. */
+const loginFor = (s, host) => (host && s.logins && Object.prototype.hasOwnProperty.call(s.logins, host) ? s.logins[host] : null);
+/** The host of the school's own sign-in (the class site, or its single-sign-on page). */
+const schoolLoginHost = (s) => (s.schoolLoginHost && loginFor(s, s.schoolLoginHost) ? s.schoolLoginHost : s.home && loginFor(s, hostOf(s.home)) ? hostOf(s.home) : '');
+function writeSchool(s) {
+  fs.mkdirSync(path.dirname(schoolFile()), { recursive: true });
+  const json = JSON.stringify(s);
+  fs.writeFileSync(schoolFile(), safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(json) : Buffer.from(json));
+  schoolCache.at = 0;
+}
+/**
+ * Which learning platform the class site is: 'd2l' (Brightspace) or 'canvas'. Chosen at setup; a site saved before
+ * Kea asked is known by its address (every D2L home is under /d2l/, Canvas sites are mostly *.instructure.com).
+ */
+function platformOf(s = readSchool()) {
+  if (s.platform === 'canvas' || s.platform === 'd2l') return s.platform;
+  return guessPlatform(s.home);
+}
+const guessPlatform = (home) => (/\/d2l\//i.test(home || '') ? 'd2l' : /instructure\.com$|(^|\.)canvas\./i.test(hostOf(home || '')) ? 'canvas' : 'd2l');
+/** What the interface may know: the address, and whether a login is saved (never the login itself). */
+function schoolInfo() {
+  const s = readSchool();
+  const hosts = Object.keys(s.logins || {});
+  const school = schoolLoginHost(s);
+  return { home: s.home || '', host: s.home ? hostOf(s.home) : '', platform: platformOf(s), remembers: hosts.length > 0, loginHost: school || hosts[0] || '', loginHosts: hosts };
+}
+function setHome(home, platform) {
+  const s = readSchool();
+  s.home = String(home || '').trim();
+  s.platform = platform === 'canvas' || platform === 'd2l' ? platform : guessPlatform(s.home);
+  writeSchool(s);
+  return schoolInfo();
+}
+function forgetLogin() {
+  const s = readSchool();
+  delete s.login;
+  s.logins = {};
+  delete s.schoolLoginHost;
+  // Forgetting also means "don't save it again" until the user ticks the box on a new sign-in.
+  s.remember = false;
+  writeSchool(s);
+  return schoolInfo();
+}
+/** Save the login the user signs in with in Kea's window: when they said so at setup (the default), any time. */
+const wantsRemember = () => rememberNext || readSchool().remember !== false;
+
+const hostOf = (u) => {
+  try {
+    return new URL(u).host.toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+// ---------- The hidden window ----------
+let win = null;
+let winProfile = '';
+const partition = () => `persist:class-site-${profiles.active()}`;
+
+function getWindow() {
+  if (win && !win.isDestroyed() && winProfile === profiles.active()) return win;
+  if (win && !win.isDestroyed()) win.destroy();
+  winProfile = profiles.active();
+  win = new BrowserWindow({
+    show: false,
+    width: 1100,
+    height: 820,
+    title: 'Kea: sign in to your class site',
+    autoHideMenuBar: true,
+    // (The preload also runs in frames, for dark mode inside embedded pages.)
+    webPreferences: { partition: partition(), sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'browser-preload.cjs') }
+  });
+  prepareSession(session.fromPartition(partition()));
+  // Pages can't open more windows: links that would, load here instead.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    win.loadURL(url).catch(() => {});
+    return { action: 'deny' };
+  });
+  win.webContents.on('context-menu', (_e, params) => contextMenu(win, params));
+  win.on('close', (e) => {
+    // Closing the sign-in window just hides it again (the session stays), unless Kea is quitting.
+    if (global.keaQuitting) return;
+    e.preventDefault();
+    win.hide();
+  });
+  return win;
+}
+
+// ---------- The class-site browser: a current Chrome, ads blocked, dark mode ----------
+// Sites check the browser by its name: Kea's window is current Chromium, so it says it's Chrome (without "Electron"
+// or "Kea", which school sites read as an old or unsupported browser).
+const chromeAgent = () => {
+  const os = (/\(([^)]+)\)/.exec(require('electron').app.userAgentFallback) || [])[1] || 'Windows NT 10.0; Win64; x64';
+  // (Chrome itself reports only its major version.)
+  return `Mozilla/5.0 (${os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome.split('.')[0]}.0.0.0 Safari/537.36`;
+};
+const prepared = new WeakSet();
+function prepareSession(ses) {
+  if (prepared.has(ses)) return;
+  prepared.add(ses);
+  ses.setUserAgent(chromeAgent());
+  require('./adblock.cjs').enable(ses);
+  // What pages may ask for (camera, microphone, full screen…): nothing by default. School platforms get what their
+  // work needs: the class site, the school's sign-in, its own domain, and known course, publisher and proctoring
+  // platforms (a recorded video assignment, a proctored exam, a full-screen quiz). (Choosing a file to upload and
+  // downloads aren't permissions: they always work.)
+  ses.setPermissionRequestHandler((_wc, permission, callback, details) => callback(permitted(permission, details?.requestingUrl || '')));
+  ses.setPermissionCheckHandler((_wc, permission, origin, details) => permitted(permission, details?.requestingUrl || origin || details?.securityOrigin || ''));
+}
+
+// Course, publisher, video and proctoring platforms a class sends students to (the same family as the MCP's list in
+// mcp.cjs, plus the proctoring and live-class tools that need a camera or the screen).
+const SCHOOL_PLATFORMS = /(^|\.)(aleks\.com|mheducation\.com|mcgraw-hill\.com|pearson\.com|pearsoned\.com|pearsoncmg\.com|mylabmastering\.com|masteringchemistry\.com|cengage\.com|webassign\.net|cengagenow\.com|holscience\.com|scienceinteractive\.com|macmillanlearning\.com|wiley\.com|wileyplus\.com|zybooks\.com|perusall\.com|instructure\.com|brightspace\.com|d2l\.com|desire2learn\.com|openstax\.org|libretexts\.org|simplesyllabus\.com|kaltura\.com|panopto\.com|youtube\.com|youtube-nocookie\.com|vimeo\.com|turnitin\.com|labster\.com|knewton\.com|hawkeslearning\.com|yuja\.com|readspeaker\.com|respondus\.com|proctorio\.com|honorlock\.com|proctoru\.com|examity\.com|meazurelearning\.com|proctortrack\.com|examsoft\.com|bbcollab\.com|blackboard\.com|zoom\.us|webex\.com|teams\.microsoft\.com|flipgrid\.com|flip\.com|voicethread\.com|vidgrid\.com|screencast-o-matic\.com|loom\.com)$/i;
+// Allowed for those: what course work uses. Everything else (location, USB, MIDI, notifications…) is refused.
+const PLATFORM_PERMISSIONS = new Set(['media', 'fullscreen', 'pointerLock', 'keyboardLock', 'display-capture', 'clipboard-read', 'mediaKeySystem', 'openExternal', 'storage-access', 'top-level-storage-access', 'window-management', 'speaker-selection', 'fileSystem', 'persistent-storage', 'idle-detection']);
+// Allowed anywhere: a page copying text the student asked it to copy.
+const ANY_PERMISSIONS = new Set(['clipboard-sanitized-write']);
+// (Permission checks come often: the school's address is read from its encrypted file at most every few seconds.)
+let schoolCache = { at: 0, home: '', sso: '' };
+function trustedHost(host) {
+  if (!host) return false;
+  if (Date.now() - schoolCache.at > 5000) {
+    const s = readSchool();
+    schoolCache = { at: Date.now(), home: s.home ? new URL(s.home).hostname.toLowerCase() : '', sso: String(schoolLoginHost(s) || '').replace(/:\d+$/, '') };
+  }
+  const { home, sso } = schoolCache;
+  const school = home.split('.').slice(-2).join('.');
+  if (home && (host === home || (school.includes('.') && (host === school || host.endsWith(`.${school}`))))) return true;
+  // The school's own sign-in page (single sign-on), and any .edu.
+  if (sso && host === sso) return true;
+  if (/\.edu$/i.test(host)) return true;
+  return SCHOOL_PLATFORMS.test(host);
+}
+function permitted(permission, url) {
+  if (ANY_PERMISSIONS.has(permission)) return true;
+  if (!PLATFORM_PERMISSIONS.has(permission)) return false;
+  let host = '';
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    host = u.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  try {
+    return trustedHost(host);
+  } catch {
+    return false;
+  }
+}
+
+/** Dark mode for class sites, from Kea's settings (Settings → Class sites). */
+function darkSettings() {
+  const settings = require('../settings.cjs');
+  const g = (k, d) => settings.get(`sites.${k}`, d);
+  const sites = {};
+  for (const id of ['d2l', 'canvas', 'blackboard', 'moodle', 'schoology', 'classroom', 'publishers', 'other']) sites[id] = g(`dark.${id}`, id !== 'other' || g('dark.other', true));
+  // A light Kea theme keeps class sites light too, when they match Kea.
+  const keaDark = !!(require('../themes.json')[settings.get('appearance.theme', 'dark')] || { dark: true }).dark;
+  return {
+    on: g('dark', true) !== false && (keaDark || g('matchKea', true) === false),
+    strength: Number(g('darkStrength', 0.9)),
+    brightness: Number(g('darkBrightness', 1)),
+    contrast: Number(g('darkContrast', 1)),
+    sepia: Number(g('darkWarmth', 0)),
+    docs: g('darkDocs', false) === true,
+    sites,
+    offHosts: Array.isArray(g('darkOff', [])) ? g('darkOff', []) : [],
+    header: g('darkHeader', true) !== false,
+    match: g('matchKea', true) !== false,
+    theme: keaTheme()
+  };
+}
+// Kea's own colours (Settings → Appearance), for the site's header.
+const ACCENTS = { blue: ['#a8c7fa', '#062e6f'], purple: ['#d0bcff', '#381e72'], teal: ['#80d5cf', '#003734'], green: ['#9fd8a8', '#0a3816'], orange: ['#ffb68a', '#4a1f00'], pink: ['#ffb0c8', '#5e1133'] };
+function keaTheme() {
+  const settings = require('../settings.cjs');
+  let [accent, onAccent] = ACCENTS[settings.get('appearance.accent', 'blue')] || ACCENTS.blue;
+  const custom = settings.get('appearance.accentCustom', '');
+  if (settings.get('appearance.accent') === 'custom' && /^#[0-9a-f]{6}$/i.test(custom)) {
+    accent = custom;
+    const n = parseInt(custom.slice(1), 16);
+    onAccent = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 150 ? '#111111' : '#ffffff';
+  }
+  // Kea's panel colour, from the theme, with Settings → Appearance → Panel contrast (the same sums as the window's).
+  const theme = require('../themes.json')[settings.get('appearance.theme', 'dark')] || require('../themes.json').dark;
+  if (!theme.dark && settings.get('appearance.accent') !== 'custom') {
+    accent = { blue: '#0b57d0', purple: '#8430ce', teal: '#00796b', green: '#188038', orange: '#c5501b', pink: '#c2185b' }[settings.get('appearance.accent', 'blue')] || '#0b57d0';
+    onAccent = '#ffffff';
+  }
+  const c = (Number(settings.get('appearance.surfaceContrast', 0)) || 0) * (theme.dark ? 3 : -3);
+  const n = parseInt(theme.c.surface.slice(1), 16);
+  const hex = (v) => Math.max(0, Math.min(255, v + c)).toString(16).padStart(2, '0');
+  return { surface: `#${hex((n >> 16) & 255)}${hex((n >> 8) & 255)}${hex(n & 255)}`, text: theme.c.text, accent, onAccent, dark: theme.dark };
+}
+
+/** Right-click in the class-site window: back, forward, reload, and dark mode on or off for this site. */
+function contextMenu(w, params) {
+  const { Menu, clipboard } = require('electron');
+  const settings = require('../settings.cjs');
+  const wc = w.webContents;
+  let host = '';
+  try {
+    host = new URL(wc.getURL()).hostname.replace(/^www\./, '');
+  } catch {}
+  const off = settings.get('sites.darkOff', []) || [];
+  const isOff = off.includes(host);
+  const items = [];
+  if (params.isEditable) items.push({ label: 'Cut', role: 'cut' }, { label: 'Copy', role: 'copy' }, { label: 'Paste', role: 'paste' });
+  else if (params.selectionText) items.push({ label: 'Copy', role: 'copy' });
+  if (params.linkURL) items.push({ label: 'Copy link', click: () => clipboard.writeText(params.linkURL) });
+  if (items.length) items.push({ type: 'separator' });
+  items.push(
+    { label: 'Back', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() },
+    { label: 'Forward', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() },
+    { label: 'Reload', click: () => wc.reload() }
+  );
+  if (host && settings.get('sites.dark', true) !== false)
+    items.push({ type: 'separator' }, { label: `Dark mode on ${host}`, type: 'checkbox', checked: !isOff, click: () => settings.set({ 'sites.darkOff': isOff ? off.filter((h) => h !== host) : [...off, host] }) });
+  Menu.buildFromTemplate(items).popup({ window: w });
+}
+ipcMain.on('class-site:dark', (e) => (e.returnValue = darkSettings()));
+let themeScript = '';
+ipcMain.on('class-site:theme-script', (e) => (e.returnValue = themeScript || (themeScript = require('fs').readFileSync(path.join(__dirname, 'site-theme.js'), 'utf8'))));
+// Settings changed: every class-site window (the main one and the messages one) and all their frames take them.
+require('../settings.cjs').onChange(() => {
+  const open = [win, mailWin].filter((w) => w && !w.isDestroyed());
+  if (!open.length) return;
+  const d = darkSettings();
+  for (const w of open)
+    for (const f of w.webContents.mainFrame.framesInSubtree) {
+      try {
+        f.send('class-site:dark', d);
+      } catch {}
+    }
+});
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Load a page and wait for it (and its scripts) to settle. */
+async function load(url) {
+  const w = getWindow();
+  const done = new Promise((resolve) => {
+    const t = setTimeout(resolve, PAGE_TIMEOUT);
+    w.webContents.once('did-stop-loading', () => (clearTimeout(t), resolve()));
+  });
+  w.loadURL(url).catch(() => {});
+  await done;
+  // Brightspace draws much of the page after it loads.
+  await sleep(1200);
+  return w;
+}
+
+/** On the class site (signed in), rather than on a sign-in page. */
+function onSite(url) {
+  const s = readSchool();
+  const host = hostOf(url);
+  return !!s.home && host === hostOf(s.home) && !/\/d2l\/login|\/login\b/i.test(url);
+}
+
+async function pageHasPassword(w) {
+  return w.webContents.executeJavaScript(`!!document.querySelector('input[type=password]')`).catch(() => false);
+}
+
+/**
+ * Make sure we're signed in: if a page sent us to sign in, Kea fills in the saved login (if the user let it).
+ * Otherwise, or if that doesn't get back to the class site, Kea shows its window and waits for the user (up to
+ * `waitMs`). Resolves true once back on the class site.
+ */
+async function ensureSignedIn(w, waitMs = 5 * 60000) {
+  if (onSite(w.webContents.getURL()) && !(await pageHasPassword(w))) return true;
+  const s = readSchool();
+  // Kea's own sign-in, with the login the user chose to save for the page it's on (up to three steps: name,
+  // password, "stay signed in"; a step can move to another sign-in host, whose own login is then used).
+  if (loginFor(s, hostOf(w.webContents.getURL()))) {
+    for (let step = 0; step < 3 && !onSite(w.webContents.getURL()); step++) {
+      const login = loginFor(s, hostOf(w.webContents.getURL()));
+      if (!login) break;
+      const filled = await fillLogin(w, login);
+      if (!filled) break;
+      await new Promise((resolve) => {
+        const t = setTimeout(resolve, 15000);
+        w.webContents.once('did-stop-loading', () => (clearTimeout(t), resolve()));
+      });
+      await sleep(1500);
+    }
+    if (onSite(w.webContents.getURL())) return true;
+  }
+  // The user signs in: show the window, and tell them why.
+  w.setTitle('Kea needs you to sign in to your class site');
+  w.show();
+  w.focus();
+  if (Notification.isSupported()) new Notification({ title: 'Kea needs you to sign in', body: 'Sign in to your class site in the Kea window so Kea can keep your classes up to date.' }).show();
+  const until = Date.now() + waitMs;
+  signingIn = { hosts: [] };
+  try {
+    while (Date.now() < until) {
+      await sleep(1000);
+      if (w.isDestroyed()) return false;
+      if (onSite(w.webContents.getURL()) && !(await pageHasPassword(w))) {
+        w.hide();
+        markSchoolLogin(signingIn.hosts);
+        return true;
+      }
+    }
+    w.hide();
+    return false;
+  } finally {
+    signingIn = null;
+  }
+}
+// While the user signs in to the class site: the hosts whose logins they submitted on the way. The one that got them
+// back to the class site (the last) is the school's sign-in, the host Kea treats as the class site's own sign-in page.
+let signingIn = null;
+function markSchoolLogin(hosts) {
+  const host = hosts[hosts.length - 1];
+  if (!host) return;
+  const s = readSchool();
+  if (!loginFor(s, host) || s.schoolLoginHost === host) return;
+  s.schoolLoginHost = host;
+  writeSchool(s);
+}
+
+/** Ask the window's preload to fill in the saved login (over Kea's private channel, out of the page's reach). */
+function fillLogin(w, login) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => (ipcMain.removeListener('class-site:filled', on), resolve(false)), 5000);
+    const on = (e, ok) => {
+      if (e.sender !== w.webContents) return;
+      clearTimeout(t);
+      ipcMain.removeListener('class-site:filled', on);
+      resolve(!!ok);
+    };
+    ipcMain.on('class-site:filled', on);
+    w.webContents.send('class-site:fill', { user: login.user, pass: login.pass, userField: login.userField, passField: login.passField });
+  });
+}
+
+// ---------- What the tools do ----------
+/**
+ * Read a page: its title, address, text (including shadow DOM and frames) and links. Works for the class site and for
+ * the outside platforms it links to (ALEKS, Science Interactive, Simple Syllabus, publisher sites), reached directly or
+ * through a D2L launch link. Only a D2L sign-in page asks the student to sign in; an outside platform is given time to
+ * draw itself (they build their pages with scripts) and all its frames are read. Platforms visited are remembered, so
+ * Kea can tell when one hasn't been checked in a while.
+ */
+async function open(url, offset = 0) {
+  if (remote.active()) return remote.open(url, offset);
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const target = url || s.home;
+  let w = await load(target);
+  // Sent to the school's sign-in (D2L's own page, or a single-sign-on host): sign in, then open the page again.
+  const signInPage = async () => {
+    const cur = w.webContents.getURL();
+    if (hostOf(cur) === hostOf(s.home)) return !onSite(cur);
+    const sso = schoolLoginHost(s);
+    if (sso && hostOf(cur) === sso) return true;
+    if (hostOf(target) !== hostOf(s.home)) return false;
+    const pw = await w.webContents.executeJavaScript('!!document.querySelector("input[type=password]")').catch(() => false);
+    return pw && /login|signin|sso|saml|adfs|idp|microsoftonline|okta|auth/i.test(cur);
+  };
+  if (await signInPage()) {
+    if (!(await ensureSignedIn(w))) throw new Error('Not signed in to the class site (the user did not finish signing in).');
+    w = await load(target);
+  }
+  return readCurrent(w, offset);
+}
+
+/** The page the scan window is on now: its text (and its frames'), links, and any separate platform sign-in. */
+async function readCurrent(w, offset = 0) {
+  const s = readSchool();
+  const outside = () => hostOf(w.webContents.getURL()) !== hostOf(s.home);
+  if (outside()) {
+    // A platform draws its page after loading: wait until its text stops growing (up to ~15 seconds).
+    let last = -1;
+    for (let i = 0; i < 15; i++) {
+      const len = await w.webContents.executeJavaScript('(document.body ? document.body.innerText.length : 0)').catch(() => 0);
+      if (len > 200 && len === last) break;
+      last = len;
+      await sleep(1000);
+    }
+    rememberPlatform(w.webContents.getURL());
+  }
+  const page = await w.webContents.executeJavaScript(`(${extract.toString()})()`);
+  // Frames: the class site's content viewer, and a platform's own frames (any host, on a platform page).
+  for (const f of w.webContents.mainFrame.framesInSubtree) {
+    if (f === w.webContents.mainFrame) continue;
+    if (!outside() && hostOf(f.url) !== hostOf(s.home)) continue;
+    try {
+      const sub = await f.executeJavaScript(`(${extract.toString()})()`);
+      if (sub.text.trim()) page.text += `\n\n[Frame: ${f.url}]\n${sub.text}`;
+      page.links.push(...sub.links);
+      if (hostOf(f.url) && hostOf(f.url) !== hostOf(s.home)) rememberPlatform(f.url);
+    } catch {}
+  }
+  // A platform asking for its own sign-in (not D2L's): say so, so the scan tells the student instead of reading a
+  // login form as if it were the assignment list.
+  const loginWall = outside() && (await w.webContents.executeJavaScript('!!document.querySelector("input[type=password]")').catch(() => false));
+  const LIMIT = 40000;
+  const text = page.text.slice(offset, offset + LIMIT);
+  return {
+    url: w.webContents.getURL(),
+    title: page.title,
+    ...(loginWall ? { needs_sign_in: `This platform (${hostOf(w.webContents.getURL())}) is asking for its own sign-in, separate from the class site. Tell the student (kea_notify, needs_you) to sign in to it once in Kea's class-site window; its assignments can't be read until then.` } : {}),
+    text,
+    more: page.text.length > offset + LIMIT ? `Text continues: call again with offset ${offset + LIMIT} (of ${page.text.length}).` : undefined,
+    links: offset ? undefined : [...new Map(page.links.map((l) => [l.href, l])).values()].slice(0, 500)
+  };
+}
+
+// ---------- Clicking through, read-only ----------
+// A guide's instructions are sometimes a few clicks in: a tab, a "Next" page, a folded section, a lab's procedure
+// inside its platform. Kea clicks those for the scan, as the student would, but never anything that hands in,
+// records or changes something: no Submit, Start (a quiz attempt), Save, Check answer, Post, Reply, Upload, Mark
+// complete, Agree…, no button that submits a form, and no typing at all. Answering a quiz to unlock instructions is
+// the student's to do (the guide links straight to it).
+const NEVER = /\b(submit|start|begin|resume|retake|re-?attempt|attempt|save|check (my )?answers?|finish|grade|post|reply|respond|send|upload|attach|delete|remove|confirm|agree|accept|enrol+|purchase|buy|pay|sign ?out|log ?out|turn in|hand in|mark (as )?(complete|read|done)|complete|i have read|acknowledge|vote|rate|like|subscribe)\b/i;
+/** Runs inside a page: click the visible link, tab or button whose text (or label) matches, if it's safe. */
+function clickIn(label, nth, never) {
+  const NEVER_RE = new RegExp(never, 'i');
+  const want = String(label).toLowerCase().replace(/\s+/g, ' ').trim();
+  const all = [];
+  const walk = (root) => {
+    for (const el of root.querySelectorAll('*')) {
+      all.push(el);
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  walk(document);
+  const shown = (el) => {
+    const r = el.getBoundingClientRect();
+    const st = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+  };
+  const CLICKABLE = 'a[href], button, summary, [role=button], [role=tab], [role=link], [role=menuitem], [aria-expanded], input[type=button], d2l-button, d2l-button-subtle, d2l-link, d2l-tab, d2l-menu-item';
+  const textOf = (el) => (el.getAttribute('aria-label') || el.getAttribute('text') || el.innerText || el.value || el.title || '').replace(/\s+/g, ' ').trim();
+  const items = all.filter((el) => el.matches && el.matches(CLICKABLE) && shown(el)).map((el) => ({ el, text: textOf(el) })).filter((x) => x.text);
+  const exact = items.filter((x) => x.text.toLowerCase() === want);
+  const hits = exact.length ? exact : items.filter((x) => x.text.toLowerCase().includes(want));
+  const hit = hits[Math.max(0, (nth || 1) - 1)];
+  if (!hit) return { found: false, options: [...new Set(items.map((x) => x.text.slice(0, 80)))].slice(0, 60) };
+  const el = hit.el;
+  const tag = el.tagName;
+  const type = (el.getAttribute('type') || '').toLowerCase();
+  const submits = (tag === 'INPUT' && /submit|image/.test(type)) || (tag === 'BUTTON' && type !== 'button' && !!el.closest('form')) || (el.getAttribute('primary') !== null && !!el.closest('form'));
+  if (NEVER_RE.test(hit.text) || submits) return { refused: hit.text };
+  el.scrollIntoView({ block: 'center' });
+  el.click();
+  return { clicked: hit.text };
+}
+/**
+ * Click something on the page the scan window is on (a tab, "Next", a folded section, a link), then read where it
+ * leads. `allowed(url)` checks where it ended up: anywhere else, the window goes back and it's an error.
+ */
+async function click(label, nth = 1, allowed = () => true) {
+  if (remote.active()) return remote.click(label, nth);
+  const w = getWindow();
+  const before = w.webContents.getURL();
+  if (!before || before === 'about:blank') throw new Error('Open a page with d2l_open first; page_click clicks on the page that is open.');
+  const frames = [w.webContents.mainFrame, ...w.webContents.mainFrame.framesInSubtree.filter((f) => f !== w.webContents.mainFrame)];
+  let result = null;
+  let options = [];
+  for (const f of frames) {
+    const r = await f.executeJavaScript(`(${clickIn.toString()})(${JSON.stringify(String(label))}, ${Number(nth) || 1}, ${JSON.stringify(NEVER.source)})`).catch(() => null);
+    if (!r) continue;
+    if (r.refused) throw new Error(`"${r.refused}" would hand in, start or change something on the class site, so Kea doesn't click it. If the instructions are behind a quiz or check the student must complete, say so in the guide and link to it.`);
+    if (r.clicked) {
+      result = r;
+      break;
+    }
+    options.push(...(r.options || []));
+  }
+  if (!result) throw new Error(`Nothing clickable called "${label}" on this page. Things that can be clicked: ${[...new Set(options)].slice(0, 60).join(' | ')}`);
+  // Whatever it opened: a new page, or the same page redrawn.
+  await new Promise((resolve) => {
+    const t = setTimeout(resolve, 2500);
+    w.webContents.once('did-stop-loading', () => (clearTimeout(t), resolve()));
+  });
+  await sleep(1200);
+  const now = w.webContents.getURL();
+  if (now !== before && !allowed(now)) {
+    w.loadURL(before).catch(() => {});
+    throw new Error(`That led to ${hostOf(now)}, which isn't the class site or a platform it links to, so Kea went back.`);
+  }
+  return { clicked: result.clicked, ...(await readCurrent(w, 0)) };
+}
+
+// When each outside platform was last read (profile platforms.json { host: ISO time }), for the "not checked in a
+// while" alert.
+const platformsFile = () => path.join(profiles.paths().dir, 'platforms.json');
+function rememberPlatform(url) {
+  const host = hostOf(url);
+  if (!host) return;
+  try {
+    let seen = {};
+    try {
+      seen = JSON.parse(fs.readFileSync(platformsFile(), 'utf8'));
+    } catch {}
+    seen[host] = new Date().toISOString();
+    fs.writeFileSync(platformsFile(), JSON.stringify(seen, null, 1));
+  } catch {}
+}
+function platformsRead() {
+  try {
+    return JSON.parse(fs.readFileSync(platformsFile(), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+/** Runs inside the page: visible text and links, walking into shadow roots. */
+function extract() {
+  const out = [];
+  const links = [];
+  const skip = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG']);
+  const block = /^(P|DIV|LI|TR|H[1-6]|SECTION|ARTICLE|HEADER|FOOTER|TABLE|UL|OL|BR|D2L-.*)$/;
+  const walk = (node) => {
+    if (node.nodeType === 3) {
+      const t = node.textContent.replace(/\s+/g, ' ');
+      if (t.trim()) out.push(t);
+      return;
+    }
+    if (node.nodeType !== 1 && node.nodeType !== 11) return;
+    if (node.nodeType === 1) {
+      if (skip.has(node.tagName.toUpperCase())) return;
+      const st = getComputedStyle(node);
+      if (st.display === 'none' || st.visibility === 'hidden') return;
+      if (node.tagName === 'A' && node.href) links.push({ text: (node.innerText || node.getAttribute('title') || node.getAttribute('aria-label') || '').trim().slice(0, 200), href: node.href });
+      if (node.tagName === 'IFRAME' || node.tagName === 'FRAME') return;
+    }
+    if (node.shadowRoot) walk(node.shadowRoot);
+    for (const c of node.childNodes) walk(c);
+    if (node.nodeType === 1 && block.test(node.tagName)) out.push('\n');
+  };
+  walk(document.body || document.documentElement);
+  return { title: document.title, text: out.join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim(), links };
+}
+
+/** A request with the class site's session (for its REST API and files). Signs in first when needed. */
+// Worker mode (remote.cjs): every class-site read goes to the student's own Kea through the Hub's relay.
+const remote = require('./remote.cjs');
+
+async function request(url) {
+  if (remote.active()) return remote.request(url);
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  if (hostOf(url) && hostOf(url) !== hostOf(s.home) && !/^https:\/\//i.test(url)) throw new Error('Only https addresses can be fetched.');
+  const ses = session.fromPartition(partition());
+  prepareSession(ses);
+  let res = await ses.fetch(url, { redirect: 'follow' });
+  // Refused while signed in: a page students can't see, not a sign-in problem.
+  if (res.status === 403 && (await status()).signedIn) return res;
+  // Sent to sign in (or refused): sign in through the window, then try once more.
+  // (A file can come from another host: Canvas sends its files from a separate file server. Only a page there is a
+  // sign-in.)
+  const offSite = res.url && !onSite(res.url) && hostOf(url) === hostOf(s.home) && (hostOf(res.url) === hostOf(s.home) || /html/i.test(res.headers.get('content-type') || ''));
+  if (res.status === 401 || res.status === 403 || offSite) {
+    const w = await load(s.home);
+    if (!(await ensureSignedIn(w))) throw new Error('Not signed in to the class site (the user did not finish signing in).');
+    res = await ses.fetch(url, { redirect: 'follow' });
+  }
+  return res;
+}
+
+async function fetchText(url, offset = 0, raw = false) {
+  const res = await request(url);
+  const type = res.headers.get('content-type') || '';
+  if (!/json|text|xml|html|javascript/i.test(type)) return { status: res.status, contentType: type, text: '', note: 'Not text: use d2l_download to save it.' };
+  let body = unguard(await res.text());
+  // For Claude, JSON is trimmed (rich text as plain text with its links, no empty fields, false flags or bookkeeping):
+  // about a third of the size. Kea's own code asks for it raw.
+  if (!raw && /json/i.test(type)) body = require('./compact.cjs').compactText(body, readSchool().home);
+  // Parts small enough to arrive whole: a bigger answer is set aside in a file Claude then has to search piece by piece.
+  const LIMIT = 40000;
+  // Canvas pages its lists (about 10 to 100 per page) with a Link header: the next page's address, to fetch it too.
+  const link = res.headers.get('link') || '';
+  const next = (/<([^>]+)>\s*;\s*rel="?next"?/i.exec(link) || [])[1] || undefined;
+  return {
+    status: res.status,
+    url: res.url,
+    contentType: type,
+    text: body.slice(offset, offset + LIMIT),
+    more: body.length > offset + LIMIT ? `Continues: call again with offset ${offset + LIMIT} (of ${body.length}).` : undefined,
+    ...(next ? { next, next_note: 'The list continues on another page: fetch `next` for the rest.' } : {}),
+    ...(link && !next ? { link } : {})
+  };
+}
+
+/** Show a class-site page in Kea's own window, already signed in (for links the student opens). */
+async function show(url) {
+  const w = await load(url);
+  w.setTitle('Kea: class site');
+  w.show();
+  w.focus();
+  ensureSignedIn(w).then((ok) => ok && !onSite(w.webContents.getURL()) && w.loadURL(url).catch(() => {}));
+  return true;
+}
+
+// ---------- Messages: read and send class-site mail from Kea ----------
+// A second hidden window on the same signed-in session, used only for messages, so reading or sending never moves the
+// page a scan is reading. Kea finds the class site's own Reply, editor and Send on the page (inside frames and web
+// components), the same as the student pressing them, and reports "sent" only when the class site confirms it.
+let mailWin = null;
+let mailProfile = '';
+function mailWindow() {
+  if (mailWin && !mailWin.isDestroyed() && mailProfile === profiles.active()) return mailWin;
+  if (mailWin && !mailWin.isDestroyed()) mailWin.destroy();
+  mailProfile = profiles.active();
+  mailWin = new BrowserWindow({
+    show: false,
+    width: 1100,
+    height: 820,
+    title: 'Kea: class-site messages',
+    autoHideMenuBar: true,
+    webPreferences: { partition: partition(), sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'browser-preload.cjs') }
+  });
+  prepareSession(session.fromPartition(partition()));
+  mailWin.webContents.setWindowOpenHandler(({ url }) => {
+    mailWin.loadURL(url).catch(() => {});
+    return { action: 'deny' };
+  });
+  mailWin.on('close', (e) => {
+    if (global.keaQuitting) return;
+    e.preventDefault();
+    mailWin.hide();
+  });
+  return mailWin;
+}
+async function mailLoad(url) {
+  const w = mailWindow();
+  const done = new Promise((resolve) => {
+    const t = setTimeout(resolve, PAGE_TIMEOUT);
+    w.webContents.once('did-stop-loading', () => (clearTimeout(t), resolve()));
+  });
+  w.loadURL(url).catch(() => {});
+  await done;
+  await sleep(1500);
+  return w;
+}
+/** Run a script in every frame of the mail window; the first frame that answers truthy wins. */
+async function inFrames(w, script) {
+  for (const f of w.webContents.mainFrame.framesInSubtree) {
+    try {
+      const r = await f.executeJavaScript(script);
+      if (r) return r;
+    } catch {}
+  }
+  return null;
+}
+async function mailSignedIn(w, url) {
+  if (onSite(w.webContents.getURL())) return true;
+  // Signed out: sign in through Kea's usual window, then come back.
+  const main = await load(readSchool().home);
+  if (!(await ensureSignedIn(main))) return false;
+  await mailLoad(url);
+  return onSite(mailWindow().webContents.getURL());
+}
+
+// Reading and sending share one window: one at a time, so opening another message can never move the page a reply
+// is being written on.
+let mailLock = Promise.resolve();
+const withMail = (fn) => {
+  const run = mailLock.then(fn, fn);
+  mailLock = run.catch(() => {});
+  return run;
+};
+
+/** A message's page as text (what the class site shows: sender, subject, date, body). */
+const readMessage = (url) => (platformOf() === 'canvas' ? require('./canvas.cjs').readMessage(url) : withMail(() => readMessageNow(url)));
+async function readMessageNow(target) {
+  const url = typeof target === 'string' ? target : target?.url || '';
+  const loc = typeof target === 'object' ? target?.loc : null;
+  let w;
+  if (url) {
+    if (!onSite(url)) throw new Error('This message has no class-site link to open.');
+    w = await mailLoad(url);
+    if (!(await mailSignedIn(w, url))) throw new Error('Kea isn’t signed in to your class site.');
+  } else if (loc) w = await openMessage(loc);
+  else throw new Error('This message has no class-site link to open.');
+  let text = '';
+  for (const f of w.webContents.mainFrame.framesInSubtree) {
+    if (hostOf(f.url) && hostOf(f.url) !== hostOf(readSchool().home)) continue;
+    // (Not the folder list or the message list beside the open message.)
+    if (loc && /frame_side_folders|frame_list_mail/i.test(f.url)) continue;
+    try {
+      const sub = await f.executeJavaScript(`(${extract.toString()})()`);
+      if (sub.text.trim()) text += `${text ? '\n\n' : ''}${sub.text.trim()}`;
+    } catch {}
+  }
+  return { url: w.webContents.getURL(), text: text.slice(0, 20000) };
+}
+
+/**
+ * The class site's message tool, at a folder ('inbox' or 'sent'). Its folders and messages are links that only work
+ * by being clicked (D2L's classic Email draws "javascript://" links), so Kea clicks them, as the student would.
+ */
+async function openFolder(folder = 'inbox') {
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const ou = (s.home.match(/\/d2l\/home\/(\d+)/) || [])[1] || '';
+  const start = new URL(`/d2l/lms/email/frame.d2l${ou ? `?ou=${ou}` : ''}`, s.home).href;
+  let w = await mailLoad(start);
+  if (!(await mailSignedIn(w, start))) throw new Error('Kea isn’t signed in to your class site.');
+  w = mailWindow();
+  if (folder === 'sent') {
+    let clicked = false;
+    for (let i = 0; i < 10 && !clicked; i++) {
+      clicked = !!(await inFrames(w, `(() => { ${ALL} const a = all.find((x) => x.tagName === 'A' && /^sent( mail| items)?\\b/i.test((x.textContent || '').trim()) && shown(x)); if (a) { a.click(); return true; } return false; })()`));
+      if (!clicked) await sleep(700);
+    }
+    if (!clicked) throw new Error('Kea couldn’t find the Sent folder in your class site’s messages.');
+    await sleep(2500);
+  }
+  return w;
+}
+
+/** Open one message by clicking it in its folder: { folder, subject, date }. Resolves to the mail window, message open. */
+async function openMessage(loc) {
+  const w = await openFolder(loc.folder || 'inbox');
+  const pick = `((subject, date) => { ${ALL}
+    const norm = (t) => (t || '').replace(/\\s+/g, ' ').trim();
+    const links = all.filter((x) => x.tagName === 'A' && norm(x.textContent) === norm(subject));
+    const a = links.find((l) => { const row = l.closest('tr, [role=row], li') || l.parentElement; return !date || norm(row && row.innerText).includes(norm(date)); }) || (date ? null : links[0]);
+    if (!a) return false;
+    a.click();
+    return true;
+  })(${JSON.stringify(String(loc.subject || ''))}, ${JSON.stringify(String(loc.date || ''))})`;
+  let ok = false;
+  for (let i = 0; i < 12 && !ok; i++) {
+    ok = !!(await inFrames(w, pick));
+    if (!ok) await sleep(800);
+  }
+  if (!ok) throw new Error('Kea couldn’t find that message in your class site’s mailbox (it may have been moved or deleted there). Open it on the class site.');
+  // Open once a frame other than the lists shows the subject with more than the list's line.
+  const probe = String(loc.subject || '').slice(0, 40);
+  for (let i = 0; i < 15; i++) {
+    await sleep(800);
+    for (const f of w.webContents.mainFrame.framesInSubtree) {
+      if (/frame_side_folders|frame_list_mail/i.test(f.url)) continue;
+      const t = await f.executeJavaScript('document.body ? document.body.innerText : ""').catch(() => '');
+      if (t.includes(probe) && t.length > probe.length + 60) return w;
+    }
+  }
+  return w;
+}
+
+// Inside the page: the elements of every shadow root and the document, for finding D2L's own controls.
+const ALL = `const all = []; const walk = (r) => { for (const el of r.querySelectorAll('*')) { all.push(el); if (el.shadowRoot) walk(el.shadowRoot); } }; walk(document);
+  const label = (b) => (b.getAttribute('text') || b.getAttribute('aria-label') || b.getAttribute('title') || b.value || b.textContent || '').trim();
+  const shown = (el) => el.offsetParent !== null || el.getClientRects().length > 0;`;
+
+/**
+ * Send a message through the class site: a reply to the message at `url` (its own Reply is pressed), or a new message
+ * (`to` addresses) from the class's message tool. The body is put in the class site's own editor above any quoted
+ * text, then its Send is pressed. Returns { sent: true } once the class site shows it went, otherwise opens the page
+ * with everything filled in for the student to check and send ({ sent: false, shown: true, why }).
+ */
+const sendMessage = (msg) => (platformOf() === 'canvas' ? require('./canvas.cjs').sendMessage(msg) : withMail(() => sendMessageNow(msg)));
+async function sendMessageNow(args) {
+  if (remote.active()) throw new Error('Read-only: a shared-Claude job never sends messages.');
+  return sendMessageReal(args);
+}
+async function sendMessageReal({ url = '', loc = null, ou = '', subject = '', body = '', to = '' }) {
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const text = String(body || '').trim();
+  if (!text) throw new Error('Write something first.');
+  const reply = !!(url || loc);
+  let w;
+  if (!url && loc) w = await openMessage(loc);
+  else {
+    const start = url || new URL(`/d2l/lms/email/frame.d2l?ou=${encodeURIComponent(ou)}`, s.home).href;
+    if (url && !onSite(url)) throw new Error('This message has no class-site link to reply through.');
+    w = await mailLoad(start);
+    if (!(await mailSignedIn(w, start))) throw new Error('Kea isn’t signed in to your class site.');
+  }
+  w = mailWindow();
+  const show = (why) => {
+    w.setTitle('Kea: check and send your message');
+    w.show();
+    w.focus();
+    return { sent: false, shown: true, why };
+  };
+  const press = (re) => `(() => { ${ALL} const b = all.find((x) => /^(BUTTON|A|D2L-BUTTON|D2L-BUTTON-SUBTLE|D2L-BUTTON-ICON|INPUT)$/.test(x.tagName) && ${re}.test(label(x)) && shown(x)); if (b) { b.click(); return true; } return false; })()`;
+  // 1. Open the editor: the message's Reply, or the message tool's New Message.
+  let opened = false;
+  for (let i = 0; i < 12 && !opened; i++) {
+    opened = !!(await inFrames(w, press(reply ? '/^reply$/i' : '/^(new message|compose|new)$/i')));
+    if (!opened) await sleep(800);
+  }
+  if (!opened) return show(reply ? 'Kea couldn’t find the message’s Reply button.' : 'Kea couldn’t find New Message in your class’s messages.');
+  await sleep(2000);
+  // 2. Fill it in: To (new messages), Subject (only when empty), and the body above any quoted text.
+  const html = text
+    .split(/\n{2,}/)
+    .map((p) => `<p>${p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>`)
+    .join('');
+  const fill = `((html, subject, to, plain) => { ${ALL}
+    const set = (el, v) => { const proto = Object.getPrototypeOf(el); const d = Object.getOwnPropertyDescriptor(proto, 'value'); d && d.set ? d.set.call(el, v) : (el.value = v); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+    const field = (re) => all.find((x) => (x.tagName === 'INPUT' || x.tagName === 'TEXTAREA') && shown(x) && re.test([x.name, x.id, x.getAttribute('aria-label'), x.placeholder].join(' ')));
+    if (to) { const t = field(/(^|\\b)to\\b|recipient/i); if (t) set(t, to); }
+    if (subject) { const sj = field(/subject/i); if (sj && !sj.value) set(sj, subject); }
+    if (window.tinymce && window.tinymce.activeEditor) { const ed = window.tinymce.activeEditor; ed.setContent(html + ed.getContent()); ed.fire('change'); ed.save && ed.save(); return 'tinymce'; }
+    const editable = all.filter((x) => x.isContentEditable && shown(x) && !(x.parentElement && x.parentElement.isContentEditable)).sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0]
+      || (document.body && document.body.isContentEditable ? document.body : null);
+    if (editable) { editable.focus(); editable.insertAdjacentHTML('afterbegin', html); editable.dispatchEvent(new InputEvent('input', { bubbles: true })); return 'editable'; }
+    const ta = field(/body|message|content/i) || all.find((x) => x.tagName === 'TEXTAREA' && shown(x));
+    if (ta) { set(ta, plain + (ta.value ? '\\n\\n' + ta.value : '')); return 'textarea'; }
+    return '';
+  })(${JSON.stringify(html)}, ${JSON.stringify(String(subject || ''))}, ${JSON.stringify(String(to || ''))}, ${JSON.stringify(text)})`;
+  let how = '';
+  for (let i = 0; i < 10 && !how; i++) {
+    how = await inFrames(w, fill);
+    if (!how) await sleep(800);
+  }
+  if (!how) return show('Kea couldn’t find the place to type in the class site’s message editor. Your message is below in Kea; paste it there.');
+  // The text must really be in the editor before anything is sent.
+  const probe = text.slice(0, 40).replace(/\s+/g, ' ');
+  const present = `(() => { ${ALL} return all.some((x) => (x.isContentEditable || x.tagName === 'TEXTAREA' || x.tagName === 'BODY') && (x.innerText || x.value || '').replace(/\\s+/g, ' ').includes(${JSON.stringify(probe)})); })()`;
+  if (!(await inFrames(w, present))) return show('Kea filled the editor but couldn’t confirm your text is in it. Check it and press Send.');
+  // 3. Send, then watch for the class site to confirm (the editor closes, or it says the message was sent).
+  const before = w.webContents.getURL();
+  if (!(await inFrames(w, press('/^send$/i')))) return show('Kea couldn’t find the Send button. Everything is filled in: press Send.');
+  for (let i = 0; i < 15; i++) {
+    await sleep(1000);
+    const gone = !(await inFrames(w, present));
+    const said = await inFrames(w, `(() => /message (has been |was )?sent|sent successfully/i.test(document.body ? document.body.innerText : ''))()`);
+    // Sent only when the site says so, or the editor closed and the page moved on (not just a redraw).
+    if (said || (gone && w.webContents.getURL() !== before)) return { sent: true, how };
+  }
+  return show('Kea pressed Send but the class site didn’t confirm it. Check your Sent folder on the class site before sending again.');
+}
+
+/**
+ * The class site's whole mailbox (every class's messages, not only the ones its alerts mention): the Inbox and Sent
+ * folders of its message tool, read from the page the way the student sees them. Returns { inbox: [row], sent: [row],
+ * seen } where a row is { url, subject, from, date, unread, text } and `seen` says what the page looked like (kept by
+ * the caller, so a school whose message tool looks different can be fixed rather than silently read as empty).
+ */
+const readMailbox = () => (platformOf() === 'canvas' ? require('./canvas.cjs').readMailbox() : withMail(() => readMailboxNow()));
+async function readMailboxNow() {
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const ou = (s.home.match(/\/d2l\/home\/(\d+)/) || [])[1] || '';
+  const start = new URL(`/d2l/lms/email/frame.d2l${ou ? `?ou=${ou}` : ''}`, s.home).href;
+  let w = await mailLoad(start);
+  if (!(await mailSignedIn(w, start))) throw new Error('Kea isn’t signed in to your class site.');
+  w = mailWindow();
+  // Inside each frame: the message rows (a row with a link to one message), and what the page looked like.
+  const collect = `(() => { ${ALL}
+    const dateRe = /\\b(?:\\d{1,2}[\\/.-]\\d{1,2}[\\/.-]\\d{2,4}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.? \\d{1,2}(?:,? \\d{4})?|today|yesterday|\\d{1,2}:\\d{2}\\s*(?:am|pm))/i;
+    const msgLink = (a) => { const h = a.getAttribute('href') || ''; const on = a.getAttribute('onclick') || '';
+      return /email|message|msg|mail/i.test(h + ' ' + on) && !/compose|new_?message|folder|addressbook|settings|javascript:void|#$/i.test(h) && (a.textContent || '').trim().length > 0; };
+    const rows = [];
+    const seenRows = new Set();
+    for (const a of all.filter((x) => x.tagName === 'A' && msgLink(x))) {
+      const row = a.closest('tr, [role=row], li, d2l-list-item, .d2l-datalist-item') || a.parentElement;
+      if (!row || seenRows.has(row)) continue;
+      seenRows.add(row);
+      const cells = [...row.querySelectorAll('td, th, [role=cell], [role=gridcell]')].map((c) => (c.innerText || c.textContent || '').trim()).filter(Boolean);
+      const text = (row.innerText || row.textContent || '').replace(/\\s+/g, ' ').trim();
+      const subject = (a.innerText || a.textContent || '').trim();
+      const date = (cells.find((c) => dateRe.test(c) && c !== subject) || (text.match(dateRe) || [''])[0] || '').trim();
+      // The sender: its own cell, or (a list with no cells) what's left of the row's text without the subject and date.
+      const from = cells.find((c) => c !== subject && c !== date && /[a-z]/i.test(c) && !dateRe.test(c) && c.length < 80)
+        || (!cells.length ? text.replace(subject, ' ').replace(date, ' ').replace(/\\s+/g, ' ').trim().slice(0, 80) : '');
+      const bold = getComputedStyle(a).fontWeight;
+      const unread = /unread/i.test(row.className + ' ' + (row.getAttribute('aria-label') || '') + ' ' + [...row.querySelectorAll('img, [title], [aria-label]')].map((i) => i.getAttribute('alt') || i.getAttribute('title') || i.getAttribute('aria-label') || '').join(' ')) || Number(bold) >= 600;
+      let url = '';
+      try { url = new URL(a.getAttribute('href'), location.href).href; } catch {}
+      if (/^javascript:/i.test(url)) url = '';
+      rows.push({ url, subject: subject.slice(0, 300), from: from.slice(0, 120), date: date.slice(0, 60), unread, text: text.slice(0, 400), oc: (a.getAttribute('onclick') || '').slice(0, 160) });
+    }
+    const folders = all.filter((x) => x.tagName === 'A' && /^(sent( items| mail)?|inbox)\\b/i.test((x.textContent || '').trim()))
+      .map((x) => ({ name: (x.textContent || '').trim().slice(0, 40), href: (() => { try { return new URL(x.getAttribute('href') || '', location.href).href; } catch { return ''; } })() }));
+    return { url: location.href, title: document.title, rows, folders, sample: (document.body ? document.body.innerText : '').slice(0, 1500), links: all.filter((x) => x.tagName === 'A').slice(0, 40).map((x) => (x.getAttribute('href') || '').slice(0, 120)) };
+  })()`;
+  // Every frame's answer: the message tool draws its list a moment after loading, inside frames.
+  const scan = async () => {
+    const out = [];
+    for (const f of w.webContents.mainFrame.framesInSubtree) {
+      if (hostOf(f.url) && hostOf(f.url) !== hostOf(s.home)) continue;
+      try {
+        out.push(await f.executeJavaScript(collect));
+      } catch {}
+    }
+    return out;
+  };
+  const settle = async () => {
+    let frames = [];
+    for (let i = 0; i < 12; i++) {
+      frames = await scan();
+      if (frames.some((f) => f.rows.length)) break;
+      await sleep(1000);
+    }
+    return frames;
+  };
+  const uniq = (rows) => {
+    const seen = new Set();
+    return rows.filter((r) => {
+      const k = r.url || `${r.subject}|${r.from}|${r.date}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
+  const inboxFrames = await settle();
+  const inbox = uniq(inboxFrames.flatMap((f) => f.rows));
+  // The Sent folder: clicked in the folder list (its link only works by being clicked).
+  let sent = [];
+  let sentError = null;
+  try {
+    await openFolder('sent');
+    sent = uniq((await settle()).flatMap((f) => f.rows));
+  } catch (err) {
+    sentError = String(err.message || err);
+  }
+  const seen = { at: new Date().toISOString(), start, frames: inboxFrames.map((f) => ({ url: f.url, title: f.title, rows: f.rows.length, folders: f.folders, links: f.links, sample: f.rows.length ? '' : f.sample, onclick: f.rows.slice(0, 3).map((r) => r.oc) })), sentRows: sent.length, sentError };
+  return { inbox, sent, seen };
+}
+
+/**
+ * Answer a class-site message: open the message itself in Kea's window and press the page's own Reply, so the student
+ * lands on a reply already addressed to the sender. Kea never writes or sends anything: the student does. When the
+ * message has no link of its own, its class's message list opens instead. Returns { replied }.
+ */
+async function reply(url, ou) {
+  const s = readSchool();
+  // (Canvas: its Inbox page with the conversation, where its own Reply is.)
+  if (platformOf(s) === 'canvas') return show(url && onSite(url) ? url : new URL('/conversations', s.home).href).then(() => ({ replied: false }));
+  const target = url && onSite(url) ? url : s.home && ou ? new URL(`/d2l/lms/email/frame.d2l?ou=${encodeURIComponent(ou)}`, s.home).href : s.home;
+  if (!target) throw new Error('No class site is set up yet.');
+  const w = await load(target);
+  w.setTitle('Kea: reply to a message');
+  w.show();
+  w.focus();
+  if (!(await ensureSignedIn(w))) return { replied: false };
+  if (!onSite(w.webContents.getURL())) await load(target);
+  if (!url) return { replied: false };
+  // The message is drawn inside frames and web components, a moment after loading: look for its Reply a few times.
+  const press = `(() => {
+    const roots = [document];
+    for (let i = 0; i < roots.length; i++) for (const el of roots[i].querySelectorAll('*')) if (el.shadowRoot) roots.push(el.shadowRoot);
+    for (const r of roots)
+      for (const b of r.querySelectorAll('button, a, [role=button], d2l-button, d2l-button-subtle, d2l-button-icon, input[type=button]')) {
+        const label = (b.getAttribute('text') || b.getAttribute('aria-label') || b.getAttribute('title') || b.value || b.textContent || '').trim();
+        if (/^reply$/i.test(label) && b.offsetParent !== null) { b.click(); return true; }
+      }
+    return false;
+  })()`;
+  for (let tries = 0; tries < 15; tries++) {
+    for (const f of w.webContents.mainFrame.framesInSubtree) {
+      try {
+        if (await f.executeJavaScript(press)) return { replied: true };
+      } catch {}
+    }
+    await sleep(800);
+  }
+  return { replied: false };
+}
+
+/**
+ * Hand in a file: open the assignment folder's own D2L submission page in Kea's window and put the file in its upload
+ * box, the same as the student choosing it there. Kea never presses Submit: the student checks the page and submits.
+ * Returns { attached } (false when the page's upload box couldn't be found; the page is open either way).
+ */
+async function handIn(ou, folderId, file) {
+  if (remote.active()) throw new Error('Read-only: a shared-Claude job never hands anything in.');
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  if (!fs.existsSync(file)) throw new Error('Save the file first, then hand it in.');
+  const canvas = platformOf(s) === 'canvas';
+  const url = canvas
+    ? new URL(`/courses/${encodeURIComponent(ou)}/assignments/${encodeURIComponent(folderId)}`, s.home).href
+    : new URL(`/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${encodeURIComponent(folderId)}&grpid=0&isprv=0&bp=0&ou=${encodeURIComponent(ou)}`, s.home).href;
+  let w = await load(url);
+  w.setTitle('Kea: hand in your work');
+  w.show();
+  w.focus();
+  if (!(await ensureSignedIn(w))) return { attached: false };
+  if (!onSite(w.webContents.getURL()) || !(canvas ? /\/assignments\/\d+/ : /folder_submit_files/i).test(w.webContents.getURL())) w = await load(url);
+  const dbg = w.webContents.debugger;
+  try {
+    if (!dbg.isAttached()) dbg.attach('1.3');
+  } catch {
+    return { attached: false };
+  }
+  // The upload box is a file input, sometimes only added after pressing "Add a File" or "Upload" (D2L) or "Start
+  // Assignment" (Canvas). On Canvas only the button that opens the hand-in form is ever pressed, once: the form's own
+  // button is also called "Submit Assignment", and that one is the student's to press.
+  const findInput = async () => {
+    const doc = await dbg.sendCommand('DOM.getDocument', { depth: -1, pierce: true });
+    const search = await dbg.sendCommand('DOM.performSearch', { query: 'input[type=file]', includeUserAgentShadowDOM: false });
+    const found = search.resultCount ? await dbg.sendCommand('DOM.getSearchResults', { searchId: search.searchId, fromIndex: 0, toIndex: search.resultCount }) : { nodeIds: [] };
+    await dbg.sendCommand('DOM.discardSearchResults', { searchId: search.searchId }).catch(() => {});
+    return doc && found.nodeIds[0];
+  };
+  const pressAdd = () =>
+    w.webContents
+      .executeJavaScript(
+        canvas
+          ? `(() => { const shown = (el) => el.offsetParent !== null;
+              const own = 'a.submit_assignment_link, [data-testid="start-assignment-button"], [data-testid="new-attempt-button"]';
+              const b = [...document.querySelectorAll(own + ', button, a')]
+                .find((el) => shown(el) && !el.closest('form') && el.type !== 'submit' && (el.matches(own) || /^(start assignment|new attempt|try again)$/i.test((el.innerText || '').trim())));
+              if (b) { b.click(); return true; } return false; })()`
+          : `(() => { const all = []; const walk = (r) => { for (const el of r.querySelectorAll('*')) { all.push(el); if (el.shadowRoot) walk(el.shadowRoot); } }; walk(document);
+          const b = all.find((el) => /^(BUTTON|D2L-BUTTON|D2L-BUTTON-SUBTLE|A)$/.test(el.tagName) && /add a file|upload|choose file|browse/i.test((el.innerText || el.getAttribute('text') || el.getAttribute('aria-label') || '').trim()));
+          if (b) { b.click(); return true; } return false; })()`
+      )
+      .catch(() => false);
+  try {
+    let node = await findInput();
+    for (let i = 0; !node && i < 8; i++) {
+      if (i === 0 || (i === 4 && !canvas)) await pressAdd();
+      await sleep(1000);
+      node = await findInput();
+    }
+    if (!node) return { attached: false };
+    await dbg.sendCommand('DOM.setFileInputFiles', { files: [file], nodeId: node });
+    return { attached: true };
+  } catch {
+    return { attached: false };
+  } finally {
+    try {
+      dbg.detach();
+    } catch {}
+  }
+}
+
+/** Whether an address is on the class site (those open in Kea's signed-in window). */
+const isClassSite = (url) => {
+  const s = readSchool();
+  return !!s.home && hostOf(url) === hostOf(s.home);
+};
+
+// Canvas starts its JSON with "while(1);" for a signed-in browser session (a guard against other sites reading it).
+const unguard = (text) => String(text).replace(/^while\(1\);/, '');
+
+/**
+ * GET one of the class site's data addresses (relative to it) as JSON: { status, data, next }. `next` is the address
+ * of the next page when the site pages its lists with a Link header (Canvas). For Kea's own checks.
+ */
+async function getJson(rel) {
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const res = await request(new URL(rel, s.home).href);
+  if (!res.ok) return { status: res.status, data: null };
+  const next = (/<([^>]+)>;\s*rel="next"/.exec(res.headers.get('link') || '') || [])[1] || null;
+  try {
+    return { status: res.status, data: JSON.parse(unguard(await res.text())), next };
+  } catch {
+    return { status: res.status, data: null };
+  }
+}
+
+/**
+ * A class-site page's whole HTML, as the signed-in student sees it (the student's own Assignments and Quizzes lists).
+ * When the page draws its rows after loading (nothing matching `expect` in what the server sent), it's opened in Kea's
+ * hidden window and read once drawn. Returns '' when it can't be read.
+ */
+async function pageHtml(rel, expect = /./) {
+  const s = readSchool();
+  if (!s.home) return '';
+  const url = new URL(rel, s.home).href;
+  let html = '';
+  try {
+    const res = await request(url);
+    if (res.ok && /html/i.test(res.headers.get('content-type') || '')) html = await res.text();
+  } catch {}
+  if (expect.test(html) || remote.active()) return html;
+  try {
+    const w = await load(url);
+    if (!onSite(w.webContents.getURL())) return html;
+    return String(await w.webContents.executeJavaScript('document.documentElement.outerHTML'));
+  } catch {
+    return html;
+  }
+}
+
+/**
+ * Send a change to the class site's data API (Canvas: sending a message) as the signed-in student, with the site's own
+ * protection token, the same as its own pages do. `form` is sent as a form. Returns { status, data }.
+ */
+async function postForm(rel, form) {
+  if (remote.active()) throw new Error('Read-only: a shared-Claude job never changes anything on the class site.');
+  const s = readSchool();
+  if (!s.home) throw new Error('No class site is set up yet.');
+  const ses = session.fromPartition(partition());
+  prepareSession(ses);
+  const url = new URL(rel, s.home).href;
+  const token = (await ses.cookies.get({ url, name: '_csrf_token' }))[0]?.value;
+  if (!token) throw new Error('Kea isn’t signed in to your class site.');
+  const body = new URLSearchParams();
+  for (const [k, v] of Object.entries(form)) for (const x of Array.isArray(v) ? v : [v]) body.append(k, String(x));
+  const res = await ses.fetch(url, { method: 'POST', headers: { 'X-CSRF-Token': decodeURIComponent(token), 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: body.toString() });
+  let data = null;
+  try {
+    data = JSON.parse(unguard(await res.text()));
+  } catch {}
+  return { status: res.status, data };
+}
+
+/** Save a file from the class site into the profile's workspace (only under data/downloads). */
+async function download(url, rel) {
+  const base = path.join(profiles.paths().workspace, 'data', 'downloads');
+  const dest = path.resolve(base, String(rel || '').replace(/^[\\/]+/, ''));
+  if (!dest.startsWith(path.resolve(base) + path.sep)) throw new Error('Files can only be saved under data/downloads.');
+  const res = await request(url);
+  if (!res.ok) throw new Error(`The class site answered ${res.status}.`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, buf);
+  return { saved: path.relative(profiles.paths().workspace, dest), bytes: buf.length, contentType: res.headers.get('content-type') || '' };
+}
+
+async function status() {
+  if (remote.active()) return remote.status();
+  const s = readSchool();
+  if (!s.home) return { setUp: false, signedIn: false };
+  try {
+    const ses = session.fromPartition(partition());
+    prepareSession(ses);
+    const who = platformOf(s) === 'canvas' ? '/api/v1/users/self' : '/d2l/api/lp/1.0/users/whoami';
+    const res = await ses.fetch(new URL(who, s.home).href, { redirect: 'manual' });
+    return { setUp: true, signedIn: res.status === 200, home: s.home, platform: platformOf(s) };
+  } catch {
+    return { setUp: true, signedIn: false, home: s.home, platform: platformOf(s) };
+  }
+}
+
+/**
+ * The first sign-in: show the window at the class site and let the user sign in. With `remember`, the login form
+ * they submit is saved (encrypted) so Kea can sign in for them later.
+ */
+async function signIn(remember) {
+  const s = readSchool();
+  if (!s.home) throw new Error('Enter your class site address first.');
+  rememberNext = !!remember;
+  s.remember = !!remember;
+  writeSchool(s);
+  const w = await load(s.home);
+  const ok = await ensureSignedIn(w, 10 * 60000);
+  rememberNext = false;
+  return { signedIn: ok, ...schoolInfo() };
+}
+
+// The window's preload reports the login form the user submitted. It's kept only while they asked Kea to remember
+// it, and only from Kea's own class-site window. A two-step login (name, then password) is put back together.
+let rememberNext = false;
+let pendingUser = null;
+// Each login is kept under its own host, so a platform's login (ALEKS, Pearson) never replaces the school's. Only the
+// window's own page counts: a frame inside it (an ad, an embedded tool) can't report a login.
+const fromMainFrame = (e) => !!(win && !win.isDestroyed() && e.sender === win.webContents && e.senderFrame && e.senderFrame === win.webContents.mainFrame);
+function onLoginSubmitted(e, form) {
+  if (!wantsRemember() || !fromMainFrame(e) || !form || typeof form !== 'object') return;
+  const host = hostOf(form.url);
+  if (!host) return;
+  if (!form.pass) {
+    if (form.user) pendingUser = { host, user: String(form.user), userField: String(form.userField || '') };
+    return;
+  }
+  const user = form.user ? { user: String(form.user), userField: String(form.userField || '') } : pendingUser?.host === host ? pendingUser : null;
+  if (!user) return;
+  if (signingIn) signingIn.hosts = [...signingIn.hosts.filter((h) => h !== host), host];
+  const s = readSchool();
+  const old = loginFor(s, host);
+  // The same login reported twice (a click, then the page moving on): nothing new to save.
+  if (old && old.user === user.user && old.pass === String(form.pass)) return;
+  s.logins = { ...(s.logins || {}), [host]: { host, user: user.user, pass: String(form.pass), userField: user.userField, passField: String(form.passField || '') } };
+  // The class site's own sign-in page is the school's login.
+  if (s.home && host === hostOf(s.home) && !s.schoolLoginHost) s.schoolLoginHost = host;
+  writeSchool(s);
+  pendingUser = null;
+}
+
+const remembering = (e) => (e.returnValue = !!(wantsRemember() && fromMainFrame(e)));
+
+module.exports = { request, SCHOOL_PLATFORMS, open, click, platformsRead, show, reply, readMessage, readMailbox, sendMessage, handIn, isClassSite, fetchText, getJson, pageHtml, postForm, platformOf, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };

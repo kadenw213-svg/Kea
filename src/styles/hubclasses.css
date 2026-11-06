@@ -1,0 +1,346 @@
+/* Kea Hub classes in School: the join box, class cards, a class's page, practice and leaderboards. Theme tokens only,
+   so light and dark both work. */
+.hubc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hubc-row .grow,
+.hubc-next .grow,
+.hubc-board .grow {
+  flex: 1;
+  min-width: 0;
+}
+.hubc-row input.grow {
+  min-width: 200px;
+}
+.hubc-gap {
+  margin: 12px 0;
+}
+.hubc-small {
+  font-size: 12.5px;
+}
+.hubc-text {
+  font: inherit;
+  resize: vertical;
+  padding: 8px 10px;
+  height: auto;
+}
+.hubc-join .hubc-row .input {
+  flex: 1;
+  min-width: 220px;
+}
+.hubc-join {
+  max-width: none;
+}
+.hubc-found {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hubc-offline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.hubc-dot {
+  background: var(--accent);
+}
+.hubc-color {
+  background: var(--accent);
+}
+.hubc-ico {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.hubc-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+}
+.hubc-desc {
+  margin: -8px 0 16px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+
+/* Level, XP and streak */
+.hubc-progress {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  margin: 0 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  font-size: 13.5px;
+}
+.hubc-level,
+.hubc-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.hubc-level svg {
+  color: var(--accent);
+}
+.hubc-streak svg {
+  color: var(--warning);
+}
+.hubc-bar {
+  flex: 1;
+  min-width: 120px;
+  max-width: 320px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.hubc-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+/* My classes */
+.hubc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+.hubc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease);
+}
+.hubc-card:hover {
+  border-color: var(--text-3);
+  border-left-color: var(--accent);
+}
+.hubc-card-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+.hubc-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+.hubc-card-foot svg {
+  vertical-align: -1px;
+}
+
+/* A class's page */
+.hubc-next {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.hubc-next > svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.hubc-tabs {
+  margin-bottom: 8px;
+}
+.hubc-session {
+  cursor: default;
+}
+.hubc-session.past {
+  opacity: 0.7;
+}
+.hubc-notes {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.hubc-editor {
+  max-width: 720px;
+  margin: 12px 0;
+}
+.hubc-editor.hubc-wide {
+  max-width: 860px;
+}
+.hubc-editor textarea,
+.hubc-editor select {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+.hubc-cols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.hubc-cols > label {
+  flex: 1;
+  min-width: 140px;
+}
+.hubc-qedit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.hubc-qedit .input {
+  background: var(--surface);
+}
+.hubc-choice {
+  padding-left: 32px;
+}
+.hubc-choice input[type='radio'] {
+  accent-color: var(--success);
+  width: 16px;
+  height: 16px;
+}
+.hubc-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+}
+.hubc-pick-row {
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+}
+.hubc-pick-row .sch-row-main {
+  display: flex;
+  flex-direction: column;
+}
+.hubc-person {
+  cursor: default;
+}
+.hubc-invite {
+  cursor: default;
+  flex-wrap: wrap;
+}
+.hubc-code {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  font-size: 15px;
+  user-select: all;
+}
+
+/* Leaderboard */
+.hubc-board {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hubc-board li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.hubc-board li.you {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.hubc-rank {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 13px;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.hubc-rank.r1 {
+  background: color-mix(in srgb, var(--warning) 35%, transparent);
+  color: var(--text);
+}
+.hubc-rank.r2,
+.hubc-rank.r3 {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text);
+}
+.hubc-pts {
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* Practice */
+.hubc-head-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.hubc-head-stats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.hubc-head-stats svg {
+  color: var(--accent);
+}
+.hubc-score {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.hubc-done {
+  text-align: center;
+  padding-top: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.hubc-done h2 {
+  margin: 0;
+  font-weight: 500;
+}
+.hubc-done .acct-actions {
+  justify-content: center;
+}

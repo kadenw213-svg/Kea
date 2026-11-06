@@ -1,0 +1,336 @@
+{
+  "name": "kea",
+  "productName": "Kea",
+  "version": "0.67.0",
+  "description": "Kea: your classes, textbooks and calendar, with a clean offline office suite for PDFs, documents, spreadsheets and slides.",
+  "author": "kadenw213-svg",
+  "license": "MIT",
+  "private": true,
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/engine-vendor.cjs && concurrently -k -n vite,electron \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "build": "node scripts/engine-vendor.cjs && node scripts/licenses.cjs && node scripts/assets.cjs && vite build",
+    "start": "node scripts/engine-vendor.cjs && vite build && electron .",
+    "typecheck": "tsc --noEmit",
+    "dist": "node scripts/engine-vendor.cjs && vite build && electron-builder --win",
+    "dist:mac": "node scripts/engine-vendor.cjs && vite build && electron-builder --mac",
+    "release": "node scripts/release.cjs",
+    "postinstall": "node scripts/keep-out-of-onedrive.cjs && node scripts/engine-vendor.cjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.135.0",
+    "@ghostery/adblocker-electron": "^2.18.2",
+    "@pdf-lib/fontkit": "1.1.1",
+    "electron-updater": "^6.3.9",
+    "markdown-it": "^14.3.3",
+    "node-llama-cpp": "^3.21.1",
+    "onnxruntime-node": "1.24.3",
+    "sql.js": "^1.13.0",
+    "wordnet-db": "3.1.14"
+  },
+  "devDependencies": {
+    "@cantoo/pdf-lib": "2.11.1",
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/cli": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.9",
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-markdown": "^6.3.1",
+    "@codemirror/lang-python": "^6.1.6",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/language": "^6.10.6",
+    "@codemirror/search": "^6.7.2",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.35.0",
+    "@fontsource/inter": "^5.1.0",
+    "@huggingface/transformers": "4.2.0",
+    "@lezer/highlight": "^1.2.1",
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tiptap/extension-color": "^2.11.5",
+    "@tiptap/extension-font-family": "^2.11.5",
+    "@tiptap/extension-highlight": "^2.11.5",
+    "@tiptap/extension-image": "^2.11.5",
+    "@tiptap/extension-link": "^2.11.5",
+    "@tiptap/extension-placeholder": "^2.11.5",
+    "@tiptap/extension-subscript": "^2.11.5",
+    "@tiptap/extension-superscript": "^2.11.5",
+    "@tiptap/extension-table": "^2.11.5",
+    "@tiptap/extension-table-cell": "^2.11.5",
+    "@tiptap/extension-table-header": "^2.11.5",
+    "@tiptap/extension-table-row": "^2.11.5",
+    "@tiptap/extension-task-item": "^2.11.5",
+    "@tiptap/extension-task-list": "^2.11.5",
+    "@tiptap/extension-text-align": "^2.11.5",
+    "@tiptap/extension-text-style": "^2.11.5",
+    "@tiptap/extension-underline": "^2.11.5",
+    "@tiptap/pm": "^2.11.5",
+    "@tiptap/react": "^2.11.5",
+    "@tiptap/starter-kit": "^2.11.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "ag-psd": "31.0.2",
+    "codemirror": "^6.0.1",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "docx": "^9.1.1",
+    "electron": "^44.5.0",
+    "electron-builder": "^25.1.8",
+    "exceljs": "^4.4.0",
+    "harper.js": "2.10.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.460.0",
+    "mammoth": "^1.8.0",
+    "mathjax-full": "3.2.2",
+    "mediabunny": "1.61.3",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "4.10.38",
+    "pptxgenjs": "^3.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tesseract.js": "7.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "wait-on": "^8.0.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zustand": "^5.0.1"
+  },
+  "build": {
+    "appId": "com.kea.app",
+    "productName": "Kea",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "build/icon.png",
+      "package.json",
+      "!node_modules/@node-llama-cpp/win-x64-cuda/**",
+      "!node_modules/@node-llama-cpp/win-x64-cuda-ext/**",
+      "!node_modules/@node-llama-cpp/win-arm64/**",
+      "!node_modules/@node-llama-cpp/linux-*/**",
+      "!node_modules/@node-llama-cpp/mac-*/**",
+      "!node_modules/node-llama-cpp/llama/gitRelease.bundle",
+      "!node_modules/node-llama-cpp/llama/llama.cpp/**",
+      "!node_modules/node-llama-cpp/templates/**",
+      "!node_modules/wordnet-db/dict/index.sense",
+      "!node_modules/wordnet-db/test.js"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "Kea.pdf",
+        "description": "PDF Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "docx",
+        "name": "Kea.docx",
+        "description": "Word Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "doc",
+        "name": "Kea.doc",
+        "description": "Word 97-2003 Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "odt",
+        "name": "Kea.odt",
+        "description": "OpenDocument Text",
+        "role": "Editor"
+      },
+      {
+        "ext": "rtf",
+        "name": "Kea.rtf",
+        "description": "Rich Text Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "html",
+        "name": "Kea.html",
+        "description": "HTML Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "xlsx",
+        "name": "Kea.xlsx",
+        "description": "Excel Workbook",
+        "role": "Editor"
+      },
+      {
+        "ext": "xls",
+        "name": "Kea.xls",
+        "description": "Excel 97-2003 Workbook",
+        "role": "Editor"
+      },
+      {
+        "ext": "ods",
+        "name": "Kea.ods",
+        "description": "OpenDocument Spreadsheet",
+        "role": "Editor"
+      },
+      {
+        "ext": "csv",
+        "name": "Kea.csv",
+        "description": "CSV File",
+        "role": "Editor"
+      },
+      {
+        "ext": "tsv",
+        "name": "Kea.tsv",
+        "description": "Tab-separated Values",
+        "role": "Editor"
+      },
+      {
+        "ext": "pptx",
+        "name": "Kea.pptx",
+        "description": "PowerPoint Presentation",
+        "role": "Editor"
+      },
+      {
+        "ext": "txt",
+        "name": "Kea.txt",
+        "description": "Text File",
+        "role": "Editor"
+      },
+      {
+        "ext": "md",
+        "name": "Kea.md",
+        "description": "Markdown File",
+        "role": "Editor"
+      }
+    ],
+    "win": {
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+      ],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kea",
+      "include": "build/installer.nsh"
+    },
+    "mac": {
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/**"
+      ],
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "icon": "build/icon.png",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "kadenw213-svg",
+        "repo": "kea",
+        "releaseType": "release"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "scholar",
+        "to": "scholar",
+        "filter": [
+          "**/*",
+          "!engine/.venv/**",
+          "!**/__pycache__/**",
+          "!engine/.pytest_cache/**",
+          "!engine/.ruff_cache/**",
+          "!engine/data/**"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/node-llama-cpp/**",
+      "node_modules/@node-llama-cpp/**",
+      "electron/ai-worker.mjs",
+      "electron/mcp/stdio-bridge.cjs",
+      "node_modules/onnxruntime-node/**"
+    ]
+  },
+  "homepage": "https://github.com/kadenw213-svg/kea",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kadenw213-svg/kea.git"
+  },
+  "rendererDependencies": [
+    "@cantoo/pdf-lib",
+    "@codemirror/commands",
+    "@codemirror/lang-css",
+    "@codemirror/lang-html",
+    "@codemirror/lang-javascript",
+    "@codemirror/lang-json",
+    "@codemirror/lang-markdown",
+    "@codemirror/lang-python",
+    "@codemirror/lang-xml",
+    "@codemirror/language",
+    "@codemirror/search",
+    "@codemirror/state",
+    "@codemirror/view",
+    "@fontsource/inter",
+    "@huggingface/transformers",
+    "@lezer/highlight",
+    "@tesseract.js-data/eng",
+    "@tiptap/extension-color",
+    "@tiptap/extension-font-family",
+    "@tiptap/extension-highlight",
+    "@tiptap/extension-image",
+    "@tiptap/extension-link",
+    "@tiptap/extension-placeholder",
+    "@tiptap/extension-subscript",
+    "@tiptap/extension-superscript",
+    "@tiptap/extension-table",
+    "@tiptap/extension-table-cell",
+    "@tiptap/extension-table-header",
+    "@tiptap/extension-table-row",
+    "@tiptap/extension-task-item",
+    "@tiptap/extension-task-list",
+    "@tiptap/extension-text-align",
+    "@tiptap/extension-text-style",
+    "@tiptap/extension-underline",
+    "@tiptap/pm",
+    "@tiptap/react",
+    "@tiptap/starter-kit",
+    "codemirror",
+    "docx",
+    "exceljs",
+    "harper.js",
+    "jszip",
+    "lucide-react",
+    "mammoth",
+    "mathjax-full",
+    "onnxruntime-web",
+    "pdf-lib",
+    "pdfjs-dist",
+    "pptxgenjs",
+    "react",
+    "react-dom",
+    "tesseract.js",
+    "xlsx",
+    "zustand"
+  ]
+}

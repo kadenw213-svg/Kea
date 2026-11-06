@@ -1,0 +1,543 @@
+/* ---------- The Claude Assistant panel (shares the sidebar look with the Encyclopedia, ai.css) ---------- */
+.as-model {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-3);
+  text-transform: capitalize;
+}
+.as-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.as-starters {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 6px;
+}
+.as-starters .ai-chip {
+  justify-content: flex-start;
+  height: auto;
+  min-height: 32px;
+  padding: 6px 12px;
+  text-align: left;
+}
+
+/* Claude's reasoning: one folded line, opened on click. */
+.as-think {
+  border-left: 2px solid var(--surface-4);
+  padding-left: 8px;
+}
+.as-think-head,
+.as-step-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.as-think-head svg {
+  transition: transform 0.15s;
+}
+.as-think.open .as-think-head svg {
+  transform: rotate(90deg);
+}
+.as-think .ai-md {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+/* A step Claude took in the file. */
+.as-step {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  min-width: 0;
+}
+.as-step.ok .as-step-head > svg:first-child {
+  color: var(--success, #81c995);
+}
+.as-step.bad .as-step-head > svg:first-child {
+  color: var(--danger);
+}
+.as-step-icon {
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.as-step-name {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.as-step-err {
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.as-step-body {
+  font-size: 11.5px;
+  color: var(--text-3);
+  padding: 2px 0 4px 20px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.as-step-out {
+  color: var(--text-2);
+  margin-top: 2px;
+  white-space: pre-wrap;
+}
+.as-shot {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: var(--radius-sm);
+  margin: 4px 0 4px auto;
+  border: 1px solid var(--border);
+}
+.as-step .as-shot {
+  margin-left: 0;
+}
+.ai-msg.assistant .ai-md {
+  overflow-wrap: anywhere;
+}
+.ai-md pre {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  overflow-x: auto;
+}
+
+.as-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px 4px;
+}
+.as-usage {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+/* Connecting a key. */
+.as-setup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 20px;
+  text-align: center;
+}
+.as-setup > svg {
+  color: var(--accent);
+}
+.as-setup-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+.as-setup .muted {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.as-setup .input {
+  width: 100%;
+}
+.as-setup-actions {
+  display: flex;
+  gap: 8px;
+}
+.as-err {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+/* Attachments: files waiting to go with the next message, and the ones already sent */
+.as-pending {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 12px 6px;
+}
+.as-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 4px 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.as-file img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.as-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.as-file.sent {
+  margin: 4px 0 4px auto;
+  width: fit-content;
+  padding-right: 8px;
+}
+.as-drop {
+  position: absolute;
+  inset: 8px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--accent);
+  font-weight: 500;
+  pointer-events: none;
+}
+body.drop-to-claude .drop-overlay {
+  display: none;
+}
+
+/* The Claude plan's usage: 5-hour window and week */
+.as-bars {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.as-usage-bars {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 6px;
+  padding: 6px 4px 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.as-bar {
+  flex: 1;
+  min-width: 0;
+}
+.as-bar-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.as-bar-top span:first-child {
+  color: var(--text-2);
+}
+.as-bar-track {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-4);
+  overflow: hidden;
+}
+.as-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.as-bar-fill.warm {
+  background: #f6b26b;
+}
+.as-bar-fill.hot {
+  background: var(--danger);
+}
+.spin {
+  animation: as-spin 0.9s linear infinite;
+}
+@keyframes as-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ai-head .icon-btn.on {
+  color: var(--accent);
+}
+
+/* Over the file while Claude works on it */
+.claude-working {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent), inset 0 0 28px color-mix(in srgb, var(--accent) 16%, transparent);
+  animation: cw-glow 2.4s ease-in-out infinite;
+}
+.cw-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-3) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  font-size: 12.5px;
+  color: var(--text);
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
+}
+.cw-spark {
+  color: var(--accent);
+  animation: cw-spin 3s linear infinite;
+}
+.cw-stop {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  display: grid;
+  place-items: center;
+  background: var(--surface-4);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.cw-stop:hover {
+  color: var(--danger);
+}
+@keyframes cw-glow {
+  50% {
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 30%, transparent), inset 0 0 18px color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+}
+@keyframes cw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+body.kea-capturing .claude-working {
+  display: none;
+}
+
+/* The steps of one answer, folded into one line */
+.as-steps {
+  margin: 2px 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+.as-steps-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+  text-align: left;
+}
+.as-steps-head .chev {
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.as-steps.open .as-steps-head .chev {
+  transform: rotate(90deg);
+}
+.as-steps-head .bad {
+  color: var(--danger);
+  margin-left: auto;
+}
+.as-steps-body {
+  padding: 0 8px 8px;
+}
+.as-note {
+  color: var(--text-3);
+  padding: 2px 4px 4px 22px;
+  font-style: italic;
+}
+
+/* Which assignment the file is for (AssignmentPicker.tsx) */
+.as-assignment {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 12px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+}
+.as-assignment-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.as-assignment-main span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.as-picker {
+  display: flex;
+  flex-direction: column;
+  margin: 0 12px 8px;
+  max-height: min(420px, 55vh);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-2, 0 8px 24px rgba(0, 0, 0, 0.3));
+  overflow: hidden;
+}
+.as-picker-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px 8px;
+  font-size: 13px;
+}
+.as-picker-head .muted {
+  font-size: 12px;
+}
+.as-pick-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1, var(--bg));
+  color: var(--text-2);
+}
+.as-pick-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.as-pick-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 4px 4px;
+}
+.as-pick-group {
+  padding: 8px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3, var(--text-2));
+}
+.as-pick-note {
+  padding: 10px;
+  font-size: 12px;
+}
+.as-pick-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.as-pick-row:hover,
+.as-pick-row.on {
+  background: var(--surface-3);
+}
+.as-pick-course {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.as-pick-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.as-pick-due {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.as-pick-paste {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.as-pick-paste:hover {
+  background: var(--surface-3);
+}
+.as-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+.as-paste textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1, var(--bg));
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.as-paste-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}

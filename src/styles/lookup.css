@@ -1,0 +1,240 @@
+/* ---------- Look up panel ---------- */
+.lk-search {
+  padding: 4px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.lk-search .input {
+  width: 100%;
+}
+.lk-actions {
+  display: flex;
+  gap: 8px;
+}
+.lk-actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+.lk-offline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.lk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  user-select: text;
+}
+.lk-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: var(--ai-font, 13px);
+  line-height: 1.6;
+}
+.lk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lk-term {
+  font-size: 1.15em;
+  font-weight: 700;
+}
+.lk-src {
+  font-size: 12px;
+}
+.lk-desc {
+  color: var(--text-3);
+  font-size: 12px;
+  margin-top: 1px;
+}
+.lk-body p {
+  margin: 8px 0 0;
+}
+.lk-section {
+  margin-top: 12px;
+}
+.lk-sec-title {
+  font-weight: 700;
+}
+.lk-section p {
+  margin: 4px 0 0;
+}
+.lk-focus {
+  margin: 8px 0 14px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+.lk-focus p {
+  margin: 4px 0 0;
+}
+.lk-focus-sec {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.lk-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  margin-top: 4px;
+  font-size: 12px;
+}
+.lk-others {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.lk-chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.lk-chip:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.lk-error {
+  color: var(--text-2);
+}
+.lk-pos {
+  margin-top: 10px;
+}
+.lk-pos-name {
+  font-style: italic;
+  font-weight: 600;
+  color: var(--accent);
+}
+.lk-pos ol {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+.lk-pos li {
+  margin-bottom: 6px;
+}
+.lk-ex {
+  color: var(--text-3);
+  font-style: italic;
+  margin-top: 2px;
+}
+.lk-ex strong {
+  color: var(--text-2);
+}
+.lk-label {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.lk-sub {
+  margin: 3px 0 2px;
+  padding-left: 18px;
+  list-style: lower-alpha;
+  color: var(--text-2);
+}
+.lk-formof {
+  color: var(--text-2);
+  font-style: italic;
+}
+.lk-rel-all {
+  margin-top: 10px;
+}
+.lk-rel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+/* A highlighted question: its parts, each with the passages that answer it. */
+.lk-question {
+  color: var(--text-2);
+  font-style: italic;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.lk-part {
+  margin-top: 12px;
+}
+.lk-part + .lk-part {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.lk-part-label {
+  font-weight: 700;
+}
+.lk-passage {
+  margin-top: 8px;
+}
+.lk-passage + .lk-passage {
+  margin-top: 14px;
+}
+.lk-passage p {
+  margin: 4px 0 0;
+}
+.lk-cite {
+  font-size: 12px;
+}
+.lk-cite a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.lk-cite a:hover {
+  text-decoration: underline;
+}
+.lk-answer {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  border-radius: 3px;
+  transition: filter 0.15s;
+}
+.lk-answer.hidden {
+  filter: blur(4px);
+  cursor: pointer;
+  user-select: none;
+}
+.lk-tex svg {
+  vertical-align: middle;
+  max-width: 100%;
+}
+.lk-tex.display {
+  display: block;
+  margin: 6px 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.lk-none {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.lk-card .ai-actions {
+  margin-top: 10px;
+}

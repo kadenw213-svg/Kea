@@ -1,0 +1,241 @@
+---
+name: kea-practice
+description: Write a practice exam (a bank of exam-style questions with answers and explanations) or a flashcard deck for a class topic, all at once, as one JSON file Kea saves, shuffles and grades itself. Kea runs it when the student asks for one.
+user-invocable: true
+---
+
+# /kea-practice: a practice exam or flashcard deck
+
+> **In Kea:** this run is unattended: never ask, never wait. **Be fast.** The student is watching a progress bar and
+> expects about a minute or two. Kea has already done all the reading for you.
+
+**Question banks.** When the brief's title says "Question bank", the set is that chapter's standing bank (Quiz me
+beside its textbook, the questions practice exams draw on): cover every section of the chapter, every objective and
+every review-sheet problem type, not just the test focus.
+
+Arguments: `$ARGUMENTS` = Kea's brief (`data/study/requests/<id>.md`), optionally followed by `resume`.
+
+You write the **whole set in one go**. Kea saves it, shuffles question order and choice order every time the student
+takes it, samples shorter practice exams from it, and grades it itself. Students re-take sets many times with no
+Claude, so every question must stand on its own and grade correctly by its stored answer alone.
+
+## 1. Read the brief, and only the brief
+
+Read the brief (one Read; it's short). Kea built it from what the scans learned, in this order:
+1. **What the real tests cover**: each test on these chapters with the instructor's study focus, scraped from the
+   class site (format, allowed sheets, the exact problem types on each FunSheet).
+2. **How the class tests** (the syllabus's guidelines: formats, what exams draw on, allowed sheets) and each
+   chapter's internal notes: summary, sections, objectives, vocabulary, its place in the student's textbook and the
+   **syllabus outcomes it teaches**. Every one of those outcomes gets at least one question (two or more when it's a
+   skill the tests calculate with); match the question types the guidelines name (essay or short answer when the
+   exams have them, calculations shown step by step when written work is graded).
+3. The review material for those chapters, already converted and trimmed by Kea: FunSheets and their answer keys,
+   study guides, guided readings, past quiz notes.
+
+That is enough. Do **not** open the class files, the request JSON, the notes files, the textbook sources or the class
+site, and don't browse or search. The only exception: open a textbook source (path in the brief) only to check one
+fact you are genuinely unsure of, and read only the part you need (Grep it).
+
+Call `mcp__kea__kea_progress` once after reading, with `percent` 20 ("Writing 25 questions on Chapters 5–6").
+
+**Aim a little above the course.** Questions match the real tests' style and are at their difficulty or slightly
+harder (an extra step, a unit conversion, a reversed question), so the real exam feels easy. Explanations teach the
+method or reason, not just the answer, so a missed question is learned.
+
+**Write for the real exam.** What the scans found about the tests is what will actually be on them, so it drives
+the set:
+- **At least 60% of the questions come straight from the tests' study focus and review sheets.** Every study-focus
+  line and every problem type on a FunSheet or study guide gets at least one question (for a set too small for all of
+  them, take the most exam-heavy ones first: calculations and the topics the focus repeats). Match their style,
+  numbers and difficulty, and check your answers against the answer keys when they're in the brief.
+- **Use the test's format.** If the focus says "essay, multiple choice, and calculation problems", mix exactly those
+  types in about that balance; if a test is matching or multiple choice only, write those.
+- When a set is for one test (the brief marks it "the test this set is for"), that test's focus comes first; other
+  tests on the same chapters fill in.
+- The rest (up to 40%) covers each chapter's objectives (each one at least once in a set of 50 or more) and vocabulary,
+  tested in context, not as bare definitions. With no test information in the brief, the objectives and review
+  material drive the whole set.
+- Set `source` on every question to where it came from ("FunSheet Ch 5", "Exam 3 focus", "Objective"), so the
+  balance can be checked.
+
+**Saved questions.** Kea keeps every question the student has had, and a new set reuses some of them. The brief
+ends with "Already saved for these chapters": write the number of **new** items the brief's title asks for, all different
+from those (other problems, other numbers and angles, topics and problem types the saved ones miss). Don't
+rewrite a saved question in new words; Kea drops repeats. **Calculations are the exception:** a saved
+calculation's format with new numbers (and a new answer) is a new question, and a good one, since the exam tests
+the method. Vary the numbers enough that the answer can't be remembered, and where you can, change which quantity
+is asked for too.
+
+The student never sees the vocabulary and objective lists. This set is where they're used.
+
+## 2. Exam-style questions (`kind: exam`)
+
+Write questions the way the course's real exams ask them. Mix the types the course uses (from `study_focus`, raw
+notes and review sheets: "multiple choice, calculation problems and short essays"):
+- `mc`: one correct choice of 4 (3 to 6 allowed). Distractors are wrong answers students really give: sign or unit
+  slips, a confused look-alike term, a reversed relationship. Never "all/none of the above", "both A and B" or a
+  choice that refers to other choices: Kea shuffles them.
+  **Nothing but knowing the material should find the answer.** Every wrong choice is a near miss that only the
+  distinction the chapter teaches rules out (the student's rule: distractors "that make you distinguish between
+  similar concepts at a high level, not random ones"):
+  - the closely related concept it's confused with (protostome for deuterostome, pseudocoelom for coelom, polyp for
+    medusa, osmosis for diffusion), or the right concept matched to the wrong example or group;
+  - the relationship reversed (cause and effect swapped, the two halves of a comparison traded);
+  - a true statement that doesn't answer the question (a real feature that isn't the reason asked for);
+  - the right reasoning with one step wrong (a unit slip, a sign, the wrong formula for the case).
+  For example, "Which two phyla grow by molting?" offers Arthropoda and Annelida (both segmented, but annelids don't
+  molt), Annelida and Mollusca, Nematoda and Platyhelminthes, and the answer Arthropoda and Nematoda.
+  Write each one's mistake in `wrong` (one entry per choice, `""` for the answer, a short sentence each): Kea shows
+  it to the student who picks that choice ("Annelids are segmented like arthropods, but they're lophotrochozoans and
+  don't molt"). If you can't name the mistake a wrong choice stands for, it's a random choice: replace it.
+  `practice-check` refuses a question without these notes.
+  A student who half-knows the chapter should find every wrong choice tempting:
+  - All choices are the same kind of thing (four processes, four citations, four orders of events), in the same
+    grammatical form, about the same length and the same level of detail. The answer must not be the longest, most
+    qualified or most carefully worded choice: make it the shortest in some questions, and give the wrong choices the
+    same "because…" reasons and specifics. `practice-check` refuses an answer 5+ words longer than every wrong choice,
+    and a set where the answer is the longest in more than 40% of questions.
+  - No throwaway choices a student can rule out without the chapter: nothing silly, off-topic or from another
+    subject (a URL as a citation, "nothing changes" when the question is about a change, a method nobody would pick).
+  - Words like "always", "only", "never", "no effect" belong as often in right answers as in wrong ones; a wrong choice
+    is wrong because of its content, not because it sounds absolute.
+  - The answer doesn't repeat the question's key words when the wrong choices don't.
+- `multi`: "Select all that apply", 4 to 6 choices, 2 or more correct.
+- `match`: matching. `q` says what to match ("Match each structure to its function"), and `pairs` lists 3 to 8
+  `[term, what it matches]` pairs (Kea shows the right sides shuffled and the student picks one for each term). Every
+  term and every right side different; right sides about the same length and style, so none stands out. Good for
+  terms and definitions, structures and functions, formulas and what they find, scientists and discoveries,
+  equations and reaction types.
+- `tf`: only where the course uses true/false; prefer `mc`.
+- `num`: a calculation with a numeric answer: `answer` (number), `tolerance` (absolute; fit it to sensible
+  rounding, such as 0.01 for an answer of 2.45), `unit`, and `calc`: the plain arithmetic that gives the answer,
+  with the numbers from the stem (`"745/760*5.60/2.10"`; `^` for powers, `log`, `ln`, `sqrt`, `exp`, e-notation).
+  `practice-check` works `calc` out and refuses an answer it doesn't match, so every answer is computed, never
+  typed from memory. The stem gives every value needed. Chemistry, math and physics sets should be at least 30%
+  `num` when the course's tests are calculation-heavy.
+- `blank`: fill in the blank. The stem has `____` where the answer goes, and the answer is one or two words (a term,
+  a name, a symbol, a short number with its unit): `answer`, plus `accept`, a list of other forms a teacher would take
+  ("NaCl" for "sodium chloride", "ATP" for "adenosine triphosphate", a common synonym). Kea forgives spelling
+  slips, capitals and plurals itself and has a local model judge the rest, so list only real alternatives. The stem
+  must make one answer clearly right. Blanks: at most 25% of a set (`practice-check` enforces it), only for terms,
+  names, symbols and values a test really asks for, never a trivial definition.
+- `short`: a short written answer or explanation (essay-style courses, "explain why"). `answer` is a model answer
+  in 1 to 4 sentences, with the points a grader would look for. The student marks their own answer against it.
+
+**A good mix of kinds.** A set of 15 or more uses at least four kinds, has at least one `match` (two in 25 or more),
+and is at most 55% `mc`: mix in `blank`, `match`, `multi` and, where the chapter has calculations, `num`
+(`practice-check` enforces it). Kea builds each practice exam from these in the student's chosen mix.
+
+Every question has:
+- `explain`: teaches the idea, so a student who got it wrong learns it from this alone (2 to 5 sentences):
+  - why the answer is right: the concept or rule behind it, not just the result;
+  - for a calculation: name the formula, then say what **every symbol** stands for, with its unit ("M = n/V, where M is
+    the molarity in mol/L, n the moles of solute and V the solution's volume in liters"), then each step with its
+    reason ("convert mL to L first, because molarity is per liter"), and a sanity check of the answer's size or units;
+  - for `mc`: also why the most tempting wrong choice is wrong (the mistake it comes from).
+  Kea's check rejects explanations that use a formula without saying what its symbols mean.
+- `steps`: the worked solution the student reads after answering. Written for someone who got it wrong and doesn't
+  see how to start: slow, complete, plain and professional (no emojis, exclamation marks or slang).
+  - Calculations (`num`, and `apply`/`multistep` questions with arithmetic or a chain of ideas) get a **walkthrough**:
+    `asks` (what the question is really asking and what it gives, with units), then 3 to 8 step objects
+    `{ "title", "text", "math", "terms" }`, then `final` (`{ "math", "text" }`, drawn boxed). The formula step lists
+    every symbol in `terms` as `{ "sym", "means", "value", "why" }`: what it actually is, the number it takes here and
+    where that number comes from ("NaCl splits into two ions", "given for water"). Then conversions with why,
+    substitute, one algebra move per step, what each result means ("per kilogram, but we only have 0.500 kg"), and
+    the conversion to what's asked. `math`, `sym` and `final.math` are LaTeX (`\Delta T_f = i K_f m`,
+    `\frac{5}{3.72}`); `text` is plain. The full format and an example are in the `kea-steps` skill.
+  - Every other question (except `short`) also gets a walkthrough, shown at once when the student taps "I don't
+    know" or misses it, so it has to teach on its own: `asks` (what the question is really asking, in plain words),
+    then 2 to 5 step objects with a `title` and `text` (the rule or idea that decides it, how it applies to this
+    question, why the tempting wrong answer fails, with `math` and `terms` only where there's a formula), then
+    `final` (`{ "text" }`: the answer and the one-line reason; `math` too when it's a value).
+  Kea's check rejects a question (other than `short`) without its walkthrough.
+- `chapter`: the chapter label it tests ("Chapter 5"); `topic`: the idea it tests in a few words, using the
+  textbook's own term ("Boyle's law", "molarity").
+- `section`: the textbook section that teaches the answer, exactly as the chapter's `Sections:` line in the brief
+  writes it ("5.1 The Gaseous State"). Kea opens the textbook there when the student taps the book icon, so pick the
+  section a student should read to answer it.
+- `source`: where it came from: "FunSheet Ch 5", "Study focus", "Objective", "Textbook 5.3".
+- `level`: how hard it is: `recall` (remember a term or fact), `apply` (use one idea: calculate, classify, predict,
+  interpret), or `multistep` (chain two or more steps or concepts: a unit conversion before a gas law, grams of an
+  electrolyte → particles → ΔT, % m/m with density → molarity, ranking several compounds by two properties).
+
+Balance and difficulty:
+- Spread questions across the chapters in proportion to what the tests' focus covers. For one chapter, cover every
+  section.
+- At most 35% `recall`, about 45% `apply`, and at least 20% `multistep` (`practice-check` enforces the limits). The
+  multistep ones are the hardest type the review sheets and practice exams show, and a bit harder: exams combine
+  ideas, so practice must too. No giveaways: a choice set where only one option could possibly fit, or a stem that
+  names the answer, is recall at best.
+- Every objective, every section and every problem type on the review sheets gets questions; in your summary,
+  name any you couldn't cover and why.
+- Each question tests one thing and doesn't give away another question's answer. No duplicates or near-duplicates,
+  except calculations: the same problem format with new numbers is fine (better still if what's asked changes too).
+- Plain text only, no LaTeX or Markdown. Use Unicode: x², x³, √, ≤, ≥, ≠, ±, π, Δ, →, ⇌, °, subscripts like H₂O and
+  CO₂, superscripts like Na⁺ and SO₄²⁻, and fractions like (x + 1)/(x − 2). An exponent or subscript that isn't a
+  single Unicode character is written `^(…)` or `_(…)`: `(1.00375)^(72)`, `e^(rt)`, `log_(b)(x)`, `10^(−4)`; Kea draws
+  these as real superscripts and subscripts. Never `**`, `\frac` or `$…$` in these fields. The one exception: the
+  walkthrough's `math`, `sym` and `final.math` fields are LaTeX (see `steps`).
+- Be accurate: check every answer by working it, and keep the explanation's numbers consistent with the answer.
+- Quote only what the brief or the textbook shows. A quotation, statistic or page number credited to a real author
+  comes from them word for word; otherwise invent a clearly made-up source ("a 2021 article by A. Ruiz") rather than
+  put remembered or approximate words in a real person's mouth.
+
+## Pictures (identification)
+
+When the brief asks for picture questions (or a picture set), find real pictures, freely licensed, from Wikimedia
+Commons through Kea:
+1. `uv run academic-sync study-image search "<words>"` (e.g. "Volvox colony micrograph", "fern sorus", "sea star
+   aboral surface", "Erlenmeyer flask", "trigonal pyramidal molecule"); pick a clear one whose description says what
+   it shows. Never a picture you can't verify from its description.
+2. `uv run academic-sync study-image get "<File:...>" --course <CODE> --name <code>-id-<n>`: it prints `image` and
+   `image_credit`; put both on the question or card exactly as printed. The name never gives the answer away.
+3. Ask what's shown, or what a labeled part is ("What structure is labeled B?" only when the picture has labels).
+   Multiple choice with plausible look-alikes (other organisms or structures from the same chapter), or a blank.
+   The explanation says what identifies it in the picture (the features to look for), like a lab instructor would.
+For flashcards, put the picture on the card (front: "Identify this organism", back: the name and its key features).
+
+## 3. Flashcards (`kind: cards`)
+
+- `front`: a term, a concept prompt ("What happens to a gas's volume when its temperature doubles at constant
+  pressure?"), a structure, a formula's name, or a problem type ("How do you find the limiting reactant?").
+- `back`: the answer in 1 to 3 sentences, or a short procedure. Include the key fact the exam asks.
+- `chapter`, `section` (as for questions: from the chapter's `Sections:` line) and `topic` on each card.
+- Start with what the tests will ask: a card for every study-focus point and every item on the review sheets
+  (formulas, problem types as "How do you…" cards, the facts the FunSheets drill). Then every vocabulary term and
+  objective of the chapters. Mix term cards with how and why cards. No duplicates.
+
+## 4. Write the file and check it
+
+Write `output` (inside `data/`) as JSON **in parts of about 25 items**: Write the first part as a complete file,
+then Edit to append each next part (a run can be stopped partway by the student's usage limit, and what's written
+is kept and continued; a set held back to one Write at the end would be lost). Call `mcp__kea__kea_progress` after
+each part with how far along you are:
+
+```json
+{ "questions": [
+  { "type": "mc", "q": "…", "choices": ["…", "…", "…", "…"], "answer": 2, "wrong": ["the mistake choice A stands for", "… B …", "", "… D …"], "level": "apply", "explain": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law", "source": "FunSheet Ch 5" },
+  { "type": "multi", "q": "Select all that apply: …", "choices": ["…", "…", "…", "…", "…"], "answer": [0, 3], "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "tf", "q": "…", "answer": false, "explain": "…", "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "num", "q": "…", "answer": 2.45, "tolerance": 0.02, "unit": "atm", "calc": "745/760*5.60/2.24", "level": "multistep", "explain": "…", "asks": "What the question asks and gives, in plain words", "steps": [{"title": "Understand the formula", "text": "…", "math": "P_1 V_1 = P_2 V_2", "terms": [{"sym": "P_1", "means": "the starting pressure", "value": "745 mmHg", "why": "given"}]}, {"title": "Convert to atmospheres", "text": "…", "math": "745\\ \\text{mmHg} \\times \\frac{1\\ \\text{atm}}{760\\ \\text{mmHg}} = 0.980\\ \\text{atm}"}, {"title": "Solve for the unknown", "text": "…", "math": "…"}], "final": {"math": "2.45\\ \\text{atm}", "text": "… which makes sense because …"}, "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "blank", "q": "The pressure of a gas is inversely proportional to its volume at constant temperature; this is ____ law.", "answer": "Boyle's", "accept": ["Boyle"], "explain": "…", "asks": "…", "steps": [{"title": "…", "text": "…"}, {"title": "…", "text": "…"}], "final": {"text": "…"}, "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "match", "q": "Match each gas law to what it holds constant.", "pairs": [["Boyle's law", "Temperature and amount of gas"], ["Charles's law", "Pressure and amount of gas"], ["Avogadro's law", "Pressure and temperature"]], "level": "recall", "explain": "…", "asks": "…", "steps": [{"title": "…", "text": "…"}, {"title": "…", "text": "…"}], "final": {"text": "…"}, "chapter": "…", "topic": "…", "source": "…" },
+  { "type": "short", "q": "…", "answer": "…", "explain": "…", "chapter": "…", "topic": "…", "source": "…" }
+] }
+```
+
+or, for flashcards, `{ "cards": [ { "front": "…", "back": "…", "chapter": "Chapter 5", "section": "5.1 The Gaseous State", "topic": "Boyle's law" } ] }`. `answer` indexes are
+0-based. Work each answer in your head as you write it; don't draft the set twice. Before the check, read your
+multiple-choice questions once more as a student who half-knows the chapter: any choice they could rule out without
+it (off-topic, silly, obviously absolute, much shorter or vaguer than the rest) gets replaced with a near miss.
+
+Then call `mcp__kea__kea_progress` with `percent` 90 and run `uv run academic-sync practice-check <output> --count
+<count>` once. If it lists problems, fix just those with Edit and check again. Kea drops any malformed item itself, so
+never rewrite the whole file.
+
+With `resume` (or when Kea continues this conversation after a stop): if `output` already exists, keep its
+questions, add only the ones still missing, and check again. Never rewrite what's there.
+
+## 5. Report
+
+One line: how many questions or cards, the chapters covered, and which review material was used.

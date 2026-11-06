@@ -1,0 +1,94 @@
+/* "Hand in" picker (PDF toolbar). Kept apart from scholar.css, which only loads with the Scholar tab. */
+.hi-pick {
+  width: 360px;
+  max-height: 460px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  font-size: 13.5px;
+}
+.hi-wait {
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.hi-head {
+  font-weight: 600;
+  font-size: 14.5px;
+  margin: 2px 2px 8px;
+}
+.hi-note {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #fdd663 14%, transparent);
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.hi-classes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.hi-classes button {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.hi-classes button.on {
+  background: var(--surface-3);
+  color: var(--text);
+  border-color: var(--text-3);
+}
+.hi-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hi-folder {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.hi-folder:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--border);
+}
+.hi-folder.closed {
+  opacity: 0.5;
+  cursor: default;
+}
+.hi-name {
+  font-weight: 500;
+}
+.hi-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.hi-foot {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.4;
+}

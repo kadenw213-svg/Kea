@@ -1,0 +1,778 @@
+/* Kea for Android: the same graphite and silver as Kea on the PC, sized for a thumb. */
+:root {
+  --bg: #131314;
+  --surface: #1b1c1e;
+  --surface-2: #222326;
+  --surface-3: #2c2e31;
+  --border: #2f3134;
+  --hover: #26282b;
+  --text: #e3e4e6;
+  --text-2: #c4c7c5;
+  --text-3: #8e9196;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+.muted {
+  color: var(--text-3);
+}
+.small {
+  font-size: 12.5px;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.center {
+  height: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+}
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 8px 18px;
+}
+.brand {
+  flex: 1;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.icon {
+  border: none;
+  background: transparent;
+  padding: 8px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+.icon.flip svg {
+  transform: rotate(180deg);
+}
+.body {
+  flex: 1;
+  overflow-y: auto;
+}
+.page {
+  padding: 4px 14px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+h1 {
+  font-size: 21px;
+  margin: 6px 0 2px;
+  font-weight: 600;
+}
+h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  margin: 14px 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tabs {
+  display: flex;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.tabs button {
+  flex: 1;
+  position: relative;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  padding: 8px 0 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+}
+.tabs button.on {
+  color: var(--text);
+}
+.tabs b {
+  position: absolute;
+  top: 4px;
+  left: 54%;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 11px;
+  display: grid;
+  place-items: center;
+}
+.tabs b.alert {
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid;
+  border-radius: 12px;
+  background: var(--surface);
+}
+.row.done .row-title {
+  text-decoration: line-through;
+  color: var(--text-3);
+}
+.row.missing {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-left-color: var(--danger);
+}
+.check {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--text-3);
+  display: grid;
+}
+.row.done .check {
+  color: var(--success);
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+.row-title {
+  font-weight: 500;
+}
+.row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.row-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--on-danger);
+  font-size: 11px;
+  font-weight: 700;
+}
+.miss h2 {
+  color: var(--danger);
+}
+.miss-banner {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--text);
+  font-size: 13.5px;
+}
+.next {
+  padding: 14px;
+  border: 1px solid;
+  border-radius: 14px;
+  background: var(--surface);
+}
+.next-k {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+.next-t {
+  font-size: 18px;
+  font-weight: 600;
+}
+.next-r {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-2);
+}
+.card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: left;
+  width: 100%;
+}
+.card.link {
+  justify-content: flex-start;
+}
+.card.closed,
+.card:disabled {
+  opacity: 0.5;
+}
+.card.class b {
+  font-size: 16px;
+}
+.grade {
+  font-weight: 700;
+  font-size: 17px;
+}
+.grade.low,
+b.low {
+  color: var(--danger);
+}
+.bigrade {
+  font-size: 34px;
+  font-weight: 600;
+}
+.grade-row {
+  align-items: flex-start;
+}
+.chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 0;
+}
+.chips button {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+}
+.chips button.on {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.chips button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.msg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+/* Each kind has its color (--k): the left stripe, icon, label and buttons. */
+.msg {
+  --k: #9aa0a6;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid color-mix(in srgb, var(--k) 45%, transparent);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.msg.unread {
+  border-left-color: var(--k);
+  background: color-mix(in srgb, var(--k) 7%, var(--surface));
+}
+.msg.unread .msg-title {
+  font-weight: 700;
+}
+.msg-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.msg-head svg {
+  color: var(--k);
+}
+.msg-kind {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--k);
+  background: color-mix(in srgb, var(--k) 15%, transparent);
+}
+.msg-at {
+  margin-left: auto;
+}
+.msg-title {
+  margin-top: 4px;
+  color: var(--text);
+}
+.msg-score {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: var(--surface-3);
+}
+.msg-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.msg-links button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 6px 11px;
+  border: 1px solid color-mix(in srgb, var(--k) 40%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--k) 9%, transparent);
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-links svg {
+  flex-shrink: 0;
+  color: var(--k);
+}
+.msg-body {
+  margin-top: 5px;
+  font-size: 13.5px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.msg.open .msg-body {
+  display: block;
+  margin-bottom: 10px;
+}
+.empty {
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--text-3);
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+}
+.week {
+  display: flex;
+  align-items: center;
+}
+.wd {
+  flex: 1;
+  border: none;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  border-radius: 12px;
+  color: var(--text-3);
+}
+.wd b {
+  color: var(--text);
+  font-size: 16px;
+}
+.wd.on {
+  background: var(--surface-3);
+}
+.wd.today b {
+  color: var(--text);
+  text-decoration: underline;
+}
+.wd i {
+  display: flex;
+  gap: 2px;
+  height: 5px;
+}
+.wd em,
+.legend em {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.legend em {
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+}
+.back {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 0;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.btn.primary {
+  background: var(--primary, #e3e4e6);
+  color: var(--on-primary, #131314);
+  border-color: var(--primary, #e3e4e6);
+  font-weight: 600;
+}
+.btn.big {
+  padding: 14px;
+  font-size: 16px;
+  margin-top: 10px;
+}
+.btn:disabled {
+  opacity: 0.5;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.scan-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 40px 10px;
+  color: var(--text-2);
+}
+.sheet-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+}
+.sheet {
+  width: 100%;
+  max-height: 88%;
+  overflow-y: auto;
+  background: var(--bg);
+  border-top: 3px solid;
+  border-radius: 18px 18px 0 0;
+  padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sheet-head .icon {
+  margin-left: auto;
+}
+.pre {
+  white-space: pre-wrap;
+  margin: 0;
+}
+.setup input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.note {
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.toast {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--text);
+  color: var(--bg);
+}
+.tb-h {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  margin: 12px 0 4px;
+}
+
+.block {
+  display: block;
+  margin-top: 2px;
+}
+
+/* Starting up: a real progress bar, and what went wrong instead of an endless spinner */
+.loading {
+  display: grid;
+  gap: 12px;
+  padding-top: 30vh;
+}
+.loading .bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2, #2a2a2a);
+  overflow: hidden;
+}
+.loading .bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent, #8ab4f8);
+  transition: width 0.6s ease;
+}
+.stale {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.scan-name {
+  width: 100%;
+  margin: 8px 0;
+}
+
+/* ---------- Studying: the PC's study screens and reader, full screen on the phone ---------- */
+.m-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  /* (Clear of the phone's clock and status icons, with a little room to spare.) */
+  padding-top: calc(env(safe-area-inset-top, 0px) + 6px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* The study screens fill the overlay inside that room, so their close button is never under the clock. */
+.m-overlay .st-player {
+  position: absolute;
+  inset: calc(env(safe-area-inset-top, 0px) + 6px) 0 env(safe-area-inset-bottom, 0px) 0;
+}
+/* The book under the quiz, not beside it, and big enough to read. */
+.m-overlay .st-player.with-reading .st-player-body {
+  flex-direction: column;
+}
+.m-overlay .st-player.with-reading .st-main {
+  flex: 1 1 45%;
+}
+.m-overlay .st-reading {
+  flex: 1 1 55%;
+  border-left: 0;
+  border-top: 1px solid var(--border);
+}
+/* Teach, Book and Encyclopedia under an answered question: most of the screen, the question still in view above. */
+.m-overlay .st-player.with-reading .st-reading.st-side {
+  flex: 1 1 62%;
+}
+.m-overlay .st-player.with-reading .st-reading.st-side ~ .st-main,
+.m-overlay .st-player.with-reading .st-main:has(+ .st-side) {
+  flex: 1 1 38%;
+}
+.m-reader .st-reading {
+  flex: 1;
+  border-top: 0;
+}
+.m-overlay .hub,
+.m-overlay .st-exam,
+.m-overlay .st-setup {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.m-overlay .hub-modes {
+  grid-template-columns: 1fr 1fr;
+}
+.m-overlay .hub-pick-row {
+  grid-template-columns: 1fr;
+}
+.st-m-ch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.st-m-ch .actions {
+  margin-top: 2px;
+}
+.link-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+}
+.review-all {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  border-color: var(--accent);
+}
+.stale.lib {
+  background: var(--accent-soft);
+}
+.block {
+  display: block;
+}
+/* The shared screens' own headings, not the phone's small section labels. */
+.m-overlay h2 {
+  display: block;
+  font-size: 19px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  margin: 4px 0;
+}
+.read-card {
+  flex-direction: column;
+  align-items: stretch;
+}
+.m-opened {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+}
+.m-opened img {
+  max-width: 100%;
+}
+.m-opened pre {
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+/* A class's readings in their own area over the class page (like Study), closed with X. */
+.rd-over-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 8px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 16px;
+}
+.rd-over-head b {
+  flex: 1;
+}
+.rd-over-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 16px 24px;
+}
+/* An item's readings, folded into one row in the sheet. */
+.sheet-fold {
+  margin: 10px 0;
+}
+.sheet-fold > summary {
+  font-weight: 600;
+  padding: 6px 0;
+  color: var(--text-2);
+}
+.sheet .gd {
+  margin: 12px 0;
+}
+
+/* On the student's own (extended) due date */
+.ext-tag {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ext-line {
+  margin: -4px 0 8px;
+  color: var(--accent);
+}

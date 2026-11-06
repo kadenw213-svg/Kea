@@ -1,0 +1,281 @@
+/* The laptop's buttons, menus and colours, so Kea's own study screens and reader (shared with the laptop) look the
+   same here. Generated from src/styles/global.css; the phone's own styles (styles.css) come after it. */
+:root {
+  --surface-4: #36373a;
+  --active: rgba(232, 234, 237, 0.12);
+  --border-strong: #444649;
+  --accent: #a8c7fa;
+  --accent-strong: #7cacf8;
+  --accent-soft: rgba(168, 199, 250, 0.14);
+  --on-accent: #062e6f;
+  --danger: #f28b82;
+  --success: #81c995;
+  --warning: #fdd663;
+  --warn: #fdd663;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --font: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', monospace;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--accent);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.btn:hover {
+  background: var(--accent-soft);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+.btn.primary:hover {
+  background: #bdd5fc;
+}
+.btn.danger {
+  color: var(--danger);
+}
+.btn.danger.primary {
+  background: var(--danger);
+  color: #3c0d0a;
+}
+.btn.tonal {
+  background: var(--surface-3);
+  border-color: transparent;
+  color: var(--text);
+}
+.btn.tonal:hover {
+  background: var(--surface-4);
+}
+.btn.sm {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12.5px;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+  position: relative;
+}
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.icon-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+}
+.icon-btn.sm {
+  width: 28px;
+  height: 28px;
+}
+
+/* ---------- Toolbar ---------- */
+.toolbar {
+  height: var(--toolbar-h);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px;
+  margin: 0 10px 8px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+.tb-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--border-strong);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+.tb-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+.tb-label {
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.select {
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 0 26px 0 10px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23c4c7c5' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.select:hover {
+  background-color: var(--hover);
+}
+.select option {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+
+.input {
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  padding: 0 12px;
+  outline: none;
+  width: 100%;
+  user-select: text;
+}
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.input.sm {
+  height: 30px;
+  font-size: 12.5px;
+}
+
+.num-input {
+  width: 46px;
+  height: 28px;
+  text-align: center;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--surface-3);
+  outline: none;
+  user-select: text;
+}
+.num-input:focus {
+  border-color: var(--accent);
+}
+
+/* ---------- Popover menus ---------- */
+.popover {
+  position: fixed;
+  z-index: 1000;
+  background: var(--surface-3);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  min-width: 180px;
+  animation: pop 0.12s ease-out;
+}
+/* Transform-only animations: content stays visible even if the clock is paused. */
+@keyframes pop {
+  from {
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+}
+.menu-item:hover {
+  background: var(--hover);
+}
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.menu-item .kbd {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11.5px;
+  padding-left: 24px;
+}
+.menu-item svg {
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.menu-sep {
+  height: 1px;
+  background: var(--border-strong);
+  margin: 6px 4px;
+}
+.menu-title {
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid var(--surface-4);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.link-btn {
+  border: none;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0 0 0 6px;
+}

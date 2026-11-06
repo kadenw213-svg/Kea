@@ -1,0 +1,446 @@
+// The phone app's link to Kea's native parts (KeaPlugin.java) and its data: the copy Kea on the PC keeps in the cloud
+// drive (classes, calendar, grades) and what the phone reads from the class site itself (announcements, grades,
+// assignment folders).
+import { registerPlugin } from '@capacitor/core';
+import { phoneRequests, studyOut } from './study';
+import { getLook, onThemeChange, setLook } from './theme';
+import { THEMES } from '../../src/lib/themes';
+import { hubInfo, hubOn, hubProblem, hubPushPhone, hubReadData } from './hub';
+import type { ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem } from '../../src/lib/api';
+
+interface KeaNative {
+  /** Kea's colours for class sites and publisher pages opened on the phone (electron/scholar/site-theme.js settings, as JSON). */
+  siteTheme?(o: { json: string }): Promise<void>;
+  setup(o: { home: string; user?: string; pass?: string }): Promise<void>;
+  /** `drive`: where the chosen files or folder live (see DriveFrom). */
+  state(): Promise<{ home: string; hasLogin: boolean; signedIn: boolean; dataFolder: string; dataFileOnly?: boolean; files?: string[]; drive?: DriveFrom; notifications: boolean; hub?: HubLink }>;
+  pickDataFile(): Promise<{ files: string[] }>;
+  /** Kea's three files, chosen together (kea-data.json, kea-library.zip, phone.json), from the drive named. */
+  pickFiles(o?: { drive?: string }): Promise<{ files: string[]; from?: DriveFrom }>;
+  /** Which drive apps are installed. */
+  drives(): Promise<Partial<Record<'google' | 'onedrive' | 'dropbox', boolean>>>;
+  /** Unpack the library when the PC wrote a new one. */
+  syncLibrary(o?: { size?: number }): Promise<{ root: string; changed: boolean; files?: number; missing?: boolean; error?: string }>;
+  addListener(event: 'library', cb: (p: { files: number; bytes: number; name: string }) => void): Promise<{ remove(): void }>;
+  addListener(event: 'opened', cb: (f: OpenedFile) => void): Promise<{ remove(): void }>;
+  /** The file Kea was opened with (Open with, Share), once. */
+  takeOpenedFile(): Promise<{ file?: OpenedFile }>;
+  signIn(o?: { show?: boolean }): Promise<{ signedIn: boolean }>;
+  get(o: { url: string }): Promise<{ status: number; body: string }>;
+  open(o: { url: string }): Promise<void>;
+  handIn(o: { url: string; file: string }): Promise<void>;
+  watch(o: { le?: string; lp?: string; platform?: string; courses: { code: string; ou: string }[] }): Promise<void>;
+  allowNotifications(): Promise<void>;
+  /** Which notifications, quiet hours, and how often to check (minutes; 0 = only when Kea is opened). */
+  setNotify(o: NotifyPrefs): Promise<void>;
+  /** A reply to a conversation on the class site (Canvas), sent with the phone's signed-in session. */
+  reply(o: { conv: string; text: string }): Promise<void>;
+  checkNow(): Promise<{ count: number }>;
+  phoneInbox(): Promise<{ items: ScholarInboxItem[] }>;
+  /** A folder holding Kea's files (or one above them: Kea, Kea → School). Not every drive app allows folders. */
+  pickFolder(): Promise<{ folder: string; base: string; from?: DriveFrom }>;
+  /** Forget the pairing with the PC (the phone's own files stay). */
+  unpair(): Promise<void>;
+  writeFile(o: { path: string; text: string }): Promise<void>;
+  readFile(o: { path?: string }): Promise<{ text: string; modified: number }>;
+  openFile(o: { path: string }): Promise<void>;
+  /** `temp`: scanned to a scratch file (pages to add to another scan) instead of a new scan in Files. */
+  scan(o?: { name?: string; temp?: boolean }): Promise<{ file: string; path: string; pages: number; name: string }>;
+  /** Write over one of Kea's own files (a scan with pages added), given as base64. */
+  replaceFile(o: { path: string; data: string }): Promise<{ path: string; size: number }>;
+  /** `file`: a content address, or a path to one of Kea's own files. */
+  share(o: { file: string; name?: string }): Promise<void>;
+  saveCopy(o: { file: string; name: string }): Promise<{ name: string }>;
+  /** The phone's own scans and PDFs, newest first. */
+  listFiles(): Promise<{ files: PhoneFile[] }>;
+  /** Choose a PDF anywhere; it's copied into Kea's files. */
+  pickPdf(): Promise<{ path: string; name: string }>;
+  /** Choose any file; it's copied into Kea's files. */
+  pickFile(): Promise<{ path: string; name: string; type: string }>;
+  /** One of Kea's files in another app (Android asks which). */
+  openWith(o: { path: string }): Promise<void>;
+  renameFile(o: { path: string; name: string }): Promise<{ path: string; name: string }>;
+  deleteFile(o: { path: string }): Promise<void>;
+  appInfo(): Promise<{ version: string; build: number }>;
+  /** The phone's text-to-speech voices for its language (offline ones first). */
+  voices(): Promise<{ voices: PhoneVoice[] }>;
+  say(o: { text: string; voice?: string; rate?: number }): Promise<void>;
+  /** Read sentences aloud like an audiobook (keeps going with the screen off); `id` says where each is. */
+  readAloud(o: { items: { id: string; text: string; pause?: number }[]; title: string; voice?: string; rate?: number; loop?: boolean }): Promise<void>;
+  readMore(o: { items: { id: string; text: string }[] }): Promise<void>;
+  readControl(o: { action: 'pause' | 'resume' | 'stop' | 'skip' | 'settings' | 'sleep' | 'state'; by?: number; voice?: string; rate?: number; minutes?: number }): Promise<{ playing: boolean; id: string; sleepLeft: number }>;
+  addListener(event: 'speech', cb: (p: { id: string; index: number; total: number; state: 'playing' | 'paused' | 'stopped' | 'done' | 'error' }) => void): Promise<{ remove(): void }>;
+  /** Kea account (Kea Hub): the address, and whether this phone is signed in. The session token stays in native code. */
+  hubState(): Promise<{ url: string; signedIn: boolean; email: string; root: string }>;
+  hubSetUrl(o: { url: string }): Promise<void>;
+  /** One call to the Hub's API (`path` from /v1/). `keepToken`: a sign-in, whose token is kept natively and left out of `body`. */
+  hubRequest(o: { method: string; path: string; body?: string; contentType?: string; auth?: boolean; keepToken?: boolean; ifMatch?: string; ifNoneMatch?: boolean }): Promise<{ status: number; body: string; version: string }>;
+  hubForget(): Promise<void>;
+  /** A file from Kea storage into the phone's library folder at `to`; skipped when the copy there matches `sha256`. */
+  hubDownload(o: { path: string; to: string; size: number; sha256: string }): Promise<{ status: number; version?: string; size?: number; skipped?: boolean; body?: string }>;
+  hubRemoveLocal(o: { to: string }): Promise<void>;
+  downloadUpdate(o: { url: string }): Promise<{ path: string; version: string }>;
+  installUpdate(): Promise<{ started: boolean; needsPermission?: boolean }>;
+  addListener(event: 'update', cb: (p: { received: number; total: number }) => void): Promise<{ remove(): void }>;
+}
+
+// (A test can stand in for the native side: window.__keaMock, set before the app loads. The app never sets it.)
+/** A file another app opened with Kea, copied where the reader can load it. */
+export type OpenedFile = { path: string; name: string; type: string };
+/** A text-to-speech voice on the phone. `online`: needs a connection (offline ones keep reading with no signal). */
+export type PhoneVoice = { name: string; locale: string; country: string; quality: number; online: boolean; isDefault: boolean };
+/** Where a chosen file came from: a drive's app, the phone's storage, Downloads (a one-time copy) or another app. */
+export type DriveFrom = 'google' | 'onedrive' | 'dropbox' | 'phone' | 'downloads' | 'other' | '';
+/** One of the phone's own files: a scan, or a PDF opened or chosen in Kea. */
+export type PhoneFile = { path: string; name: string; size: number; modified: number; kind: 'scan' | 'file' };
+
+/** How many pages each scan has (the scanner says; kept by path). */
+const PAGES = 'kea.pages';
+export const pagesOf = (path: string): number | null => {
+  try {
+    return JSON.parse(localStorage.getItem(PAGES) || '{}')[path] ?? null;
+  } catch {
+    return null;
+  }
+};
+export const setPages = (path: string, n: number) => {
+  try {
+    const all = JSON.parse(localStorage.getItem(PAGES) || '{}');
+    all[path] = n;
+    localStorage.setItem(PAGES, JSON.stringify(all));
+  } catch {}
+};
+
+export const Kea: KeaNative = (globalThis as any).__keaMock || registerPlugin<KeaNative>('Kea');
+
+/** Classes through the Kea account (set by keaState, never by the native side): which profile, and whose account. */
+export type HubLink = { email: string; profile: string; url: string };
+
+/**
+ * The phone's state, with the Kea account folded in: signed in with a profile chosen, the classes come through the
+ * Kea Hub (dataFolder names it) and the drive files are left alone.
+ */
+export async function keaState(): Promise<Awaited<ReturnType<KeaNative['state']>>> {
+  const [st, h] = await Promise.all([Kea.state(), hubInfo()]);
+  if (h.signedIn && h.profile) return { ...st, dataFolder: `Kea Hub: ${h.profile}`, dataFileOnly: false, files: ['kea-data.json', 'phone.json'], drive: '', hub: { email: h.email, profile: h.profile, url: h.url } };
+  return st;
+}
+
+/** kea-data.json's text: from the Kea Hub when signed in (null: unchanged since the copy kept here), else the drive. */
+async function readDataText(): Promise<string | null> {
+  if (hubOn()) {
+    try {
+      return await hubReadData(!(fresh || localStorage.getItem(CACHE)));
+    } catch (e: any) {
+      throw new Error(hubProblem(e));
+    }
+  }
+  return (await Kea.readFile({ path: 'kea-data.json' })).text;
+}
+/** What the chosen kea-data.json holds right now (for setting up), wherever it comes from. */
+export async function readKeaData(): Promise<KeaData> {
+  if (hubOn()) {
+    const t = await hubReadData(true);
+    if (t) return JSON.parse(t);
+    const c = cachedData();
+    if (c) return c;
+    throw new Error('not found');
+  }
+  return JSON.parse((await Kea.readFile({ path: 'kea-data.json' })).text);
+}
+
+/** What Kea on the PC wrote to the cloud drive. */
+/** One message in the class site's mailbox, as the PC read it. `date` is the site's own wording; `first` is when Kea first saw it. */
+export interface PhoneMail {
+  id: string;
+  course: string;
+  subject: string;
+  from: string;
+  date: string;
+  first: string;
+  read: boolean;
+  url: string;
+  text: string;
+}
+
+export interface KeaData {
+  synced: string;
+  profile: string;
+  home: string;
+  /** The class site's platform (from the PC; older data files don't say, so it's read from the address). */
+  platform?: 'd2l' | 'canvas';
+  courses: ScholarCourse[];
+  items: ScholarItem[];
+  details: ScholarCourseDetail[];
+  grades: Record<string, ScholarGrades | null>;
+  inbox: ScholarInboxItem[];
+  /** Inbox messages deleted on the PC, by content, so the phone hides its own copies too. */
+  inboxDeleted?: string[];
+  /** The class site's mailbox (newest first), for Messages. Older PCs don't send it. */
+  mail?: PhoneMail[];
+  /** The PC's checkmark changes, with their times (for merging with the phone's). */
+  doneLog?: Record<string, { on: boolean; at: string }>;
+}
+
+const CACHE = 'kea.data';
+
+/**
+ * Whether kea-data.json arrived whole. The PC ends it with `"integrity":{"length","sha256"}`, covering the UTF-8 bytes of
+ * everything before `,"integrity":` plus the closing `}` (electron/scholar/cloud.cjs withIntegrity). A file from an
+ * older PC has no check, and is taken as it is.
+ */
+async function whole(text: string): Promise<boolean> {
+  const i = text.lastIndexOf(',"integrity":');
+  if (i < 0) return true;
+  try {
+    const want = JSON.parse(text.slice(i + 13, -1)) as { length: number; sha256: string };
+    const bytes = new TextEncoder().encode(text.slice(0, i) + '}');
+    if (bytes.length !== want.length) return false;
+    if (!crypto?.subtle) return true;
+    const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
+    return hash === want.sha256;
+  } catch {
+    return false;
+  }
+}
+// The copy read this session: used even when the phone's storage is too full to keep it for next time.
+let fresh: string | null = null;
+export function cachedData(): KeaData | null {
+  try {
+    return JSON.parse(fresh || localStorage.getItem(CACHE) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the data file from the chosen folder (or the file chosen on its own), giving up after `ms` (a drive app that's
+ * still downloading it). Falls back to the last copy; `error` says why the fresh one couldn't be read.
+ */
+export async function loadData(ms = 45000): Promise<{ data: KeaData | null; error: string | null }> {
+  try {
+    const text = await Promise.race([readDataText(), new Promise<never>((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
+    // (Through the Kea Hub, unchanged since last time: the copy kept here is current.)
+    if (text == null) return { data: cachedData(), error: null };
+    const r = { text };
+    if (!(await whole(r.text))) throw new Error('Unexpected end: the file failed its check');
+    const d = JSON.parse(r.text) as KeaData;
+    fresh = r.text;
+    try {
+      localStorage.setItem(CACHE, r.text);
+    } catch {
+      // (Storage full: an old copy kept for offline would be read instead of this one, so it goes.)
+      try {
+        localStorage.removeItem(CACHE);
+        localStorage.setItem(CACHE, r.text);
+      } catch {}
+    }
+    // The theme picked on the PC, when it's newer than the phone's.
+    const look = (d as any).look as { theme?: string; at?: string } | undefined;
+    if (look?.theme && look.theme in THEMES && look.at && look.at > (getLook().themeAt || '') && look.theme !== getLook().theme) setLook({ theme: look.theme as any, themeAt: look.at });
+    return { data: d, error: null };
+  } catch (e: any) {
+    const m = String(e?.message || e);
+    const error = /timeout/.test(m)
+      ? hubOn()
+        ? 'Your Kea Hub is taking too long to answer.'
+        : 'Your drive app is taking too long to hand Kea the file (it may still be downloading it).'
+      : /not found/.test(m)
+        ? 'The chosen folder has no kea-data.json in it.'
+        : /No Kea folder/.test(m)
+          ? 'No Kea folder or file is chosen yet.'
+          : /JSON|Unexpected/.test(m)
+            ? 'kea-data.json was only partly downloaded. Try again in a moment.'
+            : m;
+    return { data: cachedData(), error };
+  }
+}
+
+/** A class's id on the class site, from its address ("…/d2l/home/661880", or Canvas's "…/courses/1234"). */
+export const ouOf = (url: string | null | undefined) => (String(url || '').match(/\/d2l\/home\/(\d+)|\/courses\/(\d+)/) || []).slice(1).find(Boolean) || '';
+
+/** Which platform the class site is: what the PC says, or (older data) what its address shows. */
+export const platformOf = (d: Pick<KeaData, 'home' | 'platform'>): 'd2l' | 'canvas' =>
+  d.platform || (/\/d2l\//i.test(d.home || '') ? 'd2l' : /instructure\.com/i.test(d.home || '') ? 'canvas' : 'd2l');
+
+let versions: { le: string; lp: string } | null = null;
+export async function api(home: string, rel: string) {
+  const r = await Kea.get({ url: new URL(rel, home).href });
+  if (r.status !== 200) throw new Error(`The class site answered ${r.status}.`);
+  // (Canvas starts its JSON with "while(1);" for a signed-in session.)
+  return JSON.parse(String(r.body).replace(/^while\(1\);/, ''));
+}
+export async function d2lVersions(home: string) {
+  if (versions) return versions;
+  const v = { le: '1.74', lp: '1.47' };
+  try {
+    for (const p of await api(home, '/d2l/api/versions/')) if (p.ProductCode in v) (v as any)[p.ProductCode] = p.LatestVersion;
+  } catch {}
+  versions = v;
+  return v;
+}
+
+/** Tell the background check which classes to watch. */
+export async function watchClasses(d: KeaData) {
+  const platform = platformOf(d);
+  const v = platform === 'canvas' ? {} : await d2lVersions(d.home);
+  const courses = d.details.map((c) => ({ code: c.code, ou: ouOf(c.url) })).filter((c) => c.ou);
+  await Kea.watch({ ...v, platform, courses });
+}
+
+/** Every class's assignment folders, straight from the class site, soonest due first. */
+export async function folders(d: KeaData) {
+  const canvas = platformOf(d) === 'canvas';
+  const v = canvas ? null : await d2lVersions(d.home);
+  const out: { code: string; ou: string; folders: { id: number; name: string; due: string | null; closed: boolean }[] }[] = [];
+  for (const c of d.details) {
+    const ou = ouOf(c.url);
+    if (!ou) continue;
+    try {
+      const now = Date.now();
+      // Canvas: assignments that take a file (its own list pages up to 100 at a time; the first page is the soonest).
+      const list = canvas
+        ? ((await api(d.home, `/api/v1/courses/${ou}/assignments?per_page=100&order_by=due_at`)) || [])
+            .filter((a: any) => (a.submission_types || []).includes('online_upload') && a.published !== false)
+            .map((a: any) => ({ Id: a.id, Name: a.name, DueDate: a.due_at, Availability: { EndDate: a.lock_at } }))
+        : await api(d.home, `/d2l/api/le/${v!.le}/${ou}/dropbox/folders/`);
+      out.push({
+        code: c.code,
+        ou,
+        folders: (list || [])
+          .filter((f: any) => !f.IsHidden)
+          .map((f: any) => ({ id: f.Id, name: f.Name, due: f.DueDate || null, closed: !!(f.Availability?.EndDate && new Date(f.Availability.EndDate).getTime() < now) }))
+          .sort((a: any, b: any) => Number(a.closed) - Number(b.closed) || Math.abs(new Date(a.due || 8e15).getTime() - now) - Math.abs(new Date(b.due || 8e15).getTime() - now))
+      });
+    } catch {}
+  }
+  return out;
+}
+
+export const handInUrl = (d: Pick<KeaData, 'home' | 'platform'>, ou: string, folder: number) =>
+  new URL(platformOf(d) === 'canvas' ? `/courses/${ou}/assignments/${folder}` : `/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${folder}&grpid=0&isprv=0&bp=0&ou=${ou}`, d.home).href;
+
+// ---------- Checkmarks and read messages, synced with the PC through the drive folder ----------
+// Every change is logged with its time; the PC does the same. Whichever side changed an item last wins.
+export type DoneLog = Record<string, { on: boolean; at: string }>;
+const DONE = 'kea.doneLog';
+const READ = 'kea.read';
+const load = <T,>(k: string, fallback: T): T => {
+  try {
+    return JSON.parse(localStorage.getItem(k) || 'null') ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+const store = (k: string, v: unknown) => {
+  try {
+    localStorage.setItem(k, JSON.stringify(v));
+  } catch {}
+};
+const DELETED = 'kea.deleted';
+export const phoneDone = () => load<DoneLog>(DONE, {});
+export const phoneRead = () => load<string[]>(READ, []);
+/** Inbox messages deleted on the phone, by content (the phone's own checks name them differently from the PC). */
+export const phoneDeleted = () => load<string[]>(DELETED, []);
+export const inboxKey = (i: { course: string; title: string; body: string }) => `${i.course}|${i.title}|${String(i.body || '').slice(0, 60)}`;
+
+let timer: any = null;
+let retry: any = null;
+/** Write phone.json for Kea on the PC (a moment after the last change, so a burst of taps is one write). */
+export function syncOut() {
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    let study: unknown = null;
+    try {
+      study = studyOut();
+    } catch {}
+    const l = getLook();
+    // (If the drive can't be written now, it's tried again in a minute: the phone's changes aren't left behind.)
+    const text = JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000), deleted: phoneDeleted().slice(-1000), study, requests: phoneRequests(), look: { theme: l.theme, at: l.themeAt || '' } });
+    (hubOn() ? hubPushPhone(text) : Kea.writeFile({ path: 'phone.json', text })).catch(() => {
+      clearTimeout(retry);
+      retry = setTimeout(syncOut, 60000);
+    });
+  }, 1500);
+}
+export function setPhoneDeleted(keys: string[]) {
+  store(DELETED, [...new Set([...phoneDeleted(), ...keys])].slice(-2000));
+  syncOut();
+}
+export function setPhoneDone(id: string, on: boolean) {
+  const d = phoneDone();
+  d[id] = { on, at: new Date().toISOString() };
+  store(DONE, d);
+  syncOut();
+}
+export function setPhoneRead(ids: string[]) {
+  store(READ, [...new Set([...phoneRead(), ...ids])].slice(-2000));
+  syncOut();
+}
+
+/** An item's checkmark: the PC's, unless the phone changed it more recently. */
+export function doneOf(it: { id: string; done: string | null }, pcLog: DoneLog | undefined, mine: DoneLog): string | null {
+  const p = mine[it.id];
+  const pc = pcLog?.[it.id];
+  if (p && (!pc || p.at > pc.at)) return p.on ? p.at : null;
+  return it.done;
+}
+
+/**
+ * Add the pages of a fresh scan (`extra`, a scratch file) to the end of an existing scan or PDF, and save it in place.
+ * Returns the new page count.
+ */
+export async function appendScan(path: string, extra: string): Promise<number> {
+  const { Capacitor } = await import('@capacitor/core');
+  const { PDFDocument } = await import('pdf-lib');
+  const bytes = async (p: string) => {
+    const r = await fetch(Capacitor.convertFileSrc(p));
+    if (!r.ok) throw new Error('Kea couldn’t read the scan.');
+    return new Uint8Array(await r.arrayBuffer());
+  };
+  const [a, b] = await Promise.all([bytes(path), bytes(extra)]);
+  const doc = await PDFDocument.load(a, { ignoreEncryption: true });
+  const more = await PDFDocument.load(b);
+  for (const p of await doc.copyPages(more, more.getPageIndices())) doc.addPage(p);
+  const out = await doc.save();
+  let bin = '';
+  for (let i = 0; i < out.length; i += 0x8000) bin += String.fromCharCode(...out.subarray(i, i + 0x8000));
+  await Kea.replaceFile({ path, data: btoa(bin) });
+  return doc.getPageCount();
+}
+
+// A theme picked on the phone goes to the PC with the next phone.json.
+onThemeChange((l) => {
+  if (l.themeAt && l.themeAt > new Date(Date.now() - 60000).toISOString()) syncOut();
+});
+
+/** The student's notification choices (Settings → Notifications). Every message stays in the Inbox either way. */
+export interface NotifyPrefs {
+  messages: boolean;
+  announcements: boolean;
+  grades: boolean;
+  /** Classes whose notifications are off, by code. */
+  classesOff: Record<string, boolean>;
+  /** Quiet hours ("22:00" to "07:00"; empty for none): notified without a sound. */
+  quietFrom: string;
+  quietTo: string;
+  /** How often Kea checks the class site, in minutes (15 at the least; 0 = only when Kea is opened or refreshed). */
+  every: number;
+}
+const NOTIFY = 'kea.notify';
+const NOTIFY_DEFAULT: NotifyPrefs = { messages: true, announcements: true, grades: true, classesOff: {}, quietFrom: '', quietTo: '', every: 15 };
+export function getNotify(): NotifyPrefs {
+  try {
+    return { ...NOTIFY_DEFAULT, ...JSON.parse(localStorage.getItem(NOTIFY) || '{}') };
+  } catch {
+    return NOTIFY_DEFAULT;
+  }
+}
+export function setNotifyPrefs(patch: Partial<NotifyPrefs>) {
+  const p = { ...getNotify(), ...patch };
+  try {
+    localStorage.setItem(NOTIFY, JSON.stringify(p));
+  } catch {}
+  Kea.setNotify(p).catch(() => {});
+  return p;
+}

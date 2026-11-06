@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Kea</string>
+    <string name="title_activity_main">Kea</string>
+    <string name="package_name">com.kea.scholar</string>
+    <string name="custom_url_scheme">com.kea.scholar</string>
+</resources>

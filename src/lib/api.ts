@@ -1,0 +1,1262 @@
+/** The Claude plan's usage windows (from Claude Code): used is 0–1, resetsAt a timestamp in ms. */
+export interface PlanUsage {
+  fiveHour: { used: number; resetsAt: number | null; status: string } | null;
+  week: { used: number; resetsAt: number | null; status: string } | null;
+  status: string;
+  at: number;
+}
+export interface FileEntry {
+  path: string;
+  name: string;
+  data: Uint8Array;
+  size?: number;
+}
+export interface RecentEntry {
+  path: string;
+  name: string;
+  openedAt: number;
+}
+export interface FileFilter {
+  name: string;
+  extensions: string[];
+}
+
+export interface DirEntry {
+  path: string;
+  name: string;
+  dir: boolean;
+  size: number;
+  mtime: number;
+  /** Cloud file that isn't downloaded to this PC yet. */
+  online?: boolean;
+}
+export interface KnownFolder {
+  id: string;
+  label: string;
+  path: string;
+}
+export type DriveId = 'onedrive' | 'gdrive' | 'dropbox' | 'icloud';
+export interface DriveInfo {
+  id: DriveId;
+  label: string;
+  installed: boolean;
+  accounts: { label: string; path: string }[];
+}
+export interface DriveProgress {
+  id: DriveId;
+  status: 'downloading' | 'verifying' | 'installing' | 'error';
+  received?: number;
+  total?: number;
+  error?: string;
+}
+export type FilePreview =
+  | { type: 'image'; src: string; w: number; h: number }
+  | { type: 'doc'; html: string }
+  | { type: 'text'; text: string }
+  | { type: 'grid'; rows: string[][] }
+  | { type: 'slide'; slide: any; w: number; h: number; font: string }
+  | { type: 'none' };
+export interface FileMeta {
+  description?: string;
+}
+export interface HomeSettings {
+  view?: 'grid' | 'list';
+  sort?: 'recent' | 'modified' | 'name';
+  tone?: 'dark' | 'light';
+  folders?: string[];
+  source?: string;
+}
+
+export interface VersionInfo {
+  id: string;
+  ts: number;
+  size: number;
+  label?: string;
+}
+export interface RecoveryEntry {
+  tabId: string;
+  name: string;
+  path: string | null;
+  kind: string;
+  ext: string;
+  savedAt: number;
+}
+
+export interface KeaApi {
+  setZoom(factor: number): void;
+  /** The window's caption buttons (Windows): the theme's background and text colours. */
+  setTitleOverlay?(color: string, symbolColor: string): void;
+  settings: {
+    get(): Promise<Record<string, any>>;
+    set(patch: Record<string, any>): Promise<Record<string, any>>;
+    onChange(cb: (all: Record<string, any>) => void): () => void;
+  };
+  history: {
+    list(path: string): Promise<VersionInfo[]>;
+    read(path: string, id: string): Promise<Uint8Array>;
+    snapshot(path: string, label?: string): Promise<VersionInfo | null>;
+    label(path: string, id: string, label: string): Promise<VersionInfo[]>;
+    remove(path: string, id: string): Promise<VersionInfo[]>;
+    usage(): Promise<number>;
+    clear(): Promise<boolean>;
+    openFolder(): Promise<string>;
+  };
+  present: {
+    screens(): Promise<number>;
+    open(html: string, start: number): Promise<boolean>;
+    goto(i: number, type: string, duration: number, dir: number): Promise<boolean>;
+    close(): Promise<boolean>;
+    onClosed(cb: () => void): () => void;
+  };
+  scholar: {
+    profiles(): Promise<ProfileList>;
+    createProfile(name: string): Promise<ProfileList>;
+    selectProfile(id: string): Promise<ProfileList>;
+    renameProfile(id: string, name: string): Promise<ProfileList>;
+    status(): Promise<{ hasData: boolean; paths: { dir: string; workspace: string; db: string; textbooks: string } }>;
+    courses(): Promise<ScholarCourse[]>;
+    courseImages(): Promise<number>;
+    items(q: { from: string; to: string; courseId?: string }): Promise<ScholarItem[]>;
+    course(id: string): Promise<ScholarCourseDetail | null>;
+    setDone(id: string, done: boolean): Promise<boolean>;
+    importExisting(folder: string): Promise<{ pdfs: number }>;
+    school(): Promise<SchoolInfo>;
+    setSchoolHome(home: string, platform?: SchoolPlatform): Promise<SchoolInfo>;
+    signIn(remember: boolean): Promise<SchoolInfo & { signedIn: boolean }>;
+    forgetLogin(): Promise<SchoolInfo>;
+    siteStatus(): Promise<{ setUp: boolean; signedIn: boolean; home?: string }>;
+    check(): Promise<ScholarSetup>;
+    installUv(): Promise<{ code: number; out: string }>;
+    installClaude(): Promise<{ code: number; out: string }>;
+    signInClaude(): Promise<ClaudeAccount>;
+    setupEngine(): Promise<boolean>;
+    /** On a device that isn't the primary, the primary is asked instead: `relayed` names it. */
+    run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe' | 'curriculum' | 'steps', arg?: string): Promise<boolean | { relayed: string; online: boolean }>;
+    /** Your devices: the drive they sync through, which one is the primary, and what it's running. */
+    devices(): Promise<DevicesStatus>;
+    /** Classes other devices share, found in every drive on this one, and what's missing when there are none. */
+    devicesFind(): Promise<{ found: DeviceShare[]; notes: string[]; me: string }>;
+    /** Use one of those here (this device follows the primary). */
+    devicesJoin(choice: DeviceShare): Promise<{ ok: boolean; primary?: boolean; from?: string; waiting?: string }>;
+    /** Make a device (by id) the one that scans. */
+    makePrimary(id: string): Promise<DevicesStatus>;
+    /** Sync through this drive: 'auto', 'onedrive', 'google', another drive's id, 'custom' or 'off'. */
+    setDrive(choice: string): Promise<DevicesStatus>;
+    /** Practice exams and flashcard decks, newest first. */
+    studyList(): Promise<StudySet[]>;
+    /** One set with its questions or cards. */
+    studyGet(id: string): Promise<StudySetFull | null>;
+    /** Open a class-site message with its Reply pressed (the student writes and sends it). */
+    replyMessage(url: string, course: string): Promise<{ replied: boolean }>;
+    /** One item's history: created, each change (old → new), replaced or cancelled, with the scan and the reason. */
+    itemHistory(id: string): Promise<{ id: string; title: string; sources: { title: string; source_type: string; url: string | null; retrieved_at: string }[]; events: HistoryEvent[] }>;
+    /** The rules a class grades by (late work, required uploads, exam environment), with where each was found. */
+    courseRules(code: string): Promise<{ course: string; rules: { text: string; where: string; strength: number }[] }>;
+    curriculum(code: string, fresh?: boolean): Promise<ScholarCurriculum | null>;
+    /** What changed on the calendar since a date (default a week ago). */
+    changes(opts: { since?: string; course?: string }): Promise<{ since: string; events: (HistoryEvent & { title: string | null; course: string | null })[] }>;
+    mailList(): Promise<MailList>;
+    mailSync(): Promise<{ inbox: number; sent: number; unreadable?: boolean } | null>;
+    /** A message to open in Messages (from its notification); `reply`: with the reply box open. */
+    onOpenMail(cb: (id: string, reply: boolean) => void): () => void;
+    /** A message in full, read from the class site (cached after the first time). */
+    mailRead(id: string, refresh?: boolean): Promise<{ text: string; quoted?: string; at: string | null; noLink?: boolean }>;
+    mailDraft(key: string, draft: MailDraft | null): Promise<boolean>;
+    /** Send through the class site. sent: confirmed by the class site; otherwise the page was opened to finish there. */
+    mailSend(msg: MailDraft & { draftKey?: string }): Promise<{ sent: boolean; shown?: boolean; why?: string }>;
+    /** Create or replace a set the student made or imported. Returns its id. */
+    studySaveMine(set: { id?: string; title: string; courseId: string; cards: { front: string; back: string; chapter?: string | null }[] }): Promise<string>;
+    studyStar(k: string, on: boolean): Promise<boolean>;
+    /** Save Learn progress for a set ({ [k]: 0 | 1 | 2 }); null resets it. */
+    studyLearn(id: string, levels: Record<string, number> | null): Promise<boolean>;
+    /** Record a Match time; returns the best. */
+    studyMatch(id: string, ms: number): Promise<number | null>;
+    studyReview(opts?: { courseId?: string; chapters?: string[]; sections?: string[]; limit?: number; newPerDay?: number }): Promise<ReviewQueue>;
+    studyReviewMark(k: string, grade: 'again' | 'good' | 'easy', ctx: { courseId: string; chapter: string | null }): Promise<{ box: number; due: string }>;
+    /** Ask Claude for a new set (for a test or assignment, or for chapters). Resolves with its id once queued. */
+    /** mode: 'mix' reuses up to 60% saved questions and has Claude write the rest; 'saved' uses saved ones only (ready at once); 'new' writes them all. */
+    studyMake(req: { id?: string; kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null; count?: number; mode?: 'mix' | 'saved' | 'new'; /** Exactly these saved questions (keys). */ pick?: string[]; /** An identification set: pictures. */ pictures?: boolean }): Promise<string>;
+    /** How many saved questions (or cards) a set on these chapters, or for this test, could reuse. */
+    studySaved(req: { kind: StudyKind; courseId: string; chapters?: string[]; itemId?: string | null }): Promise<{ count: number }>;
+    studyPool(req: { courseId: string; chapters: string[] }): Promise<PoolItem[]>;
+    studyImage(rel: string): Promise<string | null>;
+    studyStepsFor(k: string): Promise<{ queued: boolean; courseCode: string; chapter: string }>;
+    /** Teach: a new lesson on an answered question, or a follow-up to one (`lessonId` + `ask`). The text streams to onTeach. On the phone: asked of the PC ({ queued }). */
+    teach(id: string, req: TeachRequest): Promise<{ lesson?: Lesson; error?: string; stopped?: boolean; queued?: boolean }>;
+    teachStop(id: string): Promise<boolean>;
+    /** The saved lessons on a question, oldest first. */
+    lessons(k: string): Promise<Lesson[]>;
+    onTeach(cb: (m: { id: string; text: string }) => void): () => void;
+    /** Every assignment's step-by-step guide, by item id (written ahead of time by the guides run). */
+    guides(): Promise<Record<string, Guide>>;
+    /** The Claude tab's class tools (electron/scholar/lookups.cjs). */
+    classSearch(q: string, course?: string): Promise<{ ref: string; kind: string; course: string; title: string; snippet: string }[]>;
+    classRead(ref: string): Promise<string>;
+    lookup(req: { question: string; course?: string; context?: string }): Promise<string>;
+    lookupWait(id: string, ms?: number): Promise<{ done: boolean; ok?: boolean; text?: string; summary?: string; progress?: string }>;
+    /** Graded work for the Claude tab's assignment picker, soonest due first. */
+    assignments(): Promise<AssignmentChoice[]>;
+    /** One assignment written out whole for Claude: guide, the class site's instructions and rubric, its files' text. */
+    assignmentBrief(id: string): Promise<(AssignmentChoice & { text: string }) | null>;
+    /** Write one assignment's guide again now (after the student unlocks its instructions). */
+    guideRescan(id: string, code: string): Promise<{ queued: boolean }>;
+    /** Which class and chapters a textbook PDF is (for Quiz me), or null. */
+    textbookOf(file: string): Promise<{ courseId: string; code: string; chapters: string[] } | null>;
+    /** Write question banks for chapters that have none (on the primary); false when Claude isn't connected. */
+    studyBanks(): Promise<boolean>;
+    studyDelete(id: string): Promise<boolean>;
+    /** items: how each question went, [key, right] (right null for an unmarked written answer). */
+    studyAttempt(id: string, a: { score: number; total: number; n: number; items?: [string, boolean | null][] }): Promise<boolean>;
+    studyKnown(id: string, known: string[]): Promise<boolean>;
+    stop(): Promise<boolean>;
+    runStatus(): Promise<{ running: ScholarRun | null; queued: QueuedRun[] }>;
+    activity(): Promise<ScholarRun[]>;
+    news(): Promise<ScholarNews[]>;
+    markNewsRead(ids?: string[]): Promise<boolean>;
+    /** Announcements (straight from the class site) and what scans found, newest first. */
+    inbox(): Promise<ScholarInboxItem[]>;
+    markInboxRead(ids?: string[]): Promise<boolean>;
+    deleteInbox(ids: string[]): Promise<boolean>;
+    /** Look for new announcements now (no Claude). False when Kea isn't signed in. */
+    checkInbox(): Promise<boolean>;
+    /** Cloud drives on this computer, and the folder Kea keeps the phone's copy in. */
+    cloudDrives(): Promise<{ drives: { id: string; label: string; path: string }[]; target: string | null }>;
+    /** Update the phone's copy now. */
+    syncNow(): Promise<{ dir: string; hash: string } | null>;
+    /** Every class's assignment folders a file can be handed in to. */
+    handInTargets(): Promise<{ code: string; ou: string; folders: { id: number; name: string; due: string | null; closed: boolean; submitted: boolean }[] }[]>;
+    /** Open the assignment's hand-in page on the class site with the file in its upload box. The student presses Submit there. */
+    handIn(ou: string, folderId: number, file: string): Promise<{ attached: boolean }>;
+    /** A class's overall grade and graded items, or null before anything is known. */
+    grades(courseId: string, code: string): Promise<ScholarGrades | null>;
+    /** Open a link: class-site pages in Kea's signed-in window, anything else in the web browser. */
+    openLink(url: string): Promise<boolean>;
+    /** A run paused by a Claude usage limit, waiting to continue. */
+    pending(): Promise<ScholarPending | null>;
+    /** Continue the paused run now, or the last stopped run of a task. */
+    resume(task?: string): Promise<boolean>;
+    onResume(cb: (p: ScholarPending | null) => void): () => void;
+    onRun(cb: (r: ScholarRun & { running: boolean }) => void): () => void;
+    onNews(cb: (n: ScholarNews) => void): () => void;
+    onSetupLine(cb: (line: string) => void): () => void;
+    onChanged(cb: () => void): () => void;
+  };
+  lookup: {
+    search(query: string, lang?: string): Promise<WikiCandidate[]>;
+    find(query: string, lang?: string, limit?: number): Promise<WikiCandidate[]>;
+    article(title: string, lang?: string): Promise<WikiPage | null>;
+    titles(list: string[], lang?: string): Promise<WikiCandidate[]>;
+    complete(prefix: string, lang?: string): Promise<string[]>;
+    about(list: string[], lang?: string): Promise<Record<string, { intro: string; categories: string[] }>>;
+    meanings(title: string, lang?: string): Promise<WikiCandidate[]>;
+    define(word: string, maxSenses?: number): Promise<DictEntry | null>;
+    wiktionary(word: string): Promise<DictEntry | null>;
+  };
+  speech: {
+    state(): Promise<SpeechModel[]>;
+    download(id: string): Promise<boolean>;
+    pause(id: string): Promise<boolean>;
+    remove(id: string): Promise<boolean>;
+    onDownload(cb: (m: SpeechModel) => void): () => void;
+  };
+  tts: {
+    voices(): Promise<string[]>;
+    speak(text: string, voice: string, rate: number): Promise<boolean>;
+    stop(): Promise<boolean>;
+  };
+  searchContent(query: string, roots?: string[]): Promise<{ path: string; name: string; snippet: string; nameHit: boolean }[]>;
+  citeLookup(query: string): Promise<any>;
+  /** The video editor's main-process helpers (electron/media.cjs): streaming media, export writing, and the index cache. */
+  video: {
+    mediaUrl(path: string): string;
+    openWrite(path: string): Promise<string>;
+    writeAt(id: string, position: number, data: Uint8Array): Promise<void>;
+    closeWrite(id: string, abort?: boolean): Promise<void>;
+    indexGet(key: string): Promise<string | null>;
+    indexSet(key: string, json: string): Promise<boolean>;
+  };
+  /** On-device AI models beyond speech (electron/models.cjs): download/cache/run locally, by type. */
+  models: {
+    state(type: string): Promise<AiModel[]>;
+    download(type: string, id: string): Promise<boolean>;
+    pause(type: string, id: string): Promise<boolean>;
+    remove(type: string, id: string): Promise<boolean>;
+    onDownload(cb: (m: AiModel) => void): () => void;
+  };
+  /** The Kea engine (electron/engine.cjs): native on-device compute, on the GPU (DirectML) where it can. */
+  engine?: {
+    status(): Promise<EngineStatus>;
+    resetGpu(): Promise<EngineStatus>;
+    segment(type: string, id: string, rgba: ArrayBuffer, width: number, height: number, accel: string): Promise<{ alpha: Uint8Array; width: number; height: number; ep: string; ms: number }>;
+    faces(id: string, rgba: ArrayBuffer, width: number, height: number, accel: string): Promise<{ faces: { x: number; y: number; w: number; h: number; score: number }[]; ep: string }>;
+    transcribe(repo: string, audio: ArrayBuffer, englishOnly: boolean, timestamps: boolean | 'word'): Promise<{ text: string; chunks: { text: string; timestamp: [number, number | null] }[] | null; words?: boolean; ms: number }>;
+  };
+  /** The MCP control server (electron/mcp + src/lib/controlBridge.ts): lets a connected outside app drive the editors. */
+  control: {
+    /** Main asks the renderer to run a tool / read a resource for a connected app; the renderer answers via respond(). */
+    onRequest(cb: (req: { callId: string; kind: string; [k: string]: any }) => void): () => void;
+    respond(callId: string, result: { ok: boolean; result?: any; error?: string }): void;
+    status(): Promise<{ enabled: boolean; url: string | null; clients: { id: string; name: string; createdAt: string; lastUsed: string | null }[] }>;
+    setEnabled(on: boolean): Promise<{ enabled: boolean; url: string | null }>;
+    addClient(name: string): Promise<{ id: string; name: string; config: string; configStdio: string }>;
+    revokeClient(id: string): Promise<boolean>;
+    onActivity(cb: (ev: { client: string; kind: string; name?: string; ok?: boolean; active: boolean }) => void): () => void;
+  };
+  /** The Claude Assistant (electron/assistant.cjs): the student's own API key, kept encrypted in the main process. */
+  assistant: {
+    status(): Promise<{ hasKey: boolean; hint: string; models: string[] }>;
+    setKey(key: string): Promise<{ ok: boolean; error?: string }>;
+    send(id: string, req: { model: string; effort: string; system: string; messages: unknown[]; tools: unknown[] }): Promise<{ content?: any[]; stop_reason?: string; usage?: any; model?: string; error?: string; stopped?: boolean; retry?: boolean }>;
+    stop(id: string): Promise<boolean>;
+    capture(rect: { x: number; y: number; width: number; height: number }): Promise<{ dataUrl: string; width: number; height: number }>;
+    onEvent(cb: (ev: { id: string; type: 'text' | 'thinking' | 'tool'; text?: string; name?: string }) => void): () => void;
+    planStatus(): Promise<{ installed: boolean; loggedIn: boolean; email: string; plan: string; method: string }>;
+    planSignIn(): Promise<{ loggedIn: boolean; email?: string }>;
+    planSend(id: string, req: { tabId: string; content: unknown[]; session?: string; model?: string; effort?: string; system: string; web?: boolean }): Promise<{ session?: string; error?: string; stopped?: boolean; usage?: any; turns?: number }>;
+    planStop(id: string): Promise<boolean>;
+    planUsage(): Promise<PlanUsage | null>;
+    planUsageRefresh(): Promise<PlanUsage | null>;
+    onPlanEvent(cb: (e: { id: string; ev: any }) => void): () => void;
+    onPlanUsage(cb: (u: PlanUsage) => void): () => void;
+  };
+  google: {
+    status(): Promise<{ configured: boolean; signedIn: boolean; email: string | null; name: string | null }>;
+    signIn(): Promise<{ email?: string; name?: string }>;
+    signOut(): Promise<boolean>;
+    open(localPath: string): Promise<{ id: string; name: string; ext: string; kind: 'doc' | 'sheet' | 'slides'; google: string; canEdit: boolean; modifiedTime: string; data: Uint8Array }>;
+    save(id: string, ext: string, data: Uint8Array): Promise<{ id: string; modifiedTime: string }>;
+  };
+  recovery: {
+    put(meta: Omit<RecoveryEntry, 'savedAt'>, data: Uint8Array): Promise<boolean>;
+    drop(tabId: string): Promise<boolean>;
+    list(): Promise<RecoveryEntry[]>;
+    read(tabId: string): Promise<Uint8Array>;
+  };
+  platform: string;
+  openDialog(opts?: { title?: string; multi?: boolean; filters?: FileFilter[] }): Promise<FileEntry[]>;
+  saveDialog(opts?: { title?: string; defaultPath?: string; filters?: FileFilter[] }): Promise<string | null>;
+  readFile(p: string): Promise<FileEntry>;
+  writeFile(p: string, data: Uint8Array): Promise<boolean>;
+  /** An installed font's file, for embedding in a PDF (null if the family isn't installed). */
+  fontFile(family: string, bold: boolean, italic: boolean): Promise<{ file: string; name: string; data: Uint8Array } | null>;
+  fileExists(p: string): Promise<boolean>;
+  /** Rename a file in place; fails if the new name is taken. */
+  renameFile(from: string, to: string): Promise<boolean>;
+  showInFolder(p: string): Promise<void>;
+  getRecent(): Promise<RecentEntry[]>;
+  addRecent(p: string): Promise<RecentEntry[]>;
+  removeRecent(p: string): Promise<RecentEntry[]>;
+  clearRecent(): Promise<RecentEntry[]>;
+  listDir(dir: string, opts?: { cloud?: boolean; allOnline?: boolean; allTypes?: boolean; hidden?: boolean }): Promise<DirEntry[]>;
+  searchDir(dir: string, query: string, opts?: { allTypes?: boolean; hidden?: boolean }): Promise<DirEntry[]>;
+  statMany(paths: string[]): Promise<{ path: string; exists: boolean; size?: number; mtime?: number }[]>;
+  knownFolders(): Promise<KnownFolder[]>;
+  openFolderDialog(): Promise<string | null>;
+  isDir(p: string): Promise<boolean>;
+  openPath(p: string): Promise<string>;
+  getPreview(p: string): Promise<FilePreview | null>;
+  clearPreviews(): Promise<boolean>;
+  clearMeta(): Promise<Record<string, FileMeta>>;
+  openDataFolder(): Promise<string>;
+  sysinfo(): Promise<{ version: string; os: string; cpu: string; ramGb: number; electron: string; logTail: string }>;
+  setPreview(p: string, preview: FilePreview): Promise<boolean>;
+  getMeta(): Promise<Record<string, FileMeta>>;
+  setMeta(p: string, patch: FileMeta): Promise<Record<string, FileMeta>>;
+  homeSettings(): Promise<HomeSettings>;
+  setHomeSettings(patch: HomeSettings): Promise<HomeSettings>;
+  detectDrives(): Promise<DriveInfo[]>;
+  connectDrive(id: DriveId): Promise<{ action: 'launched' | 'installing' | 'web' }>;
+  onDriveProgress(cb: (m: DriveProgress) => void): () => void;
+  printHtml(html: string, opts?: { noMargins?: boolean }): Promise<boolean>;
+  pdfFromHtml(html: string, opts?: { pageSize?: string; noMargins?: boolean }): Promise<Uint8Array>;
+  getPendingOpen(): Promise<string[]>;
+  getPathForFile(file: File): string;
+  onOpenPaths(cb: (paths: string[]) => void): () => void;
+  onBeforeClose(cb: () => void): () => void;
+  confirmClose(): void;
+  getVersion(): Promise<string>;
+  checkForUpdates(): Promise<{ status: string; message?: string }>;
+  downloadUpdate(): Promise<boolean>;
+  installUpdate(): void;
+  onUpdateState(cb: (s: UpdateState) => void): () => void;
+  account: AccountApi;
+  hub: HubApi;
+  /** Kea Hub classes, study sets and leaderboards (typed in lib/hubClasses.ts). */
+  hubClasses: { call(name: string, arg?: object): Promise<HubResult<any>>; onChanged(cb: () => void): () => void; onOpen(cb: (classId: string) => void): () => void };
+  ai: AiApi;
+}
+
+// ---------- The Kea Hub (one account for Kea and KeaS) ----------
+/** Every Hub call resolves (never throws): ok + value, or the Hub's error with its status and extra data. */
+export type HubResult<T> = { ok: true; value: T } | { ok: false; error: string; status: number | null; data: any };
+export interface HubAccount {
+  id: string;
+  email: string;
+  displayName: string;
+  owner: boolean;
+  emailVerified: boolean;
+  verifiedBy: string | null;
+  identityVerified: boolean;
+  canHost: boolean;
+  totpEnabled: boolean;
+  /** Under 18 (by birth year): a parent's or guardian's sign-off comes before Kea's shared Claude. */
+  birthYear?: number | null;
+  minor?: boolean;
+  parentSignOff?: HubParentSignOff;
+  parentEmail?: string | null;
+  /** How they show on class leaderboards (the default for every class). */
+  leaderboard?: { show: 'name' | 'nickname' | 'hidden'; nickname: string | null };
+}
+export type HubParentSignOff = 'not_needed' | 'needed' | 'pending' | 'approved';
+export interface HubConsent {
+  minor: boolean;
+  parentSignOff: HubParentSignOff;
+  parentEmail: string | null;
+  /** A link the parent opens (only right after asking). */
+  link?: string | null;
+  requests?: { id: string; parentEmail: string; status: 'pending' | 'approved' | 'declined' | 'revoked'; method: string | null; createdAt: number; expiresAt: number; decidedAt: number | null }[];
+  googleOnWeb?: boolean;
+}
+export interface HubQuestionChapter {
+  courseId: string;
+  code: string;
+  name: string;
+  label: string;
+  /** The date of the next test on it, if one is coming. */
+  test: string | null;
+}
+export interface HubTermsStatus {
+  current: number;
+  accepted: number | null;
+  needsAgreement: boolean;
+}
+export interface HubMe {
+  account: HubAccount;
+  progress: { level: number; xp: number; floor: number; next: number; today: number; streak: number };
+  terms: HubTermsStatus;
+  storage: { used: number; quota: number };
+}
+export interface HubStatus {
+  url: string;
+  /** The address this copy of Kea came with. */
+  defaultUrl?: string;
+  signedIn: boolean;
+  reachable: boolean;
+  me: HubMe | null;
+  /** What Kea last saw (shown while the Hub is offline). */
+  cached: { email: string; name: string; emailVerified: boolean; verifiedBy?: string | null; owner?: boolean; canHost?: boolean; leaderboard?: HubAccount['leaderboard'] | null; progress?: HubMe['progress'] | null; terms: HubTermsStatus | null; at?: number } | null;
+}
+export interface TermsSection {
+  id: string;
+  title: string;
+  body: string;
+}
+export interface HubTerms {
+  terms: { version: number; label: string; title: string; summary: string; publishedAt: number; sections: TermsSection[] };
+  versions: { version: number; label: string; publishedAt: number }[];
+}
+export interface HubTermsChanges {
+  from: number | null;
+  to: number;
+  summary: string;
+  added: TermsSection[];
+  changed: { id: string; title: string; before: TermsSection; after: TermsSection }[];
+  removed: { id: string; title: string }[];
+}
+type Agreement = { termsVersion: number; termsSections: string[] };
+export interface HubScanJob {
+  id: string;
+  kind: 'initial_scan' | 'update_scan' | 'more_questions';
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+  course?: string;
+  chapter?: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+  note: string | null;
+  position?: number;
+  etaMinutes?: number;
+}
+export type HubAllowance = { unlimited: true } | { today: number; perDay: number; week: number; perWeek: number; batchSize: number };
+export interface HubSyncState {
+  on: boolean;
+  last: number | null;
+  error: string | null;
+  counts: { up: number; down: number; deleted: number; bytesUp: number; bytesDown: number } | null;
+}
+export interface HubApi {
+  status(): Promise<HubResult<HubStatus>>;
+  terms(): Promise<HubResult<HubTerms>>;
+  /** The Hub's donation link, if its owner set one. */
+  support(): Promise<HubResult<{ url: string | null; message: string | null }>>;
+  openSupport(): Promise<HubResult<boolean>>;
+  changes(): Promise<HubResult<HubTermsChanges>>;
+  openTerms(since?: number): Promise<HubResult<void>>;
+  register(a: { email: string; password: string; name: string; age13: boolean; birthYear?: number } & Agreement): Promise<HubResult<HubStatus>>;
+  login(a: { email: string; password: string; code?: string }): Promise<HubResult<HubStatus>>;
+  accept(a: Agreement): Promise<HubResult<HubStatus>>;
+  googleVerify(): Promise<HubResult<HubStatus>>;
+  googleSignIn(a: { email?: string; code?: string }): Promise<HubResult<HubStatus>>;
+  googleReset(a: { email?: string; password: string; code?: string }): Promise<HubResult<HubStatus>>;
+  totpSetup(): Promise<HubResult<{ secret: string; uri: string }>>;
+  totpEnable(a: { code: string }): Promise<HubResult<HubStatus>>;
+  logout(): Promise<HubResult<HubStatus>>;
+  /** Syncing through the Hub: on, when it last finished, the last error, and what moved. */
+  syncStatus(): Promise<HubResult<HubSyncState>>;
+  syncNow(): Promise<HubResult<HubSyncState>>;
+  /** Ask Kea's shared Claude to set up this profile's classes (queued; runs through this Kea while it's open). */
+  requestScan(): Promise<HubResult<{ status: 'queued' | 'joined' | 'shared'; message?: string; job?: HubScanJob; allowance: HubAllowance }>>;
+  scanJobs(): Promise<HubResult<{ jobs: HubScanJob[]; allowance: HubAllowance | null; paused?: boolean }>>;
+  /** Chapters (with a textbook) this profile can ask Kea's shared Claude for 25 more questions on. */
+  questionChapters(): Promise<HubResult<HubQuestionChapter[]>>;
+  /** One batch of new questions for a chapter; it arrives with a later sync. */
+  requestQuestions(a: { courseId: string; chapter: string }): Promise<HubResult<{ status: 'queued' | 'joined' | 'shared'; message?: string; job?: HubScanJob; allowance: HubAllowance }>>;
+  /** Set once; under 18 then needs a parent's sign-off for Kea's shared Claude. */
+  birthYear(year: number): Promise<HubResult<HubStatus>>;
+  consent(): Promise<HubResult<HubConsent>>;
+  consentRequest(parentEmail: string): Promise<HubResult<HubConsent>>;
+  /** The parent signs in to Google here, as the email given. */
+  consentGoogle(): Promise<HubResult<HubStatus>>;
+  setUrl(url: string): Promise<HubResult<HubStatus>>;
+}
+
+export type AiTier = 'light' | 'balanced' | 'best';
+export interface AiSettings {
+  slider: number;
+  tier: AiTier;
+  contextSize: number;
+  maxTokens: number;
+  gpu: boolean;
+  gpuLayers: 'auto' | number;
+  threads: number;
+  temperature: number;
+  keepLoaded: boolean;
+  custom: boolean;
+}
+export interface EngineStatus {
+  available: boolean;
+  running: boolean;
+  gpuSupported: boolean;
+  gpuCrashed: boolean;
+  lastDevice: '' | 'gpu' | 'cpu';
+  lastMs: number;
+}
+
+export interface AiModelState {
+  tier: AiTier;
+  label: string;
+  model: string;
+  license: string;
+  size: number;
+  minRam: number;
+  blurb: string;
+  installed: boolean;
+  download: { status: 'downloading' | 'paused' | 'verifying' | 'done' | 'error'; received: number; total: number; error?: string } | null;
+}
+export interface AiHardware {
+  gpu: string | false;
+  gpuNames: string[];
+  vramTotal: number;
+  vramFree: number;
+  unified: boolean;
+  ramTotal: number;
+  ramFree: number;
+  cpuThreads: number;
+  cpuName: string;
+}
+export interface AiState {
+  hardware: AiHardware;
+  settings: AiSettings;
+  recommended: { slider: number; tier: AiTier; contextSize: number; maxTokens: number };
+  presets: { tier: AiTier; contextSize: number; maxTokens: number }[];
+  models: AiModelState[];
+}
+export type AvatarCrop = { x: number; y: number; zoom: number; w: number; h: number };
+/** The Kea account (needed for school mode): verified when the email is signed in on this computer. */
+export interface KeaAccount {
+  email: string;
+  name: string;
+  avatar: string | null;
+  /** Where the picture sits in its circle (null: centred). */
+  crop: AvatarCrop | null;
+  verified: boolean;
+  verifiedBy: string | null;
+  /** Kea's creator. */
+  owner: boolean;
+}
+export interface AccountApi {
+  get(): Promise<KeaAccount | null>;
+  /** Emails signed in on this computer (Claude, OneDrive, Google), to pick from. */
+  suggest(): Promise<string[]>;
+  save(a: { email: string; name: string }): Promise<KeaAccount | null>;
+  verify(): Promise<KeaAccount>;
+  avatar(clear?: boolean): Promise<KeaAccount | null>;
+  crop(c: AvatarCrop | null): Promise<KeaAccount | null>;
+  signOut(): Promise<boolean>;
+}
+
+export interface AiGenerateRequest {
+  system?: string;
+  history?: { role: 'user' | 'assistant'; text: string }[];
+  prompt: string;
+  maxTokens?: number;
+  temperature?: number;
+  jsonSchema?: any;
+}
+export type AiEvent =
+  | { type: 'token'; id: string; text: string }
+  | { type: 'done'; id: string; text: string; tokensPerSecond?: number; aborted?: boolean }
+  | { type: 'error'; id: string; message: string };
+export interface AiApi {
+  state(): Promise<AiState>;
+  setSettings(patch: Partial<AiSettings>): Promise<AiSettings>;
+  resetSettings(): Promise<AiSettings>;
+  download(tier: AiTier): Promise<boolean>;
+  pauseDownload(tier: AiTier): Promise<boolean>;
+  deleteModel(tier: AiTier): Promise<boolean>;
+  generate(req: AiGenerateRequest): Promise<string>;
+  stop(id: string): Promise<boolean>;
+  count(text: string): Promise<number>;
+  benchmark(): Promise<{ loadMs: number; tokensPerSecond: number }>;
+  onEvent(cb: (e: AiEvent) => void): () => void;
+  onDownload(cb: (m: AiModelState) => void): () => void;
+}
+
+export interface UpdateState {
+  status: 'idle' | 'checking' | 'available' | 'latest' | 'downloading' | 'ready' | 'error' | 'dev';
+  version?: string;
+  percent?: number;
+  message?: string;
+  notes?: string;
+}
+
+declare global {
+  interface Window {
+    api: KeaApi;
+  }
+}
+
+/** A Wikipedia search result: title, short description, first two sentences. */
+// ---------- Kea Scholar ----------
+/** The learning platform a school's class site runs on. */
+export type SchoolPlatform = 'd2l' | 'canvas';
+export interface SchoolInfo {
+  home: string;
+  host: string;
+  platform: SchoolPlatform;
+  /** Kea saved a login to sign in with (the login itself never leaves Kea's main process). */
+  remembers: boolean;
+  loginHost: string;
+}
+export interface ClaudeAccount {
+  loggedIn: boolean;
+  email?: string;
+  method?: string;
+  plan?: string;
+}
+/** A profile's classes shared through a drive by the device that scans them (its primary). */
+export interface DeviceShare {
+  drive: string;
+  label: string;
+  account: string;
+  root: string;
+  profile: string;
+  primary: string;
+  at: string;
+  /** This device is the primary for it. */
+  mine: boolean;
+  /** Its class database has fully arrived on this device. */
+  ready: boolean;
+}
+
+export interface CloudDrive {
+  id: string;
+  label: string;
+  path: string;
+  /** The signed-in account (OneDrive's email), or a drive letter. */
+  account: string;
+}
+
+export interface DeviceInfo {
+  id: string;
+  name: string;
+  at: string;
+  version: string;
+  drive: { label: string; account: string } | null;
+  primary: boolean;
+  me: boolean;
+  online: boolean;
+}
+
+/** A waiting run, with what it usually takes. */
+export interface QueuedRun {
+  task?: string;
+  arg: string;
+  label: string;
+  expectedMs: number;
+}
+
+/** What a run reports for its progress bar (also sent from the primary to the other devices). */
+export interface RunProgress {
+  label: string;
+  /** Other runs going at the same time. */
+  others?: number;
+  arg: string;
+  start: string;
+  phase?: 'check' | 'claude';
+  claudeStart?: string | null;
+  expectedMs?: number;
+  expectedTurns?: number;
+  turns?: number;
+  percent?: number | null;
+  batch?: { done: number; total: number } | null;
+  step?: string;
+}
+
+export interface DevicesStatus {
+  on: boolean;
+  me: { id: string; name: string };
+  drive: CloudDrive | null;
+  drives: CloudDrive[];
+  choice: string;
+  role: 'primary' | 'follower' | 'alone';
+  folder?: string;
+  primary: { id: string; name: string; at: string; online: boolean } | null;
+  devices: DeviceInfo[];
+  phone: { at: string } | null;
+  /** On a device that isn't the primary: what the primary is running now, and what's waiting. */
+  run: RunProgress | null;
+  queue: QueuedRun[];
+  pending?: ScholarPending | null;
+  elsewhere: DeviceShare[];
+  /** The primary's classes are still arriving: how much of the database is here. */
+  waiting: { since: string; have: number; of: number } | null;
+  pulledAt?: string | null;
+}
+
+export interface ScholarSetup {
+  uv: string | null;
+  claude: string | null;
+  account: ClaudeAccount;
+  engineReady: boolean;
+  hasData: boolean;
+}
+export interface ScholarRun {
+  id: string;
+  /** Other runs going at the same time (question sets are written several at once). */
+  others?: number;
+  task: string;
+  label: string;
+  arg: string;
+  why: string;
+  start: string;
+  end: string | null;
+  ok: boolean | null;
+  summary: string;
+  steps: { at: string; message: string }[];
+  /** Set when the run stopped at a Claude usage limit: when Kea continues it. */
+  paused?: string;
+  phase?: 'check' | 'claude';
+  claudeStart?: string | null;
+  expectedMs?: number;
+  expectedTurns?: number;
+  turns?: number;
+  percent?: number | null;
+  /** Whether Claude was used (false: Kea's own check found nothing to do). */
+  claude?: boolean;
+  batch?: { id: string; done: number; total: number } | null;
+}
+export interface ScholarGrades {
+  final: { shown: string; percent: number | null } | null;
+  items: { id: string; title: string; score: string; percent: number | null; shown: string; comment: string; at: string | null }[];
+  url: string;
+  checked: string | null;
+}
+export interface ScholarInboxItem {
+  id: string;
+  /**
+   * One message about one thing. From the class site directly: announcement, grade, feedback, message, update. From a
+   * scan: needs_you, attention, missed (and grade/feedback from outside platforms). "news" is an old daily overview.
+   */
+  kind: 'announcement' | 'grade' | 'feedback' | 'message' | 'update' | 'needs_you' | 'attention' | 'missed' | 'news';
+  course: string;
+  title: string;
+  body: string;
+  at: string;
+  url: string;
+  /** Buttons to show (the text itself has no addresses in it). */
+  links?: { label: string; url: string }[];
+  /** For grades and feedback: the score as shown, and its percent. */
+  score?: string;
+  percent?: number | null;
+  read: boolean;
+  updated?: boolean;
+}
+export interface ScholarPending {
+  task: string;
+  arg: string;
+  label: string;
+  until: string;
+  /** Why the runs are waiting: the Claude usage limit, a server or connection problem, or Kea closing mid-run. */
+  reason?: 'limit' | 'error' | 'closed';
+  /** How many more runs wait behind the first. */
+  more?: number;
+}
+/** A class's chapters against its syllabus (Kea's curriculum check). */
+export interface ScholarCurriculum {
+  course: string;
+  textbook: { title?: string; numbering?: 'same' | 'different'; none?: string } | null;
+  chapters: { label: string; title: string | null; textbook_ref: string | null; sections: number; objectives: number; missing: string[]; outcomes: string[]; depth?: 'ok' | 'gaps' | null; depth_note?: string | null }[];
+  outcomes: { kind: 'course' | 'module' | 'outline' | 'recommended'; ref: string; text: string; chapters: string[]; auto: boolean; not_tested: string | null; source: string | null }[];
+  guidelines: { text: string; source: string; chapters: string[] }[];
+  problems: { key: string; severity: 'fix' | 'note'; text: string }[];
+  ok: boolean;
+}
+export interface ScholarNews {
+  id: string;
+  at: string;
+  read: boolean;
+  course: string;
+  title: string;
+  body: string;
+}
+export interface ProfileList {
+  active: string;
+  list: { id: string; name: string; created: string }[];
+}
+export type StudyKind = 'exam' | 'cards';
+export interface HistoryEvent {
+  ts: string;
+  run: string | null;
+  command: string | null;
+  reason: string | null;
+  op: 'baseline' | 'create' | 'update' | 'supersede' | 'cancel' | 'restore' | 'unsync' | 'dismiss' | 'source';
+  table: string;
+  id: string | null;
+  course_id: string | null;
+  changes: Record<string, [unknown, unknown]> | Record<string, unknown> | unknown[] | null;
+}
+export interface MailDraft {
+  course: string;
+  to?: string;
+  subject?: string;
+  body: string;
+  /** The Inbox id of the message this replies to. */
+  replyTo?: string | null;
+}
+export interface MailList {
+  messages: { id: string; course: string; title: string; from?: string; preview: string; at: string; url: string; canOpen?: boolean; read: boolean; full: string | null; quoted?: string | null }[];
+  /** What Kea sent, then the class site's own Sent folder (`fromSite`). */
+  sent: { id: string; at: string; course: string; to: string; subject: string; body: string; replyTo: string | null; confirmed: boolean; why: string | null; url?: string; fromSite?: boolean }[];
+  drafts: (MailDraft & { key: string; at: string })[];
+  /** When Kea last read the class site's mailbox. */
+  checked?: string | null;
+}
+export interface StudySet {
+  id: string;
+  kind: StudyKind;
+  title: string;
+  courseId: string;
+  courseCode: string;
+  chapters: string[];
+  itemId: string | null;
+  itemTitle: string | null;
+  count: number;
+  createdAt: string;
+  status: 'making' | 'ready' | 'failed';
+  source: 'claude' | 'saved' | 'library' | 'mine';
+  /** A chapter's saved question bank (written by Kea in the background); `pictures`: its identification set. */
+  bank?: boolean;
+  pictures?: boolean;
+  editedAt?: string;
+  /** How many of its items were reused from saved sets. */
+  reused?: number;
+  error?: string;
+  attempts: number;
+  /** Best score as a fraction (0–1), or null before any attempt. */
+  best: number | null;
+  last: { at: string; score: number; total: number; n: number } | null;
+  known: number;
+}
+/** One saved question and how it has gone (for choosing what to study). */
+/** An assignment's step-by-step guide (electron/scholar/guides.cjs, written by Claude ahead of time). */
+export interface AssignmentChoice {
+  id: string;
+  course: string;
+  title: string;
+  date: string;
+  due: string | null;
+  points: number | null;
+  guide: boolean;
+}
+export interface GuideFocus {
+  research: { question: string; why: string; search: string }[];
+  fix: string[];
+  /** (Guides written before v0.66 kept the topic and goal here.) */
+  topic?: string;
+  question?: string;
+  goals?: string[];
+  builds?: string;
+}
+/** The class site's rubric for an item, complete: every criterion, with each level's points and wording. */
+export interface GuideRubric {
+  name: string;
+  total: number;
+  levels: string[];
+  criteria: { name: string; cells: { points: number | null; text: string }[] }[];
+}
+export interface Guide {
+  kind: 'lab' | 'paper' | 'platform-homework' | 'written-homework' | 'discussion' | 'quiz' | 'exam' | 'project' | 'presentation' | 'other';
+  title: string;
+  /** What it's about (the student's own topic for writing work) and what it must achieve for full marks. */
+  topic?: string;
+  goal?: string;
+  summary: string;
+  /** What's easy to miss: announcements, policies, conflicts between sources, what couldn't be found. */
+  notes?: string[];
+  need: string[];
+  /** Labs: the whole procedure (Markdown), and what this lab's notebook pages must hold. */
+  procedure?: string;
+  notebook?: { item: string; detail: string }[];
+  rubric?: GuideRubric | null;
+  /** `unlocks`: work the platform wants done before it shows the rest; checking it off asks Kea to read the rest. */
+  steps: { title: string; text: string; detail?: string; links?: { label: string; url: string }[]; unlocks?: boolean }[];
+  submit: { what: string; where: string; format: string; due: string; url?: string };
+  graded: { criterion: string; points: number | null; how: string }[];
+  gaps: string[];
+  /** What must be done first before the class site shows the instructions (a quiz to take), and where. */
+  gate?: { what: string; url: string; label: string } | null;
+  sources?: { label: string; url?: string }[];
+  /** Writing work: the student's own topic, what this piece must do for it, what to research, what to fix. */
+  focus?: GuideFocus | null;
+  hash: string;
+  at: string;
+  model: string;
+}
+/** One of a lesson's check questions: practice inside the lesson, never saved as an answer. */
+export interface TeachCheck {
+  q: string;
+  choices: string[];
+  answer: number;
+  why: string;
+}
+/** Claude's lesson on a question (Teach), with the follow-ups asked in it. */
+export interface Lesson {
+  id: string;
+  /** What was highlighted to be taught ('' for the question as a whole). */
+  focus: string;
+  model: string;
+  at: string;
+  session?: string;
+  text: string;
+  checks: TeachCheck[];
+  followups: { ask: string; text: string; checks: TeachCheck[]; at: string }[];
+}
+/** A new lesson (the answer in the question's own choice numbers), or a follow-up (lessonId + ask). */
+export interface TeachRequest {
+  k: string;
+  focus?: string;
+  answer?: number | number[] | boolean | string | null;
+  right?: boolean | null;
+  dunno?: boolean;
+  question?: StudyQuestion;
+  courseCode?: string;
+  lessonId?: string;
+  ask?: string;
+  /** Teach it a different way. */
+  again?: boolean;
+}
+export interface PoolItem {
+  k: string;
+  chapter: string | null;
+  section: string | null;
+  topic: string | null;
+  type: string;
+  level: string | null;
+  seen: number;
+  right: number;
+  lastRight: boolean | null;
+  box: number | null;
+  starred: boolean;
+  steps: boolean;
+}
+/**
+ * k: the question's key (the same question in two sets has the same key); section: the textbook section that answers
+ * it; steps: its worked solution; answerDisputed: the steps writer found the stored answer may be wrong.
+ */
+/**
+ * One step of a worked solution: plain text (older sets), or a walkthrough step with a heading, its explanation, a
+ * formula (LaTeX) and what each symbol in it means, the value it takes and where that comes from.
+ */
+export type StudyStep = string | { title?: string; text?: string; math?: string; terms?: { sym: string; means: string; value?: string; why?: string }[] };
+type QuestionBase = { k?: string; explain: string; chapter: string | null; section?: string | null; topic: string | null; source: string | null; steps?: StudyStep[]; /** What the question is asking, in plain words, with what it gives. */ asks?: string; /** The answer at the end of the walkthrough: LaTeX `math` (boxed) and a sentence. */ final?: { math?: string; text?: string }; answerDisputed?: boolean; image?: string; image_credit?: string; /** For each choice, the mistake it stands for ("" for a right one): shown when the student picks it. */ wrong?: string[] };
+export type StudyQuestion = QuestionBase &
+  (
+  | { type: 'mc'; q: string; choices: string[]; answer: number; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  | { type: 'multi'; q: string; choices: string[]; answer: number[]; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  | { type: 'tf'; q: string; answer: boolean; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  | { type: 'num'; q: string; answer: number; tolerance: number; unit: string | null; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  | { type: 'short'; q: string; answer: string; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  /** Fill in the blank ("____" in q): a word or two; `accept` lists other forms that count (a symbol, a synonym). */
+  | { type: 'blank'; q: string; answer: string; accept?: string[]; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  /** Matching: each [term, what it matches]; the right sides are shown shuffled, one picked for each term. */
+  | { type: 'match'; q: string; pairs: [string, string][]; explain: string; chapter: string | null; topic: string | null; source: string | null }
+  );
+/** How a question has gone, across every set and device. */
+export interface StudyHistory {
+  seen: number;
+  right: number;
+  last: string;
+  lastRight: boolean | null;
+}
+export interface StudyCard {
+  k?: string;
+  front: string;
+  back: string;
+  /** A picture on the front (identify what it shows), with its credit. */
+  image?: string;
+  image_credit?: string;
+  chapter: string | null;
+  section?: string | null;
+  topic?: string | null;
+  /** A card made from a question: its answer choices and explanation (read by Listen). */
+  choices?: string[];
+  /** Select-all question: several choices are right, so they can't serve as wrong answers. */
+  multi?: boolean;
+  explain?: string;
+}
+export type StudySetFull = Omit<StudySet, 'known' | 'attempts' | 'best' | 'last'> & {
+  questions?: StudyQuestion[];
+  cards?: StudyCard[];
+  known: string[];
+  history?: Record<string, StudyHistory>;
+  /** Keys of starred items. */
+  starred?: string[];
+  /** Learn progress: { [k]: 0 new | 1 familiar | 2 mastered }. */
+  learn?: Record<string, number>;
+  matchBest?: number | null;
+};
+/** One card or question waiting for review. */
+export interface ReviewItem {
+  k: string;
+  kind: 'card' | 'question';
+  item: StudyCard | StudyQuestion;
+  setId: string;
+  courseId: string;
+  courseCode: string;
+  chapter: string | null;
+  test: { date: string; title: string } | null;
+  starred: boolean;
+  box: number | null;
+}
+export interface ReviewQueue {
+  due: ReviewItem[];
+  fresh: ReviewItem[];
+  counts: Record<string, { due: number; fresh: number; total: number; learning?: number; mastered?: number; code: string; test?: { date: string; title: string } | null }>;
+  newToday: number;
+}
+export interface ScholarReading {
+  chapter: string;
+  title: string | null;
+  /** A two-or-three-sentence description of the chapter. */
+  summary?: string | null;
+  /** The chapter's study PDF in the class textbook, when one has been made. */
+  pdf: { file: string; pages: number | null; title: string } | null;
+}
+export interface ScholarLink {
+  label: string;
+  url: string;
+  kind: string;
+  chapter?: string | null;
+}
+export interface ScholarItem {
+  id: string;
+  courseId: string;
+  courseCode: string;
+  type: string;
+  title: string;
+  date: string;
+  dateEnd: string | null;
+  start: string | null;
+  end: string | null;
+  due: string | null;
+  module: string | null;
+  /** Room or place ("PPSC Rampart Range Campus, E112", "Online"). */
+  location: string | null;
+  /** The location is the class's usual room for this kind of meeting, not one this item names itself. */
+  locationUsual: boolean;
+  instructor: string | null;
+  contact: string | null;
+  description: string | null;
+  sourceWording: string | null;
+  links: ScholarLink[];
+  weeklyLinks: ScholarLink[];
+  covered: string[];
+  studyFocus: string[];
+  points: number | null;
+  optional: boolean;
+  tentative: boolean;
+  /** On the student's own due date from the class site (an extension): the class's date, and whether theirs is later. */
+  extended?: { from: string | null; later: boolean | null };
+  /** When it was checked off, or null. */
+  done: string | null;
+  /** What the class site says: graded or handed in, confirmed not handed in, or null when Kea can't tell. */
+  handIn: 'graded' | 'submitted' | 'not_submitted' | null;
+  /** The outside platforms it's done on (Science Interactive, ALEKS…), through the class's own link. */
+  platformLinks?: ScholarLink[];
+  /** The work it goes with: the lab a discussion is built on, or the other half of a discussion. */
+  related?: { id: string; title: string; type: string; date: string; why: 'lab' | 'post' }[];
+  /** When it opens on the class site, while that's still ahead (its link leads to a locked page until then). */
+  opensAt?: string | null;
+  readings: ScholarReading[];
+  /** A Kea Hub class session (from electron/hubClasses.cjs): its class, and the meeting link. */
+  hub?: { classId: string; sessionId: string; meetingUrl: string | null; startAt: string; endAt: string };
+}
+export interface ScholarCourse {
+  id: string;
+  code: string;
+  name: string;
+  term: string;
+  instructor: string | null;
+  url: string | null;
+  synthetic: boolean;
+  start: string | null;
+  end: string | null;
+  next: { id: string; title: string; type: string; date: string; due: string | null } | null;
+  dueThisWeek: number;
+  chapters: number;
+  /** The class's picture from the class site (a small JPEG data address), when it has one. */
+  image?: string | null;
+}
+export interface ScholarChapter {
+  label: string;
+  title: string | null;
+  summary: string | null;
+  sections: string[];
+  objectives: string[];
+  vocabulary: string;
+  readingUrl: string | null;
+  readingLabel: string | null;
+  pdf: ScholarReading['pdf'];
+}
+export interface ScholarCourseDetail {
+  id: string;
+  code: string;
+  name: string;
+  term: string;
+  instructor: string | null;
+  contact: string | null;
+  campus: string | null;
+  delivery: string | null;
+  url: string | null;
+  start: string | null;
+  end: string | null;
+  chapters: ScholarChapter[];
+  weeks: ScholarItem[];
+  portal: { kind: string; label: string; url: string }[];
+}
+
+export interface WikiCandidate {
+  title: string;
+  description: string;
+  intro: string;
+  disambiguation: boolean;
+  rank: number;
+  /** For articles found from a phrase in the reading: that phrase. */
+  phrase?: string;
+  /** When the term redirects here: the section the redirect points at (may be empty), and the term as redirected. */
+  fragment?: string;
+  redirectFrom?: string;
+  /** When the search matched a section of the article: that section's title. */
+  section?: string;
+  /** Its place in the results of searching the term with the reading's main words (0 = first). */
+  contextRank?: number;
+}
+/** A Wikipedia article as plain text, split into its lead and sections (reference sections removed). */
+export interface WikiPage {
+  title: string;
+  url: string;
+  description: string;
+  edited: string | null;
+  lead: string;
+  sections: { title: string; level: number; text: string }[];
+}
+/** An offline dictionary entry (WordNet). */
+/** A dictionary entry: from Wiktionary when online, or the offline dictionary (WordNet). */
+export interface DictEntry {
+  word: string;
+  entries: {
+    pos: string;
+    lemma: string;
+    senses: {
+      def: string;
+      examples: string[];
+      synonyms: string[];
+      antonyms: string[];
+      /** Wiktionary only: the subject the sense belongs to ("Chemistry"), its narrower senses, and for an
+       * inflected form ("dissolves") the base word. */
+      label?: string;
+      sub?: string[];
+      formOf?: string;
+    }[];
+  }[];
+  synonyms: string[];
+  antonyms: string[];
+  source?: 'wiktionary' | 'wordnet';
+  url?: string;
+}
+
+export interface SpeechModel {
+  id: string;
+  repo: string;
+  label: string;
+  blurb: string;
+  englishOnly: boolean;
+  /** Can time every word (timestamped export). */
+  words?: boolean;
+  size: number;
+  installed: boolean;
+  download: { status: string; received: number; total: number; error?: string } | null;
+}
+
+export interface AiModel {
+  type: string;
+  id: string;
+  repo: string;
+  label: string;
+  blurb: string;
+  license: string;
+  task: string;
+  dtype: string;
+  default: boolean;
+  size: number;
+  installed: boolean;
+  download: { status: string; received: number; total: number; error?: string } | null;
+}
+
+export const api: KeaApi = window.api;
+
+// ---------- Work mode: organizations on the Kea Hub (electron/hubOrg.cjs; types in components/work/types.ts) ----------
+/** A shift or org class session for the calendar. */
+export interface WorkEvent {
+  id: string;
+  kind: 'shift' | 'class';
+  orgId: string;
+  orgName: string;
+  title: string;
+  start: string;
+  end: string;
+  date: string;
+  location?: string | null;
+  meetingUrl?: string | null;
+}
+export interface HubOrgApi {
+  /** An org route on the Hub (/v1/orgs..., /v1/todo...), signed in as this Kea's account. */
+  call<T = any>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<HubResult<T>>;
+  saveCsv(orgId: string, formId: string, format?: 'sheets' | 'long'): Promise<HubResult<string | null>>;
+  events(from?: string, to?: string): Promise<HubResult<{ events: WorkEvent[]; offline: boolean; at?: number }>>;
+  saveIcs(from?: string, to?: string): Promise<HubResult<string | null>>;
+  showFile(file: string): Promise<HubResult<void>>;
+}
+export interface KeaApi {
+  hubOrg: HubOrgApi;
+}

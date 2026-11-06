@@ -1,0 +1,811 @@
+// Starting Kea: a short tour of what it does, then the choice to connect classes or just use the scanner and PDFs.
+// Connecting is its own few steps (Kea on the PC, its files from the drive, the class site, notifications), and the
+// settings page holds all of it afterwards.
+import { useEffect, useState } from 'react';
+import { BookOpen, Bell, Brain, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, Circle, Cloud, ExternalLink, FileText, FolderOpen, GraduationCap, Inbox, Laptop, Loader2, RefreshCw, ScanLine, School, Smartphone, Upload, UserRound } from 'lucide-react';
+import { Kea, getNotify, setNotifyPrefs, NotifyPrefs, cachedData, keaState, readKeaData } from './kea';
+import { HubAccount } from './HubAccount';
+import type { DriveFrom } from './kea';
+import { AUTO, checkForUpdate, installUpdate, useUpdate } from './update';
+import { toast } from './ui';
+import { ACCENT_LIST, PAGES, PageId, THEME_LIST, setLook, useLook } from './theme';
+import { VoiceSheet } from './Book';
+import { useSetting, useSettings } from '../../src/lib/settings';
+
+type NativeState = Awaited<ReturnType<typeof Kea.state>>;
+const DOWNLOAD = 'https://github.com/kadenw213-svg/Kea/releases/latest';
+
+/** The drives Kea on the PC can sync through, with where Kea's files are in each and its name in Android's picker. */
+const DRIVES = [
+  { id: 'google', label: 'Google Drive', app: 'com.google.android.apps.docs', menu: 'Drive', where: 'My Drive → Kea → School' },
+  { id: 'onedrive', label: 'OneDrive', app: 'com.microsoft.skydrive', menu: 'OneDrive', where: 'Kea → School' },
+  { id: 'dropbox', label: 'Dropbox', app: 'com.dropbox.android', menu: 'Dropbox', where: 'Kea → School' },
+  { id: 'phone', label: 'A folder on this phone', app: '', menu: '', where: '' }
+] as const;
+type DriveId = (typeof DRIVES)[number]['id'];
+const DRIVE = 'kea.drive';
+/** Where chosen files came from, in words. */
+export const placeName = (from?: DriveFrom) => (from === 'phone' ? 'this phone' : from === 'downloads' ? 'Downloads' : from === 'other' ? 'another app' : DRIVES.find((d) => d.id === from)?.label || '');
+
+/** The first start: what Kea is, how it's used, and whether to connect classes now. */
+export function Welcome({ onTools, onConnect }: { onTools(): void; onConnect(): void }) {
+  const [page, setPage] = useState(0);
+  const pages = [
+    <>
+      <div className="hero-mark">K</div>
+      <h1 className="hero-t">Welcome to Kea</h1>
+      <p className="hero-p">A scanner, a PDF reader and, if you want it, your whole class schedule and study tools in one app.</p>
+    </>,
+    <>
+      <h1 className="hero-t">Use it right away</h1>
+      <div className="feature">
+        <ScanLine size={24} />
+        <span>
+          <b>Scan</b>
+          <span>Point at a page. Kea finds the edges, straightens and cleans it, and makes a PDF you can share or save.</span>
+        </span>
+      </div>
+      <div className="feature">
+        <FileText size={24} />
+        <span>
+          <b>PDFs</b>
+          <span>Open any PDF from your phone or drive. Kea keeps your scans and PDFs together, ready to read or send.</span>
+        </span>
+      </div>
+      <p className="hero-p small">No account, nothing to set up. Your files stay on your phone.</p>
+    </>,
+    <>
+      <h1 className="hero-t">Add your classes</h1>
+      <p className="hero-p">With Kea on your computer set up for your classes, your phone gets everything too:</p>
+      <ul className="perks">
+        <li>
+          <CalendarDays size={18} /> Every due date, class and test, with what’s done and what’s missing
+        </li>
+        <li>
+          <BookOpen size={18} /> Your textbook chapters, readable offline
+        </li>
+        <li>
+          <Brain size={18} /> Practice exams, flashcards and review that sync with your computer
+        </li>
+        <li>
+          <Inbox size={18} /> Announcements, grades and messages, with notifications
+        </li>
+        <li>
+          <Upload size={18} /> Scan your work and hand it in to the right assignment
+        </li>
+      </ul>
+      <p className="hero-p small">You can connect now or any time later from Settings.</p>
+    </>
+  ];
+  const last = page === pages.length - 1;
+  return (
+    <div className="welcome">
+      <div className="welcome-body">{pages[page]}</div>
+      <div className="dots">
+        {pages.map((_, i) => (
+          <i key={i} className={i === page ? 'on' : ''} />
+        ))}
+      </div>
+      <div className="welcome-foot">
+        {last ? (
+          <>
+            <button className="btn primary big" onClick={onConnect}>
+              <GraduationCap size={18} /> Connect my classes
+            </button>
+            <button className="btn big" onClick={onTools}>
+              Not now, just scan and read
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="btn primary big" onClick={() => setPage(page + 1)}>
+              Next <ChevronRight size={18} />
+            </button>
+            <button className="btn ghost" onClick={onTools}>
+              Skip
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Connecting classes, step by step. Each step says why it's needed; only Kea's files are required. */
+export function PairFlow({ state, onDone, onCancel }: { state: NativeState | null; onDone(): void; onCancel(): void }) {
+  const [step, setStep] = useState(state?.dataFolder ? 2 : 0);
+  const [st, setSt] = useState(state);
+  const [found, setFound] = useState<{ classes: string[]; home: string; platform: string } | null>(null);
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState('');
+  const [user, setUser] = useState('');
+  const [pass, setPass] = useState('');
+  const refresh = () => keaState().then(setSt).catch(() => {});
+  // Classes through the Kea account instead of a drive's files.
+  const [viaHub, setViaHub] = useState(!!state?.hub);
+
+  // What the chosen kea-data.json holds: the classes, and the class site (so it doesn't have to be typed).
+  const readFound = async () => {
+    const d = await readKeaData();
+    setFound({ classes: (d.courses || []).map((c: any) => c.code), home: d.home || '', platform: d.platform || (/\/d2l\//i.test(d.home || '') ? 'd2l' : 'canvas') });
+  };
+  useEffect(() => {
+    if (state?.dataFolder) readFound().catch(() => {});
+  }, []);
+
+  // Which drive Kea's folder is on: asked first, so the steps (and the check after) are that drive's.
+  const [drive, setDriveId] = useState<DriveId | null>(() => {
+    const saved = localStorage.getItem(DRIVE) as DriveId | null;
+    const held = state?.drive as DriveId | undefined;
+    return DRIVES.some((d) => d.id === held) ? held! : DRIVES.some((d) => d.id === saved) ? saved : null;
+  });
+  const setDrive = (d: DriveId | null) => {
+    setDriveId(d);
+    setWrong('');
+    if (d) localStorage.setItem(DRIVE, d);
+  };
+  const chooseDrive = (d: DriveId) => setDrive(d);
+  const drv = DRIVES.find((d) => d.id === drive);
+  const [apps, setApps] = useState<Partial<Record<string, boolean>>>({});
+  useEffect(() => {
+    Kea.drives()
+      .then(setApps)
+      .catch(() => {});
+  }, []);
+  // The files came from somewhere other than the drive chosen: most often a copy in Downloads, which never updates.
+  const [wrong, setWrong] = useState('');
+  const checkFrom = (from?: DriveFrom) => {
+    if (!from || !drv || from === drv.id || (drv.id === 'phone' && from !== 'downloads')) return setWrong('');
+    setWrong(
+      from === 'downloads'
+        ? `These came from Downloads, not ${drv.label}. A downloaded copy never updates, so your classes would stay as they are today. Choose them again from ${drv.label}.`
+        : `These came from ${placeName(from)}, not ${drv.label}. If that’s where your computer syncs Kea, change the drive above; otherwise choose them again from ${drv.label}.`
+    );
+  };
+
+  const pickFiles = async () => {
+    setBusy('files');
+    setMsg('');
+    try {
+      const r = await Kea.pickFiles({ drive: drive || undefined });
+      checkFrom(r.from);
+      await readFound();
+      await refresh();
+    } catch (e: any) {
+      if (!/No file/.test(String(e?.message))) setMsg(String(e?.message || e));
+    }
+    setBusy('');
+  };
+  const pickFolder = async () => {
+    setBusy('folder');
+    setMsg('');
+    try {
+      const r = await Kea.pickFolder();
+      checkFrom(r.from);
+      await readFound();
+      await refresh();
+    } catch (e: any) {
+      if (!/No folder/.test(String(e?.message))) setMsg(String(e?.message || e));
+    }
+    setBusy('');
+  };
+  const signIn = async () => {
+    setBusy('signin');
+    setMsg('');
+    try {
+      await Kea.setup({ home: found?.home || st?.home || '', user: user.trim() || undefined, pass: pass || undefined });
+      const r = await Kea.signIn({ show: true });
+      await refresh();
+      if (r.signedIn) setStep(3);
+      else setMsg('Not signed in yet. Try again when you’re ready.');
+    } catch (e: any) {
+      setMsg(String(e?.message || e));
+    }
+    setBusy('');
+  };
+
+  const files = st?.files || [];
+  const have = (f: string) => files.includes(f);
+  const steps = ['Your computer', 'Kea’s files', 'Class site', 'Notifications'];
+  return (
+    <div className="pair">
+      <div className="pair-top">
+        <button className="icon" aria-label="Back" onClick={() => (step === 1 && viaHub ? setViaHub(false) : step === 1 && drive ? setDrive(null) : step ? setStep(step - 1) : onCancel())}>
+          <ChevronLeft size={20} />
+        </button>
+        <span className="pair-steps">
+          Step {step + 1} of {steps.length} · {steps[step]}
+        </span>
+      </div>
+      <div className="progress">
+        <span style={{ width: `${((step + 1) / steps.length) * 100}%` }} />
+      </div>
+      <div className="pair-body">
+        {step === 0 && (
+          <>
+            <Laptop size={34} className="pair-ic" />
+            <h1>Start on your computer</h1>
+            <p>Your classes come from Kea on your Windows computer: it reads your class site and writes your textbooks and practice sets. The phone shows the same things and sends back what you do here.</p>
+            <ol className="how">
+              <li>Install Kea on your computer and connect your classes there.</li>
+              <li>
+                Sign in to your <b>Kea account</b> in Kea on the computer (your name → Your account). Your classes then sync through your Kea storage, and this phone signs in to the same account.
+              </li>
+              <li>
+                Or, without an account: in Kea on the computer, open <b>Scans → Devices</b> and turn on sync with <b>Google Drive</b> or <b>OneDrive</b>. Kea puts a <b>Kea</b> folder in that drive.
+              </li>
+            </ol>
+            <button className="btn" onClick={() => Kea.open({ url: DOWNLOAD })}>
+              <ExternalLink size={16} /> Get Kea for Windows
+            </button>
+          </>
+        )}
+        {step === 1 && viaHub && (
+          <>
+            <UserRound size={34} className="pair-ic" />
+            <h1>Your Kea account</h1>
+            <HubAccount
+              compact
+              onChange={async () => {
+                await refresh();
+                await readFound().catch(() => setFound(null));
+              }}
+            />
+            {found && (
+              <p className="note ok">
+                <Check size={15} /> Found your classes: {found.classes.join(', ') || 'none yet'}.
+              </p>
+            )}
+          </>
+        )}
+        {step === 1 && !viaHub && !drive && (
+          <>
+            <Cloud size={34} className="pair-ic" />
+            <h1>Where is Kea’s folder?</h1>
+            <p>
+              Sign in to your Kea account, or choose the drive your computer syncs Kea through (the one chosen in Kea on the computer under <b>Scans → Devices</b>).
+            </p>
+            <div className="drives">
+              <button className="drive-opt" onClick={() => setViaHub(true)}>
+                <UserRound size={22} />
+                <span>
+                  <b>My Kea account</b>
+                  <span className="muted small block">{st?.hub ? `Signed in as ${st.hub.email}` : 'The same account as Kea on your computer'}</span>
+                </span>
+                <ChevronRight size={18} className="muted" />
+              </button>
+              {DRIVES.map((d) => (
+                <button key={d.id} className="drive-opt" onClick={() => chooseDrive(d.id)}>
+                  {d.id === 'phone' ? <Smartphone size={22} /> : <Cloud size={22} />}
+                  <span>
+                    <b>{d.label}</b>
+                    <span className="muted small block">{d.id === 'phone' ? 'Synced or copied onto this phone' : apps[d.id] === false ? `Needs the ${d.label} app` : apps[d.id] ? 'App is on this phone' : ''}</span>
+                  </span>
+                  <ChevronRight size={18} className="muted" />
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {step === 1 && !viaHub && drv && (
+          <>
+            <button className="drive-on" onClick={() => setDrive(null)}>
+              {drv.id === 'phone' ? <Smartphone size={18} /> : <Cloud size={18} />}
+              <span>
+                On <b>{drv.id === 'phone' ? 'this phone' : drv.label}</b>
+              </span>
+              <span className="drive-change">Change</span>
+            </button>
+            <h1>{drv.id === 'phone' ? 'Choose Kea’s folder' : `Choose Kea’s files from ${drv.label}`}</h1>
+            {drv.id !== 'phone' && apps[drv.id] === false && (
+              <div className="note warn">
+                <p>The {drv.label} app isn’t on this phone. Android only shows a drive’s files through its app: install it and sign in with the same account as your computer.</p>
+                <button className="btn" onClick={() => Kea.open({ url: `https://play.google.com/store/apps/details?id=${drv.app}` })}>
+                  <ExternalLink size={16} /> Get {drv.label}
+                </button>
+              </div>
+            )}
+            {drv.id === 'phone' ? (
+              <p>If a sync app keeps your Kea folder on this phone, choose it: the Kea folder or Kea → School both work.</p>
+            ) : (
+              <ol className="how">
+                <li>
+                  Tap the button below. If the picker opens somewhere else, tap <b>☰</b> and choose <b>{drv.menu}</b>.
+                </li>
+                <li>
+                  Open <b>{drv.where}</b>.
+                </li>
+                <li>Press and hold the first file, tap the other two, then tap Select.</li>
+              </ol>
+            )}
+            <div className="filelist">
+              {[
+                ['kea-data.json', 'your classes, calendar and study sets'],
+                ['kea-library.zip', 'your textbooks'],
+                ['phone.json', 'what you do here, sent back to your computer']
+              ].map(([f, why]) => (
+                <div key={f} className={`fl ${have(f) ? 'ok' : ''}`}>
+                  {have(f) ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                  <span>
+                    <b>{f}</b>
+                    <span className="muted small"> {why}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            {drv.id === 'phone' ? (
+              <>
+                <button className="btn primary" disabled={!!busy} onClick={pickFolder}>
+                  {busy === 'folder' ? <Loader2 size={16} className="spin" /> : <FolderOpen size={16} />} {st?.dataFolder && !files.length ? 'Choose the folder again' : 'Choose the folder'}
+                </button>
+                <button className="btn" disabled={!!busy} onClick={pickFiles}>
+                  {busy === 'files' ? <Loader2 size={16} className="spin" /> : <FileText size={16} />} Choose the three files instead
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn primary" disabled={!!busy} onClick={pickFiles}>
+                  {busy === 'files' ? <Loader2 size={16} className="spin" /> : <FolderOpen size={16} />} {files.length ? 'Choose the files again' : `Open ${drv.label}`}
+                </button>
+                <details className="why">
+                  <summary>Why not just pick the folder?</summary>
+                  <p>
+                    {drv.label}’s Android app doesn’t let any app use a whole folder, only files in it, so the folder picker lets you browse but not choose. Picking the three files once works the same: Kea always reads their newest copies.
+                  </p>
+                </details>
+              </>
+            )}
+            {wrong && <p className="note warn">{wrong}</p>}
+            {found && !wrong && (
+              <p className="note ok">
+                <Check size={15} /> Found your classes: {found.classes.join(', ') || 'none yet'}.
+              </p>
+            )}
+          </>
+        )}
+        {step === 2 && (
+          <>
+            <School size={34} className="pair-ic" />
+            <h1>Sign in to your class site</h1>
+            <p>For notifications about announcements and grades the moment they’re posted, and to hand in scans. Your classes and textbooks already work without it.</p>
+            {(found?.home || st?.home) && (
+              <p className="note">
+                {found?.platform === 'canvas' ? 'Canvas' : 'D2L Brightspace'}: {(found?.home || st?.home || '').replace(/^https?:\/\//, '').split('/')[0]}
+              </p>
+            )}
+            <input className="input" value={user} onChange={(e) => setUser(e.target.value)} placeholder={st?.hasLogin ? 'Username (saved)' : 'School username'} autoCapitalize="none" autoComplete="username" />
+            <input className="input" value={pass} onChange={(e) => setPass(e.target.value)} placeholder={st?.hasLogin ? 'Password (saved)' : 'Password'} type="password" autoComplete="current-password" />
+            <button className="btn primary" disabled={!!busy || (!found?.home && !st?.home)} onClick={signIn}>
+              {busy === 'signin' && <Loader2 size={16} className="spin" />} {st?.signedIn ? 'Signed in · sign in again' : 'Sign in'}
+            </button>
+            <p className="muted small">Kept in Android’s encrypted storage, only used to sign in to your school. If your school asks for a code, Kea shows its page so you can finish.</p>
+          </>
+        )}
+        {step === 3 && (
+          <>
+            <Bell size={34} className="pair-ic" />
+            <h1>Notifications</h1>
+            <p>Kea checks your classes every 15 minutes or so and tells you about new announcements, grades and messages, even when it’s closed.</p>
+            <button className="btn primary" onClick={() => Kea.allowNotifications().then(refresh)}>
+              <Bell size={16} /> {st?.notifications ? 'Notifications are on' : 'Allow notifications'}
+            </button>
+          </>
+        )}
+        {msg && <p className="note warn">{msg}</p>}
+      </div>
+      <div className="pair-foot">
+        {step === 0 && (
+          <button className="btn primary big" onClick={() => setStep(1)}>
+            Kea on my computer is ready <ChevronRight size={18} />
+          </button>
+        )}
+        {step === 1 && (viaHub || drive) && (
+          <button className="btn primary big" disabled={viaHub ? !st?.hub : !have('kea-data.json') && !found} onClick={() => setStep(2)}>
+            Next <ChevronRight size={18} />
+          </button>
+        )}
+        {step === 2 && (
+          <button className="btn big" onClick={() => setStep(3)}>
+            {st?.signedIn ? 'Next' : 'Skip for now'} <ChevronRight size={18} />
+          </button>
+        )}
+        {step === 3 && (
+          <button className="btn primary big" onClick={onDone}>
+            <Check size={18} /> Done
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Settings: classes, class site, notifications, updates and the tour, each explained in a line. */
+export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onClose, onAccount }: { state: NativeState | null; paired: boolean; onPair(): void; onUnpaired(): void; onWelcome(): void; onClose(): void; onAccount?(): void }) {
+  const u = useUpdate();
+  const [auto, setAuto] = useState(localStorage.getItem(AUTO) !== 'off');
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <div className="m-overlay settings">
+      <div className="pair-top">
+        <button className="icon" aria-label="Back" onClick={onClose}>
+          <ChevronLeft size={20} />
+        </button>
+        <span className="pair-steps">Settings</span>
+      </div>
+      <div className="pair-body">
+        <section className="set">
+          <h2>Kea account</h2>
+          <HubAccount onChange={() => onAccount?.()} />
+        </section>
+        <section className="set">
+          <h2>Classes</h2>
+          {paired && state?.hub ? (
+            <>
+              <div className="set-row">
+                <CheckCircle2 size={18} className="ok-ic" />
+                <span>
+                  <b>Through your Kea account</b>
+                  <span className="muted small block">{state.hub.profile} · synced with Kea on your computer through your Kea storage</span>
+                </span>
+              </div>
+              <button className="btn" onClick={onPair}>
+                <School size={16} /> Class site and notifications
+              </button>
+            </>
+          ) : paired ? (
+            <>
+              <div className="set-row">
+                <CheckCircle2 size={18} className="ok-ic" />
+                <span>
+                  <b>Connected to Kea on your computer</b>
+                  <span className="muted small block">
+                    {[state?.drive && `On ${placeName(state.drive)}`, (state?.files || []).length ? `${state!.files!.length} of 3 files chosen` : 'Through a folder on the phone'].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+              </div>
+              {state?.drive === 'downloads' && <p className="note warn">These files are a copy in Downloads, which never updates. Choose them again from your drive.</p>}
+              <button className="btn" onClick={onPair}>
+                <FolderOpen size={16} /> Change files or class site
+              </button>
+              {confirm ? (
+                <div className="actions">
+                  <button className="btn danger" onClick={() => Kea.unpair().then(onUnpaired)}>
+                    Disconnect
+                  </button>
+                  <button className="btn" onClick={() => setConfirm(false)}>
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button className="btn ghost danger-text" onClick={() => setConfirm(true)}>
+                  Disconnect this phone
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="muted small">Your calendar, textbooks, practice exams and inbox, from Kea on your computer.</p>
+              <button className="btn primary" onClick={onPair}>
+                <GraduationCap size={16} /> Connect my classes
+              </button>
+            </>
+          )}
+        </section>
+        {paired && (
+          <section className="set">
+            <h2>Class site</h2>
+            <div className="set-row">
+              <School size={18} />
+              <span>
+                <b>{state?.home ? state.home.replace(/^https?:\/\//, '').split('/')[0] : 'Not signed in'}</b>
+                <span className="muted small block">{state?.signedIn ? 'Signed in' : state?.hasLogin ? 'Login saved, signs in when needed' : 'For notifications and handing in'}</span>
+              </span>
+            </div>
+          </section>
+        )}
+        {paired && <HomeAndStudy />}
+        <Appearance />
+        <Notifications on={!!state?.notifications} />
+        <section className="set">
+          <h2>Updates</h2>
+          <div className="set-row">
+            <RefreshCw size={18} />
+            <span>
+              <b>Kea {u.version || ''}</b>
+              <span className="muted small block">
+                {u.status === 'checking'
+                  ? 'Checking…'
+                  : u.status === 'downloading'
+                    ? `Downloading ${u.next}… ${u.percent}%`
+                    : u.status === 'ready'
+                      ? `Kea ${u.next} is ready to install`
+                      : u.status === 'current'
+                        ? `Up to date: ${u.version} is the newest release${u.checked ? ` (checked ${new Date(u.checked).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})` : ''}`
+                        : u.error
+                          ? `Couldn’t check: ${u.error}`
+                          : ''}
+              </span>
+            </span>
+          </div>
+          <div className="actions">
+            {u.status === 'ready' ? (
+              <button className="btn primary" onClick={installUpdate}>
+                Install {u.next}
+              </button>
+            ) : (
+              <button className="btn" disabled={u.status === 'checking' || u.status === 'downloading'} onClick={() => checkForUpdate(true).catch(toast)}>
+                Check for updates
+              </button>
+            )}
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={auto}
+              onChange={(e) => {
+                setAuto(e.target.checked);
+                localStorage.setItem(AUTO, e.target.checked ? 'on' : 'off');
+              }}
+            />
+            <span>Download updates automatically</span>
+          </label>
+          <p className="muted small">Kea downloads new versions in the background; Android asks you to confirm before it installs.</p>
+        </section>
+        <section className="set">
+          <h2>About</h2>
+          <p className="muted small">Kea is free and open source. Your scans and files stay on your phone; your classes sync only through your own drive.</p>
+          <button className="btn" onClick={onWelcome}>
+            Show the welcome tour
+          </button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/** How Kea looks, and how it reads aloud: every colour and size the student's choice. */
+function Appearance() {
+  const look = useLook();
+  const [voices, setVoices] = useState(false);
+  return (
+    <>
+      <section className="set">
+        <h2>Appearance</h2>
+        <span className="muted small">Theme</span>
+        <div className="themes">
+          {THEME_LIST.map((t) => (
+            <button key={t.id} className={`theme-opt ${look.theme === t.id ? 'on' : ''}`} onClick={() => setLook({ theme: t.id })}>
+              <i style={{ background: t.bg, color: t.text, borderColor: t.surface }}>Aa</i>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <span className="muted small">Accent colour</span>
+        <div className="accents">
+          {ACCENT_LIST.map((a) => (
+            <button key={a.id} className={`accent-opt ${look.accent === a.id ? 'on' : ''}`} aria-label={a.label} title={a.label} onClick={() => setLook({ accent: a.id })}>
+              <i style={{ background: a.id === 'silver' ? 'linear-gradient(135deg, #e3e4e6 50%, #a8c7fa 50%)' : a.color }} />
+            </button>
+          ))}
+        </div>
+        <label className="toggle">
+          <input type="checkbox" checked={look.siteColors !== false} onChange={(e) => setLook({ siteColors: e.target.checked })} />
+          <span>Class sites and ALEKS in these colours</span>
+        </label>
+        <span className="muted small">Size</span>
+        <div className="bk-opts">
+          {[
+            [0.9, 'Smaller'],
+            [1, 'Normal'],
+            [1.1, 'Larger'],
+            [1.2, 'Largest']
+          ].map(([v, label]) => (
+            <button key={v} className={`bk-chip ${look.scale === v ? 'on' : ''}`} onClick={() => setLook({ scale: v as number })}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="muted small">Book pages (as the theme unless you pick a colour for pages only)</span>
+        <div className="bk-opts">
+          {(Object.keys(PAGES) as PageId[]).map((id) => (
+            <button key={id} className={`bk-chip ${look.page === id ? 'on' : ''}`} onClick={() => setLook({ page: id })}>
+              {PAGES[id].label}
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="set">
+        <h2>Reading aloud</h2>
+        <p className="muted small">Books and flashcards read in the phone’s own voices. Offline voices keep reading with no signal, and reading carries on with the screen off.</p>
+        <span className="muted small">Speed for books and documents: {look.rate}×</span>
+        <div className="bk-opts">
+          {[0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2].map((r) => (
+            <button key={r} className={`bk-chip ${look.rate === r ? 'on' : ''}`} onClick={() => setLook({ rate: r })}>
+              {r}×
+            </button>
+          ))}
+        </div>
+        <input className="range" type="range" min={0.5} max={2.5} step={0.05} value={look.rate} onChange={(e) => setLook({ rate: Number(e.target.value) })} aria-label="Speed" />
+        <button className="btn" onClick={() => setVoices(true)}>
+          Choose a voice
+        </button>
+        <span className="muted small">Mark the sentence being read</span>
+        <div className="bk-opts">
+          {(
+            [
+              ['fill', 'Highlight'],
+              ['underline', 'Underline'],
+              ['off', 'Off']
+            ] as const
+          ).map(([v, l]) => (
+            <button key={v} className={`bk-chip ${look.highlight === v ? 'on' : ''}`} onClick={() => setLook({ highlight: v })}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <label className="toggle">
+          <input type="checkbox" checked={look.follow} onChange={(e) => setLook({ follow: e.target.checked })} />
+          <span>Turn the pages while reading aloud</span>
+        </label>
+      </section>
+      {voices && <VoiceSheet onClose={() => setVoices(false)} />}
+    </>
+  );
+}
+
+const MIX: [string, string][] = [
+  ['mc', 'Multiple choice'],
+  ['blank', 'Fill in the blank'],
+  ['match', 'Matching'],
+  ['multi', 'Select all that apply'],
+  ['num', 'Calculations'],
+  ['tf', 'True or false'],
+  ['short', 'Written answers']
+];
+
+/** What Home's class cards show, and (under More) the mix of question kinds in a practice exam. */
+function HomeAndStudy() {
+  const set = (k: string, v: any) => useSettings.getState().set({ [k]: v });
+  const cols = String(useSetting<string>('scholar.homeColumns') || '2');
+  const pictures = useSetting<boolean>('scholar.homePictures') !== false;
+  const grades = useSetting<boolean>('scholar.homeGrades') !== false;
+  const weekStart = String(useSetting<string>('scholar.weekStart') ?? '0');
+  const values = useSettings((st) => st.values);
+  const [more, setMore] = useState(false);
+  return (
+    <>
+      <section className="set">
+        <h2>Home</h2>
+        <div className="chips">
+          {(
+            [
+              ['2', 'Two across'],
+              ['1', 'One per row']
+            ] as const
+          ).map(([v, l]) => (
+            <button key={v} className={`bk-chip ${cols === v || (v === '2' && Number(cols) > 2) ? 'on' : ''}`} onClick={() => set('scholar.homeColumns', v)}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <label className="toggle">
+          <input type="checkbox" checked={pictures} onChange={(e) => set('scholar.homePictures', e.target.checked)} />
+          <span>Class pictures from the class site</span>
+        </label>
+        <label className="toggle">
+          <input type="checkbox" checked={grades} onChange={(e) => set('scholar.homeGrades', e.target.checked)} />
+          <span>Grade on each class</span>
+        </label>
+        <p className="muted small">Class colours come from Kea on your computer (This week → Colours, by class).</p>
+      </section>
+      <section className="set">
+        <h2>Calendar</h2>
+        <label className="mix-row">
+          <span>Weeks start on</span>
+          <select className="class-pick" value={weekStart} onChange={(e) => set('scholar.weekStart', e.target.value)}>
+            {[['0', 'Sunday'], ['1', 'Monday'], ['2', 'Tuesday'], ['3', 'Wednesday'], ['4', 'Thursday'], ['5', 'Friday'], ['6', 'Saturday']].map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+      <section className="set">
+        <h2>Practice exams</h2>
+        <label className="toggle">
+          <input type="checkbox" checked={!!values['study.sound']} onChange={(e) => set('study.sound', e.target.checked)} />
+          <span>Soft sounds for right and wrong answers</span>
+        </label>
+        <button className="btn ghost" onClick={() => setMore(!more)}>
+          {more ? 'Hide' : 'Mix of question kinds'}
+        </button>
+        {more && (
+          <>
+            <p className="muted small">How often each kind comes up, compared with the others (0 leaves it out). When a chapter doesn’t have enough of one kind, the others fill in.</p>
+            {MIX.map(([k, label]) => {
+              const v = Number(values[`study.mix.${k}`] ?? 1);
+              return (
+                <label key={k} className="mix-row">
+                  <span>{label}</span>
+                  <input type="range" min={0} max={10} step={1} value={v} onChange={(e) => set(`study.mix.${k}`, Number(e.target.value))} />
+                  <b>{v}</b>
+                </label>
+              );
+            })}
+          </>
+        )}
+      </section>
+    </>
+  );
+}
+
+/** Which notifications Kea sends, when it stays quiet, and how often it checks your class site. */
+function Notifications({ on }: { on: boolean }) {
+  const [p, setP] = useState(getNotify);
+  const save = (patch: Partial<NotifyPrefs>) => setP(setNotifyPrefs(patch));
+  const codes = (cachedData()?.courses || []).map((c) => c.code).filter(Boolean);
+  return (
+    <section className="set">
+      <h2>Notifications</h2>
+      {!on && (
+        <button className="btn" onClick={() => Kea.allowNotifications()}>
+          <Bell size={16} /> Allow notifications
+        </button>
+      )}
+      <p className="muted small">Everything still arrives in the Inbox; these only choose what makes your phone notify you.</p>
+      {(
+        [
+          ['messages', 'Messages (with who sent them and a Reply button)'],
+          ['announcements', 'Announcements'],
+          ['grades', 'New grades and feedback']
+        ] as const
+      ).map(([k, label]) => (
+        <label key={k} className="toggle">
+          <input type="checkbox" checked={p[k]} onChange={(e) => save({ [k]: e.target.checked })} />
+          <span>{label}</span>
+        </label>
+      ))}
+      {codes.length > 0 && (
+        <>
+          <span className="muted small">Classes</span>
+          <div className="chips wrap">
+            {codes.map((c) => (
+              <button key={c} className={p.classesOff[c] ? '' : 'on'} onClick={() => save({ classesOff: { ...p.classesOff, [c]: !p.classesOff[c] } })}>
+                {c}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      <span className="muted small">Check for new messages</span>
+      <div className="bk-opts">
+        {(
+          [
+            [15, 'Every 15 min'],
+            [30, '30 min'],
+            [60, 'Hourly'],
+            [180, 'Every 3 h'],
+            [0, 'Only when I open Kea']
+          ] as const
+        ).map(([v, label]) => (
+          <button key={v} className={`bk-chip ${p.every === v ? 'on' : ''}`} onClick={() => save({ every: v })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="muted small">Android decides the exact moment, so a check can come a few minutes late. 15 minutes is the most often Android allows.</p>
+      <label className="toggle">
+        <input type="checkbox" checked={!!p.quietFrom} onChange={(e) => save(e.target.checked ? { quietFrom: '22:00', quietTo: '07:00' } : { quietFrom: '', quietTo: '' })} />
+        <span>Quiet hours (no sound or buzz)</span>
+      </label>
+      {!!p.quietFrom && (
+        <div className="quiet-row">
+          <input type="time" value={p.quietFrom} onChange={(e) => save({ quietFrom: e.target.value })} aria-label="Quiet from" />
+          <span className="muted">to</span>
+          <input type="time" value={p.quietTo} onChange={(e) => save({ quietTo: e.target.value })} aria-label="Quiet until" />
+        </div>
+      )}
+    </section>
+  );
+}

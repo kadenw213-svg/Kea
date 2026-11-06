@@ -1,0 +1,772 @@
+/* Photo editor (src/editors/photo). Self-contained: doesn't rely on other editors' CSS. */
+.photo-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.photo-editor input[type='range'] {
+  accent-color: var(--accent);
+  height: 4px;
+}
+.photo-editor input[type='color'] {
+  width: 28px;
+  height: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+.photo-editor input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+.photo-editor input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+/* ---------- Top bar & menus ---------- */
+.ph-topbar {
+  gap: 2px;
+}
+.ph-menus {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.ph-menu-btn {
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 13px;
+}
+.ph-menu-btn:hover,
+.ph-menu-btn.on {
+  background: var(--hover);
+  color: var(--text);
+}
+.ph-menu-scroll {
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+  min-width: 240px;
+}
+.ph-check-mark {
+  width: 12px;
+  margin-right: -6px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.ph-zoom {
+  min-width: 64px;
+}
+
+/* ---------- Options bar ---------- */
+.ph-options {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 10px 8px;
+  padding: 0 12px;
+  background: var(--surface);
+  border-radius: 12px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+.ph-options::-webkit-scrollbar {
+  display: none;
+}
+.ph-opt-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--text);
+  padding-right: 8px;
+  border-right: 1px solid var(--border-strong);
+  flex-shrink: 0;
+}
+.ph-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.ph-opt .tb-label {
+  padding: 0;
+}
+.ph-opt .num-input {
+  width: 48px;
+  height: 26px;
+  font-size: 12px;
+}
+.ph-opt-check {
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.ph-opt-check input,
+.ph-check input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.ph-unit {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.ph-options .select {
+  height: 28px;
+  font-size: 12.5px;
+  background-color: var(--surface-3);
+}
+
+/* Segmented buttons (own copy: editor CSS loads lazily). */
+.ph-seg {
+  display: inline-flex;
+  background: var(--surface-3);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.ph-seg button {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ph-seg button:hover {
+  color: var(--text);
+}
+.ph-seg button.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---------- Body ---------- */
+.ph-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+/* Tool strip */
+.ph-tools {
+  width: 44px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 0;
+  background: var(--surface);
+  border-radius: 14px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.ph-tools::-webkit-scrollbar {
+  display: none;
+}
+.ph-tool {
+  position: relative;
+  width: 34px;
+  height: 30px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.ph-tool:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.ph-tool.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ph-tool-more {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-bottom: 4px solid currentColor;
+  opacity: 0.6;
+}
+
+/* Foreground / background colour wells */
+.ph-wells {
+  position: relative;
+  width: 38px;
+  height: 40px;
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+.ph-well {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 2px solid var(--surface-4);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  padding: 0;
+}
+.ph-well.fg {
+  left: 2px;
+  top: 2px;
+  z-index: 1;
+}
+.ph-well.bg {
+  left: 13px;
+  top: 13px;
+}
+.ph-well-swap {
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  width: 14px;
+  height: 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  padding: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.ph-well-reset {
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  width: 10px;
+  height: 10px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: linear-gradient(135deg, #000 50%, #fff 50%);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.ph-color-pop {
+  width: 236px;
+}
+.ph-color-pop .input {
+  font-family: Consolas, monospace;
+}
+
+/* Canvas area */
+.ph-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #161718;
+}
+.ph-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  touch-action: none;
+}
+.ph-busy {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+  pointer-events: none;
+}
+.ph-busy .spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+.ph-text-input {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 1px dashed rgba(124, 172, 248, 0.9);
+  outline: none;
+  background: transparent;
+  color: transparent;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  user-select: text;
+}
+.ph-text-input::selection {
+  background: rgba(124, 172, 248, 0.35);
+  color: transparent;
+}
+
+/* ---------- Dock ---------- */
+.ph-dock {
+  width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ph-sec {
+  background: var(--surface);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.ph-sec.grow {
+  flex: 1 1 300px;
+  min-height: 300px;
+}
+.ph-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ph-sec-head:hover {
+  color: var(--text);
+}
+.ph-sec-body {
+  padding: 0 10px 10px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ph-sec.grow .ph-sec-body {
+  flex: 1;
+}
+.ph-sec:not(.grow) .ph-sec-body {
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+/* Layers */
+.ph-layers {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  gap: 6px;
+}
+.ph-layer-props {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+.ph-layer-props .ph-select {
+  flex: 1;
+  min-width: 120px;
+}
+.ph-select {
+  height: 28px;
+  font-size: 12.5px;
+  background-color: var(--surface-3);
+  max-width: 100%;
+}
+.ph-mini-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.ph-mini-slider > span:first-child {
+  width: 46px;
+}
+.ph-mini-slider input {
+  flex: 1;
+}
+.ph-mini-slider .ph-unit {
+  width: 34px;
+  text-align: right;
+}
+.ph-layer-list {
+  flex: 1;
+  min-height: 80px;
+  overflow-y: auto;
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 3px;
+}
+.ph-layer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 42px;
+  padding-right: 6px;
+  border-radius: 7px;
+  cursor: default;
+  position: relative;
+}
+.ph-layer:hover {
+  background: var(--hover);
+}
+.ph-layer.on {
+  background: var(--accent-soft);
+}
+.ph-layer.dim {
+  opacity: 0.55;
+}
+.ph-layer.drop-above {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.ph-layer.drop-below {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.ph-layer.drop-into {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.ph-eye {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.ph-eye:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.ph-clip {
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.ph-thumb-wrap {
+  padding: 2px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.ph-thumb-wrap.target {
+  border-color: var(--accent);
+}
+.ph-thumb {
+  max-width: 34px;
+  max-height: 34px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.ph-thumb.icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-3);
+  color: var(--text-2);
+  box-shadow: none;
+}
+.ph-layer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  padding-left: 2px;
+}
+.ph-rename {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+}
+.ph-lock {
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.ph-layer-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+}
+
+/* Properties */
+.ph-props {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ph-props-title {
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--text);
+  margin-top: 2px;
+}
+.ph-hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.45;
+  user-select: text;
+}
+.ph-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ph-chips .btn {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.ph-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+  vertical-align: middle;
+}
+.ph-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ph-row input[type='range'] {
+  flex: 1;
+  min-width: 80px;
+}
+
+/* Adjustments panel */
+.ph-adj-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.ph-adj-btn {
+  border: none;
+  background: var(--surface-3);
+  color: var(--text-2);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.ph-adj-btn:hover {
+  background: var(--surface-4);
+  color: var(--text);
+}
+
+/* History */
+.ph-history {
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.ph-hist-row {
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ph-hist-row:hover {
+  background: var(--hover);
+}
+.ph-hist-row.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ph-hist-row.future {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+/* Status bar */
+.ph-status .ph-pos {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  min-width: 72px;
+}
+
+/* ---------- Dialogs & form controls ---------- */
+.ph-dialog {
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  width: 440px;
+}
+.ph-dialog.wide {
+  width: 560px;
+}
+.ph-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ph-dialog-head h2 {
+  margin: 0 0 12px;
+}
+.ph-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.ph-dialog .dialog-actions {
+  align-items: center;
+}
+.ph-working {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.ph-slider {
+  display: grid;
+  grid-template-columns: minmax(70px, 120px) 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.ph-props .ph-slider {
+  grid-template-columns: 78px 1fr auto;
+  font-size: 12px;
+}
+.ph-slider-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ph-slider-num .num-input {
+  width: 52px;
+  height: 26px;
+  font-size: 12px;
+}
+.ph-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.ph-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.ph-color-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ph-color-input .input {
+  width: 90px;
+  font-family: Consolas, monospace;
+}
+.ph-hist {
+  width: 100%;
+  height: 90px;
+  background: var(--bg);
+  border-radius: 6px;
+}
+.ph-curve-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 300px;
+  aspect-ratio: 1;
+  align-self: center;
+}
+.ph-curve-hist {
+  position: absolute;
+  inset: 0;
+  opacity: 0.35;
+  pointer-events: none;
+}
+.ph-curve-hist .ph-hist {
+  height: 100%;
+}
+.ph-curve {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.ph-grad-bar {
+  height: 22px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.ph-anchor {
+  display: grid;
+  grid-template-columns: repeat(3, 24px);
+  gap: 3px;
+}
+.ph-anchor button {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-3);
+  cursor: pointer;
+  padding: 0;
+}
+.ph-anchor button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}

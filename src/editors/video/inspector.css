@@ -1,0 +1,341 @@
+.ve-insp {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-size: 12.5px;
+}
+.ve-insp-head {
+  padding: 12px 14px 8px;
+  font-weight: 500;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.ve-insp-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 10px 12px;
+}
+.ve-insp-hint {
+  color: var(--text-3);
+  text-align: center;
+  padding: 16px 8px;
+  font-size: 12px;
+}
+.ve-insp-hint.left {
+  text-align: left;
+  padding: 6px 2px;
+}
+.ve-insp-note {
+  color: var(--text-3);
+  font-size: 11.5px;
+  padding: 2px 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ve-insp-note.pad {
+  padding: 4px 4px 8px;
+}
+
+/* Name and tabs */
+.ve-insp-name {
+  padding: 0 2px 8px;
+}
+.ve-insp-name-input {
+  width: 100%;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--surface-2);
+  padding: 0 10px;
+  outline: none;
+  user-select: text;
+  font-weight: 500;
+}
+.ve-insp-name-input:focus {
+  border-color: var(--accent);
+}
+.ve-insp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 8px;
+  background: var(--surface-2);
+  border-radius: 10px;
+}
+.ve-insp-tabs button {
+  flex: 1;
+  min-width: 52px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ve-insp-tabs button:hover {
+  background: var(--hover);
+}
+.ve-insp-tabs button.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Sections */
+.ve-insp-section {
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 6px 10px 10px;
+  margin-bottom: 8px;
+}
+.ve-insp-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 26px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ve-insp-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  padding: 4px 0 8px;
+  color: var(--text-3);
+}
+.ve-insp-facts b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Rows */
+.ve-insp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+}
+.ve-insp-row.sub {
+  min-height: 26px;
+  padding-left: 12px;
+}
+.ve-insp-label {
+  width: 74px;
+  flex-shrink: 0;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ve-insp-range {
+  flex: 1;
+  min-width: 40px;
+  height: 4px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.ve-insp-num {
+  width: 50px;
+  height: 24px;
+  text-align: right;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--surface-3);
+  padding: 0 6px;
+  outline: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+.ve-insp-num:focus {
+  border-color: var(--accent);
+}
+.ve-insp-unit {
+  width: 16px;
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.ve-insp-extra {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.ve-insp-extra:empty {
+  display: none;
+}
+.ve-insp-select {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: var(--surface-3);
+  color: var(--text);
+  padding: 0 6px;
+  outline: none;
+  cursor: pointer;
+}
+.ve-insp-select option {
+  background: var(--surface-3);
+}
+.ve-insp-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.ve-insp-check input {
+  accent-color: var(--accent);
+}
+
+/* Icon buttons */
+.ve-insp-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.ve-insp-icon:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.ve-insp-icon:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.ve-insp-icon.big {
+  width: 28px;
+  height: 26px;
+}
+.ve-insp-icon.on,
+.ve-insp-icon.key.on {
+  color: var(--accent);
+}
+.ve-insp-icon.big.on {
+  background: var(--accent-soft);
+}
+.ve-insp-keys {
+  display: inline-flex;
+  align-items: center;
+}
+.ve-insp-btns {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.ve-insp-gap {
+  width: 8px;
+}
+
+/* Colour wells */
+.ve-insp-colour {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.ve-insp-colour input[type='color'] {
+  width: 30px;
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+.ve-insp-colour input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+.ve-insp-colour input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+.ve-insp-colour input[type='color'].none {
+  opacity: 0.35;
+}
+.ve-insp-hex {
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.ve-insp-chip {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: none;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.ve-insp-chip.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Preset grids */
+.ve-insp-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 4px;
+  padding: 4px 0;
+}
+.ve-insp-presets button {
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 6px;
+}
+.ve-insp-presets button:hover {
+  background: var(--surface-4);
+  color: var(--text);
+}
+.ve-insp-presets button.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ve-insp-textarea {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--surface-3);
+  padding: 8px 10px;
+  outline: none;
+  user-select: text;
+  margin: 4px 0 6px;
+  font: inherit;
+}
+.ve-insp-textarea:focus {
+  border-color: var(--accent);
+}
+.ve-insp-wide {
+  width: 100%;
+  margin-top: 8px;
+}

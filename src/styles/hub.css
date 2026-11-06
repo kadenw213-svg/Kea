@@ -1,0 +1,224 @@
+/* The Kea Hub account: sign in, create, the terms and the re-agree gate. Uses the app's theme tokens (light/dark). */
+.hub-card {
+  margin-bottom: 16px;
+}
+.hub-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.hub-tabs {
+  display: flex;
+  gap: 8px;
+}
+.hub-warn {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.hub-ok {
+  color: var(--accent);
+  vertical-align: -2px;
+}
+.hub-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.hub-advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.btn.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.hub-agree {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  font-size: 13px;
+  cursor: pointer;
+}
+.hub-agree input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+.hub-terms-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.hub-terms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 52vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+.hub-terms-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--surface-2);
+}
+.hub-terms-section.agreed {
+  border-color: var(--accent);
+}
+.hub-terms-section h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.hub-terms-body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-2);
+  user-select: text;
+}
+.hub-terms-body p {
+  margin: 4px 0;
+}
+.hub-terms-body ul {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+.hub-gate {
+  max-width: 680px;
+  width: min(680px, calc(100vw - 32px));
+}
+.hub-gate-scroll {
+  max-height: 55vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hub-gate-scroll .hub-terms-list {
+  max-height: none;
+  overflow: visible;
+}
+.hub-summary {
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
+}
+.hub-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin-bottom: 4px;
+}
+.hub-tag.removed {
+  background: var(--accent-soft);
+  color: var(--text-2);
+}
+.hub-before summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.hub-support {
+  margin: 40px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.hub-shared {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* "How do you use Kea?" */
+.modes-dialog {
+  max-width: 640px;
+  width: min(640px, calc(100vw - 32px));
+}
+.modes-grid {
+  margin: 14px 0 6px;
+}
+.hubc-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.hubc-settings .acct-form input {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+/* Settings → Kea account: the account page's form pieces, which otherwise load only with School. */
+.hubc-settings .acct-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+.hubc-settings .acct-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.hubc-settings .acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hubc-settings .acct-note {
+  margin: 0;
+  font-size: 12.5px;
+}
+.hubc-settings .hubc-gap {
+  margin: 12px 0 4px;
+}
+.hubc-settings .st-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  align-self: flex-start;
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 3px;
+}
+.hubc-settings .st-seg button {
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-3);
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.hubc-settings .st-seg button.on {
+  background: var(--surface-4);
+  color: var(--text);
+}
+.hubc-settings .hubc-small {
+  font-size: 12.5px;
+  margin: 0;
+}

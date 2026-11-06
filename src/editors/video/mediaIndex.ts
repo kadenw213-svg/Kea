@@ -1,0 +1,288 @@
+// Build a cheap, local "understanding" of a clip so an AI agent can edit it without ingesting the video: a timed
+// transcript (bundled Whisper), scene-cut list (frame differences), silence spans (audio peaks), and a keyframe
+// contact sheet. Exposed to agents as MCP resources (see the video editor's resources()). Cached on disk by
+// path+size+mtime so re-opening never re-transcribes. Heavy decode reuses media.ts; transcription reuses transcribe.ts.
+import { CanvasSink, AudioBufferSink } from 'mediabunny';
+import type { MediaItem } from './model';
+import { mediaKey, videoTrackOf, audioTrackOf, peaksFor } from './media';
+import { transcribe, to16kMono, type TranscriptSegment } from '../../lib/transcribe';
+import { api } from '../../lib/api';
+
+export interface MediaIndex {
+  mediaId: string;
+  name: string;
+  duration: number;
+  /** Scene ranges from shot-change detection. */
+  scenes: { start: number; end: number }[];
+  /** Quiet spans (candidate cuts / pauses). */
+  silences: { start: number; end: number }[];
+  transcript: { text: string; segments: TranscriptSegment[]; words?: TranscriptSegment[]; model: string } | null;
+  /** Loudness envelope for precise cuts: `rate` frames per second, each byte = dBFS + 100 (base64). */
+  envelope?: { rate: number; db: string };
+  /** Why there's no transcript (no speech model installed, no audio…). */
+  transcriptNote?: string;
+  /** A grid of keyframes as a JPEG data URL. */
+  contactSheet?: string;
+  builtAt: number;
+}
+
+type Progress = (p: number, note?: string) => void;
+const ck = (signal?: AbortSignal) => {
+  if (signal?.aborted) throw new DOMException('Canceled', 'AbortError');
+};
+const mem = new Map<string, MediaIndex>();
+/** The built index for a media key, if we have it this session. */
+export const getIndex = (key: string) => mem.get(key);
+
+export function tc(s: number): string {
+  s = Math.max(0, s);
+  const m = Math.floor(s / 60);
+  const sec = (s % 60).toFixed(1).padStart(4, '0');
+  return `${String(m).padStart(2, '0')}:${sec}`;
+}
+
+// ---------- Audio → 16 kHz mono (for Whisper) ----------
+async function decodeMono16k(key: string, signal?: AbortSignal): Promise<Float32Array | null> {
+  const at = await audioTrackOf(key);
+  if (!at) return null;
+  const sink = new AudioBufferSink(at);
+  // Mixed to mono and resampled a minute at a time, so a long recording never sits in memory at its source rate.
+  // Whole-minute blocks resample to exactly 960 000 samples each, so the blocks join without drift.
+  const out: Float32Array[] = [];
+  let sr = 0;
+  let block: Float32Array | null = null;
+  let fill = 0;
+  const flush = async () => {
+    if (!block || !fill) return;
+    const ab = new AudioBuffer({ numberOfChannels: 1, length: fill, sampleRate: sr });
+    ab.copyToChannel((fill === block.length ? block : block.subarray(0, fill)) as Float32Array<ArrayBuffer>, 0);
+    out.push(await to16kMono(ab));
+    fill = 0;
+  };
+  for await (const { buffer } of sink.buffers()) {
+    ck(signal);
+    if (!sr) {
+      sr = buffer.sampleRate;
+      block = new Float32Array(sr * 60);
+    }
+    const n = buffer.length;
+    const chs = buffer.numberOfChannels;
+    const data = Array.from({ length: chs }, (_, c) => buffer.getChannelData(c));
+    for (let i = 0; i < n; i++) {
+      let v = 0;
+      for (let c = 0; c < chs; c++) v += data[c][i];
+      block![fill++] = v / chs;
+      if (fill === block!.length) await flush();
+    }
+  }
+  await flush();
+  if (!out.length) return null;
+  const full = new Float32Array(out.reduce((s, c) => s + c.length, 0));
+  let off = 0;
+  for (const c of out) {
+    full.set(c, off);
+    off += c.length;
+  }
+  return full;
+}
+
+// ---------- Loudness envelope (10 ms RMS) for snapping cuts to pauses ----------
+export const ENV_RATE = 100;
+function envelopeOf(audio16k: Float32Array): { rate: number; db: string } {
+  const hop = 16000 / ENV_RATE;
+  const n = Math.floor(audio16k.length / hop);
+  const bytes = new Uint8Array(n);
+  for (let f = 0; f < n; f++) {
+    let ss = 0;
+    for (let i = f * hop; i < (f + 1) * hop; i++) ss += audio16k[i] * audio16k[i];
+    const db = ss > 0 ? 10 * Math.log10(ss / hop) : -100;
+    bytes[f] = Math.max(0, Math.min(255, Math.round(db + 100)));
+  }
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { rate: ENV_RATE, db: btoa(bin) };
+}
+
+/** The envelope as dBFS per frame (decoded once per index and cached). */
+const envCache = new WeakMap<object, Float32Array>();
+export function envelopeDb(idx: MediaIndex): Float32Array | null {
+  if (!idx.envelope) return null;
+  let d = envCache.get(idx.envelope);
+  if (!d) {
+    const bin = atob(idx.envelope.db);
+    d = new Float32Array(bin.length);
+    for (let i = 0; i < bin.length; i++) d[i] = bin.charCodeAt(i) - 100;
+    envCache.set(idx.envelope, d);
+  }
+  return d;
+}
+
+// ---------- Scene-change detection ----------
+async function detectScenes(key: string, duration: number, onProgress: Progress, signal?: AbortSignal): Promise<{ start: number; end: number }[]> {
+  const vt = await videoTrackOf(key);
+  if (!vt) return [];
+  // 2 samples a second, spread thinner on long clips so the whole clip is covered within 1800 samples.
+  const fps = Math.min(2, 1800 / Math.max(1, duration));
+  const n = Math.min(1800, Math.max(2, Math.ceil(duration * fps)));
+  const first = await vt.getFirstTimestamp();
+  const times = Array.from({ length: n }, (_, i) => first + i / fps);
+  const sink = new CanvasSink(vt, { height: 72 });
+  const tmp = document.createElement('canvas');
+  const ctx = tmp.getContext('2d', { willReadFrequently: true })!;
+  let prev: Uint8ClampedArray | null = null;
+  const cuts = [0];
+  let i = 0;
+  for await (const f of sink.canvasesAtTimestamps(times)) {
+    ck(signal);
+    if (f) {
+      const c = f.canvas;
+      tmp.width = c.width;
+      tmp.height = c.height;
+      ctx.drawImage(c as any, 0, 0);
+      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+      if (prev && prev.length === data.length) {
+        let diff = 0;
+        for (let p = 0; p < data.length; p += 4) diff += Math.abs(data[p] - prev[p]) + Math.abs(data[p + 1] - prev[p + 1]) + Math.abs(data[p + 2] - prev[p + 2]);
+        const norm = diff / ((data.length / 4) * 3 * 255);
+        if (norm > 0.18 && times[i] - first - cuts[cuts.length - 1] > 0.6) cuts.push(times[i] - first);
+      }
+      prev = data;
+    }
+    onProgress(i / n);
+    i++;
+  }
+  return cuts.map((t, k) => ({ start: t, end: k + 1 < cuts.length ? cuts[k + 1] : duration }));
+}
+
+// ---------- Silence detection (from audio peaks) ----------
+function detectSilences(peaks: { rate: number; data: Float32Array } | null, duration: number): { start: number; end: number }[] {
+  if (!peaks) return [];
+  const { rate, data } = peaks;
+  const thresh = 0.02;
+  const minLen = 0.35;
+  const out: { start: number; end: number }[] = [];
+  let runStart = -1;
+  for (let b = 0; b < data.length; b++) {
+    const t = b / rate;
+    const quiet = data[b] < thresh;
+    if (quiet && runStart < 0) runStart = t;
+    else if (!quiet && runStart >= 0) {
+      if (t - runStart >= minLen) out.push({ start: runStart, end: t });
+      runStart = -1;
+    }
+  }
+  if (runStart >= 0 && duration - runStart >= minLen) out.push({ start: runStart, end: duration });
+  return out;
+}
+
+// ---------- Contact sheet ----------
+async function contactSheet(key: string, scenes: { start: number; end: number }[], duration: number, signal?: AbortSignal): Promise<string | undefined> {
+  const vt = await videoTrackOf(key);
+  if (!vt) return undefined;
+  const first = await vt.getFirstTimestamp();
+  const picks = (scenes.length ? scenes.slice(0, 16) : [{ start: duration * 0.1, end: duration }]).map((s) => first + s.start + Math.min(0.5, (s.end - s.start) / 2));
+  const sink = new CanvasSink(vt, { height: 120 });
+  const frames: { t: number; c: HTMLCanvasElement | OffscreenCanvas }[] = [];
+  let i = 0;
+  for await (const f of sink.canvasesAtTimestamps(picks)) {
+    ck(signal);
+    if (f) frames.push({ t: picks[i] - first, c: f.canvas });
+    i++;
+  }
+  if (!frames.length) return undefined;
+  const cols = Math.min(4, frames.length);
+  const rows = Math.ceil(frames.length / cols);
+  const tw = frames[0].c.width;
+  const th = frames[0].c.height;
+  const pad = 4;
+  const out = document.createElement('canvas');
+  out.width = cols * (tw + pad) + pad;
+  out.height = rows * (th + pad) + pad;
+  const ctx = out.getContext('2d')!;
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.font = '11px sans-serif';
+  frames.forEach((fr, idx) => {
+    const r = Math.floor(idx / cols);
+    const c = idx % cols;
+    const x = pad + c * (tw + pad);
+    const y = pad + r * (th + pad);
+    ctx.drawImage(fr.c as any, x, y, tw, th);
+    const label = tc(fr.t);
+    const wLabel = ctx.measureText(label).width + 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(x, y + th - 15, wLabel, 15);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, x + 3, y + th - 4);
+  });
+  return out.toDataURL('image/jpeg', 0.72);
+}
+
+// ---------- Disk cache key ----------
+async function cacheKey(media: MediaItem): Promise<string | null> {
+  if (!media.path) return null; // in-memory media can't be cached by path
+  const [st] = await api.statMany([media.path]).catch(() => [] as any[]);
+  if (!st || !st.exists) return null;
+  return `${media.path}|${st.size}|${st.mtime}`;
+}
+
+/** Build (or load from cache) the index for one media item. */
+export async function buildIndex(media: MediaItem, onProgress: Progress, signal?: AbortSignal): Promise<MediaIndex> {
+  const key = mediaKey(media);
+  // A cached index is reused unless its transcript could now be better: none was made (no speech model then, or it
+  // failed) or it has no word timing while a word-timing model is installed now.
+  const models = await api.speech.state().catch(() => []);
+  const stale = (idx: MediaIndex) =>
+    media.hasAudio &&
+    models.some((m) => m.installed) &&
+    (!idx.transcript || (idx.transcript.segments.length > 0 && !idx.transcript.words?.length && models.some((m) => m.installed && m.words)));
+  // Cached by file, but reported under this project's id for the file (it changes between projects and sessions).
+  const own = (idx: MediaIndex): MediaIndex => ({ ...idx, mediaId: media.id, name: media.name });
+  const have = mem.get(key);
+  if (have && !stale(have)) return own(have);
+  const ckey = await cacheKey(media);
+  if (ckey) {
+    const cached = await api.video.indexGet(ckey).catch(() => null);
+    if (cached) {
+      const idx = JSON.parse(cached) as MediaIndex;
+      if (!stale(idx)) {
+        mem.set(key, idx);
+        return own(idx);
+      }
+    }
+  }
+
+  // Transcript (the slow part): decode audio → 16 kHz mono → Whisper. Missing model/audio is a note, not a failure.
+  onProgress(0.02, 'Listening to the audio…');
+  let transcript: MediaIndex['transcript'] = null;
+  let transcriptNote: string | undefined;
+  let envelope: MediaIndex['envelope'];
+  try {
+    const audio = media.hasAudio ? await decodeMono16k(key, signal) : null;
+    if (!audio) transcriptNote = 'No audio to transcribe.';
+    else {
+      envelope = envelopeOf(audio); // before transcribe(), which hands the buffer to the worker
+      onProgress(0.08, 'Transcribing…');
+      transcript = await transcribe(audio, { timestamps: 'word' }, signal);
+    }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw err;
+    transcriptNote = String(err?.message || err);
+  }
+
+  onProgress(0.6, 'Finding scene changes…');
+  const scenes = await detectScenes(key, media.duration, (p) => onProgress(0.6 + p * 0.25), signal);
+  onProgress(0.85, 'Finding quiet spans…');
+  const silences = detectSilences(await peaksFor(media).catch(() => null), media.duration);
+  onProgress(0.9, 'Making a contact sheet…');
+  const sheet = await contactSheet(key, scenes, media.duration, signal).catch(() => undefined);
+
+  const index: MediaIndex = { mediaId: media.id, name: media.name, duration: media.duration, scenes, silences, transcript, envelope, transcriptNote, contactSheet: sheet, builtAt: Date.now() };
+  mem.set(key, index);
+  if (ckey) api.video.indexSet(ckey, JSON.stringify(index)).catch(() => {});
+  onProgress(1, 'Done.');
+  return index;
+}
+
+/** A small summary for a job result (the full index goes to resources, not the job result). */
+export const indexSummary = (i: MediaIndex) => ({ mediaId: i.mediaId, name: i.name, duration: Math.round(i.duration * 100) / 100, scenes: i.scenes.length, silences: i.silences.length, transcript: i.transcript ? `${i.transcript.segments.length} segments` : i.transcriptNote || 'none', contactSheet: !!i.contactSheet });
