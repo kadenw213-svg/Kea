@@ -3,11 +3,23 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from academic_sync.cli import app
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _data_here(tmp_path, monkeypatch):
+    """practice-check only reads files in the workspace's data folder: make tmp_path that folder."""
+    from academic_sync.config import clear_caches
+
+    monkeypatch.setenv("ACADEMIC_SYNC_DB_PATH", str(tmp_path / "test.db"))
+    clear_caches()
+    yield
+    clear_caches()
 
 EXPLAIN = "Natural selection acts on variation already present: the drug kills susceptible cells, so resistant ones leave more offspring."
 

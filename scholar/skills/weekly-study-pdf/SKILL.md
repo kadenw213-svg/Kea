@@ -191,12 +191,58 @@ is the floor, not the target. A student who reads only this PDF should be able t
 
 ### Images (4-8 per PDF, each one earning its place)
 
-1. **Drawn for the PDF.** Graphs, function plots, phase diagrams, titration curves, data
-   plots. Write a matplotlib script in `work_dir` (e.g. `fig_exp.py`, saving PNGs at
-   200 dpi into `img/`, clean white style, labeled axes), then run
-   `uv run academic-sync study-pdf-plot <work_dir>/fig_exp.py`. No credit needed. Kea reads the script before
-   running it: import only math, numpy, matplotlib, random and os (for `os.makedirs("img", exist_ok=True)` only),
-   and save with a plain literal path, `plt.savefig("img/name.png", dpi=200)`. Anything else is refused.
+1. **Drawn for the PDF.** Graphs, function plots, energy and phase diagrams, titration curves,
+   data plots, conic sections, simple labeled diagrams (boxes, circles, arrows, a color scale).
+   **Never write a script**: Kea doesn't run code written during a run. Describe the figures in
+   one JSON file in `work_dir` (e.g. `figures.json`), then run
+   `uv run academic-sync study-pdf-figure <work_dir>/figures.json`. Kea draws each one at 200 dpi
+   into `img/<file>` (white background, labeled axes) and prints the `typst_path` to use. No
+   credit needed. A figure that needs more than this (a 3-D surface, a photo-like drawing) comes
+   from Commons instead, or is left out.
+
+   ```json
+   {"figures": [
+     {"file": "titration.png", "size": [6.5, 4], "xlabel": "NaOH added (mL)", "ylabel": "pH",
+      "xlim": [0, 50], "ylim": [0, 14], "legend": "upper left", "items": [
+        {"type": "function", "expr": "where(c > 0, -log10(c), 14 + log10(-c))", "domain": [0, 50],
+         "vars": {"c": "(2.5 - 0.1*x)/(25 + x)"}, "color": "#1f3a5f", "width": 2.2, "label": "HCl + NaOH"},
+        {"type": "hspan", "from": 8.2, "to": 10, "color": "#d9534f"},
+        {"type": "point", "at": [25, 7], "text": "Equivalence point"},
+        {"type": "arrow", "from": [33, 4.6], "to": [25, 7], "text": "moles H$_3$O$^+$ = moles OH$^-$"}]},
+     {"file": "conics.png", "layout": [1, 2], "panels": [
+        {"title": "Ellipse", "aspect": "equal", "frame": "cross", "items": [
+          {"type": "parametric", "x": "4*cos(t)", "y": "3*sin(t)", "t": [0, 6.2832]}]},
+        {"title": "Hyperbola", "aspect": "equal", "frame": "cross", "items": [
+          {"type": "implicit", "expr": "x^2/4 - y^2/9 - 1", "x": [-6, 6], "y": [-6, 6]}]}]}]}
+   ```
+
+   - **Figure:** `file` (lowercase letters, digits, `-`, `_`; `.png` or `.svg`), `size` [w, h]
+     inches (1-12), and either one panel's fields directly, or `layout` [rows, cols] (up to 4x4)
+     with `panels`, plus an overall `title`.
+   - **Panel:** `title`, `xlabel`, `ylabel`, `xlim`/`ylim` [lo, hi], `xscale`/`yscale`
+     (`linear`, `log`), `aspect` (`equal`, `auto`), `grid` (true for light gridlines), `frame`
+     (`open` default: left and bottom axes; `box`; `cross`: axes through the origin; `off`),
+     `xticks`/`yticks` ([numbers], [] to hide, or `{"at": [...], "labels": [...]}`), `legend`
+     (true or a place like `"upper right"`), `font` (size), `items`.
+   - **Items** (`type`, plus `color`, `width`, `style` `-` `--` `:` `-.`, `alpha`, `label` for the
+     legend, `z` for drawing order):
+     `function` (`expr` in x, `domain`, `vars`, `points`), `parametric` (`x`, `y` in t, `t`),
+     `implicit` (the curve where `expr` in x and y is 0, over `x` and `y` ranges), `line` and
+     `scatter` (data: `x` and `y` lists, or `points` [[x, y], ...]; `marker`, `size`), `point`
+     (`at`, `text`, `offset`), `bar` (`labels` or `x`, `values`, `horizontal`, `base`, `barwidth`,
+     `colors`), `fill` (between `expr` and `expr2`, default 0, over `domain`, optional `where`;
+     or data `x`, `y`, `y2`), `hline`/`vline` (`y`/`x`, optional `from`/`to`), `hspan`/`vspan`
+     (`from`, `to`), `segment` and `arrow` (`from`, `to`; arrow: `text` at its tail, `head`
+     `->` `<->` `-|>` `-`, `curve`), `text` (`at`, `text`, `size`, `ha`, `va`, `rotation`,
+     `bold`, `italic`, `box`, `coords` `axes` for 0-1 across the panel), `rect` (`at` lower left,
+     `width`, `height`, `rounded`, `fill`, `text`), `circle` (`center`, `radius`), `ellipse`
+     (`center`, `width`, `height`, `angle`), `polygon` (`points`, `closed`), `gradient`
+     (`extent` [x0, x1, y0, y1], `colors` or `cmap`, `direction` `x`/`y`).
+   - **Formulas** use x (t for parametric; x and y for implicit), numbers, pi, e, + - * / ^ ** %,
+     comparisons, earlier `vars`, and sin cos tan asin acos atan atan2 sinh cosh tanh exp log
+     (= ln) log10 log2 sqrt cbrt abs floor ceil round sign min max where clip hypot. Use
+     `where(cond, a, b)` for pieces. Text can use `$...$` math (`$\\Delta H$`, `H$_2$O`).
+   - The command lists any figure it couldn't draw with the reason; fix the spec and run it again.
 2. **Wikimedia Commons.** For anatomy, organisms, structures and lab equipment:
    `uv run academic-sync study-pdf-image search "<words>"`, then
    `uv run academic-sync study-pdf-image get "File:<name>" --banner <id> --name <stem>`.

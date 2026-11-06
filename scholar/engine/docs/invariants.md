@@ -1233,7 +1233,7 @@ to add either; that decision was deliberate, not an oversight.
     - **Where it goes.** `Desktop/Weekly Study PDFs/<CODE>/<chapters>.pdf`
       (OneDrive Desktop when present), named for the chapters it covers
       (`pdf_filename`; 4+ chapters becomes "Ch 1-9 Review"). Typst source,
-      figures and plot scripts stay in `data/study_pdfs/<CODE>/<week>/`.
+      figures and their JSON specs stay in `data/study_pdfs/<CODE>/<week>/`.
       One shared template (`src/academic_sync/study_pdf_template.typ`) so
       every PDF looks the same; text is never hyphenated or ligatured so a
       highlight picks up whole words.
@@ -1251,9 +1251,20 @@ to add either; that decision was deliberate, not an oversight.
       a bare term list in to pass it.
     - **Images are freely licensed or drawn.** Wikimedia Commons only via
       `study-pdf-image` (CC BY / BY-SA / CC0 / public domain, filtered in
-      `_image_info`), always credited in the caption; or matplotlib
-      figures run through `study-pdf-plot` (scripts must live under
-      `data/study_pdfs/`).
+      `_image_info`), always credited in the caption; or figures drawn
+      by `study-pdf-figure` from a JSON spec under `data/study_pdfs/`
+      (`figure_spec.py`: a fixed schema, formulas read by a small
+      arithmetic-only evaluator). **Nothing Claude writes is ever run as
+      code**: Claude reads class content anyone in the class can write,
+      so a script could carry their instructions. `study-pdf-plot` (the
+      old matplotlib scripts) only refuses.
+    - **Paths stay in data/.** Every path argument (`extract`, `doc-text`,
+      `practice-check`, `shells-check`, `digest-ingest`, `export --output`,
+      `d2l-reconcile --dir`, `study-pdf-check/build --source`,
+      `study-pdf-figure`) must resolve inside the workspace's `data/`
+      (`safe_paths.py`); image names are cleaned to plain stems, and a
+      course code used in a folder name must match
+      `^[A-Za-z0-9 ._-]{1,40}$` without `..`.
     - **Idempotent.** One `study_pdfs` row per banner (migration `_0019`):
       built or deliberately skipped (`study-pdf-skip`, e.g. every chapter
       already has a PDF and no test is near). A rebuild overwrites the

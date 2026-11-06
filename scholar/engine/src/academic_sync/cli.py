@@ -29,6 +29,7 @@ from academic_sync import diagnostics as diagnostics_mod
 from academic_sync import digest as digest_mod
 from academic_sync import enrollments as enrollments_mod
 from academic_sync import preferences as prefs_mod
+from academic_sync import safe_paths
 from academic_sync import study_pdf as study_pdf_mod
 from academic_sync.chapter_topics import (
     canonicalize_chapter_label,
@@ -119,6 +120,34 @@ app.add_typer(course_app, name="course")
 app.add_typer(prefs_app, name="prefs")
 
 console = Console()
+
+
+def _data_path(path: Path, what: str = "That file") -> Path:
+    """`path` resolved, when it's inside this workspace's data folder; otherwise the command stops (a path argument
+    comes from Claude, which reads class content anyone in the class can write)."""
+    try:
+        return safe_paths.inside_data(path, what=what)
+    except safe_paths.UnsafePath as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from None
+
+
+def _work_path(path: Path, what: str = "That file") -> Path:
+    """`path` resolved, when it's inside data/study_pdfs/ (a week's study PDF folder); otherwise the command stops."""
+    try:
+        return safe_paths.inside(path, study_pdf_mod.WORK_ROOT, what=what)
+    except safe_paths.UnsafePath as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from None
+
+
+def _code_or_exit(code: str) -> str:
+    """A course code that's safe as a folder name; otherwise the command stops."""
+    try:
+        return safe_paths.safe_code(code)
+    except safe_paths.UnsafePath as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from None
 
 
 # --------------------------------------------------------------------------
@@ -256,7 +285,7 @@ def _load_document(path: Path, title: str | None) -> ParsedDocument:
 
 @app.command("extract")
 def extract_cmd(
-    path: Annotated[Path, typer.Argument(exists=True)],
+    path: Annotated[Path, typer.Argument(help="A file inside data/.")],
     course: Annotated[str, typer.Option("--course", help="Course id")],
     source_type: Annotated[SourceType, typer.Option("--source-type")],
     title: Annotated[str | None, typer.Option("--title")] = None,
@@ -291,6 +320,10 @@ def extract_cmd(
             console.print(f"[red]No such course id: {course}[/red]")
             raise typer.Exit(1)
 
+        path = _data_path(path, "The file to extract")
+        if not path.is_file():
+            console.print("[red]No such file.[/red]")
+            raise typer.Exit(code=1)
         document = _load_document(path, title or path.name)
         content_hash = document.content_hash
         # Combines the raw parser version with the extraction pipeline
@@ -983,6 +1016,10 @@ def reconcile_findings(session, course: Course, folder: Path | None = None) -> d
     from academic_sync.config import get_db_path
 
     root = get_db_path().parent / "digests" / "kea-precheck"
+    if not safe_paths.valid_code(course.course_code):
+        return {"folder": None, "unmatched": [], "drift": [], "_matched": []}
+    if folder is not None:
+        folder = _data_path(folder, "The pre-check folder")
     if folder is None:
         days = sorted((d for d in root.iterdir() if d.is_dir() and any(d.glob(f"{course.course_code}-*.json"))), reverse=True) if root.is_dir() else []
         folder = days[0] if days else None
@@ -1461,7 +1498,7 @@ def course_rules(session, course: Course) -> list[dict]:
     from academic_sync.config import get_db_path
 
     root = get_db_path().parent / "digests" / "kea-precheck"
-    days = sorted((d for d in root.iterdir() if d.is_dir()), reverse=True)[:1] if root.is_dir() else []
+    days = sorted((d for d in root.iterdir() if d.is_dir()), reverse=True)[:1] if root.is_dir() and safe_paths.valid_code(course.course_code) else []
     for d in days:
         try:
             news = json.loads((d / f"{course.course_code}-news.json").read_text(encoding="utf-8"))
@@ -2111,11 +2148,8 @@ def export_cmd(
             unresolved = repository.list_unresolved_references(session, c.id)
             text = format_course_export(c, items, unresolved)
 
-            if output is not None and REPO_ROOT.resolve() not in output.resolve().parents:
-                console.print("[red]--output must be inside this workspace.[/red]")
-                raise typer.Exit(code=1)
-            out_path = output or (
-                REPO_ROOT / "data" / "downloads" / c.course_code / "consolidated_events.txt"
+            out_path = _data_path(output, "--output") if output is not None else (
+                REPO_ROOT / "data" / "downloads" / _code_or_exit(c.course_code) / "consolidated_events.txt"
             )
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text(text, encoding="utf-8")
@@ -2802,6 +2836,7 @@ def shells_check_cmd(
     -- the daily run starts a full first-time import for each one. Matching
     against registered courses uses `Course.d2l_identifier` (the org unit
     id)."""
+    file = _data_path(file, "--file")
     raw = json.loads(file.read_text(encoding="utf-8"))
     items = raw.get("Items", raw) if isinstance(raw, dict) else raw
     with session_scope() as session:
@@ -2957,6 +2992,7 @@ def digest_ingest_cmd(
     first email isn't flooded with the whole term's history. After that, each
     email carries only what's new since the last one -- in daily use, the
     previous day."""
+    file = _data_path(file, "--file")
     try:
         crawl = digest_mod.DigestCrawl.model_validate_json(file.read_text(encoding="utf-8"))
     except (OSError, ValidationError) as exc:
@@ -3303,6 +3339,7 @@ def practice_check_cmd(
     question has a usable answer, choices are shuffle-safe, no duplicates.
     Prints the problems as JSON (exit 1 when there are any)."""
     problems: list[str] = []
+    path = _data_path(path, "The practice set")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as err:
@@ -3776,6 +3813,11 @@ def _study_work(session, banner_item) -> Path:  # type: ignore[no-untyped-def]
 
 def _study_source(session, banner_item, source: Path | None) -> Path:  # type: ignore[no-untyped-def]
     if source is not None:
+        # (Typst compiles with the source's folder as its root, and the template is copied beside it.)
+        source = _work_path(source, "--source")
+        if source.suffix != ".typ":
+            console.print("[red]--source must be a .typ file.[/red]")
+            raise typer.Exit(code=1)
         return source
     course = repository.get_course(session, banner_item.course_id)
     assert course is not None
@@ -3893,7 +3935,7 @@ def study_pdf_image_cmd(
         assert course is not None
         dest = study_pdf_mod.work_dir(course, item) / "img"
     try:
-        info = study_pdf_mod.commons_fetch(query, dest, name)
+        info = study_pdf_mod.commons_fetch(query, dest, safe_paths.safe_stem(name) if name else None)
     except (ValueError, study_pdf_mod.RateLimited) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
@@ -3954,89 +3996,42 @@ def study_image_cmd(
     print(json.dumps({"image": rel, "image_credit": info.get("credit"), "license": info.get("license"), "kb": round(path.stat().st_size / 1024)}, indent=1))
 
 
-# Figure scripts are written by Claude from course material, which can carry instructions planted by anyone who can
-# post in a class (a discussion reply, a linked page). So a script is read before it runs: only drawing is allowed.
-_PLOT_IMPORTS = {"math", "numpy", "matplotlib", "matplotlib.pyplot", "matplotlib.patches", "matplotlib.lines",
-                 "matplotlib.ticker", "matplotlib.colors", "matplotlib.path", "matplotlib.transforms", "matplotlib.text",
-                 "matplotlib.collections", "matplotlib.gridspec", "mpl_toolkits.mplot3d", "fractions", "statistics",
-                 "random", "datetime", "os"}
-_PLOT_BANNED_NAMES = {"open", "exec", "eval", "compile", "__import__", "globals", "locals", "vars", "getattr",
-                      "setattr", "delattr", "input", "breakpoint", "help", "memoryview", "sys", "subprocess",
-                      "socket", "shutil", "pathlib", "importlib", "builtins", "ctypes", "pickle", "marshal"}
-
-
-def _plot_script_problem(code: str) -> str | None:
-    """Why a figure script mustn't run, or None when it only draws."""
-    import ast
-    import re
-
-    try:
-        tree = ast.parse(code)
-    except SyntaxError as err:
-        return f"it doesn't parse ({err.msg})"
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for a in node.names:
-                if a.name not in _PLOT_IMPORTS:
-                    return f"it imports {a.name}"
-        elif isinstance(node, ast.ImportFrom):
-            if (node.module or "") not in _PLOT_IMPORTS or node.level:
-                return f"it imports from {node.module}"
-        elif isinstance(node, ast.Name) and node.id in _PLOT_BANNED_NAMES:
-            return f"it uses {node.id}"
-        elif isinstance(node, ast.Attribute):
-            if node.attr.startswith("_"):
-                return f"it reaches into {node.attr}"
-            # From os, only making the img/ folder (and joining a path for it).
-            if isinstance(node.value, ast.Name) and node.value.id == "os" and node.attr not in ("makedirs", "path"):
-                return f"it uses os.{node.attr}"
-            if (isinstance(node.value, ast.Attribute) and node.value.attr == "path" and isinstance(node.value.value, ast.Name)
-                    and node.value.value.id == "os" and node.attr not in ("join", "exists")):
-                return f"it uses os.path.{node.attr}"
-            # numpy and matplotlib calls that read or write files other than the figure itself.
-            if node.attr in {"load", "loadtxt", "genfromtxt", "fromfile", "tofile", "save", "savez", "savetxt",
-                             "memmap", "imread", "system", "popen", "DataSource", "ctypeslib", "lib"}:
-                return f"it calls {node.attr}"
-        elif isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "makedirs":
-            for arg in node.args[:1]:
-                if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str) and re.fullmatch(r"[\w\-]+", arg.value)):
-                    return "it makes a folder other than a plain one next to it (like img)"
-        elif isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "savefig":
-            for arg in node.args[:1]:
-                if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)
-                        and re.fullmatch(r"(img/)?[\w\- .]+\.(png|svg|pdf)", arg.value) and ".." not in arg.value):
-                    return "it saves a figure somewhere other than a plain file name in its folder or img/"
-    return None
-
-
-@app.command("study-pdf-plot")
-def study_pdf_plot_cmd(
-    script: Annotated[Path, typer.Argument(help="A matplotlib script inside data/study_pdfs/.")],
+# Figures are drawn from a JSON description by the engine's own code (figure_spec.py). Claude writes them after reading
+# course material, which anyone who can post in a class can put instructions into, so nothing Claude writes is ever run
+# as a program.
+@app.command("study-pdf-figure")
+def study_pdf_figure_cmd(
+    spec: Annotated[Path, typer.Argument(help="A figure spec (.json) inside data/study_pdfs/<CODE>/<week>/.")],
 ) -> None:
-    """Run a figure-drawing script (matplotlib) that lives inside
-    data/study_pdfs/, with its own folder as the working directory, so
-    graphs/diagrams drawn for a PDF save next to its main.typ."""
-    import subprocess
-    import sys
+    """Draw the figures a JSON spec describes (function graphs, data plots, shapes, arrows and labels) into the spec's
+    own img/ folder, for #fig("img/<file>"). Prints {"saved": [...], "errors": [...]}; exit 1 if any figure failed.
+    The schema is in the weekly-study-pdf skill and academic_sync/figure_spec.py."""
+    from academic_sync import figure_spec
 
-    path = script.resolve()
-    if study_pdf_mod.WORK_ROOT.resolve() not in path.parents or path.suffix != ".py":
-        console.print("[red]Only .py scripts inside data/study_pdfs/ can run here.[/red]")
+    path = _work_path(spec, "A figure spec")
+    if path.suffix.lower() != ".json" or not path.is_file():
+        console.print("[red]Give the path of a .json figure spec inside data/study_pdfs/.[/red]")
         raise typer.Exit(code=1)
-    problem = _plot_script_problem(path.read_text(encoding="utf-8", errors="replace"))
-    if problem:
-        console.print(f"[red]Not run: {problem}. A figure script may only import math, numpy and matplotlib, draw, and "
-                      "save images into its own folder.[/red]")
+    try:
+        result = figure_spec.render_file(path, path.parent / "img")
+    except figure_spec.SpecError as exc:
+        print(json.dumps({"saved": [], "errors": [str(exc)]}, indent=1))
+        raise typer.Exit(code=1) from None
+    print(json.dumps(result, indent=1))
+    if result["errors"]:
         raise typer.Exit(code=1)
-    # A bare environment: no inherited secrets or paths, so the script only draws.
-    env = {k: v for k, v in os.environ.items() if k.upper() in ("SYSTEMROOT", "TEMP", "TMP", "PATH", "MPLBACKEND", "WINDIR")}
-    env["MPLBACKEND"] = "Agg"
-    (path.parent / "img").mkdir(exist_ok=True)
-    proc = subprocess.run([sys.executable, "-I", str(path)], cwd=path.parent,
-                          capture_output=True, text=True, timeout=300, env=env)
-    print(proc.stdout + proc.stderr)
-    if proc.returncode:
-        raise typer.Exit(code=proc.returncode)
+
+
+@app.command("study-pdf-plot", hidden=True)
+def study_pdf_plot_cmd(
+    script: Annotated[str, typer.Argument(help="No longer used.")] = "",
+) -> None:
+    """Retired: figure scripts are never run (a script written from class content could do anything). Use
+    study-pdf-figure with a JSON spec instead."""
+    console.print("[red]study-pdf-plot no longer runs scripts: Kea never runs code written during a scan. Describe the "
+                  "figure in a JSON spec and run `uv run academic-sync study-pdf-figure <work_dir>/figures.json` "
+                  "(see the weekly-study-pdf skill for the format).[/red]")
+    raise typer.Exit(code=1)
 
 
 @app.command("study-pdf-list")
@@ -4111,7 +4106,7 @@ def study_pdf_preview_cmd(
 
 @app.command("doc-text")
 def doc_text_cmd(
-    path: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    path: Annotated[Path, typer.Argument(help="A file inside data/.")],
 ) -> None:
     """Write a downloaded PDF's, Word file's or PowerPoint deck's text next to it as `<file>.txt`,
     one `--- page N ---` marker per PDF page, and print a JSON summary. Read
@@ -4119,6 +4114,10 @@ def doc_text_cmd(
     as a picture, which is many times larger. Pages with no text (a scanned
     handout) are rendered to `<file>.page-N.png`, the only pages worth
     viewing as images."""
+    path = _data_path(path, "The document")
+    if not path.is_file():
+        console.print("[red]No such file.[/red]")
+        raise typer.Exit(code=1)
     suffix = path.suffix.lower()
     out = path.with_name(path.name + ".txt")
     images: list[str] = []

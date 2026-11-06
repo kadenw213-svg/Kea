@@ -79,7 +79,7 @@ field.** If a command answers with an error, its message says what's wrong.
 - Daily: `digest-deadlines --course X`, `digest-ingest --file X`, `digest-render --course X`,
   `digest-record-sent --course X [--message-id] [--skipped]`; `shells-check --file X`.
 - Textbooks: `study-pdf-due`, `study-pdf-check --banner X`, `study-pdf-build --banner X`, `study-pdf-skip --banner X
-  --reason X`, `study-pdf-image search|get <query> [--banner]`, `study-pdf-plot <script>`, `study-pdf-preview
+  --reason X`, `study-pdf-image search|get <query> [--banner]`, `study-pdf-figure <work_dir>/figures.json` (figures from a JSON spec; no script is ever run), `study-pdf-preview
   --banner X`, `study-pdf-list`. Practice sets: `practice-check <path> [--count N]`.
 - Preferences: `prefs get|set|unset|list`.
 - History (every change to an item is recorded by the database itself, with this run and the reason):
