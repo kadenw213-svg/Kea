@@ -60,6 +60,28 @@ test('calendar file: one event per shift, times in UTC, text escaped', () => {
   assert.equal(ics.match(/BEGIN:VEVENT/g).length, 1);
 });
 
+test('calendar file: line breaks in any field (meeting link included) never start a new property or event', () => {
+  const evil = 'x\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Pay here\rATTACH:https://evil.example/a\nX';
+  const ics = hubOrg.toIcs([
+    { id: `shift:1${evil}`, title: `Lifeguard${evil}`, orgName: `Pool${evil}`, start: '2026-12-01T11:45:00.000Z', end: '2026-12-01T16:00:00.000Z', location: `Deck;${evil}`, meetingUrl: `https://meet.jit.si/room${evil}` },
+    { id: 'shift:2', title: 'Swim', orgName: 'Pool', start: '2026-12-02T11:45:00.000Z', end: '2026-12-02T16:00:00.000Z', meetingUrl: 'javascript:alert(1)' },
+    { id: 'shift:3', title: 'Swim', orgName: 'Pool', start: '2026-12-03T11:45:00.000Z', end: '2026-12-03T16:00:00.000Z', meetingUrl: 'https://meet.jit.si/a,b;c' }
+  ]);
+  // Unfold, then every line is a known property: no injected END/BEGIN/ATTACH.
+  const lines = ics.replace(/\r\n /g, '').split('\r\n').filter(Boolean);
+  assert.equal(lines.filter((l) => l === 'BEGIN:VEVENT').length, 3);
+  assert.equal(lines.filter((l) => l === 'END:VEVENT').length, 3);
+  for (const l of lines) assert.match(l, /^(BEGIN|END|VERSION|PRODID|CALSCALE|UID|DTSTAMP|DTSTART|DTEND|SUMMARY|LOCATION|URL):/, l);
+  assert.ok(!/[\r\n]/.test(ics.replace(/\r\n/g, '')), 'no bare CR or LF');
+  assert.ok(lines.some((l) => l.startsWith('SUMMARY:Lifeguardx\\nEND:VEVENT\\nBEGIN:VEVENT\\nSUMMARY:Pay here\\nATTACH:https://evil.example/a\\nX')));
+  // Only https meeting links, written as the parsed address (the line break and spaces percent-encoded or dropped).
+  const urls = lines.filter((l) => l.startsWith('URL:'));
+  assert.equal(urls.length, 2);
+  assert.ok(urls.every((u) => /^URL:https:\/\/meet\.jit\.si\/\S+$/.test(u)), urls.join(' | '));
+  // Long lines are folded at 75 octets.
+  assert.ok(ics.split('\r\n').every((l) => Buffer.byteLength(l) <= 75));
+});
+
 test('shifts are kept on this PC for when the Hub is unreachable', async () => {
   const ev = { id: 'shift:9', kind: 'shift', orgId: 'o', orgName: 'Pool', title: 'Lifeguard', start: '2026-12-02T12:00:00.000Z', end: '2026-12-02T16:00:00.000Z', date: '2026-12-02' };
   hubReq = async () => ({ events: [ev] });

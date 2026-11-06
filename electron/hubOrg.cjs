@@ -52,15 +52,51 @@ async function events(from, to) {
 
 // iCalendar text for "Add to my calendar" (Outlook, Google Calendar, Apple Calendar all open .ics files).
 const icsTime = (iso) => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-const icsText = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/([,;])/g, '\\$1');
+// RFC 5545 TEXT: backslash, comma and semicolon escaped, any line break (CRLF, CR or LF) as \n, other control
+// characters dropped, so nothing an org writes can start a new property or event.
+const icsText = (s) =>
+  String(s ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\r\n|\r|\n/g, '\\n')
+    .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
+    .replace(/([,;])/g, '\\$1');
+/** A meeting link for the URL property: https only, as the parsed address (no spaces or line breaks), else none. */
+function icsUrl(s) {
+  try {
+    const u = new URL(String(s || '').trim());
+    if (u.protocol !== 'https:' || /[\x00-\x20\x7f"\\]/.test(u.href)) return '';
+    return u.href;
+  } catch {
+    return '';
+  }
+}
+/** Lines longer than 75 octets folded (CRLF and a space), never inside a character. */
+function icsFold(line) {
+  const out = [];
+  let cur = '';
+  let bytes = 0;
+  for (const ch of line) {
+    const n = Buffer.byteLength(ch);
+    if (bytes + n > (out.length ? 74 : 75)) {
+      out.push(cur);
+      cur = '';
+      bytes = 0;
+    }
+    cur += ch;
+    bytes += n;
+  }
+  out.push(cur);
+  return out.join('\r\n ');
+}
 function toIcs(list) {
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kea//Work//EN', 'CALSCALE:GREGORIAN'];
   for (const e of list) {
-    lines.push('BEGIN:VEVENT', `UID:${e.id}@kea-work`, `DTSTAMP:${icsTime(new Date().toISOString())}`, `DTSTART:${icsTime(e.start)}`, `DTEND:${icsTime(e.end)}`,
-      `SUMMARY:${icsText(`${e.title} (${e.orgName})`)}`, ...(e.location ? [`LOCATION:${icsText(e.location)}`] : []), ...(e.meetingUrl ? [`URL:${e.meetingUrl}`] : []), 'END:VEVENT');
+    const url = icsUrl(e.meetingUrl);
+    lines.push('BEGIN:VEVENT', `UID:${icsText(e.id)}@kea-work`, `DTSTAMP:${icsTime(new Date().toISOString())}`, `DTSTART:${icsTime(e.start)}`, `DTEND:${icsTime(e.end)}`,
+      `SUMMARY:${icsText(`${e.title} (${e.orgName})`)}`, ...(e.location ? [`LOCATION:${icsText(e.location)}`] : []), ...(url ? [`URL:${url}`] : []), 'END:VEVENT');
   }
   lines.push('END:VCALENDAR');
-  return lines.join('\r\n') + '\r\n';
+  return lines.map(icsFold).join('\r\n') + '\r\n';
 }
 
 async function saveAs(defaultName, filters, data) {

@@ -21,9 +21,25 @@ const path = require('path');
 
 const ALLOWED = /[\p{L}\p{N} ._()+@,'&!-]/u;
 const encodeSeg = (s) => [...s].map((c) => (ALLOWED.test(c) ? c : `~${c.codePointAt(0).toString(16)}~`)).join('');
-const decodeSeg = (s) => s.replace(/~([0-9a-f]+)~/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
+/** A segment's name, or null when it holds a ~hex~ that isn't a code point (over 10FFFF): never throws. */
+const decodeSeg = (s) => {
+  let bad = false;
+  const out = String(s).replace(/~([0-9a-f]+)~/g, (_, h) => {
+    const n = h.length <= 6 ? parseInt(h, 16) : Infinity;
+    if (!(n <= 0x10ffff)) {
+      bad = true;
+      return '';
+    }
+    return String.fromCodePoint(n);
+  });
+  return bad ? null : out;
+};
 const toRemote = (rel) => `kea/${rel.split(/[\\/]/).map(encodeSeg).join('/')}`;
-const toLocal = (remote) => remote.slice(4).split('/').map(decodeSeg).join('/');
+/** A Hub path as a local relative path, or null when a segment's name is invalid. */
+const toLocal = (remote) => {
+  const segs = remote.slice(4).split('/').map(decodeSeg);
+  return segs.includes(null) ? null : segs.join('/');
+};
 // Windows' reserved device names, with or without an extension ("NUL", "con.txt").
 const RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$)(\..*)?$/i;
 /**
