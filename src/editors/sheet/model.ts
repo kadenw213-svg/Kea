@@ -1,3 +1,4 @@
+import type { CsvLayout } from './csv';
 import { evaluateRaw, FormulaError, Scalar, formatGeneral, formatWithPattern, serialToDate, dateToSerial, addr } from './formula';
 
 export type NumFmt = 'general' | 'number' | 'currency' | 'percent' | 'date' | 'datetime' | 'text';
@@ -100,6 +101,10 @@ export interface Cell {
   v?: number | string | boolean | null;
   f?: string; // formula without the leading '='
   s?: CellStyle;
+  /** The field exactly as it was in the CSV file this cell came from (written back while the value is unchanged). */
+  orig?: string;
+  /** That field was in quotes. */
+  origQ?: boolean;
 }
 
 export interface Sheet {
@@ -118,6 +123,8 @@ export interface Sheet {
   hiddenRows?: Record<number, true>;
   hiddenCols?: Record<number, true>;
   gridlines?: boolean;
+  /** How the CSV/TSV file this sheet came from was written (separator, line endings…), so saving keeps it. */
+  csv?: CsvLayout;
 }
 
 export interface Workbook {
