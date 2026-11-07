@@ -35,4 +35,27 @@ function within(root, ...parts) {
   return p;
 }
 
-module.exports = { validCode, safeCode, isInside, within, CODE_RE };
+const NAME_MAX = 120;
+/**
+ * A file name from somewhere else (a classmate's shared folder, a Hub) made safe to write: one plain name, never a path.
+ * Separators, characters Windows refuses and control characters become spaces; a trailing dot or space goes (Windows
+ * drops it, so it could name another file); a Windows device name ("CON", "nul.txt") gets a "_" in front; a long name
+ * is cut to NAME_MAX characters, keeping its extension. Null when nothing usable is left ("..", "", "...").
+ */
+function safeFileName(name) {
+  let n = String(name ?? '')
+    .normalize('NFC')
+    .replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '');
+  if (!n || n.replace(/[ .]/g, '') === '') return null;
+  if (RESERVED_RE.test(n)) n = `_${n}`;
+  if (n.length > NAME_MAX) {
+    const ext = (/\.[A-Za-z0-9]{1,8}$/.exec(n) || [''])[0];
+    n = `${n.slice(0, NAME_MAX - ext.length).replace(/[. ]+$/, '')}${ext}`;
+  }
+  return n;
+}
+
+module.exports = { validCode, safeCode, safeFileName, isInside, within, CODE_RE };

@@ -50,7 +50,14 @@ export interface DriveProgress {
   error?: string;
 }
 export type FilePreview =
-  | { type: 'image'; src: string; w: number; h: number }
+  | {
+      type: 'image';
+      src: string;
+      w: number;
+      h: number;
+      /** A PDF page's dark version (darkPage.ts: inverted, but a black box saved into the page stays black). */
+      dark?: string;
+    }
   | { type: 'doc'; html: string }
   | { type: 'text'; text: string }
   | { type: 'grid'; rows: string[][] }
@@ -1274,6 +1281,10 @@ export interface ScholarCourseDetail {
   chapters: ScholarChapter[];
   weeks: ScholarItem[];
   portal: { kind: string; label: string; url: string }[];
+  /** How many syllabus outcomes the scan saved for it (not counting ones marked not tested). */
+  outcomes?: number;
+  /** How many tests and quizzes it has. */
+  tests?: number;
 }
 
 export interface WikiCandidate {

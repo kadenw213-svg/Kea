@@ -6,6 +6,7 @@ const { app, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const REGISTRY = {
   // Background removal / subject matting. Both licence-clean for a freely distributed app (RMBG is NOT — CC BY-NC).
@@ -220,16 +221,16 @@ function engineModel(type, id) {
 function register(opts) {
   log = (opts && opts.log) || log;
   getWindow = (opts && opts.getWindow) || getWindow;
-  ipcMain.handle('models:state', (_e, type) => Object.keys(catalog(type)).map((id) => modelState(type, id)));
-  ipcMain.handle('models:download', (_e, type, id) => {
+  handleApp(ipcMain, 'models:state', (_e, type) => Object.keys(catalog(type)).map((id) => modelState(type, id)));
+  handleApp(ipcMain, 'models:download', (_e, type, id) => {
     download(type, id);
     return true;
   });
-  ipcMain.handle('models:pause', (_e, type, id) => {
+  handleApp(ipcMain, 'models:pause', (_e, type, id) => {
     downloads[`${type}:${id}`]?.controller?.abort();
     return true;
   });
-  ipcMain.handle('models:delete', (_e, type, id) => {
+  handleApp(ipcMain, 'models:delete', (_e, type, id) => {
     if (!entry(type, id)) return false;
     downloads[`${type}:${id}`]?.controller?.abort();
     delete downloads[`${type}:${id}`];

@@ -11,6 +11,7 @@ import Module, { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerAndSignIn } from '../hubRegister.mjs';
 import { ofetch } from '../ownerFetch.mjs';
+const APP = { senderFrame: { url: 'app://kea/index.html', parent: null } }; // a call from Kea's own page
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -120,7 +121,7 @@ test('with a real Kea Hub: the owner’s changes arrive once, read state round-t
 
   await owner('POST', '/owner/accounts/sam@example.com/quota', { gb: 5000, note: 'For your video project.' });
   await owner('POST', '/owner/accounts/sam@example.com/supporter', { months: 1 });
-  const first = await handlers['hub:notifications']();
+  const first = await handlers['hub:notifications'](APP);
   assert.equal(first.ok, true, first.error);
   assert.equal(first.value.unread, 2);
   assert.deepEqual(toasts.map((x) => x.title), ['Your Kea storage is now 5,000 GB', 'Thank you for supporting Kea!']);
@@ -139,17 +140,17 @@ test('with a real Kea Hub: the owner’s changes arrive once, read state round-t
   // Turned off in Settings: still listed, no Windows notification.
   settingsValues['hub.notifyDesktop'] = false;
   await owner('POST', '/owner/accounts/sam@example.com/notify', { title: 'Quiet one' });
-  const quiet = await handlers['hub:notifications']();
+  const quiet = await handlers['hub:notifications'](APP);
   assert.equal(toasts.length, 3);
   assert.equal(quiet.value.notifications[0].title, 'Quiet one');
   delete settingsValues['hub.notifyDesktop'];
 
   // Mark one read, then all; clear the read ones.
-  const one = await handlers['hub:notificationsRead']({}, { ids: [quiet.value.notifications[0].id] });
+  const one = await handlers['hub:notificationsRead'](APP, { ids: [quiet.value.notifications[0].id] });
   assert.equal(one.value.unread, quiet.value.unread - 1);
-  const all = await handlers['hub:notificationsRead']({}, { all: true });
+  const all = await handlers['hub:notificationsRead'](APP, { all: true });
   assert.equal(all.value.unread, 0);
-  const cleared = await handlers['hub:notificationsDelete']({}, { all: true });
+  const cleared = await handlers['hub:notificationsDelete'](APP, { all: true });
   assert.equal(cleared.value.notifications.length, 0);
 
   // What the account panel reads: the supporter badge, 5,000 GB, and the phone number in the shape Kea sends it.
@@ -164,5 +165,5 @@ test('with a real Kea Hub: the owner’s changes arrive once, read state round-t
   // Another account signed in on this computer starts its own record (nothing carried over).
   account = { id: 'someone-else' };
   token = null;
-  assert.equal((await handlers['hub:notifications']()).value.notifications.length, 0);
+  assert.equal((await handlers['hub:notifications'](APP)).value.notifications.length, 0);
 });

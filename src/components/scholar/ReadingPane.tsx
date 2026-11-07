@@ -6,7 +6,7 @@ import { BookOpen, Moon, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { loadPdf, PDFDocumentProxy } from '../../editors/pdf/pdfjs';
 import { findChapter, OutlineEntry, readOutline } from '../../lib/pdfTarget';
-import { setPagesDark, usePagesDark, useSetting, useSettings } from '../../lib/settings';
+import { usePagesDark, useSetting, useSettings } from '../../lib/settings';
 import { MathText } from './MathText';
 
 export interface ReadingTarget {
@@ -243,14 +243,24 @@ function Page({ pdf, n, width, ratio, root }: { pdf: PDFDocumentProxy; n: number
   return <canvas ref={ref} data-page={n} className="rp-page" style={{ width, height: width * ratio }} />;
 }
 
+// The reading's own page colour (view only, for this session): as the theme, white or dark. Kea's theme and the PDF
+// page-colour setting aren't touched. Kept while Kea runs, so the next question's reading opens the same way.
+type PageColour = 'theme' | 'light' | 'dark';
+let sessionColour: PageColour = 'theme';
+const NEXT_COLOUR: Record<PageColour, PageColour> = { theme: 'light', light: 'dark', dark: 'theme' };
+const COLOUR_NAME: Record<PageColour, string> = { theme: 'as the theme', light: 'white', dark: 'dark' };
+
 /** The side panel: the chapter's textbook, scrolled to where the question is answered. */
 export function ReadingPane({ file, target, onClose, bare }: { file: string; target: ReadingTarget; onClose(): void; /** Inside the study side pane (its tabs close it). */ bare?: boolean }) {
   const [doc, setDoc] = useState<(Book & { ratio: number }) | null>(null);
   const [error, setError] = useState('');
   const [width, setWidth] = useState(0);
   const [mark, setMark] = useState<{ top: number; at: number } | null>(null);
-  // Dark pages, the same choice as Kea's PDF viewer (toggling here changes it there too).
-  const dark = usePagesDark();
+  // Dark pages as the theme and the PDF setting say, unless this reading's own view is set to white or dark.
+  const themeDark = usePagesDark();
+  const [colour, setColourState] = useState<PageColour>(sessionColour);
+  const setColour = (c: PageColour) => setColourState((sessionColour = c));
+  const dark = colour === 'theme' ? themeDark : colour === 'dark';
   const scroller = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let live = true;
@@ -303,7 +313,12 @@ export function ReadingPane({ file, target, onClose, bare }: { file: string; tar
           {target.chapter}
           {target.section || target.topic ? <span className="muted"> · {target.section || target.topic}</span> : null}
         </span>
-        <button className={`icon-btn sm ${dark ? 'active' : ''}`} title={dark ? 'Light pages' : 'Dark pages'} onClick={() => setPagesDark(!dark)}>
+        <button
+          className={`icon-btn sm ${dark ? 'active' : ''}`}
+          title={`Pages: ${COLOUR_NAME[colour]} (view only). Click for ${COLOUR_NAME[NEXT_COLOUR[colour]]}`}
+          aria-label="Page colour"
+          onClick={() => setColour(NEXT_COLOUR[colour])}
+        >
           <Moon size={15} />
         </button>
         {!bare && (

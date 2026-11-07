@@ -1,7 +1,7 @@
 // Home screen backend: folder listing, file search, previews cache, descriptions and cloud drives.
 const { app, ipcMain, shell, net, dialog } = require('electron');
 // (Only Kea's own page may list, search or open files: ipcGuard.cjs.)
-const { appOnly } = require('./ipcGuard.cjs');
+const { appOnly, handleApp } = require('./ipcGuard.cjs');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -377,7 +377,7 @@ function register({ log, getWindow }) {
 
   ipcMain.handle('fs:list', appOnly((_e, dir, opts) => listDir(dir, opts)));
   ipcMain.handle('fs:search', appOnly((_e, dir, q, opts) => searchDir(dir, q, opts || {})));
-  ipcMain.handle('fs:stat-many', (_e, paths) =>
+  handleApp(ipcMain, 'fs:stat-many', (_e, paths) =>
     (paths || []).map((p) => {
       try {
         const st = fs.statSync(p);
@@ -387,26 +387,26 @@ function register({ log, getWindow }) {
       }
     })
   );
-  ipcMain.handle('fs:known-folders', () => knownFolders());
-  ipcMain.handle('dialog:open-folder', async () => {
+  handleApp(ipcMain, 'fs:known-folders', () => knownFolders());
+  handleApp(ipcMain, 'dialog:open-folder', async () => {
     const r = await dialog.showOpenDialog(getWindow(), { title: 'Add a folder to Home', properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0] || null;
   });
-  ipcMain.handle('fs:is-dir', (_e, p) => isDir(p));
+  handleApp(ipcMain, 'fs:is-dir', (_e, p) => isDir(p));
   ipcMain.handle('shell:open-path', appOnly((_e, p) => shell.openPath(p)));
 
-  ipcMain.handle('preview:get', (_e, p) => getPreview(p));
-  ipcMain.handle('preview:clear', () => {
+  handleApp(ipcMain, 'preview:get', (_e, p) => getPreview(p));
+  handleApp(ipcMain, 'preview:clear', () => {
     fs.rmSync(previewDir(), { recursive: true, force: true });
     return true;
   });
-  ipcMain.handle('meta:clear', () => {
+  handleApp(ipcMain, 'meta:clear', () => {
     writeJson(userFile('file-meta.json'), {});
     return {};
   });
-  ipcMain.handle('app:open-data-folder', () => shell.openPath(app.getPath('userData')));
+  handleApp(ipcMain, 'app:open-data-folder', () => shell.openPath(app.getPath('userData')));
   // For bug reports: basic facts about this PC and the end of the local troubleshooting log.
-  ipcMain.handle('app:sysinfo', () => {
+  handleApp(ipcMain, 'app:sysinfo', () => {
     const os = require('os');
     let logTail = '';
     try {
@@ -421,10 +421,10 @@ function register({ log, getWindow }) {
       logTail
     };
   });
-  ipcMain.handle('preview:set', (_e, p, preview) => setPreview(p, preview));
+  handleApp(ipcMain, 'preview:set', (_e, p, preview) => setPreview(p, preview));
 
-  ipcMain.handle('meta:all', () => readJson(userFile('file-meta.json'), {}));
-  ipcMain.handle('meta:set', (_e, p, patch) => {
+  handleApp(ipcMain, 'meta:all', () => readJson(userFile('file-meta.json'), {}));
+  handleApp(ipcMain, 'meta:set', (_e, p, patch) => {
     const all = readJson(userFile('file-meta.json'), {});
     const key = p.toLowerCase();
     const next = { ...(all[key] || {}), ...patch };
@@ -435,15 +435,15 @@ function register({ log, getWindow }) {
     return all;
   });
 
-  ipcMain.handle('home:settings', () => readJson(userFile('home.json'), {}));
-  ipcMain.handle('home:set-settings', (_e, patch) => {
+  handleApp(ipcMain, 'home:settings', () => readJson(userFile('home.json'), {}));
+  handleApp(ipcMain, 'home:set-settings', (_e, patch) => {
     const next = { ...readJson(userFile('home.json'), {}), ...patch };
     writeJson(userFile('home.json'), next);
     return next;
   });
 
-  ipcMain.handle('drives:detect', () => detectDrives());
-  ipcMain.handle('drives:connect', async (_e, id) => {
+  handleApp(ipcMain, 'drives:detect', () => detectDrives());
+  handleApp(ipcMain, 'drives:connect', async (_e, id) => {
     try {
       return await connect(id, send);
     } catch (err) {

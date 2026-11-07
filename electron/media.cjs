@@ -8,7 +8,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { Readable } = require('stream');
 // (Only Kea's own page may open a file for writing: ipcGuard.cjs.)
-const { appOnly } = require('./ipcGuard.cjs');
+const { appOnly, handleApp } = require('./ipcGuard.cjs');
 
 const MIME = {
   mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska', avi: 'video/x-msvideo',
@@ -63,13 +63,13 @@ function register() {
     writers.set(id, { fd: await fs.promises.open(p, 'w'), path: p });
     return id;
   }));
-  ipcMain.handle('video:write-at', async (_e, id, position, data) => {
+  handleApp(ipcMain, 'video:write-at', async (_e, id, position, data) => {
     const w = writers.get(id);
     if (!w) throw new Error('That export file is closed.');
     const buf = Buffer.from(data);
     await w.fd.write(buf, 0, buf.length, position);
   });
-  ipcMain.handle('video:close-write', async (_e, id, abort) => {
+  handleApp(ipcMain, 'video:close-write', async (_e, id, abort) => {
     const w = writers.get(id);
     if (!w) return;
     writers.delete(id);
@@ -81,14 +81,14 @@ function register() {
   // rebuilt only when the file changes. Lives in userData so it's never synced with the project.
   const indexDir = () => path.join(require('electron').app.getPath('userData'), 'cache', 'video-index');
   const indexPath = (key) => path.join(indexDir(), crypto.createHash('sha1').update(String(key)).digest('hex') + '.json');
-  ipcMain.handle('video:index-get', async (_e, key) => {
+  handleApp(ipcMain, 'video:index-get', async (_e, key) => {
     try {
       return await fs.promises.readFile(indexPath(key), 'utf8');
     } catch {
       return null;
     }
   });
-  ipcMain.handle('video:index-set', async (_e, key, json) => {
+  handleApp(ipcMain, 'video:index-set', async (_e, key, json) => {
     await fs.promises.mkdir(indexDir(), { recursive: true });
     await fs.promises.writeFile(indexPath(key), String(json));
     return true;

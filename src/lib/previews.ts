@@ -2,6 +2,7 @@ import { api, FilePreview } from './api';
 import { extOf, kindFor } from './fileTypes';
 import { bytesToText, loadImage } from './util';
 import { setting } from './settings';
+import { darkPageCanvas } from './darkPage';
 
 /**
  * Home screen previews. Each file gets a small description of its first page (an image for PDFs and
@@ -46,7 +47,8 @@ export function getPreview(path: string, mtime?: number): Promise<FilePreview> {
   if (!p) {
     p = (async () => {
       const stored = await api.getPreview(path).catch(() => null);
-      if (stored) return stored;
+      // (A PDF's preview from before dark versions were kept is made again, once.)
+      if (stored && !(stored.type === 'image' && extOf(path) === 'pdf' && !stored.dark)) return stored;
       const made = await schedule(() => makePreview(path)).catch((e) => {
         console.warn('preview failed', path, e);
         return { type: 'none' } as FilePreview;
@@ -107,7 +109,9 @@ async function pdfPreview(data: Uint8Array): Promise<FilePreview> {
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: ctx, viewport: vp }).promise;
-    return canvasToPreview(canvas);
+    // The dark version, as Home shows it with a dark theme (the filter the previews always used).
+    const dark = darkPageCanvas(canvas, 'invert(0.86) hue-rotate(180deg) contrast(0.92)');
+    return { type: 'image', src: canvas.toDataURL('image/webp', 0.82), w: canvas.width, h: canvas.height, dark: dark.toDataURL('image/webp', 0.82) };
   } finally {
     doc.destroy();
   }

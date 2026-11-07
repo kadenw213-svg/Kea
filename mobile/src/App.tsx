@@ -994,11 +994,13 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
           <b>Study</b>
           <span>Practice questions</span>
         </button>
-        <button onClick={() => setReadings(true)}>
-          <BookOpen size={20} />
-          <b>Readings</b>
-          <span>{c.chapters.filter((ch) => ch.pdf).length} chapters</span>
-        </button>
+        {c.chapters.some((ch) => ch.pdf) && (
+          <button onClick={() => setReadings(true)}>
+            <BookOpen size={20} />
+            <b>Readings</b>
+            <span>{c.chapters.filter((ch) => ch.pdf).length} chapters</span>
+          </button>
+        )}
       </div>
       {grading ? (
         <>

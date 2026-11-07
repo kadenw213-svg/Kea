@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const settings = require('./settings.cjs');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const SCOPES = ['https://www.googleapis.com/auth/drive'];
 const API = 'https://www.googleapis.com/drive/v3';
@@ -249,7 +250,7 @@ function register({ log }) {
       throw new Error(`${err.code ? `[${err.code}] ` : ''}${err.message || err}`);
     }
   };
-  ipcMain.handle('google:status', () => {
+  handleApp(ipcMain, 'google:status', () => {
     const s = loadSession();
     let configured = true;
     try {
@@ -259,16 +260,16 @@ function register({ log }) {
     }
     return { configured, signedIn: !!s?.refresh_token, email: s?.email || null, name: s?.name || null };
   });
-  ipcMain.handle('google:sign-in', wrap(() => signIn()));
-  ipcMain.handle('google:sign-out', async () => {
+  handleApp(ipcMain, 'google:sign-in', wrap(() => signIn()));
+  handleApp(ipcMain, 'google:sign-out', async () => {
     const s = loadSession();
     if (s?.refresh_token) net.fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(s.refresh_token)}`, { method: 'POST' }).catch(() => {});
     saveSession(null);
     return true;
   });
-  ipcMain.handle('google:open', wrap((_e, p) => openFile(p)));
-  ipcMain.handle('google:save', wrap((_e, id, ext, data) => saveFile(id, ext, data)));
-  ipcMain.handle('google:open-in-browser', (_e, p) => shell.openPath(p));
+  handleApp(ipcMain, 'google:open', wrap((_e, p) => openFile(p)));
+  handleApp(ipcMain, 'google:save', wrap((_e, id, ext, data) => saveFile(id, ext, data)));
+  handleApp(ipcMain, 'google:open-in-browser', (_e, p) => shell.openPath(p));
 }
 
 /** The Google account signed in to Kea, if any (its email). */

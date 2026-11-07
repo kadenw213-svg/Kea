@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const settings = require('./settings.cjs');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const DAY = 86400_000;
 // Invite codes use these letters only (no 0/O/1/I/L), 10 of them; the Hub's /join/<code> page is the invite link.
@@ -312,7 +313,7 @@ const wrap = (fn) => async (_e, arg) => {
 
 function register() {
   const hub = require('./hub.cjs');
-  const R = (name, fn) => ipcMain.handle(`hubc:${name}`, wrap(fn));
+  const R = (name, fn) => handleApp(ipcMain, `hubc:${name}`, wrap(fn));
   /** After a change the calendar shows: read the calendar again now. */
   const changed = (v) => (syncSoon(300), broadcast('hubc:changed'), v);
 

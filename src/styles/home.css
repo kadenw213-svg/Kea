@@ -692,9 +692,17 @@ button.fcard-desc.add:hover {
   border-radius: 4px 4px 0 0;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
 }
-/* Dark previews: PDF pages get a soft dark "paper" (inverted, hue preserved). */
-.tone-dark .pv-img.page {
+/* Dark previews: PDF pages get a soft dark "paper" (inverted, hue preserved). A page with its own dark version
+   (previews.ts: a black box saved in it stays black) shows that one instead. */
+.tone-dark .pv-img.page:not(.pv-light):not(.pv-dark) {
   filter: invert(0.86) hue-rotate(180deg) contrast(0.92);
+}
+.pv-img.pv-dark,
+.tone-dark .pv-img.pv-light {
+  display: none;
+}
+.tone-dark .pv-img.pv-dark {
+  display: block;
 }
 .pv-scale {
   position: absolute;

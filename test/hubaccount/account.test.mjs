@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Module, { createRequire } from 'node:module';
+const APP = { senderFrame: { url: 'app://kea/index.html', parent: null } }; // a call from Kea's own page
 
 const require = createRequire(import.meta.url);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kea-account-'));
@@ -78,7 +79,7 @@ test('a picture is changed only for its own account, and deleting the account re
   fs.writeFileSync(path.join(dir, 'account-avatar-2.png'), 'x');
   write({ accountId: 'a1', avatar: 'account-avatar-2.png' });
   hubCache = { id: 'b2', email: 'ben@x.org', name: 'Ben' };
-  await assert.rejects(async () => handlers['account:crop']({}, { x: 0.5, y: 0.5, zoom: 1, w: 1, h: 1 }), /Choose a picture first/);
+  await assert.rejects(async () => handlers['account:crop'](APP, { x: 0.5, y: 0.5, zoom: 1, w: 1, h: 1 }), /Choose a picture first/);
   account.forget('b2');
   assert.ok(fs.existsSync(file));
   account.forget('a1');

@@ -276,16 +276,17 @@ function setKnown(id, known) {
 
 // ---------- The catalog: every saved question or card for a class's chapters ----------
 /** Saved questions (or cards) for these chapters of a class, one per key, from every finished set. */
-function catalog(kind, courseId, chapters) {
+function catalog(kind, courseId, chapters, whole = false) {
   const want = new Set(chapters);
   const seen = new Map();
   for (const e of index()) {
     if (e.kind !== kind || e.courseId !== courseId || e.status !== 'ready') continue;
     const s = readJson(file('sets', `${e.id}.json`), {});
-    // An item with no chapter counts when its whole set is on these chapters.
+    // An item with no chapter counts when its whole set is on these chapters. `whole`: a class with no chapters, where
+    // every saved item of the class counts.
     const setInside = (e.chapters || []).length > 0 && e.chapters.every((c) => want.has(c));
     for (const it of keyed(kind === 'cards' ? s.cards : s.questions))
-      if (!seen.has(it.k) && (it.chapter ? want.has(it.chapter) : setInside)) seen.set(it.k, it);
+      if (!seen.has(it.k) && (whole || (it.chapter ? want.has(it.chapter) : setInside))) seen.set(it.k, it);
   }
   return [...seen.values()];
 }
@@ -340,7 +341,7 @@ async function saved({ kind, courseId, chapters = [], itemId = null }) {
   const p = profiles.paths();
   const src = await db.practiceSources(p.db, p.textbooks, { courseId, chapters, itemId });
   if (!src) return { count: 0 };
-  return { count: catalog(kind, src.course.id, src.chapters.map((c) => c.label)).length };
+  return { count: catalog(kind, src.course.id, src.chapters.map((c) => c.label), !!src.whole).length };
 }
 
 /** A class's downloaded files: text copies of handouts, review sheets, FunSheets, study guides (workspace-relative). */
@@ -380,17 +381,20 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
   const p = profiles.paths();
   const src = await db.practiceSources(p.db, p.textbooks, { courseId, chapters, itemId });
   if (!src) throw new Error('Kea couldn’t find that class.');
-  if (!src.chapters.length && !src.item) throw new Error('Pick at least one chapter.');
+  // (A class with no chapters is studied as a whole, from its objectives, tests and work, when it has any of them.)
+  const whole = !!src.whole && !src.chapters.length;
+  if (whole && !(src.course_outcomes || []).length && !(src.tests || []).length && !(src.work || []).length) throw new Error('Kea has nothing to write questions from for this class yet: no chapters, objectives or tests.');
+  if (!src.chapters.length && !src.item && !whole) throw new Error('Pick at least one chapter.');
   // (Asked for on another computer: it named the set, so both list the same one.)
   const id = validId(given) ? given : `${kind}-${Date.now().toString(36)}`;
   const labels = src.chapters.map((c) => c.label);
-  const all = catalog(kind, src.course.id, labels);
+  const all = catalog(kind, src.course.id, labels, whole);
   const n = mode === 'saved' ? Math.max(1, Math.min(Number(count) || all.length, all.length)) : clamp(kind, count);
   const byKey = new Map(all.map((it) => [it.k, it]));
   const reuse = Array.isArray(picked) && picked.every((k) => byKey.has(k)) ? picked.map((k) => byKey.get(k)) : mode === 'new' ? [] : pick(all, mode === 'saved' ? n : Math.floor(n * REUSE));
   if (mode === 'saved' && !reuse.length) throw new Error('There are no saved questions on these chapters yet.');
   const fresh = mode === 'saved' ? 0 : n - reuse.length;
-  const topic = src.item ? src.item.title : src.chapters.map((c) => (c.title ? `${c.label}: ${c.title}` : c.label)).join(', ');
+  const topic = src.item ? src.item.title : whole ? `${src.course.code}, whole class` : src.chapters.map((c) => (c.title ? `${c.label}: ${c.title}` : c.label)).join(', ');
   const title = `${bank ? 'Question bank' : kind === 'exam' ? 'Practice exam' : 'Flashcards'}: ${topic}`;
   const entry = { id, kind, title: pictures ? title.replace(/^Question bank/, 'Picture questions') : title, ...(bank ? { bank: true } : {}), ...(upgrade ? { upgrade: true } : {}), ...(pictures ? { pictures: true } : {}), ...(fromHint ? { fromHint: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
   const list = index().filter((e) => e.id !== id);
@@ -411,6 +415,9 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
     item: src.item,
     chapters: src.chapters,
     tests: src.tests || [],
+    // The syllabus outcomes for the whole class (every one, for a class with no chapters).
+    course_outcomes: src.course_outcomes || [],
+    ...(whole ? { whole: true, work: src.work || [] } : {}),
     class_files: files,
     // What already exists on these chapters: Claude writes different questions (they're shown in the brief).
     existing: all.map((it) => ({ k: it.k, chapter: it.chapter || null, topic: it.topic || null, text: String(it.q ?? it.front).slice(0, 140) })),
@@ -487,6 +494,7 @@ function bankNeed(chapters, size = 50) {
 //   3. Per-chapter notes, kept as plain text in `data/study/notes/<CODE>/<Chapter N>.md` and rebuilt only when
 //      what they're made from changes: objectives, vocabulary, sections, and that chapter's review material.
 const BRIEF_BUDGET = 40000; // characters of review-material text in a brief (about 10k tokens; it stays one Read)
+const OUTCOME_BUDGET = 12000; // characters of whole-class syllabus outcomes in a brief
 const REVIEWISH = /review|fun ?sheet|guided reading|study guide|practice|objective|worksheet|exam|quiz|key/i;
 const SKIP = /syllabus|calendar|schedule|announcement|consolidated_events|content_modules|dropbox|discussion|lab_handout/i;
 // Review links worth fetching for a test (not reference sheets like the periodic table, which every exam allows).
@@ -512,6 +520,18 @@ function squeeze(text) {
 }
 const htmlText = (s) => String(s).replace(/<(script|style)[\s\S]*?<\/\1>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
 const chapterNum = (s) => (/(?:ch(?:apter)?\.?\s*)(\d+)/i.exec(s) || [])[1];
+// The syllabus's outcomes (course_outcomes), named as the syllabus does.
+const OUTCOME_KIND = { course: 'Course outcome', module: 'Module outcome', outline: 'Topical outline', recommended: 'Recommended topic' };
+const outcomeLine = (o) => `${OUTCOME_KIND[o.kind] || o.kind}${o.ref ? ` ${o.ref}` : ''}: ${o.text}`;
+// What goes into a chapter's notes file changes when this does (bump it when the notes' layout changes).
+const NOTES_VERSION = 2;
+/** A chapter's notes' fingerprint: everything they're written from (the review files by name and time). */
+const notesPrint = (c, files, tests) =>
+  crypto
+    .createHash('sha1')
+    .update(JSON.stringify([NOTES_VERSION, c.label, c.title, c.summary, c.sections, c.objectives, c.outcomes || [], c.vocabulary, c.depth_gaps, files.map((f) => [path.basename(f), mtime(f)]), tests.map((t) => [t.title, t.date, t.study_focus])]))
+    .digest('hex')
+    .slice(0, 16);
 const safeName = (s) => s.replace(/[<>:"/\\|?*]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
 const mtime = (f) => {
   try {
@@ -545,7 +565,7 @@ async function fetchSheets(req, nums, docText, step) {
       // Only files (a D2L content file, a Canvas file, a PDF or Word document), never a launch link into a platform like ALEKS.
       if (!/\/viewContent\/\d+|\/topics\/files\/download\/|\/courses\/\d+\/files\/\d+|\.(pdf|docx?)(\?|$)/i.test(l.url)) continue;
       const n = chapterNum(l.label);
-      if (n && !nums.has(n)) continue;
+      if (n && !nums.has(n) && !req.whole) continue;
       seen.set(safeName(l.label), l.url);
     }
   const have = (name) => ['pdf', 'docx', 'html'].map((x) => path.join(dir, `${name}.${x}`)).find((f) => fs.existsSync(f));
@@ -630,7 +650,8 @@ async function chapterNotes(req, docText, step = () => {}) {
   const wanted = (req.class_files || []).filter((f) => {
     if (SKIP.test(f.path) || !REVIEWISH.test(f.path) || /\/review\//.test(f.path)) return false;
     const n = chapterNum(path.basename(f.path));
-    return !n || nums.has(n);
+    // (A class with no chapters: all of its review material.)
+    return !n || nums.has(n) || !!req.whole;
   });
   let i = 0;
   for (const f of wanted) {
@@ -649,29 +670,36 @@ async function chapterNotes(req, docText, step = () => {}) {
   // Review sheets and answer keys first: when a chapter's review text is trimmed to fit, the end goes, and the sheets
   // are what the exams are built from.
   const sources = [...sheets, ...classTexts];
-  const general = sources.filter((f) => !chapterNum(path.basename(f)));
+  // (A class with no chapters has no notes: all of its material is class-wide.)
+  const general = req.whole ? sources : sources.filter((f) => !chapterNum(path.basename(f)));
   const notesDir = within(path.join(ws, 'data', 'study', 'notes'), safeCode(req.course.code));
   fs.mkdirSync(notesDir, { recursive: true });
   const dbTime = mtime(profiles.paths().db);
   const notes = req.chapters.map((c) => {
     const file = path.join(notesDir, `${safeName(c.label)}.md`);
     const mine = sources.filter((f) => chapterNum(path.basename(f)) === chapterNum(c.label));
-    if (mtime(file) < Math.max(dbTime, ...mine.map(mtime))) {
-      const lines = [`# ${c.label}${c.title ? `: ${c.title}` : ''}`, ''];
+    const tests = (req.tests || []).filter((t) => (t.chapters || []).includes(c.label) && t.study_focus?.length);
+    // What the notes are written from, as a hash on their first line: notes written before a change in what goes into
+    // them (the syllabus outcomes, say) or from other data are rebuilt even when no file is newer.
+    const mark = `<!-- kea-notes ${notesPrint(c, mine, tests)} -->`;
+    let text = mtime(file) >= Math.max(dbTime, ...mine.map(mtime)) ? fs.readFileSync(file, 'utf8') : '';
+    if (!text.startsWith(mark)) {
+      const lines = [mark, `# ${c.label}${c.title ? `: ${c.title}` : ''}`, ''];
       if (c.summary) lines.push(c.summary, '');
       if (c.sections?.length) lines.push(`Sections: ${c.sections.map((s) => (typeof s === 'string' ? s : s.title || s.label || JSON.stringify(s))).join('; ')}`, '');
       if (c.objectives?.length) lines.push('## Objectives', ...c.objectives.map((o) => `- ${typeof o === 'string' ? o : o.text || JSON.stringify(o)}`), '');
+      if (c.outcomes?.length) lines.push('## Syllabus outcomes', ...c.outcomes.map((o) => `- ${outcomeLine(o)}`), '');
       if (c.vocabulary) lines.push('## Vocabulary', c.vocabulary, '');
       if (c.depth_gaps) lines.push('## Kea’s depth review found these missing or too shallow (cover them first)', c.depth_gaps, '');
       for (const f of mine) lines.push(`## Review material: ${path.basename(f).replace(/\.txt$/, '')}`, readText(f), '');
-      const tests = (req.tests || []).filter((t) => (t.chapters || []).includes(c.label) && t.study_focus?.length);
       if (tests.length) {
         lines.push('## Tests on this chapter');
         for (const t of tests) lines.push(`### ${t.title}${t.date ? ` (${t.date})` : ''}`, ...t.study_focus.map((f) => `- ${f}`), '');
       }
-      fs.writeFileSync(file, lines.join('\n'));
+      text = lines.join('\n');
+      fs.writeFileSync(file, text);
     }
-    const text = fs.readFileSync(file, 'utf8');
+    text = text.slice(text.indexOf('\n') + 1);
     const at = text.indexOf('\n## Review material: ');
     const end = text.indexOf('\n## Tests on this chapter');
     const head = text.slice(0, [at, end].filter((x) => x >= 0).sort((a, b) => a - b)[0] ?? text.length);
@@ -739,6 +767,12 @@ async function prepare(id, docText, step = () => {}, engine = null) {
   const rel = (f) => path.relative(ws, f).replace(/\\/g, '/');
   const req = readJson(path.join(ws, 'data', 'study', 'requests', `${id}.json`), null);
   if (!req) throw new Error('The request for this set is missing.');
+  // (Asked for on the phone, which has no class database: the class's outcomes and work come from this one.)
+  if (req.whole && !req.course_outcomes?.length && !req.work?.length) {
+    const p = profiles.paths();
+    const src = await db.practiceSources(p.db, p.textbooks, { courseId: req.course.id }).catch(() => null);
+    if (src?.whole) Object.assign(req, { course_outcomes: src.course_outcomes || [], work: src.work || [] });
+  }
   const { notes, general, sources, missingSheets } = await chapterNotes(req, docText, step);
 
   // The brief: the tests first, then each chapter (objectives and vocabulary whole; review text shares the budget).
@@ -778,13 +812,32 @@ async function prepare(id, docText, step = () => {}, engine = null) {
     (cur?.outcomes || [])
       .filter((o) => !o.not_tested && (o.chapters || []).some((c) => String(c).toLowerCase() === String(label).toLowerCase()))
       .map((o) => `${{ course: 'Course outcome', module: 'Module outcome', outline: 'Topical outline', recommended: 'Recommended topic' }[o.kind] || o.kind} ${o.ref}: ${o.text}`);
-  const everyChapter = outcomesOf('all');
+  // The class's own outcomes as the scan saved them (practiceSources): whole-class ones here, each chapter's with it.
+  // The curriculum report's are added only where they aren't already there.
+  const given = new Set([...(req.course_outcomes || []), ...(req.chapters || []).flatMap((c) => c.outcomes || [])].map(outcomeLine));
+  const fromDb = (req.course_outcomes || []).map((o) => (req.whole && o.chapters?.length ? `${outcomeLine(o)} (${o.chapters.join(', ')})` : outcomeLine(o)));
+  const everyChapter = [...fromDb, ...outcomesOf('all').filter((o) => !given.has(o))];
+  // (A long outline is cut, like the review text, so the brief stays one Read.)
+  let outcomeRoom = OUTCOME_BUDGET;
+  const fit = (list) => list.filter((o) => (outcomeRoom -= o.length + 3) >= 0);
   const guidelines = (cur?.guidelines || []).map((g) => g.text).filter(Boolean);
   if (guidelines.length || everyChapter.length) {
-    lines.push('## How this class tests, and what every chapter serves (from the syllabus)', '');
+    lines.push(req.whole ? '## How this class tests, and what it teaches (from the syllabus)' : '## How this class tests, and what every chapter serves (from the syllabus)', '');
     if (guidelines.length) lines.push('Write to these: the formats, question types and skills the real tests use.', ...guidelines.map((g) => `- ${g}`), '');
-    if (everyChapter.length) lines.push('Outcomes every chapter serves (work them into questions on any chapter):', ...everyChapter.map((g) => `- ${g}`), '');
+    if (everyChapter.length) {
+      const kept = fit(everyChapter);
+      if (req.whole) lines.push('**Syllabus outcomes for the whole class (each needs questions)**', ...kept.map((g) => `- ${g}`));
+      else lines.push('Outcomes every chapter serves (work them into questions on any chapter):', ...kept.map((g) => `- ${g}`));
+      if (kept.length < everyChapter.length) lines.push(`(${everyChapter.length - kept.length} more outcomes are in the class's syllabus.)`);
+      lines.push('');
+    }
   }
+  if (req.whole)
+    lines.push(
+      '## This class has no chapters',
+      'Kea has no textbook chapters for this class. Write for the whole class from the outcomes above, the tests below and what the class’s work asks for. Leave each question’s `chapter` empty and put its topic (an outcome or unit, in a few words) in `section`.',
+      ''
+    );
   const tests = (req.tests || []).filter((t) => t.study_focus?.length || t.description);
   if (tests.length) {
     lines.push('## What the real tests cover (scraped from the class site: the top priority)', '');
@@ -796,13 +849,19 @@ async function prepare(id, docText, step = () => {}, engine = null) {
       lines.push('');
     }
   }
-  const texts = share([...notes.filter((n) => n.review).map((n) => ({ key: n.label, path: n.path, text: n.review })), ...general.map((f) => ({ key: f, path: rel(f), text: readText(f) }))], BRIEF_BUDGET);
+  // (What the class's work asks for, for a class with no chapters: it shares the review text's budget.)
+  const work = (req.whole ? req.work || [] : []).map((w) => ({ key: `work:${w.id}`, path: `the class's ${w.type || 'work'} "${w.title}"`, text: squeeze(htmlText(w.description || '')), w })).filter((w) => w.text);
+  const texts = share([...notes.filter((n) => n.review).map((n) => ({ key: n.label, path: n.path, text: n.review })), ...general.map((f) => ({ key: f, path: rel(f), text: readText(f) })), ...work], BRIEF_BUDGET);
   const textOf = (k) => texts.find((t) => t.key === k)?.text || '';
+  if (work.length) {
+    lines.push('## What the class’s work asks for (from the class site)', '');
+    for (const w of work) lines.push(`### ${w.w.title}${w.w.date ? ` (${String(w.w.date).slice(0, 10)})` : ''}`, textOf(w.key), '');
+  }
   for (const n of notes) {
-    lines.push(n.head.replace(/^# /, '## ').replace(/^## (Objectives|Vocabulary)$/gm, '**$1**').trim());
+    lines.push(n.head.replace(/^# /, '## ').replace(/^## (Objectives|Syllabus outcomes|Vocabulary)$/gm, (_, h) => (h === 'Syllabus outcomes' ? '**Syllabus outcomes this chapter teaches (each needs questions)**' : `**${h}**`)).trim());
     const ref = (cur?.chapters || []).find((c) => c.label === n.label)?.textbook_ref;
     if (ref) lines.push(`In the student's textbook: ${ref}`);
-    const own = outcomesOf(n.label);
+    const own = outcomesOf(n.label).filter((o) => !given.has(o));
     if (own.length) lines.push('**Syllabus outcomes this chapter teaches (each needs questions)**', ...own.map((o) => `- ${o}`));
     if (n.source) lines.push(`(Kea's textbook chapter, only to check a fact: ${n.source})`);
     const r = textOf(n.label);
@@ -1254,7 +1313,8 @@ function pool(courseId, chapters) {
   const h = history();
   const review = readJson(file('review.json'), {});
   const stars = starred();
-  return catalog('exam', courseId, chapters).map((q) => ({
+  // (No chapters: a class studied as a whole, every one of its questions.)
+  return catalog('exam', courseId, chapters, !chapters.length).map((q) => ({
     k: q.k,
     chapter: q.chapter,
     section: q.section || null,

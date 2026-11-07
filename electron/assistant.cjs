@@ -48,14 +48,15 @@ const running = new Map();
 // events sent as it goes), so the panel and the editors' tools can be tested without an API key or any cost.
 // Development copies only: an installed Kea never runs a script named by an environment variable.
 const fake = !app.isPackaged && process.env.KEA_ASSISTANT_FAKE ? require(path.resolve(process.env.KEA_ASSISTANT_FAKE)) : null;
+const { handleApp } = require('./ipcGuard.cjs');
 
 function register() {
-  ipcMain.handle('assistant:status', () => {
+  handleApp(ipcMain, 'assistant:status', () => {
     const key = fake ? 'fake-key-test' : readKey();
     return { hasKey: !!key, hint: key ? `…${key.slice(-4)}` : '', models: MODELS };
   });
   // A new key is checked with a free call (looking up a model) before it's kept.
-  ipcMain.handle('assistant:set-key', async (_e, key) => {
+  handleApp(ipcMain, 'assistant:set-key', async (_e, key) => {
     key = String(key || '').trim();
     if (!key) {
       writeKey('');
@@ -73,7 +74,7 @@ function register() {
 
   // One turn of the conversation, streamed: { model, effort, system, messages, tools }. Events go back to the window as
   // 'assistant:event' { id, type: 'text' | 'thinking' | 'tool', ... }; the promise resolves with the finished message.
-  ipcMain.handle('assistant:send', async (e, id, req) => {
+  handleApp(ipcMain, 'assistant:send', async (e, id, req) => {
     if (fake) return fake(req, (ev) => e.sender.send('assistant:event', { id, ...ev }));
     const key = readKey();
     if (!key) return { error: 'Add your Claude API key first.' };
@@ -111,7 +112,7 @@ function register() {
     }
   });
   // What part of the window looks like (an editor's area), for Claude to see: at most 1568 px on the long side.
-  ipcMain.handle('assistant:capture', async (e, rect) => {
+  handleApp(ipcMain, 'assistant:capture', async (e, rect) => {
     // The page's CSS pixels, scaled by Kea's zoom (Settings → Appearance → Size of everything) to the window's own units.
     const z = e.sender.getZoomFactor();
     const r = { x: Math.round(rect.x * z), y: Math.round(rect.y * z), width: Math.max(1, Math.round(rect.width * z)), height: Math.max(1, Math.round(rect.height * z)) };
@@ -121,7 +122,7 @@ function register() {
     if (k < 1) img = img.resize({ width: Math.round(width * k), height: Math.round(height * k), quality: 'good' });
     return { dataUrl: img.toDataURL(), width: img.getSize().width, height: img.getSize().height };
   });
-  ipcMain.handle('assistant:stop', (_e, id) => {
+  handleApp(ipcMain, 'assistant:stop', (_e, id) => {
     running.get(id)?.abort();
     return true;
   });

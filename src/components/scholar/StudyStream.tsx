@@ -34,6 +34,8 @@ export interface StreamScope {
   bookmarks?: boolean;
   /** Your weak-spot questions too, by key (from Study's Weak spots row). */
   weak?: string[];
+  /** A class with no chapters: all of its questions (or, with topics, those whose "\0 section" is ticked). */
+  whole?: boolean;
   /** Every chapter of the class ticked: one chapter at a time in curriculum order. */
   progression?: boolean;
 }
@@ -88,7 +90,7 @@ export function StudyStream({ scope, set }: { scope?: StreamScope; set?: StudySe
       const all = ((src?.questions || []) as Item[]).filter((q) => q.k);
       const items = set
         ? all
-        : all.filter((q) => (q.chapter && chapters.has(q.chapter) && (!topics || topics.has(`${q.chapter}\u0000${q.section || 'Other'}`))) || (scope?.bookmarks && starred.has(q.k)) || weak.has(q.k));
+        : all.filter((q) => (scope?.whole && (!topics || topics.has(`\u0000${q.section || 'Other'}`))) || (q.chapter && chapters.has(q.chapter) && (!topics || topics.has(`${q.chapter}\u0000${q.section || 'Other'}`))) || (scope?.bookmarks && starred.has(q.k)) || weak.has(q.k));
       // (The class's chapters in curriculum order; anything else after, as it comes.)
       const order = (course?.chapters || []).map((c) => c.label);
       if (live) setData({ items, history: src?.history || {}, starred, order });

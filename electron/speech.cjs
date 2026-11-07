@@ -5,6 +5,7 @@ const { app, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const CATALOG = {
   'tiny': {
@@ -260,16 +261,16 @@ function resolveServed(rel) {
 function register(opts) {
   log = opts.log || log;
   getWindow = opts.getWindow || getWindow;
-  ipcMain.handle('speech:state', () => Object.keys(CATALOG).map(modelState));
-  ipcMain.handle('speech:download', (_e, id) => {
+  handleApp(ipcMain, 'speech:state', () => Object.keys(CATALOG).map(modelState));
+  handleApp(ipcMain, 'speech:download', (_e, id) => {
     download(id);
     return true;
   });
-  ipcMain.handle('speech:pause', (_e, id) => {
+  handleApp(ipcMain, 'speech:pause', (_e, id) => {
     downloads[id]?.controller?.abort();
     return true;
   });
-  ipcMain.handle('speech:delete', (_e, id) => {
+  handleApp(ipcMain, 'speech:delete', (_e, id) => {
     if (!CATALOG[id]) return false;
     downloads[id]?.controller?.abort();
     delete downloads[id];

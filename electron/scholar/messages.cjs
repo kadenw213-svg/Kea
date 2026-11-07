@@ -11,6 +11,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { ipcMain, BrowserWindow } = require('electron');
 const profiles = require('./profiles.cjs');
+const { handleApp } = require('../ipcGuard.cjs');
 
 const file = () => path.join(profiles.paths().dir, 'messages.json');
 function read() {
@@ -222,7 +223,7 @@ function register({ browser, precheck, db }) {
     return [...box.map((x) => ({ id: x.id, course: x.course, title: x.subject, from: x.from, preview: x.preview || '', at: x.date || x.first, sortAt: x.first, url: x.url, loc: { folder: x.folder || 'inbox', subject: x.subject, date: x.date }, read: !x.unread })), ...alerts];
   };
 
-  ipcMain.handle('scholar:mailList', () => {
+  handleApp(ipcMain, 'scholar:mailList', () => {
     const m = read();
     // Sent: what Kea sent, then the class site's Sent folder (messages sent there directly, or before Kea).
     const mine = m.sent.slice(0, 200);
@@ -243,7 +244,7 @@ function register({ browser, precheck, db }) {
   });
 
   // Read the class site's mailbox now (the Refresh button).
-  ipcMain.handle('scholar:mailSync', () => syncMailbox(true));
+  handleApp(ipcMain, 'scholar:mailSync', () => syncMailbox(true));
   // A message opened in Kea counts as read here (the class site marks it read when Kea opens it to read the body).
   const markRead = (id) => {
     const m = read();
@@ -255,7 +256,7 @@ function register({ browser, precheck, db }) {
   };
 
   // The whole message, read from the class site (and kept, so it opens at once next time).
-  ipcMain.handle('scholar:mailRead', async (_e, id, refresh) => {
+  handleApp(ipcMain, 'scholar:mailRead', async (_e, id, refresh) => {
     const m = read();
     const out = (b) => ({ ...b, ...(b.text ? { text: cleanMessage(b.text).body, quoted: cleanMessage(b.text).quoted } : {}) });
     if (!refresh && m.bodies[id]) return out(m.bodies[id]);
@@ -274,7 +275,7 @@ function register({ browser, precheck, db }) {
     return out(fresh.bodies[id]);
   });
 
-  ipcMain.handle('scholar:mailDraft', (_e, key, draft) => {
+  handleApp(ipcMain, 'scholar:mailDraft', (_e, key, draft) => {
     const m = read();
     const k = String(key || '').slice(0, 120);
     if (!k) return false;
@@ -286,7 +287,7 @@ function register({ browser, precheck, db }) {
 
   // Send: only when the student presses Send in Kea. One at a time, never retried by itself (a retry could send twice).
   let sending = false;
-  ipcMain.handle('scholar:mailSend', async (_e, msg) => {
+  handleApp(ipcMain, 'scholar:mailSend', async (_e, msg) => {
     if (sending) throw new Error('A message is already being sent. Wait for it to finish.');
     const body = String(msg?.body || '').trim();
     if (!body) throw new Error('Write something first.');

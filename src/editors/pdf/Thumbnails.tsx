@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from './pdfjs';
 import type { PageRef } from './types';
 import { scheduleRender } from './renderQueue';
+import { darkPageCanvas } from '../../lib/darkPage';
 
 interface ThumbProps {
   doc: PDFDocumentProxy | null;
@@ -19,6 +20,8 @@ interface ThumbProps {
   onDrop(e: React.DragEvent): void;
   dropBefore: boolean;
   dropAfter: boolean;
+  /** Dark pages: drawn darkened, a black box saved in the page left black (darkPage.ts). */
+  dark: boolean;
 }
 
 const THUMB_W = 132;
@@ -46,11 +49,14 @@ const Thumb = memo(function Thumb(p: ThumbProps) {
       const s = (THUMB_W * 2) / vp1.width;
       const vp = page.getViewport({ scale: s, rotation: p.rotation });
       const c = canvasRef.current!;
-      c.width = Math.floor(vp.width);
-      c.height = Math.floor(vp.height);
-      task = page.render({ canvasContext: c.getContext('2d')!, viewport: vp });
+      // (Dark: drawn on a page of its own first, then darkened onto the thumbnail.)
+      const into = p.dark ? document.createElement('canvas') : c;
+      into.width = c.width = Math.floor(vp.width);
+      into.height = c.height = Math.floor(vp.height);
+      task = page.render({ canvasContext: into.getContext('2d')!, viewport: vp });
       try {
         await task.promise;
+        if (p.dark && !cancelled) c.getContext('2d')!.drawImage(darkPageCanvas(into), 0, 0);
       } catch {}
     });
     return () => {
@@ -58,7 +64,7 @@ const Thumb = memo(function Thumb(p: ThumbProps) {
       cancelJob();
       task?.cancel();
     };
-  }, [visible, p.doc, p.pageRef.index, p.rotation]);
+  }, [visible, p.doc, p.pageRef.index, p.rotation, p.dark]);
 
   return (
     <div
@@ -144,6 +150,7 @@ export function Thumbnails({ pages, docs, sizeOf, selected, currentIndex, onSele
             selected={selected.has(p.id)}
             current={i === currentIndex}
             root={root}
+            dark={!!dark}
             onMouseDown={(e) => handleMouseDown(e, i)}
             onContextMenu={(e) => {
               e.preventDefault();

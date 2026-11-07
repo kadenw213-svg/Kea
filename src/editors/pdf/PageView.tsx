@@ -461,11 +461,9 @@ function PageViewInner(p: Props) {
           {p.searchRects.map((s, i) => (
             <rect key={i} x={s.rect.x - 1} y={s.rect.y - 1} width={s.rect.w + 2} height={s.rect.h + 2} rx={2} className={s.active ? 'search-hit active' : 'search-hit'} />
           ))}
-          {all.map((a) => (a.type === 'redact' ? null : <SvgAnn key={a.id} a={a} interactive={interactive} />))}
-        </svg>
-        {/* Redaction boxes always show as they will be saved (black), even on a dark page. */}
-        <svg className="ann-svg ann-true" width={p.width} height={p.height} viewBox={`0 0 ${p.width} ${p.height}`}>
-          {all.map((a) => (a.type === 'redact' ? <SvgAnn key={a.id} a={a} interactive={interactive} /> : null))}
+          {/* The student's marks (redaction boxes, ink, highlights, shapes) show in their real colours, as they'll be
+              saved, even on a dark page (pdf.css); only a white-out, which stands in for the paper, darkens with it. */}
+          {all.map((a) => <SvgAnn key={a.id} a={a} interactive={interactive} />)}
         </svg>
         {all.map((a) =>
           a.type === 'text' || a.type === 'image' || a.type === 'note' ? (
@@ -494,6 +492,7 @@ function SvgAnn({ a, interactive }: { a: Annotation; interactive: boolean }) {
       return (
         <rect
           data-ann-id={a.id}
+          className={a.type === 'whiteout' ? 'ann-whiteout' : undefined}
           x={a.x}
           y={a.y}
           width={a.w}
@@ -661,7 +660,7 @@ function HtmlAnn({
       <textarea
         ref={taRef}
         data-ann-id={a.id}
-        className="text-ann editing"
+        className={`text-ann editing ${t.bg ? 'cover' : ''}`}
         style={{ ...style, height: t.h, resize: 'none', outline: 'none', overflow: 'hidden' }}
         value={t.text}
         spellCheck
@@ -691,7 +690,7 @@ function HtmlAnn({
     );
   }
   return (
-    <div data-ann-id={a.id} className="text-ann" style={{ ...style, pointerEvents: interactive ? 'auto' : 'none' }}>
+    <div data-ann-id={a.id} className={`text-ann ${t.bg ? 'cover' : ''}`} style={{ ...style, pointerEvents: interactive ? 'auto' : 'none' }}>
       {t.text || '​'}
     </div>
   );

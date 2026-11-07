@@ -1479,23 +1479,28 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
           )}
         </div>
       )}
-      {/* (Only with a textbook: no chapters, nothing to study or read.) */}
-      {c.chapters.length > 0 && (
+      {/* Study with chapters, or with the syllabus's outcomes or tests to work from (the whole class); Readings once a
+          chapter has its textbook. */}
+      {(c.chapters.length > 0 || (c.outcomes ?? 0) > 0 || (c.tests ?? 0) > 0 || pdfs > 0) && (
         <div className="cls-go">
-          <button className="cls-go-btn" style={{ ['--k' as any]: ctx.colors.course(c.id) }} onClick={() => openClassStudy(c, c.chapters.map((ch) => ch.label))}>
-            <ClipboardCheck size={20} />
-            <span>
-              <b>Study</b>
-              <span className="muted">Practice questions by chapter and topic</span>
-            </span>
-          </button>
-          <button className="cls-go-btn" style={{ ['--k' as any]: ctx.colors.course(c.id) }} onClick={() => useScholar.getState().set({ study: `readings:${c.id}` })}>
-            <BookOpen size={20} />
-            <span>
-              <b>Readings</b>
-              <span className="muted">{pdfs ? `${pdfs} chapter${pdfs === 1 ? '' : 's'} to read` : 'Being written'}</span>
-            </span>
-          </button>
+          {(c.chapters.length > 0 || (c.outcomes ?? 0) > 0 || (c.tests ?? 0) > 0) && (
+            <button className="cls-go-btn" style={{ ['--k' as any]: ctx.colors.course(c.id) }} onClick={() => openClassStudy(c, c.chapters.map((ch) => ch.label))}>
+              <ClipboardCheck size={20} />
+              <span>
+                <b>Study</b>
+                <span className="muted">{c.chapters.length ? 'Practice questions by chapter and topic' : 'Practice questions for the whole class'}</span>
+              </span>
+            </button>
+          )}
+          {pdfs > 0 && (
+            <button className="cls-go-btn" style={{ ['--k' as any]: ctx.colors.course(c.id) }} onClick={() => useScholar.getState().set({ study: `readings:${c.id}` })}>
+              <BookOpen size={20} />
+              <span>
+                <b>Readings</b>
+                <span className="muted">{`${pdfs} chapter${pdfs === 1 ? '' : 's'} to read`}</span>
+              </span>
+            </button>
+          )}
         </div>
       )}
       {tab !== 'weeks' && (

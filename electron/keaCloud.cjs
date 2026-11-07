@@ -73,6 +73,7 @@ function syncOptions(scholarOnHub) {
 // ---------- Electron side ----------
 const settings = () => require('./settings.cjs');
 const hub = () => require('./hub.cjs');
+const { handleApp } = require('./ipcGuard.cjs');
 const enabled = () => settings().get('keaCloud.enabled', true) !== false;
 const root = () => path.join(hub().syncRoot(), FOLDER);
 
@@ -152,21 +153,21 @@ function register() {
       return { ok: false, error: String(e.message || e), status: e.status ?? null };
     }
   };
-  ipcMain.handle('keaCloud:status', wrap(() => status()));
-  ipcMain.handle('keaCloud:states', wrap(({ paths }) => {
+  handleApp(ipcMain, 'keaCloud:status', wrap(() => status()));
+  handleApp(ipcMain, 'keaCloud:states', wrap(({ paths }) => {
     const st = readSyncState();
     const out = {};
     for (const p of Array.isArray(paths) ? paths.slice(0, 2000) : []) if (typeof p === 'string' && isInside(root(), p)) out[p] = stateOf(p, st);
     return out;
   }));
   // Where a new document goes: Kea Cloud's folder (made if needed), with a name not already taken.
-  ipcMain.handle('keaCloud:newPath', wrap(({ name }) => {
+  handleApp(ipcMain, 'keaCloud:newPath', wrap(({ name }) => {
     if (!hub().signedIn()) throw new Error('Sign in to your Kea account to use Kea Cloud.');
     if (!validName(name)) throw new Error('That name can’t be used for a file.');
     fs.mkdirSync(root(), { recursive: true });
     return path.join(root(), uniqueName(String(name).trim(), (n) => fs.existsSync(path.join(root(), n))));
   }));
-  ipcMain.handle('keaCloud:rename', wrap(({ path: raw, name }) => {
+  handleApp(ipcMain, 'keaCloud:rename', wrap(({ path: raw, name }) => {
     const p = path.resolve(String(raw));
     guard(p);
     if (!validName(name)) throw new Error('That name can’t be used for a file.');
@@ -177,14 +178,14 @@ function register() {
     return to;
   }));
   // Deleted documents go to the Recycle Bin here (and from Kea storage with the next sync).
-  ipcMain.handle('keaCloud:remove', wrap(async ({ path: raw }) => {
+  handleApp(ipcMain, 'keaCloud:remove', wrap(async ({ path: raw }) => {
     const p = path.resolve(String(raw));
     guard(p);
     await shell.trashItem(p);
     hub().syncNow();
     return true;
   }));
-  ipcMain.handle('keaCloud:newFolder', wrap(({ parent, name }) => {
+  handleApp(ipcMain, 'keaCloud:newFolder', wrap(({ parent, name }) => {
     const dir = parent || root();
     if (path.resolve(dir) !== path.resolve(root())) guard(dir);
     if (!validName(name)) throw new Error('That name can’t be used for a folder.');
@@ -192,12 +193,12 @@ function register() {
     fs.mkdirSync(to, { recursive: true });
     return to;
   }));
-  ipcMain.handle('keaCloud:syncNow', wrap(async () => {
+  handleApp(ipcMain, 'keaCloud:syncNow', wrap(async () => {
     hub().startSync();
     await hub().syncNow();
     return status();
   }));
-  ipcMain.handle('keaCloud:open', wrap(() => {
+  handleApp(ipcMain, 'keaCloud:open', wrap(() => {
     fs.mkdirSync(root(), { recursive: true });
     return shell.openPath(root());
   }));

@@ -3,6 +3,7 @@
 // Stopping kills it (a new one starts on the next request).
 const { ipcMain } = require('electron');
 const { execFile, spawn } = require('child_process');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const SCRIPT = [
   'Add-Type -AssemblyName System.Speech',
@@ -69,7 +70,7 @@ function stop() {
 const b64 = (s) => Buffer.from(String(s || ''), 'utf8').toString('base64');
 
 function register() {
-  ipcMain.handle('tts:voices', () =>
+  handleApp(ipcMain, 'tts:voices', () =>
     process.platform !== 'win32'
       ? []
       : new Promise((resolve) => {
@@ -85,7 +86,7 @@ function register() {
   );
 
   // Speak one paragraph; resolves when it has finished (true) or was stopped (false).
-  ipcMain.handle('tts:speak', (_e, text, voice, rate) => {
+  handleApp(ipcMain, 'tts:speak', (_e, text, voice, rate) => {
     if (process.platform !== 'win32') return false;
     if (waiting) stop();
     const p = start();
@@ -97,7 +98,7 @@ function register() {
     });
   });
 
-  ipcMain.handle('tts:stop', () => {
+  handleApp(ipcMain, 'tts:stop', () => {
     stop();
     return true;
   });

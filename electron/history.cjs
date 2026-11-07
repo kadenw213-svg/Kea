@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const settings = require('./settings.cjs');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
 const recoveryRoot = () => path.join(app.getPath('userData'), 'recovery');
@@ -88,15 +89,15 @@ function dirSize(dir) {
 }
 
 function register({ log }) {
-  ipcMain.handle('history:list', (_e, p) => list(p));
-  ipcMain.handle('history:read', (_e, p, id) => {
+  handleApp(ipcMain, 'history:list', (_e, p) => list(p));
+  handleApp(ipcMain, 'history:read', (_e, p, id) => {
     const meta = readMeta(dirFor(p));
     const v = meta.versions.find((x) => x.id === String(id));
     if (!v) throw new Error('That version no longer exists.');
     return new Uint8Array(fs.readFileSync(path.join(dirFor(p), v.file)));
   });
-  ipcMain.handle('history:snapshot', (_e, p, label) => snapshot(p, { force: true, label }));
-  ipcMain.handle('history:label', (_e, p, id, label) => {
+  handleApp(ipcMain, 'history:snapshot', (_e, p, label) => snapshot(p, { force: true, label }));
+  handleApp(ipcMain, 'history:label', (_e, p, id, label) => {
     const dir = dirFor(p);
     const meta = readMeta(dir);
     const v = meta.versions.find((x) => x.id === String(id));
@@ -107,7 +108,7 @@ function register({ log }) {
     }
     return list(p);
   });
-  ipcMain.handle('history:delete', (_e, p, id) => {
+  handleApp(ipcMain, 'history:delete', (_e, p, id) => {
     const dir = dirFor(p);
     const meta = readMeta(dir);
     const v = meta.versions.find((x) => x.id === String(id));
@@ -118,18 +119,18 @@ function register({ log }) {
     }
     return list(p);
   });
-  ipcMain.handle('history:usage', () => dirSize(historyRoot()));
-  ipcMain.handle('history:clear', () => {
+  handleApp(ipcMain, 'history:usage', () => dirSize(historyRoot()));
+  handleApp(ipcMain, 'history:clear', () => {
     fs.rmSync(historyRoot(), { recursive: true, force: true });
     return true;
   });
-  ipcMain.handle('history:open-folder', () => {
+  handleApp(ipcMain, 'history:open-folder', () => {
     fs.mkdirSync(historyRoot(), { recursive: true });
     return shell.openPath(historyRoot());
   });
 
   // ---------- Crash recovery ----------
-  ipcMain.handle('recovery:put', (_e, meta, data) => {
+  handleApp(ipcMain, 'recovery:put', (_e, meta, data) => {
     const id = safeId(meta.tabId);
     fs.mkdirSync(recoveryRoot(), { recursive: true });
     fs.writeFileSync(path.join(recoveryRoot(), id + '.bin.tmp'), Buffer.from(data));
@@ -137,14 +138,14 @@ function register({ log }) {
     fs.writeFileSync(path.join(recoveryRoot(), id + '.json'), JSON.stringify({ ...meta, tabId: id, savedAt: Date.now(), pid: process.pid }));
     return true;
   });
-  ipcMain.handle('recovery:drop', (_e, tabId) => {
+  handleApp(ipcMain, 'recovery:drop', (_e, tabId) => {
     const id = safeId(tabId);
     fs.rmSync(path.join(recoveryRoot(), id + '.bin'), { force: true });
     fs.rmSync(path.join(recoveryRoot(), id + '.json'), { force: true });
     return true;
   });
   // Entries left by an earlier run (this run's own entries are excluded by process id).
-  ipcMain.handle('recovery:list', () => {
+  handleApp(ipcMain, 'recovery:list', () => {
     try {
       return fs
         .readdirSync(recoveryRoot())
@@ -162,7 +163,7 @@ function register({ log }) {
       return [];
     }
   });
-  ipcMain.handle('recovery:read', (_e, tabId) => new Uint8Array(fs.readFileSync(path.join(recoveryRoot(), safeId(tabId) + '.bin'))));
+  handleApp(ipcMain, 'recovery:read', (_e, tabId) => new Uint8Array(fs.readFileSync(path.join(recoveryRoot(), safeId(tabId) + '.bin'))));
 }
 
 module.exports = { register, snapshot };

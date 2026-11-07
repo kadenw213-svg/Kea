@@ -6,6 +6,7 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { handleApp } = require('./ipcGuard.cjs');
 
 let index = null; // [{ name: 'Segoe UI Bold', file }]
 
@@ -69,7 +70,7 @@ async function find(family, bold, italic) {
 }
 
 function register() {
-  ipcMain.handle('fonts:file', async (_e, family, bold, italic) => {
+  handleApp(ipcMain, 'fonts:file', async (_e, family, bold, italic) => {
     const hit = await find(family, !!bold, !!italic);
     if (!hit) return null;
     try {

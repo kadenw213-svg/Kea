@@ -128,10 +128,22 @@
   display: block;
 }
 .pdf-canvas.dark,
-/* Edits sit on the page, so they're darkened the same way (a white cover behind edited text would glare). */
-.pdf-scroll.dark .ann-svg:not(.ann-true),
-.pdf-scroll.dark .text-ann {
+/* Text on its own background stands in for the paper, so it's darkened the same way (a white cover behind edited text
+   would glare). Every other mark keeps its real colour. */
+.pdf-scroll.dark .text-ann.cover {
   filter: invert(0.9) hue-rotate(180deg);
+}
+/* A white-out is the paper: on a dark page it's the dark page's colour (white inverted as above). */
+.pdf-scroll.dark .ann-whiteout {
+  fill: #1a1a1a;
+}
+/* A highlight multiplies into a white page; on a dark one that would turn it black, so it's laid on as it is. */
+.pdf-scroll.dark .ann-svg g {
+  mix-blend-mode: normal !important;
+}
+/* Added text in its real colour, with a light edge so dark text still reads on a dark page. */
+.pdf-scroll.dark .text-ann:not(.cover) {
+  text-shadow: 0 0 1px rgba(255, 255, 255, 0.9), 0 0 3px rgba(255, 255, 255, 0.6);
 }
 .page-loading {
   position: absolute;
@@ -387,9 +399,7 @@
 .thumbs.dark .thumb-img {
   background: #1e1e1e;
 }
-.thumbs.dark .thumb-img canvas {
-  filter: invert(0.9) hue-rotate(180deg);
-}
+/* (Dark thumbnails are darkened as they're drawn, Thumbnails.tsx: a black box saved in the page stays black.) */
 .thumb.current .thumb-img {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

@@ -9,6 +9,7 @@
 const { app, ipcMain, dialog, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const file = () => path.join(app.getPath('userData'), 'account.json');
 const norm = (e) => String(e || '').trim().toLowerCase();
@@ -104,9 +105,9 @@ async function verifyHere() {
 }
 
 function register() {
-  ipcMain.handle('account:get', () => get());
-  ipcMain.handle('account:verifyHere', () => verifyHere());
-  ipcMain.handle('account:avatar', async (e, clear) => {
+  handleApp(ipcMain, 'account:get', () => get());
+  handleApp(ipcMain, 'account:verifyHere', () => verifyHere());
+  handleApp(ipcMain, 'account:avatar', async (e, clear) => {
     const hub = hubAccount();
     if (!hub?.id) throw new Error('Sign in to your Kea account first.');
     const { a, mine } = local(hub);
@@ -131,7 +132,7 @@ function register() {
   });
   // Where the picture sits in the circle: the point at its centre (0–1 across and down), how far it's zoomed in (1 =
   // the short side just fills the circle), and the picture's own size.
-  ipcMain.handle('account:crop', (_e, c) => {
+  handleApp(ipcMain, 'account:crop', (_e, c) => {
     const { a, mine } = local(hubAccount());
     if (!mine || !a.avatar) throw new Error('Choose a picture first.');
     const num = (v, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : lo);

@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const GB = 1024 ** 3;
 
@@ -293,7 +294,7 @@ function register(opts) {
   log = opts.log;
   getWindow = opts.getWindow;
 
-  ipcMain.handle('ai:state', async () => {
+  handleApp(ipcMain, 'ai:state', async () => {
     const hw = await hardware();
     return {
       hardware: hw,
@@ -303,26 +304,26 @@ function register(opts) {
       models: Object.keys(CATALOG).map(modelState)
     };
   });
-  ipcMain.handle('ai:set-settings', async (_e, patch) => {
+  handleApp(ipcMain, 'ai:set-settings', async (_e, patch) => {
     const next = { ...getSettings(), ...patch };
     if (patch && patch.slider !== undefined && !patch.custom) Object.assign(next, PRESETS[patch.slider], { custom: false });
     writeJson(settingsFile(), next);
     if (!next.keepLoaded) scheduleIdleUnload();
     return next;
   });
-  ipcMain.handle('ai:reset-settings', async () => {
+  handleApp(ipcMain, 'ai:reset-settings', async () => {
     fs.rmSync(settingsFile(), { force: true });
     return getSettings();
   });
-  ipcMain.handle('ai:download', (_e, tier) => {
+  handleApp(ipcMain, 'ai:download', (_e, tier) => {
     download(tier);
     return true;
   });
-  ipcMain.handle('ai:pause-download', (_e, tier) => {
+  handleApp(ipcMain, 'ai:pause-download', (_e, tier) => {
     downloads[tier]?.controller?.abort();
     return true;
   });
-  ipcMain.handle('ai:delete-model', async (_e, tier) => {
+  handleApp(ipcMain, 'ai:delete-model', async (_e, tier) => {
     downloads[tier]?.controller?.abort();
     delete downloads[tier];
     if (worker) await call({ type: 'unload' }).catch(() => {});
@@ -331,7 +332,7 @@ function register(opts) {
     emitDownload(tier);
     return true;
   });
-  ipcMain.handle('ai:generate', async (_e, req) => {
+  handleApp(ipcMain, 'ai:generate', async (_e, req) => {
     const s = getSettings();
     if (!modelState(s.tier).installed) throw new Error('NO_MODEL');
     clearTimeout(idleTimer);
@@ -349,15 +350,15 @@ function register(opts) {
       true
     );
   });
-  ipcMain.handle('ai:stop', (_e, id) => {
+  handleApp(ipcMain, 'ai:stop', (_e, id) => {
     worker?.postMessage({ type: 'stop', id });
     return true;
   });
-  ipcMain.handle('ai:count', async (_e, text) => {
+  handleApp(ipcMain, 'ai:count', async (_e, text) => {
     const r = await call({ type: 'count', load: loadOptions(), text });
     return r.count;
   });
-  ipcMain.handle('ai:benchmark', async () => {
+  handleApp(ipcMain, 'ai:benchmark', async () => {
     const s = getSettings();
     if (!modelState(s.tier).installed) throw new Error('NO_MODEL');
     const started = Date.now();

@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+const APP = { senderFrame: { url: 'app://kea/index.html', parent: null } }; // a call from Kea's own page
 
 const require = createRequire(import.meta.url);
 const electron = require('../worker/electronStub.cjs');
@@ -51,7 +52,7 @@ test('a wrong password where the Hub asks for it again keeps Kea signed in', asy
   routes['/v1/me/totp/setup'] = [401, { error: 'Your password is wrong.' }];
   routes['/v1/me/delete'] = [401, { error: 'Your password or two-step code is wrong.' }];
   for (const [name, arg] of [['hub:changePassword', { current: 'x', next: 'y' }], ['hub:signOutOthers', { password: 'x' }], ['hub:totpSetup', { password: 'x' }], ['hub:deleteAccount', { confirm: 'DELETE', password: 'x' }]]) {
-    const r = await handlers[name]({}, arg);
+    const r = await handlers[name](APP, arg);
     assert.equal(r.ok, false, name);
     assert.equal(r.status, 401, name);
     assert.ok(fs.existsSync(token), `${name} kept the sign-in`);
@@ -59,7 +60,7 @@ test('a wrong password where the Hub asks for it again keeps Kea signed in', asy
   }
   // Anywhere else, a 401 means the sign-in ended.
   routes['/v1/me/sessions'] = [401, { error: 'Sign in again.' }];
-  await handlers['hub:sessions']({}, {});
+  await handlers['hub:sessions'](APP, {});
   assert.ok(!fs.existsSync(token));
   assert.ok(!fs.existsSync(work), 'the work calendar copy goes with the sign-in');
 });
@@ -79,7 +80,7 @@ test('Download my data: both exports in one file', async () => {
 
 test('deleting the account sends the confirmation and forgets everything about it here', async () => {
   routes['/v1/me/delete'] = [200, { ok: true, deleted: true }];
-  const r = await handlers['hub:deleteAccount']({}, { confirm: 'DELETE', password: 'pw', code: '123456' });
+  const r = await handlers['hub:deleteAccount'](APP, { confirm: 'DELETE', password: 'pw', code: '123456' });
   assert.equal(r.ok, true);
   assert.equal(r.value.signedIn, false);
   assert.deepEqual(asked.find((a) => a.p === '/v1/me/delete').body, { confirm: 'DELETE', password: 'pw', code: '123456' });
