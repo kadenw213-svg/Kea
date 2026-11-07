@@ -23,4 +23,10 @@ const appOnly = (handler) =>
     return handler.call(this, e, ...args);
   };
 
-module.exports = { fromApp, appOnly };
+/**
+ * ipcMain.handle for Kea's own page only. Every handler Kea registers goes through this (or appOnly): none of them is
+ * meant for any other window or frame, and the class-site browser's preload talks over its own ipcMain.on channels.
+ */
+const handleApp = (ipcMain, name, handler) => ipcMain.handle(name, appOnly(handler));
+
+module.exports = { fromApp, appOnly, handleApp };

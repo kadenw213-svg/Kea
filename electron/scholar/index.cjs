@@ -37,6 +37,7 @@ function setDone(s, id, on, at = new Date().toISOString()) {
 // ---------- The copy in the student's cloud drive (for Kea on their phone) ----------
 const cloud = require('./cloud.cjs');
 const courseImages = require('./courseImages.cjs');
+const { handleApp } = require('../ipcGuard.cjs');
 
 /**
  * Bring in what the phone changed (phone.json in the drive folder): checkmarks, newest change winning, and Inbox
@@ -489,25 +490,25 @@ async function keepBanks() {
 
 function register() {
   const p = () => profiles.paths();
-  ipcMain.handle('scholar:profiles', () => profiles.all());
-  ipcMain.handle('scholar:createProfile', (_e, name) => (profiles.create(name), watch(), profiles.all()));
-  ipcMain.handle('scholar:selectProfile', (_e, id) => {
+  handleApp(ipcMain, 'scholar:profiles', () => profiles.all());
+  handleApp(ipcMain, 'scholar:createProfile', (_e, name) => (profiles.create(name), watch(), profiles.all()));
+  handleApp(ipcMain, 'scholar:selectProfile', (_e, id) => {
     if (runner.status().running) throw new Error('A class scan is running. Switch profiles when it finishes.');
     profiles.select(id);
     watch();
     return profiles.all();
   });
-  ipcMain.handle('scholar:renameProfile', (_e, id, name) => profiles.rename(id, name));
-  ipcMain.handle('scholar:status', () => ({ hasData: fs.existsSync(p().db), paths: p() }));
-  ipcMain.handle('scholar:courses', async () => courseImages.withImages(await db.courses(p().db, p().textbooks, readState().done || {})));
+  handleApp(ipcMain, 'scholar:renameProfile', (_e, id, name) => profiles.rename(id, name));
+  handleApp(ipcMain, 'scholar:status', () => ({ hasData: fs.existsSync(p().db), paths: p() }));
+  handleApp(ipcMain, 'scholar:courses', async () => courseImages.withImages(await db.courses(p().db, p().textbooks, readState().done || {})));
   // Each class's picture from the class site, read again now (Settings → Scholar).
-  ipcMain.handle('scholar:courseImages', async () => {
+  handleApp(ipcMain, 'scholar:courseImages', async () => {
     const n = await courseImages.refresh({ force: true });
     if (n) (BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed')), syncSoon(5000));
     return n;
   });
   // (With the Kea Hub's class sessions this person is in, from what hubClasses.cjs last read.)
-  ipcMain.handle('scholar:items', async (_e, q) => {
+  handleApp(ipcMain, 'scholar:items', async (_e, q) => {
     const list = await db.items(p().db, p().textbooks, readState().done || {}, q || {});
     let hub = [];
     try {
@@ -519,39 +520,39 @@ function register() {
     return hub.length ? [...list, ...hub].sort((a, b) => a.date.localeCompare(b.date) || String(a.start || a.due || '').localeCompare(String(b.start || b.due || ''))) : list;
   });
   // The Claude tab's assignment picker: graded work to choose from, and one assignment written out whole.
-  ipcMain.handle('scholar:assignments', () => require('./assignmentBrief.cjs').list().catch(() => []));
+  handleApp(ipcMain, 'scholar:assignments', () => require('./assignmentBrief.cjs').list().catch(() => []));
   // The Claude tab's class tools: search what Kea has, read one result, and send a lookup to read the class site.
-  ipcMain.handle('scholar:classSearch', (_e, q, course) => require('./lookups.cjs').search(String(q || ''), String(course || '')));
-  ipcMain.handle('scholar:classRead', (_e, ref) => require('./lookups.cjs').read(String(ref || '')));
-  ipcMain.handle('scholar:lookup', (_e, req) => require('./lookups.cjs').start(req || {}));
-  ipcMain.handle('scholar:lookupWait', (_e, id, ms) => require('./lookups.cjs').wait(String(id || ''), Math.min(Number(ms) || 240000, 270000)));
-  ipcMain.handle('scholar:assignmentBrief', (_e, id) => require('./assignmentBrief.cjs').brief(String(id || '')).catch(() => null));
-  ipcMain.handle('scholar:course', (_e, id) => db.course(p().db, p().textbooks, readState().done || {}, id));
-  ipcMain.handle('scholar:setDone', (_e, id, done) => {
+  handleApp(ipcMain, 'scholar:classSearch', (_e, q, course) => require('./lookups.cjs').search(String(q || ''), String(course || '')));
+  handleApp(ipcMain, 'scholar:classRead', (_e, ref) => require('./lookups.cjs').read(String(ref || '')));
+  handleApp(ipcMain, 'scholar:lookup', (_e, req) => require('./lookups.cjs').start(req || {}));
+  handleApp(ipcMain, 'scholar:lookupWait', (_e, id, ms) => require('./lookups.cjs').wait(String(id || ''), Math.min(Number(ms) || 240000, 270000)));
+  handleApp(ipcMain, 'scholar:assignmentBrief', (_e, id) => require('./assignmentBrief.cjs').brief(String(id || '')).catch(() => null));
+  handleApp(ipcMain, 'scholar:course', (_e, id) => db.course(p().db, p().textbooks, readState().done || {}, id));
+  handleApp(ipcMain, 'scholar:setDone', (_e, id, done) => {
     const s = readState();
     setDone(s, id, done);
     writeState(s);
     syncSoon(5000);
     return true;
   });
-  ipcMain.handle('scholar:importExisting', (_e, folder) => importExisting(folder));
+  handleApp(ipcMain, 'scholar:importExisting', (_e, folder) => importExisting(folder));
 
   // The class site and Kea's own sign-in.
-  ipcMain.handle('scholar:school', () => browser.schoolInfo());
-  ipcMain.handle('scholar:setSchoolHome', (_e, home, platform) => browser.setHome(home, platform));
-  ipcMain.handle('scholar:signIn', (_e, remember) => browser.signIn(remember));
-  ipcMain.handle('scholar:forgetLogin', () => browser.forgetLogin());
-  ipcMain.handle('scholar:siteStatus', () => browser.status());
+  handleApp(ipcMain, 'scholar:school', () => browser.schoolInfo());
+  handleApp(ipcMain, 'scholar:setSchoolHome', (_e, home, platform) => browser.setHome(home, platform));
+  handleApp(ipcMain, 'scholar:signIn', (_e, remember) => browser.signIn(remember));
+  handleApp(ipcMain, 'scholar:forgetLogin', () => browser.forgetLogin());
+  handleApp(ipcMain, 'scholar:siteStatus', () => browser.status());
   ipcMain.on('class-site:login', browser.onLoginSubmitted);
   ipcMain.on('class-site:remembering', browser.remembering);
 
   // Setup: what's installed, and installing it.
   const lines = (e) => (line) => e.sender.send('scholar:setupLine', line);
-  ipcMain.handle('scholar:check', () => workspace.check());
-  ipcMain.handle('scholar:installUv', (e) => workspace.installUv(lines(e)));
-  ipcMain.handle('scholar:installClaude', (e) => workspace.installClaude(lines(e)));
-  ipcMain.handle('scholar:signInClaude', () => workspace.signInClaude());
-  ipcMain.handle('scholar:setupEngine', (e) => workspace.setupEngine(browser.schoolInfo().home, lines(e)));
+  handleApp(ipcMain, 'scholar:check', () => workspace.check());
+  handleApp(ipcMain, 'scholar:installUv', (e) => workspace.installUv(lines(e)));
+  handleApp(ipcMain, 'scholar:installClaude', (e) => workspace.installClaude(lines(e)));
+  handleApp(ipcMain, 'scholar:signInClaude', () => workspace.signInClaude());
+  handleApp(ipcMain, 'scholar:setupEngine', (e) => workspace.setupEngine(browser.schoolInfo().home, lines(e)));
 
   // Scans.
   // On a device that isn't the primary, the primary is asked to (through the drive), so nothing runs twice.
@@ -565,49 +566,49 @@ function register() {
   }));
   // Your devices: which one scans, the drive they sync through, and bringing classes in on a new one.
   const devicesChanged = () => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
-  ipcMain.handle('scholar:devices', () => devices.status());
-  ipcMain.handle('scholar:devicesFind', () => devices.find());
-  ipcMain.handle('scholar:devicesJoin', async (_e, choice) => {
+  handleApp(ipcMain, 'scholar:devices', () => devices.status());
+  handleApp(ipcMain, 'scholar:devicesFind', () => devices.find());
+  handleApp(ipcMain, 'scholar:devicesJoin', async (_e, choice) => {
     if (runner.status().running) throw new Error('A class scan is running here. Try again when it finishes.');
     const r = await devices.join(choice);
     watch();
     return r;
   });
-  ipcMain.handle('scholar:makePrimary', (_e, id) => {
+  handleApp(ipcMain, 'scholar:makePrimary', (_e, id) => {
     if (runner.status().running && id !== require('../settings.cjs').get('scholar.pcId')) throw new Error('A class scan is running on this device. Make another device the primary when it finishes (or stop it first).');
     return devices.makePrimary(id);
   });
-  ipcMain.handle('scholar:setDrive', async (_e, choice) => {
+  handleApp(ipcMain, 'scholar:setDrive', async (_e, choice) => {
     settings.set({ 'scholar.cloud': choice });
     await devices.step();
     watch();
     devicesChanged();
     return devices.status();
   });
-  ipcMain.handle('scholar:stop', () => {
+  handleApp(ipcMain, 'scholar:stop', () => {
     if (devices.follower()) return (devices.relay({ task: 'stop' }), true);
     runner.stop();
     return true;
   });
-  ipcMain.handle('scholar:runStatus', () => runner.status());
-  ipcMain.handle('scholar:activity', () => runner.activity());
-  ipcMain.handle('scholar:news', () => runner.news());
-  ipcMain.handle('scholar:markNewsRead', (_e, ids) => runner.markNewsRead(ids));
-  ipcMain.handle('scholar:pending', () => runner.pending());
+  handleApp(ipcMain, 'scholar:runStatus', () => runner.status());
+  handleApp(ipcMain, 'scholar:activity', () => runner.activity());
+  handleApp(ipcMain, 'scholar:news', () => runner.news());
+  handleApp(ipcMain, 'scholar:markNewsRead', (_e, ids) => runner.markNewsRead(ids));
+  handleApp(ipcMain, 'scholar:pending', () => runner.pending());
 
   // The Inbox: announcements (from the class site directly) and what scans found (messages, grades, deadlines).
-  ipcMain.handle('scholar:inbox', () => {
+  handleApp(ipcMain, 'scholar:inbox', () => {
     const own = precheck.readInbox().items;
     const scans = runner.news().map(scanItem);
     return [...own, ...scans].sort((a, b) => String(b.at).localeCompare(String(a.at)));
   });
-  ipcMain.handle('scholar:markInboxRead', (_e, ids) => {
+  handleApp(ipcMain, 'scholar:markInboxRead', (_e, ids) => {
     precheck.markInboxRead(ids ? ids.filter((i) => !i.startsWith('scan:')) : null);
     runner.markNewsRead(ids ? ids.filter((i) => i.startsWith('scan:')).map((i) => i.slice(5)) : null);
     syncSoon(5000);
     return true;
   });
-  ipcMain.handle('scholar:deleteInbox', (_e, ids) => {
+  handleApp(ipcMain, 'scholar:deleteInbox', (_e, ids) => {
     const list = Array.isArray(ids) ? ids.map(String) : [];
     // What scans reported is remembered by its content too, so the phone hides its own copy of it.
     const scanKeys = runner.deleteNews(list.filter((i) => i.startsWith('scan:')).map((i) => i.slice(5)));
@@ -615,14 +616,14 @@ function register() {
     syncSoon(5000);
     return true;
   });
-  ipcMain.handle('scholar:checkInbox', () => {
+  handleApp(ipcMain, 'scholar:checkInbox', () => {
     if (!devices.follower()) return precheck.pollAnnouncements();
     devices.relay({ task: 'inbox' });
     return true;
   });
   // Handing in a file: the folders it can go to, then the class site's own hand-in page with the file in its upload box.
   // (`peek`: only what is already known, for deciding whether to show a Hand in button at all.)
-  ipcMain.handle('scholar:handInTargets', async (_e, opts) => {
+  handleApp(ipcMain, 'scholar:handInTargets', async (_e, opts) => {
     let t = await precheck.handInTargets();
     // Nothing known yet: take a quick look at the class site first (no Claude).
     if (!opts?.peek && !t.some((c) => c.folders.length) && !devices.follower()) {
@@ -633,7 +634,7 @@ function register() {
   });
   ipcMain.handle('scholar:handIn', require('../ipcGuard.cjs').appOnly((_e, ou, folderId, file) => browser.handIn(ou, folderId, file)));
   // Grades: Kea's own check of the class site, or what the daily checks recorded before that ran.
-  ipcMain.handle('scholar:grades', async (_e, courseId, code) => precheck.readGrades().byCourse[code] || (await db.gradesFromChecks(p().db, courseId)));
+  handleApp(ipcMain, 'scholar:grades', async (_e, courseId, code) => precheck.readGrades().byCourse[code] || (await db.gradesFromChecks(p().db, courseId)));
   // Links: class-site pages open in Kea's signed-in window; everything else in the web browser.
   // Reply to a class-site message: the message opens with its Reply already pressed (the student writes and sends).
   // Item history and "what changed" (the engine's append-only record of every change, with runs and reasons).
@@ -647,7 +648,7 @@ function register() {
   // (Rules are worked out from every document, so each class's list is kept for ten minutes.)
   // A class's chapters against its syllabus: outcomes and the chapters that teach each, guidelines, what's missing.
   const curriculumCache = new Map();
-  ipcMain.handle('scholar:curriculum', async (_e, code, fresh) => {
+  handleApp(ipcMain, 'scholar:curriculum', async (_e, code, fresh) => {
     const k = String(code).replace(/[^\w]/g, '');
     const hit = curriculumCache.get(k);
     if (!fresh && hit && Date.now() - hit.at < 10 * 60e3) return hit.value;
@@ -656,7 +657,7 @@ function register() {
     return value;
   });
   const rulesCache = new Map();
-  ipcMain.handle('scholar:courseRules', async (_e, code) => {
+  handleApp(ipcMain, 'scholar:courseRules', async (_e, code) => {
     const k = String(code).replace(/[^\w]/g, '');
     const hit = rulesCache.get(k);
     if (hit && Date.now() - hit.at < 10 * 60e3) return hit.value;
@@ -664,8 +665,8 @@ function register() {
     rulesCache.set(k, { at: Date.now(), value });
     return value;
   });
-  ipcMain.handle('scholar:itemHistory', (_e, id) => engineJson(['item-history', String(id).replace(/[^\w-]/g, ''), '--json']));
-  ipcMain.handle('scholar:changes', (_e, opts = {}) => {
+  handleApp(ipcMain, 'scholar:itemHistory', (_e, id) => engineJson(['item-history', String(id).replace(/[^\w-]/g, ''), '--json']));
+  handleApp(ipcMain, 'scholar:changes', (_e, opts = {}) => {
     const args = ['changes', '--json'];
     if (/^\d{4}-\d{2}-\d{2}$/.test(opts.since || '')) args.push('--since', opts.since);
     if (/^[A-Z]{2,5}\d{3,5}[A-Z]?$/i.test(opts.course || '')) args.push('--course', opts.course);
@@ -680,24 +681,24 @@ function register() {
     return { log: v.log, ask: W.asking(v) };
   };
   const withdrawnChanged = () => (BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed')), syncSoon(3000));
-  ipcMain.handle('scholar:withdrawn', () => withdrawnNow());
-  ipcMain.handle('scholar:setWithdrawn', (_e, courseId, on, code) => {
+  handleApp(ipcMain, 'scholar:withdrawn', () => withdrawnNow());
+  handleApp(ipcMain, 'scholar:setWithdrawn', (_e, courseId, on, code) => {
     if (typeof courseId !== 'string' || !/^[\w-]{1,80}$/.test(courseId)) throw new Error('Kea doesn’t know which class this is.');
     W.set(p().dir, courseId, !!on, String(code || '').slice(0, 40));
     withdrawnChanged();
     return withdrawnNow();
   });
-  ipcMain.handle('scholar:withdrawDismiss', (_e, courseId) => {
+  handleApp(ipcMain, 'scholar:withdrawDismiss', (_e, courseId) => {
     if (typeof courseId !== 'string' || !/^[\w-]{1,80}$/.test(courseId)) throw new Error('Kea doesn’t know which class this is.');
     W.dismiss(p().dir, courseId);
     withdrawnChanged();
     return withdrawnNow();
   });
-  ipcMain.handle('scholar:replyMessage', async (_e, url, course) => {
+  handleApp(ipcMain, 'scholar:replyMessage', async (_e, url, course) => {
     const ou = course ? (await db.watchList(p().db)).find((c) => c.code === course)?.ou : null;
     return browser.reply(typeof url === 'string' ? url : '', ou);
   });
-  ipcMain.handle('scholar:openLink', (_e, url) => {
+  handleApp(ipcMain, 'scholar:openLink', (_e, url) => {
     if (!/^https?:\/\//i.test(String(url))) return false;
     if (browser.isClassSite(url)) return browser.show(url);
     require('electron').shell.openExternal(url);
@@ -705,7 +706,7 @@ function register() {
   });
   // Study materials: practice exams and flashcards, made by Claude only when asked, then taken offline.
   const study = require('./study.cjs');
-  ipcMain.handle('scholar:studyList', () => {
+  handleApp(ipcMain, 'scholar:studyList', () => {
     const running = runner.status();
     // (A set whose run is set aside to continue later is still being made.)
     const busy = new Set([running.running, ...(running.parallel || []), ...running.queued, ...(runner.pending()?.runs || [])].filter((j) => j && j.task === 'practice').map((j) => String(j.arg).split(/\s+/)[0]));
@@ -713,8 +714,8 @@ function register() {
     if (!devices.follower()) study.settle((id) => busy.has(id));
     return study.list();
   });
-  ipcMain.handle('scholar:studyGet', (_e, id) => study.get(id));
-  ipcMain.handle('scholar:studyMake', async (_e, req) => {
+  handleApp(ipcMain, 'scholar:studyGet', (_e, id) => study.get(id));
+  handleApp(ipcMain, 'scholar:studyMake', async (_e, req) => {
     const { id, ready, pick } = await study.request(req);
     // Made by the computer that scans (it has the class files); the set comes back here when it's ready. A set from
     // saved questions is ready here at once, and the primary saves the same one (the same picks) for every device.
@@ -736,10 +737,10 @@ function register() {
     });
     return id;
   });
-  ipcMain.handle('scholar:studySaved', (_e, req) => study.saved(req));
-  ipcMain.handle('scholar:studyImage', (_e, rel) => study.imageData(String(rel || '')));
+  handleApp(ipcMain, 'scholar:studySaved', (_e, req) => study.saved(req));
+  handleApp(ipcMain, 'scholar:studyImage', (_e, rel) => study.imageData(String(rel || '')));
   // Worked steps for a question's chapter, now (the student missed one that has none yet).
-  ipcMain.handle('scholar:studyStepsFor', (_e, k) => {
+  handleApp(ipcMain, 'scholar:studyStepsFor', (_e, k) => {
     const w = study.whereIs(String(k));
     if (!w?.courseCode || !w.chapter) throw new Error('Kea couldn’t find which chapter this question is from.');
     const arg = `${w.courseCode} ${w.chapter}`;
@@ -749,13 +750,13 @@ function register() {
     return { queued: true, ...w };
   });
   // Teach: Claude's lesson on an answered question (streamed to the window as it's written), and follow-ups.
-  ipcMain.handle('scholar:teach', (e, id, req) => require('./teach.cjs').teach(String(id), req || {}, (text) => !e.sender.isDestroyed() && e.sender.send('scholar:teach-event', { id: String(id), text })));
-  ipcMain.handle('scholar:teachStop', (_e, id) => require('./teach.cjs').stop(String(id)));
-  ipcMain.handle('scholar:lessons', (_e, k) => study.lessons(String(k || '')));
+  handleApp(ipcMain, 'scholar:teach', (e, id, req) => require('./teach.cjs').teach(String(id), req || {}, (text) => !e.sender.isDestroyed() && e.sender.send('scholar:teach-event', { id: String(id), text })));
+  handleApp(ipcMain, 'scholar:teachStop', (_e, id) => require('./teach.cjs').stop(String(id)));
+  handleApp(ipcMain, 'scholar:lessons', (_e, k) => study.lessons(String(k || '')));
   // Every assignment's step-by-step guide (guides.cjs), by item id.
-  ipcMain.handle('scholar:guides', () => study.guidesAll());
+  handleApp(ipcMain, 'scholar:guides', () => study.guidesAll());
   // Rescan one assignment's guide now (the student finished what unlocks its instructions).
-  ipcMain.handle('scholar:guideRescan', (_e, id, code) => {
+  handleApp(ipcMain, 'scholar:guideRescan', (_e, id, code) => {
     const arg = `${String(code || '').replace(/[^\w-]/g, '')} ${String(id || '').replace(/[^\w-]/g, '')} force`;
     if (!/^\S+ \S+ force$/.test(arg)) throw new Error('Kea doesn’t know which assignment this is.');
     if (devices.follower()) return (devices.relay({ task: 'guides', arg }), { queued: true });
@@ -763,23 +764,23 @@ function register() {
     return { queued: true };
   });
   // The saved questions of some chapters with how each has gone, for choosing exactly what to study.
-  ipcMain.handle('scholar:studyPool', (_e, { courseId, chapters }) => study.pool(String(courseId || ''), Array.isArray(chapters) ? chapters.map(String) : []));
+  handleApp(ipcMain, 'scholar:studyPool', (_e, { courseId, chapters }) => study.pool(String(courseId || ''), Array.isArray(chapters) ? chapters.map(String) : []));
   // The textbook PDF open in a tab: which class and chapters it is, for its Quiz me button.
-  ipcMain.handle('scholar:textbookOf', (_e, file) => db.textbookOf(p().db, p().textbooks, file));
+  handleApp(ipcMain, 'scholar:textbookOf', (_e, file) => db.textbookOf(p().db, p().textbooks, file));
   // A chapter with no saved questions yet: write its bank now (on the primary). False when Claude isn't available.
-  ipcMain.handle('scholar:studyBanks', async () => {
+  handleApp(ipcMain, 'scholar:studyBanks', async () => {
     if (devices.follower()) return (devices.relay({ task: 'banks', arg: '' }), true);
     const ok = await workspace.check().then((c) => !!c.account?.loggedIn).catch(() => false);
     if (ok) keepBanks();
     return ok;
   });
-  ipcMain.handle('scholar:studyDelete', (_e, id) => study.remove(id));
+  handleApp(ipcMain, 'scholar:studyDelete', (_e, id) => study.remove(id));
   // Running low on a chapter's questions: more get written, ~5 s after an attempt. The Study stream saves every 10
   // answers, so its saves only check on leaving the stream (`final`) or once every 25 answers.
   let banksTimer = null;
   let streamAnswers = 0;
   const banksSoon = () => (clearTimeout(banksTimer), (banksTimer = setTimeout(keepBanks, 5000)));
-  ipcMain.handle('scholar:studyAttempt', (_e, id, a) => {
+  handleApp(ipcMain, 'scholar:studyAttempt', (_e, id, a) => {
     study.saveAttempt(id, a);
     if (!study.isStream(id)) banksSoon();
     else {
@@ -788,15 +789,15 @@ function register() {
     }
     return true;
   });
-  ipcMain.handle('scholar:studyKnown', (_e, id, known) => study.setKnown(id, known));
+  handleApp(ipcMain, 'scholar:studyKnown', (_e, id, known) => study.setKnown(id, known));
   // The student's own sets, stars, Learn and Match progress, and spaced review (all kept on this computer).
-  ipcMain.handle('scholar:studySaveMine', (_e, set) => study.saveMine(set));
-  ipcMain.handle('scholar:studyStar', (_e, k, on) => study.star(String(k), !!on));
-  ipcMain.handle('scholar:studyLearn', (_e, id, levels) => study.learnSet(id, levels));
-  ipcMain.handle('scholar:studyMatch', (_e, id, ms) => study.matchBest(id, Number(ms)));
-  ipcMain.handle('scholar:studyReview', (_e, opts) => study.reviewQueue(opts || {}));
-  ipcMain.handle('scholar:studyReviewMark', (_e, k, grade, ctx) => study.reviewMark(String(k), ['again', 'good', 'easy'].includes(grade) ? grade : 'good', ctx || {}));
-  ipcMain.handle('scholar:resume', (_e, task) => {
+  handleApp(ipcMain, 'scholar:studySaveMine', (_e, set) => study.saveMine(set));
+  handleApp(ipcMain, 'scholar:studyStar', (_e, k, on) => study.star(String(k), !!on));
+  handleApp(ipcMain, 'scholar:studyLearn', (_e, id, levels) => study.learnSet(id, levels));
+  handleApp(ipcMain, 'scholar:studyMatch', (_e, id, ms) => study.matchBest(id, Number(ms)));
+  handleApp(ipcMain, 'scholar:studyReview', (_e, opts) => study.reviewQueue(opts || {}));
+  handleApp(ipcMain, 'scholar:studyReviewMark', (_e, k, grade, ctx) => study.reviewMark(String(k), ['again', 'good', 'easy'].includes(grade) ? grade : 'good', ctx || {}));
+  handleApp(ipcMain, 'scholar:resume', (_e, task) => {
     if (devices.follower()) return (devices.relay({ task: 'resume', arg: task || '' }), true);
     // Nothing set aside: nothing to continue. (Falling back to the last run of a task could restart an import that
     // already finished.)
@@ -805,9 +806,9 @@ function register() {
 
   // Developer aid (unpackaged builds only): read a page through the class-site browser.
   if (!require('electron').app.isPackaged) {
-    ipcMain.handle('scholar:debugOpen', (_e, url) => browser.open(url));
+    handleApp(ipcMain, 'scholar:debugOpen', (_e, url) => browser.open(url));
     // The pre-check on its own, without starting Claude or saving a new baseline.
-    ipcMain.handle('scholar:debugPrecheck', async () => {
+    handleApp(ipcMain, 'scholar:debugPrecheck', async () => {
       const r = await precheck.run();
       const { commit, ...rest } = r;
       return rest;
@@ -819,8 +820,8 @@ function register() {
     runner.adoptStopped();
   } catch {}
   app.on('before-quit', () => runner.shutdown());
-  ipcMain.handle('scholar:cloudDrives', () => ({ drives: cloud.drives(), target: cloud.target() }));
-  ipcMain.handle('scholar:syncNow', async () => {
+  handleApp(ipcMain, 'scholar:cloudDrives', () => ({ drives: cloud.drives(), target: cloud.target() }));
+  handleApp(ipcMain, 'scholar:syncNow', async () => {
     await devices.step();
     return devices.publishes() ? cloud.sync(snapshot) : null;
   });

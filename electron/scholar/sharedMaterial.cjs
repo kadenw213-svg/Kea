@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { validCode } = require('./safePaths.cjs');
+const { validCode, safeFileName } = require('./safePaths.cjs');
 
 const norm = (code) => String(code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 /** The code without a section number written after it ("CHEM 1110-002", "CHEM 1110 002", "CHEM1110.01" → "CHEM 1110"). */
@@ -69,10 +69,11 @@ function plan(files, taken, courses) {
     if (taken[f.rel] === sig) continue;
     const parts = f.rel.split('/');
     if (parts[0] === 'questions' && parts.length === 2 && parts[1].endsWith('.json')) out.push({ rel: f.rel, sig, action: 'questions' });
-    // (A textbook file's name is one plain file name, never a way out of the class's folder.)
-    else if (parts[0] === 'Textbooks' && parts.length === 3 && !/^\.\.?$|[\\/:]/.test(parts[2]) && !/[\\/:]|^\.\.?$/.test(parts[1])) {
+    // (A textbook file's name is one plain file name, never a way out of the class's folder: made safe to write first,
+    // safePaths.safeFileName. One with nothing usable left is skipped.)
+    else if (parts[0] === 'Textbooks' && parts.length === 3 && !/^\.\.?$|[\\/:]/.test(parts[2]) && safeFileName(parts[2]) && !/[\\/:]|^\.\.?$/.test(parts[1])) {
       const course = matchCourse(courses, parts[1]);
-      out.push(course ? { rel: f.rel, sig, action: 'textbook', folder: course.code, name: parts[2] } : { rel: f.rel, sig, action: 'wait' });
+      out.push(course ? { rel: f.rel, sig, action: 'textbook', folder: course.code, name: safeFileName(parts[2]) } : { rel: f.rel, sig, action: 'wait' });
     } else out.push({ rel: f.rel, sig, action: 'skip' });
   }
   return out;

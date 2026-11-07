@@ -13,6 +13,7 @@ const os = require('os');
 const path = require('path');
 const workspace = require('./scholar/workspace.cjs');
 const control = require('./mcp/server.cjs');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const running = new Map(); // request id -> child process
 const cancelled = new Set(); // Stop pressed before Claude Code had started
@@ -73,26 +74,26 @@ function register({ getWindow }) {
     if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
   };
 
-  ipcMain.handle('assistant:plan-status', async () => {
+  handleApp(ipcMain, 'assistant:plan-status', async () => {
     const claude = await findClaude();
     const account = claude ? await workspace.claudeAccount(claude) : { loggedIn: false };
     return { installed: !!claude, loggedIn: !!account.loggedIn, email: account.email || '', plan: account.plan || '', method: account.method || '' };
   });
-  ipcMain.handle('assistant:plan-signin', async () => {
+  handleApp(ipcMain, 'assistant:plan-signin', async () => {
     if (!(await findClaude())) {
       const r = await workspace.installClaude(() => {});
       if (!(await findClaude())) throw new Error(`Claude Code couldn’t be installed: ${String(r.out || '').slice(-300)}`);
     }
     return workspace.signInClaude();
   });
-  ipcMain.handle('assistant:plan-usage-get', () => readUsage());
+  handleApp(ipcMain, 'assistant:plan-usage-get', () => readUsage());
 
   /**
    * One message on the plan: { tabId, content (Anthropic content blocks), session (to continue), model, effort,
    * system }. Streams events to the window as 'assistant:plan-event' { id, ev } (Claude Code's own stream-json lines)
    * and resolves when Claude is done: { session, error?, stopped? }.
    */
-  ipcMain.handle('assistant:plan-send', async (_e, id, req) => {
+  handleApp(ipcMain, 'assistant:plan-send', async (_e, id, req) => {
     cancelled.delete(id);
     const claude = await findClaude();
     if (!claude) return { error: 'Claude Code isn’t installed. Use “Sign in to Claude” in the Claude tab to set it up.' };
@@ -168,7 +169,7 @@ ARGS ${JSON.stringify(args)}
       child.stdin.end(`${JSON.stringify({ type: 'user', message: { role: 'user', content: req.content } })}\n`);
     });
   });
-  ipcMain.handle('assistant:plan-stop', (_e, id) => {
+  handleApp(ipcMain, 'assistant:plan-stop', (_e, id) => {
     const c = running.get(id);
     if (!c) {
       cancelled.add(id);
@@ -180,7 +181,7 @@ ARGS ${JSON.stringify(args)}
   });
 
   /** Refresh the usage bars without a conversation: the smallest possible message (a few tokens on Haiku). */
-  ipcMain.handle('assistant:plan-usage-refresh', async () => {
+  handleApp(ipcMain, 'assistant:plan-usage-refresh', async () => {
     const claude = await findClaude();
     if (!claude) return readUsage();
     await new Promise((resolve) => {

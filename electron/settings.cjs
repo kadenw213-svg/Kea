@@ -3,6 +3,7 @@
 const { app, ipcMain, BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
 let cache = null;
@@ -84,7 +85,7 @@ function setFromRenderer(patch) {
 
 function register() {
   const { appOnly } = require('./ipcGuard.cjs');
-  ipcMain.handle('settings:get', () => all());
+  handleApp(ipcMain, 'settings:get', () => all());
   ipcMain.handle('settings:set', appOnly((_e, patch) => setFromRenderer(patch)));
 }
 

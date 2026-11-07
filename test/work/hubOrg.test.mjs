@@ -9,6 +9,7 @@ import Module, { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerAndSignIn } from '../hubRegister.mjs';
 import { ofetch } from '../ownerFetch.mjs';
+const APP = { senderFrame: { url: 'app://kea/index.html', parent: null } }; // a call from Kea's own page
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -32,7 +33,7 @@ Module._load = function (req, parent, ...rest) {
 };
 const hubOrg = require('../../electron/hubOrg.cjs');
 hubOrg.register();
-const call = (method, p, body) => handlers['hubOrg:call']({}, { method, path: p, body });
+const call = (method, p, body) => handlers['hubOrg:call'](APP, { method, path: p, body });
 
 let hub;
 after(async () => {
@@ -87,13 +88,13 @@ test('calendar file: line breaks in any field (meeting link included) never star
 test('shifts are kept on this PC for when the Hub is unreachable', async () => {
   const ev = { id: 'shift:9', kind: 'shift', orgId: 'o', orgName: 'Pool', title: 'Lifeguard', start: '2026-12-02T12:00:00.000Z', end: '2026-12-02T16:00:00.000Z', date: '2026-12-02' };
   hubReq = async () => ({ events: [ev] });
-  const live = await handlers['hubOrg:events']({}, { from: '2026-12-01T00:00:00Z', to: '2026-12-31T00:00:00Z' });
+  const live = await handlers['hubOrg:events'](APP, { from: '2026-12-01T00:00:00Z', to: '2026-12-31T00:00:00Z' });
   assert.deepEqual([live.ok, live.value.offline, live.value.events.length], [true, false, 1]);
   hubReq = async () => { throw Object.assign(new Error("Can't reach the Kea Hub"), { status: 0 }); };
-  const off = await handlers['hubOrg:events']({}, { from: '2026-12-01T00:00:00Z', to: '2026-12-31T00:00:00Z' });
+  const off = await handlers['hubOrg:events'](APP, { from: '2026-12-01T00:00:00Z', to: '2026-12-31T00:00:00Z' });
   assert.deepEqual([off.ok, off.value.offline, off.value.events[0].id], [true, true, 'shift:9']);
   hubReq = async () => { throw Object.assign(new Error('Sign in again.'), { status: 401 }); };
-  assert.equal((await handlers['hubOrg:events']({}, {})).ok, false, 'other errors are not hidden');
+  assert.equal((await handlers['hubOrg:events'](APP, {})).ok, false, 'other errors are not hidden');
 });
 
 test('the saved shifts belong to the account that fetched them', async () => {
@@ -101,12 +102,12 @@ test('the saved shifts belong to the account that fetched them', async () => {
   const range = { from: '2026-12-01T00:00:00Z', to: '2026-12-31T00:00:00Z' };
   signedInAs = { id: 'ana' };
   hubReq = async () => ({ events: [ev] });
-  await handlers['hubOrg:events']({}, range);
+  await handlers['hubOrg:events'](APP, range);
   hubReq = async () => { throw Object.assign(new Error("Can't reach the Kea Hub"), { status: 0 }); };
-  assert.deepEqual((await handlers['hubOrg:events']({}, range)).value.events.map((e) => e.id), ['shift:7']);
+  assert.deepEqual((await handlers['hubOrg:events'](APP, range)).value.events.map((e) => e.id), ['shift:7']);
   // Someone else signed in on this PC, offline: nothing of Ana's.
   signedInAs = { id: 'max' };
-  assert.deepEqual((await handlers['hubOrg:events']({}, range)).value.events, []);
+  assert.deepEqual((await handlers['hubOrg:events'](APP, range)).value.events, []);
   signedInAs = null;
 });
 

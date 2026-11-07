@@ -6,6 +6,7 @@ const { app, ipcMain, utilityProcess } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const models = require('./models.cjs');
+const { handleApp } = require('./ipcGuard.cjs');
 
 let log = () => {};
 let worker = null;
@@ -143,16 +144,16 @@ function status() {
 
 function register(opts) {
   log = (opts && opts.log) || log;
-  ipcMain.handle('engine:status', () => status());
-  ipcMain.handle('engine:resetGpu', () => {
+  handleApp(ipcMain, 'engine:status', () => status());
+  handleApp(ipcMain, 'engine:resetGpu', () => {
     const s = readState();
     delete s.gpuCrashed;
     writeState(s);
     return status();
   });
-  ipcMain.handle('engine:segment', (_e, type, id, rgba, width, height, accel) => segment(type, id, rgba, width, height, accel));
-  ipcMain.handle('engine:faces', (_e, id, rgba, width, height, accel) => faces(id, rgba, width, height, accel));
-  ipcMain.handle('engine:transcribe', async (_e, repo, audio, englishOnly, timestamps) => {
+  handleApp(ipcMain, 'engine:segment', (_e, type, id, rgba, width, height, accel) => segment(type, id, rgba, width, height, accel));
+  handleApp(ipcMain, 'engine:faces', (_e, id, rgba, width, height, accel) => faces(id, rgba, width, height, accel));
+  handleApp(ipcMain, 'engine:transcribe', async (_e, repo, audio, englishOnly, timestamps) => {
     const r = await transcribe(repo, audio, englishOnly, timestamps);
     return { text: r.text, chunks: r.chunks, words: r.words, ms: r.ms };
   });

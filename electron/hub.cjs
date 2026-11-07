@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const settings = require('./settings.cjs');
-const { appOnly } = require('./ipcGuard.cjs');
+const { appOnly, handleApp } = require('./ipcGuard.cjs');
 
 // Where Kea finds the Kea Hub unless the person sets another address (Settings → Kea account → Kea Hub address).
 // This is the one place to change it: the Hub owner's public https://….ts.net address goes here for releases, so
@@ -666,14 +666,14 @@ function stopSync() {
 }
 
 function register() {
-  ipcMain.handle('hub:requestScan', wrap(() => requestScan()));
-  ipcMain.handle('hub:questionChapters', wrap(() => questionChapters()));
-  ipcMain.handle('hub:requestQuestions', wrap((a) => requestQuestions(a)));
+  handleApp(ipcMain, 'hub:requestScan', wrap(() => requestScan()));
+  handleApp(ipcMain, 'hub:questionChapters', wrap(() => questionChapters()));
+  handleApp(ipcMain, 'hub:requestQuestions', wrap((a) => requestQuestions(a)));
   // Getting into a course section someone else started: requests to let in (or my own), and the section's code.
-  ipcMain.handle('hub:sectionRequests', wrap(() => (isSignedIn() ? req('GET', '/v1/course-sections/requests') : { incoming: [], mine: [] })));
-  ipcMain.handle('hub:sectionDecide', wrap((a) => req('POST', `/v1/course-sections/requests/${encodeURIComponent(String(a.id))}/decide`, { approve: a.approve === true })));
-  ipcMain.handle('hub:sectionCode', wrap(async (a) => req('POST', '/v1/course-sections/code', { course: await sectionOf(a.courseId), ...(a.reset ? { reset: true } : {}) })));
-  ipcMain.handle('hub:scanJobs', wrap(async () => (isSignedIn() ? { ...(await req('GET', '/v1/scan')), worker: workerState, serving: servingNow() } : { jobs: [], allowance: null, worker: workerState, serving: servingNow() })));
+  handleApp(ipcMain, 'hub:sectionRequests', wrap(() => (isSignedIn() ? req('GET', '/v1/course-sections/requests') : { incoming: [], mine: [] })));
+  handleApp(ipcMain, 'hub:sectionDecide', wrap((a) => req('POST', `/v1/course-sections/requests/${encodeURIComponent(String(a.id))}/decide`, { approve: a.approve === true })));
+  handleApp(ipcMain, 'hub:sectionCode', wrap(async (a) => req('POST', '/v1/course-sections/code', { course: await sectionOf(a.courseId), ...(a.reset ? { reset: true } : {}) })));
+  handleApp(ipcMain, 'hub:scanJobs', wrap(async () => (isSignedIn() ? { ...(await req('GET', '/v1/scan')), worker: workerState, serving: servingNow() } : { jobs: [], allowance: null, worker: workerState, serving: servingNow() })));
   // A worker copy (scholar/worker.cjs) does none of the background work below.
   if (process.env.KEA_WORKER_JOB) return;
   // Start (or stop) syncing through the Hub when Kea starts, and whenever sign-in or the chosen drive may have changed.
@@ -682,19 +682,19 @@ function register() {
   // This person's shared-Claude jobs (answering a running one's calls), and on the owner's PC, the launcher.
   watchJobs(8000);
   setInterval(launcherTick, 60_000);
-  ipcMain.handle('hub:syncStatus', wrap(() => ({ ...syncState })));
-  ipcMain.handle('hub:syncNow', wrap(async () => (startSync(), await syncNow(), { ...syncState })));
-  ipcMain.handle('hub:status', wrap(() => status()));
-  ipcMain.handle('hub:terms', wrap(() => req('GET', '/v1/terms', undefined, { auth: false })));
-  ipcMain.handle('hub:support', wrap(() => req('GET', '/v1/support', undefined, { auth: false })));
-  ipcMain.handle('hub:openSupport', wrap(async () => {
+  handleApp(ipcMain, 'hub:syncStatus', wrap(() => ({ ...syncState })));
+  handleApp(ipcMain, 'hub:syncNow', wrap(async () => (startSync(), await syncNow(), { ...syncState })));
+  handleApp(ipcMain, 'hub:status', wrap(() => status()));
+  handleApp(ipcMain, 'hub:terms', wrap(() => req('GET', '/v1/terms', undefined, { auth: false })));
+  handleApp(ipcMain, 'hub:support', wrap(() => req('GET', '/v1/support', undefined, { auth: false })));
+  handleApp(ipcMain, 'hub:openSupport', wrap(async () => {
     const s = await req('GET', '/v1/support', undefined, { auth: false });
     if (s.url && /^https:\/\//.test(s.url)) await shell.openExternal(s.url);
     return true;
   }));
-  ipcMain.handle('hub:changes', wrap(() => req('GET', '/v1/terms/changes')));
-  ipcMain.handle('hub:openTerms', wrap(({ since }) => shell.openExternal(`${hubUrl()}/terms${since ? `?since=${Number(since)}` : ''}`)));
-  ipcMain.handle('hub:register', wrap(async (a) => {
+  handleApp(ipcMain, 'hub:changes', wrap(() => req('GET', '/v1/terms/changes')));
+  handleApp(ipcMain, 'hub:openTerms', wrap(({ since }) => shell.openExternal(`${hubUrl()}/terms${since ? `?since=${Number(since)}` : ''}`)));
+  handleApp(ipcMain, 'hub:register', wrap(async (a) => {
     await req('POST', '/v1/auth/register', { email: a.email, password: a.password, displayName: a.name, age13: a.age13 === true, ...(a.birthYear ? { birthYear: Number(a.birthYear) } : {}), termsVersion: a.termsVersion, termsSections: a.termsSections }, { auth: false });
     // The Hub answers the same whether or not the email already had an account (so nobody can use it to find out who
     // has one), and never signs in by itself: sign in now with what was just entered.
@@ -706,39 +706,39 @@ function register() {
     }
   }));
   // Under 18: the birth year, and a parent's or guardian's sign-off before Kea's shared Claude.
-  ipcMain.handle('hub:birthYear', wrap(async (a) => (await req('POST', '/v1/me/birth-year', { birthYear: Number(a.birthYear) }), refresh())));
-  ipcMain.handle('hub:consent', wrap(() => req('GET', '/v1/me/consent')));
+  handleApp(ipcMain, 'hub:birthYear', wrap(async (a) => (await req('POST', '/v1/me/birth-year', { birthYear: Number(a.birthYear) }), refresh())));
+  handleApp(ipcMain, 'hub:consent', wrap(() => req('GET', '/v1/me/consent')));
   // The optional phone number and who sees it (classmates, coworkers, both, nobody).
-  ipcMain.handle('hub:setPhone', wrap(async (a) => {
+  handleApp(ipcMain, 'hub:setPhone', wrap(async (a) => {
     const body = {};
     if ('phone' in a) body.phone = a.phone == null || a.phone === '' ? null : String(a.phone);
     if (a.visibility) body.visibility = a.visibility;
     await req('POST', '/v1/me/phone', body);
     return refresh();
   }));
-  ipcMain.handle('hub:consentRequest', wrap((a) => req('POST', '/v1/me/consent', { parentEmail: a.parentEmail })));
-  ipcMain.handle('hub:consentGoogle', wrap(async () => {
+  handleApp(ipcMain, 'hub:consentRequest', wrap((a) => req('POST', '/v1/me/consent', { parentEmail: a.parentEmail })));
+  handleApp(ipcMain, 'hub:consentGoogle', wrap(async () => {
     const c = await req('GET', '/v1/me/consent');
     if (c.parentSignOff !== 'pending' || !c.parentEmail) throw new HubError('Enter your parent’s or guardian’s email first.', 400);
     await req('POST', '/v1/me/consent/google', { idToken: await googleIdToken(c.parentEmail) });
     return refresh();
   }));
-  ipcMain.handle('hub:login', wrap(async (a) => signedIn(await req('POST', '/v1/auth/login', { email: a.email, password: a.password, code: a.code || undefined }, { auth: false }))));
-  ipcMain.handle('hub:accept', wrap(async (a) => (await req('POST', '/v1/terms/accept', { termsVersion: a.termsVersion, termsSections: a.termsSections }), refresh())));
-  ipcMain.handle('hub:googleVerify', wrap(async () => (await req('POST', '/v1/me/verify/google', { idToken: await googleIdToken(cached()?.email) }), refresh())));
-  ipcMain.handle('hub:googleSignIn', wrap(async (a) => signedIn(await req('POST', '/v1/auth/google', { idToken: await googleIdToken(a.email), code: a.code || undefined }, { auth: false }))));
-  ipcMain.handle('hub:googleReset', wrap(async (a) => signedIn(await req('POST', '/v1/auth/reset/google', { idToken: await googleIdToken(a.email), password: a.password, code: a.code || undefined }, { auth: false }))));
+  handleApp(ipcMain, 'hub:login', wrap(async (a) => signedIn(await req('POST', '/v1/auth/login', { email: a.email, password: a.password, code: a.code || undefined }, { auth: false }))));
+  handleApp(ipcMain, 'hub:accept', wrap(async (a) => (await req('POST', '/v1/terms/accept', { termsVersion: a.termsVersion, termsSections: a.termsSections }), refresh())));
+  handleApp(ipcMain, 'hub:googleVerify', wrap(async () => (await req('POST', '/v1/me/verify/google', { idToken: await googleIdToken(cached()?.email) }), refresh())));
+  handleApp(ipcMain, 'hub:googleSignIn', wrap(async (a) => signedIn(await req('POST', '/v1/auth/google', { idToken: await googleIdToken(a.email), code: a.code || undefined }, { auth: false }))));
+  handleApp(ipcMain, 'hub:googleReset', wrap(async (a) => signedIn(await req('POST', '/v1/auth/reset/google', { idToken: await googleIdToken(a.email), password: a.password, code: a.code || undefined }, { auth: false }))));
   // The account page: name, password, two-step sign-in, signed-in devices, the data download, deleting the account.
   // (Changing how you sign in needs the password again: the Hub checks it.)
-  ipcMain.handle('hub:setName', wrap(async (a) => (await req('POST', '/v1/me', { displayName: String(a.name ?? '').trim() }), refresh())));
-  ipcMain.handle('hub:changePassword', wrap(async (a) => (await req('POST', '/v1/me/password', { current: a.current, next: a.next }, { reauth: true }), refresh())));
-  ipcMain.handle('hub:totpSetup', wrap((a) => req('POST', '/v1/me/totp/setup', { password: a?.password }, { reauth: true })));
-  ipcMain.handle('hub:totpEnable', wrap(async (a) => (await req('POST', '/v1/me/totp/enable', { code: a.code }, { reauth: true }), refresh())));
-  ipcMain.handle('hub:totpDisable', wrap(async (a) => (await req('POST', '/v1/me/totp/disable', { password: a.password, code: a.code }, { reauth: true }), refresh())));
-  ipcMain.handle('hub:sessions', wrap(() => req('GET', '/v1/me/sessions')));
-  ipcMain.handle('hub:signOutOthers', wrap((a) => req('POST', '/v1/me/sessions/sign-out-others', { password: a.password }, { reauth: true })));
-  ipcMain.handle('hub:exportData', wrap(() => exportData()));
-  ipcMain.handle('hub:deleteAccount', wrap(async (a) => {
+  handleApp(ipcMain, 'hub:setName', wrap(async (a) => (await req('POST', '/v1/me', { displayName: String(a.name ?? '').trim() }), refresh())));
+  handleApp(ipcMain, 'hub:changePassword', wrap(async (a) => (await req('POST', '/v1/me/password', { current: a.current, next: a.next }, { reauth: true }), refresh())));
+  handleApp(ipcMain, 'hub:totpSetup', wrap((a) => req('POST', '/v1/me/totp/setup', { password: a?.password }, { reauth: true })));
+  handleApp(ipcMain, 'hub:totpEnable', wrap(async (a) => (await req('POST', '/v1/me/totp/enable', { code: a.code }, { reauth: true }), refresh())));
+  handleApp(ipcMain, 'hub:totpDisable', wrap(async (a) => (await req('POST', '/v1/me/totp/disable', { password: a.password, code: a.code }, { reauth: true }), refresh())));
+  handleApp(ipcMain, 'hub:sessions', wrap(() => req('GET', '/v1/me/sessions')));
+  handleApp(ipcMain, 'hub:signOutOthers', wrap((a) => req('POST', '/v1/me/sessions/sign-out-others', { password: a.password }, { reauth: true })));
+  handleApp(ipcMain, 'hub:exportData', wrap(() => exportData()));
+  handleApp(ipcMain, 'hub:deleteAccount', wrap(async (a) => {
     const id = cached()?.id;
     await req('POST', '/v1/me/delete', { confirm: a.confirm, password: a.password, ...(a.code ? { code: a.code } : {}) }, { reauth: true });
     writeToken(null);
@@ -747,7 +747,7 @@ function register() {
     require('./account.cjs').forget(id);
     return status();
   }));
-  ipcMain.handle('hub:logout', wrap(async () => {
+  handleApp(ipcMain, 'hub:logout', wrap(async () => {
     try {
       await req('POST', '/v1/auth/logout', {});
     } catch {}

@@ -91,6 +91,14 @@ function forgetLogin() {
 /** Save the login the user signs in with in Kea's window: when they said so at setup (the default), any time. */
 const wantsRemember = () => rememberNext || readSchool().remember !== false;
 
+/** A host's registrable domain ("d2l.school.edu" → "school.edu"), '' when there's none. */
+const schoolDomainOf = (host) => {
+  try {
+    return require('tldts-experimental').getDomain(String(host || ''), { allowPrivateDomains: true }) || '';
+  } catch {
+    return '';
+  }
+};
 const hostOf = (u) => {
   try {
     return new URL(u).host.toLowerCase();
@@ -749,7 +757,12 @@ async function request(url, allowHop = publicHttps) {
   if (!/^https:\/\/[^/]/i.test(String(url || ''))) throw new Error('Only https addresses can be fetched.');
   const ses = session.fromPartition(partition());
   prepareSession(ses);
-  const get = () => fetchHops(net, ses, url, allowHop);
+  // (The class site and its school's own hosts may resolve to the school network's addresses on campus: those are the
+  // student's own setup, so only other hosts must resolve to public addresses.)
+  const home = hostOf(s.home).replace(/:\d+$/, '');
+  const school = schoolDomainOf(home);
+  const trusted = (h) => h === home || (!!school && (h === school || h.endsWith(`.${school}`)));
+  const get = () => fetchHops(net, ses, url, allowHop, { trusted });
   let res = null;
   try {
     res = await get();

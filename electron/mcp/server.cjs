@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { app, ipcMain, safeStorage } = require('electron');
 const jsonrpc = require('./jsonrpc.cjs');
+const { handleApp } = require('../ipcGuard.cjs');
 
 const PREFERRED_PORT = 4849; // a stable port so saved client configs keep working; falls back to ephemeral if taken.
 const CALL_TIMEOUT = 60_000;
@@ -201,12 +202,12 @@ function register(opts) {
     else p.reject(new Error(msg.error || 'The editor reported an error.'));
   });
 
-  ipcMain.handle('control:status', () => ({
+  handleApp(ipcMain, 'control:status', () => ({
     enabled: state.enabled,
     url: server ? url : null,
     clients: state.clients.map((c) => ({ id: c.id, name: c.name, createdAt: c.createdAt, lastUsed: c.lastUsed }))
   }));
-  ipcMain.handle('control:set-enabled', async (_e, on) => {
+  handleApp(ipcMain, 'control:set-enabled', async (_e, on) => {
     state.enabled = !!on;
     saveState();
     if (state.enabled) await startServer();
@@ -218,7 +219,7 @@ function register(opts) {
     if (!server) await startServer();
     return mintClient(name);
   }));
-  ipcMain.handle('control:revoke-client', (_e, id) => {
+  handleApp(ipcMain, 'control:revoke-client', (_e, id) => {
     state.clients = state.clients.filter((c) => c.id !== id);
     saveState();
     return true;

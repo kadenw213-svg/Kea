@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const zlib = require('zlib');
 const { execFile } = require('child_process');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const TEXT_EXT = new Set(['txt', 'md', 'csv', 'tsv', 'json', 'html', 'htm', 'xml', 'log', 'rtf', 'yaml', 'yml', 'ini']);
 const ZIP_EXT = new Set(['docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp']);
@@ -147,7 +148,7 @@ async function search(query, roots) {
 }
 
 function register() {
-  ipcMain.handle('search:content', (_e, query, roots) => search(query, roots && roots.length ? roots : ['desktop', 'documents', 'downloads'].map((k) => app.getPath(k))));
+  handleApp(ipcMain, 'search:content', (_e, query, roots) => search(query, roots && roots.length ? roots : ['desktop', 'documents', 'downloads'].map((k) => app.getPath(k))));
 }
 
 module.exports = { register };

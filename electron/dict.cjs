@@ -5,6 +5,7 @@ const path = require('path');
 const { ipcMain } = require('electron');
 
 const DIR = require('wordnet-db').path;
+const { handleApp } = require('./ipcGuard.cjs');
 const FILES = { n: 'noun', v: 'verb', a: 'adj', r: 'adv' };
 const POS_NAME = { n: 'noun', v: 'verb', a: 'adjective', s: 'adjective', r: 'adverb' };
 
@@ -133,7 +134,7 @@ function define(input, maxSenses = 6) {
 }
 
 function register() {
-  ipcMain.handle('lookup:define', (_e, word, maxSenses) => define(word, Math.max(1, Math.min(20, Number(maxSenses) || 6))));
+  handleApp(ipcMain, 'lookup:define', (_e, word, maxSenses) => define(word, Math.max(1, Math.min(20, Number(maxSenses) || 6))));
 }
 
 module.exports = { register, define };

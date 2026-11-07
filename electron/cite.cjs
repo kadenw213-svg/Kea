@@ -1,6 +1,7 @@
 // Citation lookups: turn a DOI, ISBN or web address into a filled-in source. Runs only when the user
 // clicks "Look up" (Crossref for DOIs, Open Library for ISBNs, or the web page's own metadata).
 const { ipcMain, net } = require('electron');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const UA = 'Kea/1.0 (https://github.com/kadenw213-svg/kea)';
 
@@ -121,7 +122,7 @@ async function byUrl(url) {
 }
 
 function register({ log }) {
-  ipcMain.handle('cite:lookup', async (_e, query) => {
+  handleApp(ipcMain, 'cite:lookup', async (_e, query) => {
     const q = String(query || '').trim();
     try {
       if (/^(https?:\/\/(dx\.)?doi\.org\/|doi:\s*)?10\.\d{4,9}\/\S+$/i.test(q)) return await byDoi(q);

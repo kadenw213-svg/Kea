@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 // Kea's riskiest IPC (files, settings, opening programs) answers only Kea's own top-level page.
-const { appOnly } = require('./ipcGuard.cjs');
+const { appOnly, handleApp } = require('./ipcGuard.cjs');
 
 // Developer aids, only in a development copy (never an installed Kea, where anything that can set an environment
 // variable could otherwise load another page into Kea's window or run a script in it): the Vite dev server, and
@@ -500,16 +500,16 @@ function readFileEntry(p) {
 }
 
 // ---------- IPC ----------
-ipcMain.handle('app:get-pending-open', () => {
+handleApp(ipcMain, 'app:get-pending-open', () => {
   rendererReady = true;
   const files = pendingOpen;
   pendingOpen = [];
   return files;
 });
 
-ipcMain.handle('app:platform', () => process.platform);
+handleApp(ipcMain, 'app:platform', () => process.platform);
 
-ipcMain.handle('dialog:open', async (_e, opts = {}) => {
+handleApp(ipcMain, 'dialog:open', async (_e, opts = {}) => {
   const res = await dialog.showOpenDialog(mainWindow, {
     title: opts.title || 'Open',
     properties: ['openFile', ...(opts.multi ? ['multiSelections'] : [])],
@@ -521,7 +521,7 @@ ipcMain.handle('dialog:open', async (_e, opts = {}) => {
   return res.filePaths.map((p) => (streamed.test(p) ? { path: p, name: path.basename(p), data: new Uint8Array(), size: fs.statSync(p).size } : readFileEntry(p)));
 });
 
-ipcMain.handle('dialog:save', async (_e, opts = {}) => {
+handleApp(ipcMain, 'dialog:save', async (_e, opts = {}) => {
   const res = await dialog.showSaveDialog(mainWindow, {
     title: opts.title || 'Save',
     defaultPath:
@@ -573,7 +573,7 @@ ipcMain.handle('file:rename', appOnly((_e, from, to) => {
   return true;
 }));
 
-ipcMain.handle('file:exists', (_e, p) => {
+handleApp(ipcMain, 'file:exists', (_e, p) => {
   try {
     return fs.statSync(p).isFile();
   } catch {
@@ -583,19 +583,19 @@ ipcMain.handle('file:exists', (_e, p) => {
 
 ipcMain.handle('shell:show-in-folder', appOnly((_e, p) => shell.showItemInFolder(p)));
 
-ipcMain.handle('recent:get', () => readRecent());
-ipcMain.handle('recent:add', (_e, p) => {
+handleApp(ipcMain, 'recent:get', () => readRecent());
+handleApp(ipcMain, 'recent:add', (_e, p) => {
   const list = readRecent().filter((r) => r.path !== p);
   list.unshift({ path: p, name: path.basename(p), openedAt: Date.now() });
   writeRecent(list);
   return list;
 });
-ipcMain.handle('recent:remove', (_e, p) => {
+handleApp(ipcMain, 'recent:remove', (_e, p) => {
   const list = readRecent().filter((r) => r.path !== p);
   writeRecent(list);
   return list;
 });
-ipcMain.handle('recent:clear', () => {
+handleApp(ipcMain, 'recent:clear', () => {
   writeRecent([]);
   return [];
 });
@@ -781,8 +781,8 @@ function friendlyUpdateError(err) {
   return msg.split('\n')[0].slice(0, 200);
 }
 
-ipcMain.handle('app:version', () => app.getVersion());
-ipcMain.handle('update:check', async () => {
+handleApp(ipcMain, 'app:version', () => app.getVersion());
+handleApp(ipcMain, 'update:check', async () => {
   if (!app.isPackaged) return { status: 'dev' };
   if (!canSelfUpdate()) return { status: 'manual' };
   try {
@@ -795,7 +795,7 @@ ipcMain.handle('update:check', async () => {
     return { status: 'error', message: friendlyUpdateError(err) };
   }
 });
-ipcMain.handle('update:download', async () => {
+handleApp(ipcMain, 'update:download', async () => {
   try {
     await getUpdater().downloadUpdate();
     return true;

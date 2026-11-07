@@ -8,6 +8,7 @@ const { app, ipcMain, BrowserWindow, Notification } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const settings = require('./settings.cjs');
+const { handleApp } = require('./ipcGuard.cjs');
 
 const DAY = 86400_000;
 
@@ -141,12 +142,12 @@ const wrap = (fn) => async (_e, arg) => {
 
 function register() {
   const hub = require('./hub.cjs');
-  ipcMain.handle('hub:notifications', wrap(async () => (await poll()) || out(mine())));
-  ipcMain.handle('hub:notificationsRead', wrap(async ({ ids, all }) => {
+  handleApp(ipcMain, 'hub:notifications', wrap(async () => (await poll()) || out(mine())));
+  handleApp(ipcMain, 'hub:notificationsRead', wrap(async ({ ids, all }) => {
     await hub.req('POST', '/v1/me/notifications/read', all ? { all: true } : { ids: (ids || []).map(Number) });
     return (await poll()) || out(mine());
   }));
-  ipcMain.handle('hub:notificationsDelete', wrap(async ({ ids, all }) => {
+  handleApp(ipcMain, 'hub:notificationsDelete', wrap(async ({ ids, all }) => {
     await hub.req('POST', '/v1/me/notifications/delete', all ? { all: true } : { ids: (ids || []).map(Number) });
     return (await poll()) || out(mine());
   }));

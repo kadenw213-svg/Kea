@@ -17,7 +17,9 @@ electron._paths.userData = dir;
 electron._paths.appData = dir;
 after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-const { fetchHops, publicHttps } = require('../../electron/scholar/hopFetch.cjs');
+const { fetchHops, publicHttps, privateAddress } = require('../../electron/scholar/hopFetch.cjs');
+// (Every name looks up to a public address unless a test says otherwise: no real DNS in these tests.)
+const PUBLIC = { lookup: async () => [{ address: '93.184.216.34', family: 4 }] };
 const browser = require('../../electron/scholar/browser.cjs');
 const mcp = require('../../electron/scholar/mcp.cjs');
 
@@ -66,7 +68,7 @@ test('https on a public host is the rule when a caller has none of its own', () 
 
 test('a refused redirect is never contacted, and says where it was going', async () => {
   const { net, contacted } = fakeNet({ 'https://a.school.edu/x': 'https://evil.example/?q=secret' });
-  await assert.rejects(fetchHops(net, {}, 'https://a.school.edu/x', (n) => n.includes('school.edu')), (e) => e.refusedHop === 'https://evil.example/?q=secret');
+  await assert.rejects(fetchHops(net, {}, 'https://a.school.edu/x', (n) => n.includes('school.edu'), PUBLIC), (e) => e.refusedHop === 'https://evil.example/?q=secret');
   assert.deepEqual(contacted, ['https://a.school.edu/x']);
 });
 
@@ -74,7 +76,7 @@ test('each hop is checked, not just the first, and the answer has the final addr
   const site = { 'https://a.school.edu/1': 'https://b.school.edu/2', 'https://b.school.edu/2': 'https://c.school.edu/3', 'https://c.school.edu/3': { body: 'done', headers: { 'content-type': 'text/plain', 'set-cookie': ['a=1', 'b=2'] } } };
   const { net } = fakeNet(site);
   const seen = [];
-  const res = await fetchHops(net, {}, 'https://a.school.edu/1', (n, from) => (seen.push([n, from]), true));
+  const res = await fetchHops(net, {}, 'https://a.school.edu/1', (n, from) => (seen.push([n, from]), true), PUBLIC);
   assert.deepEqual(seen, [['https://b.school.edu/2', 'https://a.school.edu/1'], ['https://c.school.edu/3', 'https://b.school.edu/2']]);
   assert.equal(res.url, 'https://c.school.edu/3');
   assert.equal(res.status, 200);
@@ -84,21 +86,56 @@ test('each hop is checked, not just the first, and the answer has the final addr
   assert.equal(Buffer.from(await res.arrayBuffer()).toString(), 'done');
 
   const second = fakeNet({ 'https://a.school.edu/1': 'https://b.school.edu/2', 'https://b.school.edu/2': 'https://evil.example/' });
-  await assert.rejects(fetchHops(second.net, {}, 'https://a.school.edu/1', (n) => n.includes('school.edu')), /doesn’t read/);
+  await assert.rejects(fetchHops(second.net, {}, 'https://a.school.edu/1', (n) => n.includes('school.edu'), PUBLIC), /doesn’t read/);
   assert.ok(!second.contacted.includes('https://evil.example/'));
 });
 
 test('the first address is checked too, whatever rule the caller passes: never this computer or the home network', async () => {
   for (const bad of ['https://127.0.0.1/', 'https://localhost/x', 'https://10.0.0.5/', 'http://a.school.edu/', 'file:///C:/x']) {
     const { net, contacted } = fakeNet({});
-    await assert.rejects(fetchHops(net, {}, bad, () => true), (e) => e.refusedHop === bad, bad);
+    await assert.rejects(fetchHops(net, {}, bad, () => true, PUBLIC), (e) => e.refusedHop === bad, bad);
     assert.deepEqual(contacted, [], bad);
   }
 });
 
 test('a redirect loop ends', async () => {
   const { net } = fakeNet({ 'https://a.school.edu/1': 'https://a.school.edu/2', 'https://a.school.edu/2': 'https://a.school.edu/1' });
-  await assert.rejects(fetchHops(net, {}, 'https://a.school.edu/1'), /too many/);
+  await assert.rejects(fetchHops(net, {}, 'https://a.school.edu/1', undefined, PUBLIC), /too many/);
+});
+
+test('private, loopback, link-local, carrier-grade NAT and unique local addresses are told apart from public ones', () => {
+  for (const bad of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.1', '169.254.169.254', '100.64.0.1', '100.127.255.254', '0.0.0.0', '224.0.0.1', '255.255.255.255', '::1', '::', 'fc00::1', 'fd12:3456::1', 'fe80::1%12', 'ff02::1', '::ffff:127.0.0.1', '::ffff:a00:1', '64:ff9b::c0a8:101', 'not an address'])
+    assert.equal(privateAddress(bad), true, bad);
+  for (const ok of ['93.184.216.34', '8.8.8.8', '172.32.0.1', '100.128.0.1', '2606:4700::6810:84e5', '::ffff:93.184.216.34']) assert.equal(privateAddress(ok), false, ok);
+});
+
+test('a public name that resolves to this computer or the home network is refused before it is contacted, first address or redirect', async () => {
+  const dns = { 'a.school.edu': ['93.184.216.34'], '127.0.0.1.nip.io': ['127.0.0.1'], 'mixed.example': ['93.184.216.34', '10.0.0.5'], 'v6.example': ['fd00::5'], 'cgnat.example': ['100.70.1.2'] };
+  const asked = [];
+  const lookup = async (host, opts) => {
+    asked.push([host, opts]);
+    if (!dns[host]) throw Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' });
+    return dns[host].map((address) => ({ address, family: address.includes(':') ? 6 : 4 }));
+  };
+  // The first address.
+  for (const bad of ['https://127.0.0.1.nip.io/x', 'https://mixed.example/', 'https://v6.example/', 'https://cgnat.example/', 'https://nowhere.example/']) {
+    const { net, contacted } = fakeNet({});
+    await assert.rejects(fetchHops(net, {}, bad, () => true, { lookup }), (e) => e.refusedHop === bad, bad);
+    assert.deepEqual(contacted, [], bad);
+  }
+  assert.ok(asked.every(([, o]) => o.all === true), 'every address the name has is looked at');
+  // A redirect there, even one the caller's rule allows.
+  const { net, contacted } = fakeNet({ 'https://a.school.edu/x': 'https://127.0.0.1.nip.io/steal?c=1' });
+  await assert.rejects(fetchHops(net, {}, 'https://a.school.edu/x', () => true, { lookup }), (e) => e.refusedHop === 'https://127.0.0.1.nip.io/steal?c=1');
+  assert.deepEqual(contacted, ['https://a.school.edu/x']);
+  // A public one goes ahead, redirects included.
+  const ok = fakeNet({ 'https://a.school.edu/1': 'https://a.school.edu/2', 'https://a.school.edu/2': { body: 'fine' } });
+  assert.equal(await (await fetchHops(ok.net, {}, 'https://a.school.edu/1', () => true, { lookup })).text(), 'fine');
+  // The student's own class site may be on the school's network.
+  const campus = fakeNet({ 'https://d2l.campus.edu/x': { body: 'on campus' } });
+  const local = async () => [{ address: '10.20.30.40', family: 4 }];
+  await assert.rejects(fetchHops(campus.net, {}, 'https://d2l.campus.edu/x', () => true, { lookup: local }));
+  assert.equal(await (await fetchHops(campus.net, {}, 'https://d2l.campus.edu/x', () => true, { lookup: local, trusted: (h) => h === 'd2l.campus.edu' })).text(), 'on campus');
 });
 
 test('what a scan’s own fetch may be redirected to', () => {

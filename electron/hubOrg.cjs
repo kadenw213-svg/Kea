@@ -5,6 +5,7 @@ const { app, ipcMain, dialog, BrowserWindow, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const hub = require('./hub.cjs');
+const { handleApp } = require('./ipcGuard.cjs');
 
 // The routes the page may call, by method.
 const ALLOWED = [
@@ -119,24 +120,24 @@ async function saveAs(defaultName, filters, data) {
 }
 
 function register() {
-  ipcMain.handle('hubOrg:call', wrap(async ({ method, path: p, body }) => {
+  handleApp(ipcMain, 'hubOrg:call', wrap(async ({ method, path: p, body }) => {
     const m = String(method || 'GET').toUpperCase();
     if (!['GET', 'POST'].includes(m) || !ok(p)) throw refuse();
     return hub.req(m, p, m === 'POST' ? body ?? {} : undefined);
   }));
   // An availability form's answers as CSV (the Google-Sheets shape, or one row per date).
-  ipcMain.handle('hubOrg:saveCsv', wrap(async ({ orgId, formId, format }) => {
+  handleApp(ipcMain, 'hubOrg:saveCsv', wrap(async ({ orgId, formId, format }) => {
     if (!/^[\w-]{1,80}$/.test(String(orgId)) || !/^[\w-]{1,80}$/.test(String(formId))) throw refuse();
     const r = await hub.req('GET', `/v1/orgs/${orgId}/forms/${formId}/export?as=json&format=${format === 'long' ? 'long' : 'sheets'}`);
     return saveAs(r.filename, [{ name: 'CSV', extensions: ['csv'] }], '\ufeff' + r.csv);
   }));
-  ipcMain.handle('hubOrg:events', wrap(({ from, to }) => events(from, to)));
-  ipcMain.handle('hubOrg:saveIcs', wrap(async ({ from, to }) => {
+  handleApp(ipcMain, 'hubOrg:events', wrap(({ from, to }) => events(from, to)));
+  handleApp(ipcMain, 'hubOrg:saveIcs', wrap(async ({ from, to }) => {
     const { events: list } = await events(from, to);
     if (!list.length) return null;
     return saveAs('Work schedule.ics', [{ name: 'Calendar', extensions: ['ics'] }], toIcs(list));
   }));
-  ipcMain.handle('hubOrg:showFile', wrap(({ file }) => (file ? shell.showItemInFolder(String(file)) : null)));
+  handleApp(ipcMain, 'hubOrg:showFile', wrap(({ file }) => (file ? shell.showItemInFolder(String(file)) : null)));
 }
 
 const pad = (n) => String(n).padStart(2, '0');
