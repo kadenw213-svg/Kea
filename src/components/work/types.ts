@@ -36,6 +36,8 @@ export interface Member {
   positionIds: string[];
   joinedAt: number;
   you: boolean;
+  /** Their Kea account's email is verified (with Google, or by a manager or the Hub's owner). */
+  emailVerified?: boolean;
   /** A Kea supporter (a badge, nothing more). */
   supporter?: boolean;
   /** Only when they share it with coworkers. */

@@ -1,9 +1,9 @@
 // Running an organization: people and join codes, approvals, structure (departments, positions, locations, cost
 // centers), budgets, policies to acknowledge, and settings. Plus the member's own page (who's here, Leave).
 import { useEffect, useState } from 'react';
-import { Check as CheckIcon, ClipboardCopy, FileSignature, LogOut, Plus, Trash2, X } from 'lucide-react';
+import { Check as CheckIcon, ClipboardCopy, FileSignature, LogOut, MailCheck, Plus, Trash2, X } from 'lucide-react';
 import { ask, prompt, toast } from '../../store';
-import { act, bump, clock, get, wantText, fmtDay, fmtWhen, money, useHub, useWork, todayIso, addDays, localTz } from './workStore';
+import { act, bump, clock, get, post, wantText, fmtDay, fmtWhen, money, useHub, useWork, todayIso, addDays, localTz } from './workStore';
 import { formatPhone, telHref } from '../../lib/phone';
 import { Advanced, Card, Check, Empty, Field, Loading, Num, Problem, Seg } from './ui';
 import { RANK } from './types';
@@ -14,6 +14,32 @@ const ROLE: Record<Role, string> = { owner: 'Owner', admin: 'Admin', manager: 'M
 const isAdmin = (o: Org) => RANK[o.role] >= RANK.admin;
 
 // ---------- people ----------
+/** "Email not verified", next to a name (only when the Hub says so; an older Hub doesn't). */
+const Unverified = ({ m }: { m: Member }) => (m.emailVerified === false ? <span className="wk-pill sm">Email not verified</span> : null);
+/** Marks someone's email verified, for a manager who knows the address is really theirs. */
+function VerifyEmailButton({ org, m }: { org: Org; m: Member }) {
+  if (m.emailVerified !== false) return null;
+  return (
+    <button
+      className="btn sm"
+      title="Only if you know this email address is theirs"
+      onClick={async () => {
+        if ((await ask(`Verify ${m.email ?? m.name}?`, 'Only if you know this email address really is theirs. It counts everywhere on the Kea Hub, payroll too.', [{ id: 'no', label: 'Cancel' }, { id: 'yes', label: 'Verify', primary: true }])) !== 'yes') return;
+        try {
+          await post(`/v1/orgs/${org.id}/members/${m.id}/verify-email`);
+          toast(`${m.name}’s email is verified.`);
+          bump();
+        } catch (e: any) {
+          // (A Kea Hub from before this answers a route it doesn't have with a bare "Not found.")
+          toast((e.status === 404 || e.status === 405) && e.message === 'Not found.' ? 'This Kea Hub can’t verify emails yet. It needs an update.' : e.message, 'error');
+        }
+      }}
+    >
+      <MailCheck size={14} /> Verify email
+    </button>
+  );
+}
+
 export function PeopleTab({ org }: { org: Org }) {
   const focus = useWork((s) => s.focus);
   const [tab, setTab] = useState<'people' | 'approvals' | 'codes'>(focus?.view === 'approvals' ? 'approvals' : 'people');
@@ -58,6 +84,7 @@ function People({ org }: { org: Org }) {
                 {m.name}
                 {m.supporter && <SupporterBadge />}
                 {m.minor && <span className="wk-pill sm">Under 18</span>}
+                <Unverified m={m} />
                 <div className="muted af-small">
                   {m.email}
                   {m.phone && (
@@ -75,6 +102,7 @@ function People({ org }: { org: Org }) {
               <td className="wk-nowrap">
                 {(RANK[m.role] < RANK[org.role] || org.role === 'owner') && !m.you && (
                   <>
+                    <VerifyEmailButton org={org} m={m} />
                     <button className="btn sm" onClick={() => setEdit(m.id)}>
                       Edit
                     </button>
@@ -188,11 +216,13 @@ function Approvals({ org }: { org: Org }) {
         {pending.map((m) => (
           <div key={m.id} className="wk-row">
             <span className="wk-row-main">
-              <span className="wk-row-title">{m.name}</span>
-              <span className="wk-row-sub">
-                {m.email} · as {ROLE[m.role]}
+              <span className="wk-row-title">
+                {m.name} <Unverified m={m} />
               </span>
+              <span className="wk-row-sub">
+                {m.email} · as {ROLE[m.role]}              </span>
             </span>
+            <VerifyEmailButton org={org} m={m} />
             <button className="btn sm" onClick={() => act(`/v1/orgs/${org.id}/members/${m.id}/approve`, { approve: false }, 'Declined.')}>
               <X size={14} /> Decline
             </button>

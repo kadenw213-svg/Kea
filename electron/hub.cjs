@@ -733,7 +733,21 @@ function register() {
   ipcMain.handle('hub:setName', wrap(async (a) => (await req('POST', '/v1/me', { displayName: String(a.name ?? '').trim() }), refresh())));
   ipcMain.handle('hub:changePassword', wrap(async (a) => (await req('POST', '/v1/me/password', { current: a.current, next: a.next }, { reauth: true }), refresh())));
   ipcMain.handle('hub:totpSetup', wrap((a) => req('POST', '/v1/me/totp/setup', { password: a?.password }, { reauth: true })));
-  ipcMain.handle('hub:totpEnable', wrap(async (a) => (await req('POST', '/v1/me/totp/enable', { code: a.code }, { reauth: true }), refresh())));
+  // (A Hub with backup codes answers with ten of them, shown once: they go back with the status. An older Hub has none.)
+  ipcMain.handle('hub:totpEnable', wrap(async (a) => {
+    const r = await req('POST', '/v1/me/totp/enable', { code: a.code }, { reauth: true });
+    const st = await refresh();
+    return Array.isArray(r?.backupCodes) ? { ...st, backupCodes: r.backupCodes } : st;
+  }));
+  // New backup codes: the password and a code from the authenticator app. An older Hub doesn't have the route.
+  ipcMain.handle('hub:backupCodes', wrap(async (a) => {
+    try {
+      return await req('POST', '/v1/me/totp/backup-codes', { password: a?.password, code: a?.code }, { reauth: true });
+    } catch (e) {
+      if ((e.status === 404 || e.status === 405) && e.message === 'Not found.') throw Object.assign(new Error('This Kea Hub doesn’t have backup codes yet. It needs an update.'), { status: 404 });
+      throw e;
+    }
+  }));
   ipcMain.handle('hub:totpDisable', wrap(async (a) => (await req('POST', '/v1/me/totp/disable', { password: a.password, code: a.code }, { reauth: true }), refresh())));
   ipcMain.handle('hub:sessions', wrap(() => req('GET', '/v1/me/sessions')));
   ipcMain.handle('hub:signOutOthers', wrap((a) => req('POST', '/v1/me/sessions/sign-out-others', { password: a.password }, { reauth: true })));

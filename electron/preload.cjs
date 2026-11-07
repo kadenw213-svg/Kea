@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('api', {
     googleReset: (a) => ipcRenderer.invoke('hub:googleReset', a),
     totpSetup: (a) => ipcRenderer.invoke('hub:totpSetup', a),
     totpEnable: (a) => ipcRenderer.invoke('hub:totpEnable', a),
+    backupCodes: (a) => ipcRenderer.invoke('hub:backupCodes', a),
     totpDisable: (a) => ipcRenderer.invoke('hub:totpDisable', a),
     setName: (name) => ipcRenderer.invoke('hub:setName', { name }),
     changePassword: (a) => ipcRenderer.invoke('hub:changePassword', a),

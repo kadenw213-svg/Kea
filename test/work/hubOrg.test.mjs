@@ -12,7 +12,7 @@ import { ofetch } from '../ownerFetch.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const HUB = ['../../../KeaS/hub/index.mjs', '../../../orgs-keas/hub/index.mjs'].map((p) => path.resolve(here, p)).find((p) => fs.existsSync(p));
+const HUB = [process.env.KEAS_DIR && path.join(process.env.KEAS_DIR, 'hub/index.mjs'), ...['../../../KeaS/hub/index.mjs', '../../../orgs-keas/hub/index.mjs'].map((p) => path.resolve(here, p))].find((p) => p && fs.existsSync(p));
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kea-work-'));
 const handlers = {};
@@ -143,4 +143,26 @@ test('live: make an org, join it with a code, see it in the to-do box', { skip: 
   const refused = await call('POST', `/v1/orgs/${org.id}/codes`, {});
   assert.deepEqual([refused.ok, refused.status], [false, 403]);
   assert.equal((await call('POST', `/v1/orgs/${org.id}/leave`, {})).ok, true);
+
+  // An email that isn't verified (an Outlook or school address). A Hub with join requests: the join waits for a
+  // manager, who can verify the email and approve it. An older Hub: refused with "Verify your email first", which
+  // Work mode shows as before.
+  const nov = (await (await registerAndSignIn(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'sam@school.edu', password: 'lantern velvet orbit', displayName: 'Sam', age13: true, termsVersion: t.version, termsSections: t.sections.map((s) => s.id) }) })).json()).token;
+  tokens.nov = nov;
+  who = 'nov';
+  const health = await (await fetch(`${base}/v1/health`)).json();
+  const asked = await call('POST', '/v1/orgs/join', { code });
+  if (!health.features?.includes('orgJoinRequests')) {
+    assert.deepEqual([asked.ok, asked.status, /^Verify your email first/.test(asked.error)], [false, 403, true]);
+    return;
+  }
+  assert.deepEqual([asked.ok, asked.value.pending, asked.value.org.memberStatus], [true, true, 'pending']);
+  who = 'mgr';
+  const pending = (await call('GET', `/v1/orgs/${org.id}/members`)).value.pending;
+  assert.deepEqual(pending.map((m) => [m.email, m.emailVerified]), [['sam@school.edu', false]]);
+  const v = await call('POST', `/v1/orgs/${org.id}/members/${pending[0].id}/verify-email`, {});
+  assert.deepEqual([v.ok, v.value.verifiedBy], [true, 'Manager']);
+  assert.equal((await call('POST', `/v1/orgs/${org.id}/members/${pending[0].id}/approve`, { approve: true })).ok, true);
+  who = 'nov';
+  assert.equal((await call('GET', `/v1/orgs/${org.id}`)).value.org.memberStatus, 'active');
 });

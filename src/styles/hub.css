@@ -724,6 +724,23 @@
   user-select: all;
   font-size: 12.5px;
 }
+.acct-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: 4px 32px;
+  margin: 0;
+  padding-left: 24px;
+  user-select: all;
+}
+.acct-codes code {
+  font-size: 14px;
+  letter-spacing: 0.06em;
+}
+.acct-form label.acct-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
 .acct-devices {
   list-style: none;
   margin: 0 0 0 26px;

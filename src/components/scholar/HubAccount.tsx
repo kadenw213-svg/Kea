@@ -106,6 +106,9 @@ function SignIn({ onDone, initialEmail = '' }: { onDone(): void; initialEmail?: 
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [needCode, setNeedCode] = useState(false);
+  // The Hub takes a backup code in place of the app's (it says so when it asks; an older Hub doesn't).
+  const [canBackup, setCanBackup] = useState(false);
+  const [useBackup, setUseBackup] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [busy, setBusy] = useState(false);
   const finish = async (p: Promise<HubResult<HubStatus>>, ok: string) => {
@@ -120,15 +123,39 @@ function SignIn({ onDone, initialEmail = '' }: { onDone(): void; initialEmail?: 
       // (The first time, the code box just appears with its explanation; after that, the Hub's message says what's wrong.)
       if (needCode) toast(r.error, 'error');
       setNeedCode(true);
+      if (r.data?.backupCodes) setCanBackup(true);
     } else toast(r.error, 'error');
   };
-  const codeBox = needCode && (
-    <label>
-      <span>Code from your authenticator app</span>
-      <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus />
-      <span className="acct-hint">Two-step sign-in is on for this account: open your authenticator app and enter the 6-digit code it shows for Kea.</span>
-    </label>
-  );
+  const codeBox =
+    needCode &&
+    (useBackup ? (
+      <label>
+        <span>Backup code</span>
+        <input key="backup" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9 -]/g, '').slice(0, 11))} autoComplete="off" spellCheck={false} placeholder="XXXXX-XXXXX" maxLength={11} autoFocus />
+        <span className="acct-hint">
+          One of the backup codes you saved when you turned on two-step sign-in. Each one works once.{' '}
+          <button type="button" className="btn link sm" onClick={() => (setUseBackup(false), setCode(''))}>
+            Use the code from my app
+          </button>
+        </span>
+      </label>
+    ) : (
+      <label>
+        <span>Code from your authenticator app</span>
+        <input key="app" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus />
+        <span className="acct-hint">
+          Two-step sign-in is on for this account: open your authenticator app and enter the 6-digit code it shows for Kea.
+          {canBackup && (
+            <>
+              {' '}
+              <button type="button" className="btn link sm" onClick={() => (setUseBackup(true), setCode(''))}>
+                Use a backup code
+              </button>
+            </>
+          )}
+        </span>
+      </label>
+    ));
   if (resetting)
     return (
       <form
@@ -420,7 +447,10 @@ export function HubPanel() {
   const who = me?.account ?? (c ? { displayName: c.name, email: c.email, emailVerified: c.emailVerified, verifiedBy: c.verifiedBy ?? null, owner: !!c.owner } : null);
   const storage = me ? { used: kc?.storage?.used ?? me.storage.used, quota: kc?.storage?.quota ?? me.storage.quota } : null;
   const games = modes.school || modes.personal;
-  const how = (by: string | null) => (by === 'google' ? 'with Google' : by === 'owner' ? 'by Kea’s creator' : by ? `(${by})` : '');
+  const how = (by: string | null) => {
+    const b = (by ?? '').toLowerCase();
+    return b === 'google' ? 'with Google' : b === 'owner' ? 'by the Kea Hub’s owner' : b === 'manager' ? 'by a manager' : by ? `(${by})` : '';
+  };
   const verifiedText = who?.owner ? 'Kea’s creator · Hub owner' : who?.emailVerified ? `Email verified ${how(who.verifiedBy)}` : account?.verifiedHere ? `Email verified for School on this computer (${account.verifiedBy})` : 'Email not verified yet';
   return (
     <div className="acct-page">
