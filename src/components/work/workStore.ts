@@ -44,6 +44,14 @@ interface WorkState {
   setOrgs(o: Org[]): void;
   go(orgId: string | null, tab?: Tab, focus?: WorkState['focus']): void;
 }
+/**
+ * Something on screen that would lose unsaved work if Work moved elsewhere (an availability form being filled in):
+ * asked before go() changes the organization, tab or focus. Resolves true to go on.
+ */
+let leaveGuard: (() => Promise<boolean>) | null = null;
+export function setLeaveGuard(g: (() => Promise<boolean>) | null) {
+  leaveGuard = g;
+}
 export const useWork = create<WorkState>((set) => ({
   version: 0,
   orgs: null,
@@ -57,13 +65,17 @@ export const useWork = create<WorkState>((set) => ({
   tab: 'schedule',
   focus: null,
   setOrgs: (orgs) => set((s) => ({ orgs, orgId: s.orgId && orgs.some((o) => o.id === s.orgId) ? s.orgId : orgs[0]?.id ?? null })),
-  go: (orgId, tab, focus = null) =>
-    set((s) => {
-      try {
-        if (orgId) localStorage.setItem('kea.work.org', orgId);
-      } catch {}
-      return { orgId, tab: tab ?? (orgId === s.orgId ? s.tab : 'schedule'), focus };
-    })
+  go: (orgId, tab, focus = null) => {
+    const apply = () =>
+      set((s) => {
+        try {
+          if (orgId) localStorage.setItem('kea.work.org', orgId);
+        } catch {}
+        return { orgId, tab: tab ?? (orgId === s.orgId ? s.tab : 'schedule'), focus };
+      });
+    if (!leaveGuard) return apply();
+    leaveGuard().then((ok) => ok && apply());
+  }
 }));
 /** Something changed on the Hub: everything showing org data reloads. */
 export const bump = () => useWork.setState((s) => ({ version: s.version + 1 }));

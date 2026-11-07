@@ -149,6 +149,9 @@
   color: var(--text-3);
   margin-top: 3px;
 }
+.wk-hint.bad {
+  color: var(--danger, #e5534b);
+}
 .wk-check {
   display: flex;
   gap: 8px;
