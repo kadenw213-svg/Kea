@@ -153,6 +153,8 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
   const slideRef = useRef<HTMLDivElement>(null);
   const textNode = useRef<HTMLDivElement | null>(null);
   const drag = useRef<any>(null);
+  // A key typed on a selected text box before it was in editing: typed once editing starts (like PowerPoint).
+  const pendingKey = useRef<string | null>(null);
   const clipboard = useRef<El | null>(null);
   const dragSlide = useRef<number | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
@@ -212,6 +214,11 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
           const s = window.getSelection()!;
           s.removeAllRanges();
           s.addRange(range);
+          // Typing on a selected box: that key replaces a "Click to add…" prompt, or goes at the end.
+          if (pendingKey.current) {
+            document.execCommand('insertText', false, pendingKey.current);
+            pendingKey.current = null;
+          }
         });
       }
     },
@@ -307,12 +314,15 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
     e.preventDefault();
     const id = elNode.dataset.el!;
     const el = slide.els.find((x) => x.id === id)!;
+    const wasSelected = selId === id;
     setSelId(id);
     if (e.detail === 2 && el.html !== undefined) {
       setEditingId(id);
       return;
     }
-    drag.current = { mode: 'move', start: pt, orig: { ...el }, moved: false };
+    // A click (no drag) on a "Click to add…" placeholder, or on a text box that was already selected, starts typing.
+    const editOnClick = el.html !== undefined && (isPrompt(el.html) || wasSelected);
+    drag.current = { mode: 'move', start: pt, orig: { ...el }, moved: false, editOnClick };
   };
 
   useEffect(() => {
@@ -371,6 +381,8 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
         slideRef.current.dataset.guideV = '';
         slideRef.current.dataset.guideH = '';
       }
+      const d = drag.current;
+      if (d?.mode === 'move' && !d.moved && d.editOnClick) setEditingId(d.orig.id);
       drag.current = null;
     };
     window.addEventListener('mousemove', move);
@@ -735,6 +747,11 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
       } else if (sel && e.key === 'Enter' && sel.html !== undefined) {
         e.preventDefault();
         setEditingId(sel.id);
+      } else if (sel && sel.html !== undefined && !mod && !e.altKey && e.key.length === 1 && e.key !== ' ' ) {
+        // Typing with a text box selected starts editing it with that key.
+        e.preventDefault();
+        pendingKey.current = e.key;
+        setEditingId(sel.id);
       } else if (sel && e.key.startsWith('Arrow')) {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
@@ -1090,6 +1107,8 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
 }
 
 // ---------- HTML helpers ----------
+/** A layout's "Click to add title / text" prompt, not yet replaced by the person's own words. */
+const isPrompt = (html: string) => /Click to add/.test(html.replace(/<[^>]+>/g, ''));
 function htmlText(html: string): string {
   const d = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
   d.querySelectorAll('p, li, br, div').forEach((n) => n.append('\n'));
