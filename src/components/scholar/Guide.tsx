@@ -5,8 +5,9 @@
 // wording shows, folded. The original wording is always there at the bottom, folded.
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import MarkdownIt from 'markdown-it';
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FlaskConical, Lock, Monitor, NotebookPen, RefreshCw, Search, Target, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FlaskConical, Link2, Lock, Monitor, NotebookPen, RefreshCw, Search, Target, Upload } from 'lucide-react';
 import { api, Guide, ScholarItem } from '../../lib/api';
+import { TESTS, willGuide } from './itemRules';
 
 // Writing work: what the student is writing about leads the guide.
 const FOCUS = new Set(['paper', 'discussion', 'project', 'presentation']);
@@ -160,8 +161,10 @@ function useStepFolds(itemId: string) {
 }
 
 type GuideStep = Guide['steps'][number];
-function Step({ n, s, open, done, onDone, onToggle, onOpen }: { n: number; s: GuideStep; open: boolean; done: boolean; onDone(on: boolean): void; onToggle(): void; onOpen(url: string): void }) {
-  const more = !!(s.detail || s.links?.length);
+function Step({ n, s, open, done, onDone, onToggle, onOpen, onItem }: { n: number; s: GuideStep; open: boolean; done: boolean; onDone(on: boolean): void; onToggle(): void; onOpen(url: string): void; onItem?(id: string): void }) {
+  // (A step about other work in Kea, `item`: the lab a discussion needs, opened in Kea itself with its own links.)
+  const item = s.item && onItem ? s.item : null;
+  const more = !!(s.detail || s.links?.length || item);
   return (
     <li className={`gd-step ${open ? 'open' : ''} ${done ? 'done' : ''} ${s.unlocks ? 'unlocks' : ''}`}>
       <div className="gd-step-row">
@@ -184,9 +187,14 @@ function Step({ n, s, open, done, onDone, onToggle, onOpen }: { n: number; s: Gu
       {open && more && (
         <div className="gd-step-detail">
           {s.detail && <Md text={s.detail} onOpen={onOpen} />}
-          {!!s.links?.length && (
+          {(!!s.links?.length || item) && (
             <div className="gd-links">
-              {s.links.map((l) => (
+              {item && (
+                <button className="btn sm primary" onClick={() => onItem!(item.id)} title="Opens it here in Kea, with its own links">
+                  <Link2 size={13} /> {item.label}
+                </button>
+              )}
+              {(s.links || []).map((l) => (
                 <button key={l.url} className="btn sm tonal" onClick={() => onOpen(l.url)} title={l.url}>
                   <ExternalLink size={13} /> {l.label}
                 </button>
@@ -212,7 +220,7 @@ export function supplies(need: string[] | undefined, kind?: string, type?: strin
  * a lab's whole procedure and notebook checklist, what to research, the hand-in and the class site's rubric. `compact`
  * (the phone, for seeing what's coming and handing in paper work): what it's about, the notes and the hand-in.
  */
-export function GuideView({ it, g, onOpen, compact = false }: { it: ScholarItem; g: Guide; onOpen(url: string): void; compact?: boolean }) {
+export function GuideView({ it, g, onOpen, onItem, compact = false }: { it: ScholarItem; g: Guide; onOpen(url: string): void; onItem?(id: string): void; compact?: boolean }) {
   // (A guide from before v0.66.1 kept what unlocks the instructions as a separate gate: it's the first step here.)
   const gated: GuideStep[] =
     g.gate && !g.steps.some((s) => s.unlocks) ? [{ title: g.gate.label || 'Do this first', text: g.gate.what, links: g.gate.url ? [{ label: g.gate.label || 'Open it', url: g.gate.url }] : [], unlocks: true }, ...g.steps] : g.steps;
@@ -226,7 +234,7 @@ export function GuideView({ it, g, onOpen, compact = false }: { it: ScholarItem;
   const checks = useStepChecks(it.id);
   const folds = useStepFolds(it.id);
   const [, bump] = useState(0);
-  const expandable = steps.map((s, i) => (s.detail || s.links?.length ? i : -1)).filter((i) => i >= 0);
+  const expandable = steps.map((s, i) => (s.detail || s.links?.length || (s.item && onItem) ? i : -1)).filter((i) => i >= 0);
   // A step the student never opened or folded is open until it's checked off: the questions to answer and the links
   // are the instructions, not extras behind a click. Their own choice always wins.
   const isOpen = (i: number) => folds.choice(steps[i].title) ?? (!compact && !checks.done(steps[i].title));
@@ -251,6 +259,8 @@ export function GuideView({ it, g, onOpen, compact = false }: { it: ScholarItem;
   // (The hand-in page is already a button on the item itself.)
   const ownLink = !!g.submit.url && it.links.some((l) => l.url === g.submit.url);
   const lab = !!(g.procedure || g.notebook?.length);
+  // (A quiz or exam is taken, not handed in.)
+  const taking = g.kind === 'quiz' || g.kind === 'exam' || TESTS.has(it.type);
   return (
     <section className={`gd ${compact ? 'gd-compact' : ''}`}>
       {topic || goal ? (
@@ -316,6 +326,7 @@ export function GuideView({ it, g, onOpen, compact = false }: { it: ScholarItem;
                 done={checks.done(s.title)}
                 onDone={(on) => check(s, on)}
                 onOpen={onOpen}
+                onItem={onItem}
                 onToggle={() => folds.set([[s.title, !isOpen(i)]])}
               />
             ))}
@@ -373,7 +384,7 @@ export function GuideView({ it, g, onOpen, compact = false }: { it: ScholarItem;
       {(g.submit.what || g.submit.where) && (
         <div className="gd-submit">
           <div className="gd-label">
-            <Upload size={13} /> Hand in
+            <Upload size={13} /> {taking ? 'Taking it' : 'Hand in'}
           </div>
           {g.submit.what && <div className="gd-submit-what">{g.submit.what}</div>}
           <dl>
@@ -512,11 +523,12 @@ export function OriginalWording({ text, open: startOpen = false }: { text: strin
 }
 
 /** What an item shows for its instructions: its guide, or (until one is written) a note and the class site's wording. */
-export function AssignmentGuide({ it, raw, onOpen, compact }: { it: ScholarItem; raw: string; onOpen(url: string): void; compact?: boolean }) {
+export function AssignmentGuide({ it, raw, onOpen, onItem, compact, checksOn = true }: { it: ScholarItem; raw: string; onOpen(url: string): void; onItem?(id: string): void; compact?: boolean; checksOn?: boolean }) {
   const guides = useGuides();
   const g = guides?.[it.id];
-  if (g) return <GuideView it={it} g={g} onOpen={onOpen} compact={compact} />;
-  if (!guides || !raw) return null;
+  if (g) return <GuideView it={it} g={g} onOpen={onOpen} onItem={onItem} compact={compact} />;
+  // (Promised only when a daily check will really write one: checks are running, and it's work Kea writes guides for.)
+  if (!guides || !raw || !checksOn || !willGuide(it)) return null;
   return (
     <section className="gd">
       <div className="tb-h">What to do</div>

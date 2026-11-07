@@ -92,6 +92,9 @@ test('shared material matches a class by its whole code', () => {
   assert.equal(matchCourse(courses, 'BIO 1010').id, 'c1');
   assert.equal(matchCourse(courses, 'CHEM1110').id, 'c2'); // the same class, without its section number
   assert.equal(matchCourse(courses, 'MATH 120 01').id, 'c3');
+  // Another section of the same course is another class (its own instructor, schedule and tests).
+  assert.equal(matchCourse(courses, 'CHEM 1110-001'), null);
+  assert.equal(matchCourse(courses, 'CHEM 1110-002').id, 'c2');
   // Never by one code starting with another: the audit's traversing code started with the job's own code.
   assert.equal(matchCourse(courses, EVIL), null);
   assert.equal(matchCourse(courses, 'BIO10101'), null);
