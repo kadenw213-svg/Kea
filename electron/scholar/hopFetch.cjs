@@ -20,10 +20,16 @@ function publicHttps(url) {
 /**
  * GET `url` with the session's cookies. `allow(next, from)` decides each redirect; a refused one rejects with an error
  * carrying `refusedHop` (the address, which is never contacted). Resolves to what callers use of a fetch Response, with
- * the whole body read.
+ * the whole body read. The first address must be https on a public host too, whatever `allow` is: this never reaches
+ * this computer or the home network, even if a caller forgot to check.
  */
 function fetchHops(net, ses, url, allow = publicHttps) {
   return new Promise((resolve, reject) => {
+    if (!publicHttps(url)) {
+      const err = new Error('Kea only fetches https addresses on the internet.');
+      err.refusedHop = String(url);
+      return reject(err);
+    }
     let cur = String(url);
     let hops = 0;
     let settled = false;

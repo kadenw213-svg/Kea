@@ -5,6 +5,19 @@ import { cachedPreview, getPreview } from '../../lib/previews';
 import { extOf } from '../../lib/fileTypes';
 import { FileIcon } from '../FileIcon';
 import { SlideView } from '../../editors/slides/SlideView';
+import { safeFragment } from '../../lib/docSanitize';
+
+/**
+ * A document's first page: cleaned by DOMPurify and inserted as nodes, never turned back into a string and parsed
+ * again (how mutation XSS gets past a sanitizer). The same cleaning as the phone's viewer.
+ */
+function SafeDoc({ html }: { html: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.replaceChildren(safeFragment(html));
+  }, [html]);
+  return <div className="pv-doc" ref={ref} />;
+}
 
 // One shared observer scales every preview "page" to its card width (pages render at a fixed size).
 const scaler = new ResizeObserver((entries) => {
@@ -46,7 +59,7 @@ function Body({ p, name }: { p: FilePreview; name: string }) {
     case 'doc':
       return (
         <Scaled w={520} className="pv-page">
-          <div className="pv-doc" dangerouslySetInnerHTML={{ __html: p.html }} />
+          <SafeDoc html={p.html} />
         </Scaled>
       );
     case 'text':

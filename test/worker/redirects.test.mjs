@@ -88,6 +88,14 @@ test('each hop is checked, not just the first, and the answer has the final addr
   assert.ok(!second.contacted.includes('https://evil.example/'));
 });
 
+test('the first address is checked too, whatever rule the caller passes: never this computer or the home network', async () => {
+  for (const bad of ['https://127.0.0.1/', 'https://localhost/x', 'https://10.0.0.5/', 'http://a.school.edu/', 'file:///C:/x']) {
+    const { net, contacted } = fakeNet({});
+    await assert.rejects(fetchHops(net, {}, bad, () => true), (e) => e.refusedHop === bad, bad);
+    assert.deepEqual(contacted, [], bad);
+  }
+});
+
 test('a redirect loop ends', async () => {
   const { net } = fakeNet({ 'https://a.school.edu/1': 'https://a.school.edu/2', 'https://a.school.edu/2': 'https://a.school.edu/1' });
   await assert.rejects(fetchHops(net, {}, 'https://a.school.edu/1'), /too many/);
