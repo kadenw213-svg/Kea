@@ -247,7 +247,17 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   const [grIssue, setGrIssue] = useState<{ issue: GrammarIssue; rect: DOMRect } | null>(null);
   const [reading, setReading] = useState(false);
   const [mathEdit, setMathEdit] = useState<{ pos: number | null; latex: string; display: boolean } | null>(null);
-  const showHints = useSetting<boolean>('doc.statusHints');
+  // The typing hints help while Kea is new: shown for the first few documents, then they step aside.
+  const [hintsFresh] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem('kea.docHintsSeen') || 0) + 1;
+      localStorage.setItem('kea.docHintsSeen', String(n));
+      return n <= 5;
+    } catch {
+      return true;
+    }
+  });
+  const showHints = useSetting<boolean>('doc.statusHints') && hintsFresh;
   const userName = useSetting<string>('user.name');
   const updateMeta = (m: DocMeta) => {
     metaRef.current = m;

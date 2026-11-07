@@ -10,8 +10,13 @@ export interface Template {
   build(): { html: string; meta: DocMeta; fileName: string };
 }
 
+/** The Kea account's name, used when Settings → General has no name (set by the template gallery). */
+let accountName = '';
+export const rememberAccountName = (n: string | null | undefined) => void (accountName = (n || '').trim());
+export const templateName = () => (setting<string>('user.name') || '').trim() || accountName;
+
 const nameParts = () => {
-  const full = (setting<string>('user.name') || '').trim();
+  const full = templateName();
   const parts = full.split(/\s+/).filter(Boolean);
   return { full: full || 'Your Name', last: parts.length ? parts[parts.length - 1] : 'Lastname' };
 };
