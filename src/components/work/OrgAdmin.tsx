@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { Check as CheckIcon, ClipboardCopy, FileSignature, LogOut, Plus, Trash2, X } from 'lucide-react';
 import { ask, prompt, toast } from '../../store';
-import { act, bump, get, wantText, fmtDay, fmtWhen, money, useHub, useWork, todayIso, addDays, localTz } from './workStore';
+import { act, bump, clock, get, wantText, fmtDay, fmtWhen, money, useHub, useWork, todayIso, addDays, localTz } from './workStore';
+import { formatPhone, telHref } from '../../lib/phone';
 import { Advanced, Card, Check, Empty, Field, Loading, Num, Problem, Seg } from './ui';
 import { RANK } from './types';
 import type { BudgetRow, Department, JoinCode, Member, Org, OrgSettings, Policy, Role, Structure, Swap } from './types';
@@ -59,7 +60,12 @@ function People({ org }: { org: Org }) {
                 {m.minor && <span className="wk-pill sm">Under 18</span>}
                 <div className="muted af-small">
                   {m.email}
-                  {m.phone && <> · {m.phone}</>}
+                  {m.phone && (
+                    <>
+                      {' '}
+                      · <a href={telHref(m.phone)}>{formatPhone(m.phone)}</a>
+                    </>
+                  )}
                 </div>
               </td>
               <td>{ROLE[m.role]}</td>
@@ -205,7 +211,7 @@ function Approvals({ org }: { org: Org }) {
                 {w.claimantName} takes {w.fromName}’s shift
               </span>
               <span className="wk-row-sub">
-                {w.shift?.positionName} · {w.shift && fmtDay(w.shift.date)} · {w.shift && new Date(w.shift.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: org.tz })}
+                {w.shift?.positionName} · {w.shift && fmtDay(w.shift.date)} · {w.shift && `${clock(w.shift.start, org.tz)}–${clock(w.shift.end, org.tz)}`}
                 {w.note ? ` · “${w.note}”` : ''}
               </span>
             </span>
@@ -683,6 +689,7 @@ export function SettingsTab({ org }: { org: Org }) {
 function Policies({ org }: { org: Org }) {
   const { data } = useHub<{ policies: Policy[] }>(`/v1/orgs/${org.id}/policies`);
   const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
   const [url, setUrl] = useState('');
   const [due, setDue] = useState('');
   return (
@@ -703,9 +710,17 @@ function Policies({ org }: { org: Org }) {
       ))}
       <div className="wk-form-row">
         <input className="input sm" placeholder="Title, for example Pool rules 2027" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <input className="input sm" placeholder="Link (https://…)" value={url} onChange={(e) => setUrl(e.target.value)} />
-        <input className="input sm wk-auto" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-        <button className="btn sm" disabled={!title.trim()} onClick={async () => (await act(`/v1/orgs/${org.id}/policies`, { title, url: url || null, dueOn: due || null }, 'Added to everyone’s to-do list.')) && setTitle('')}>
+        <input className="input sm" placeholder="Link (https://…), optional" value={url} onChange={(e) => setUrl(e.target.value)} />
+        <input className="input sm wk-auto" type="date" value={due} onChange={(e) => setDue(e.target.value)} title="Read by" />
+      </div>
+      <textarea className="input wk-textarea" placeholder="The text people read before they acknowledge it (or give a link above)" value={body} onChange={(e) => setBody(e.target.value)} />
+      <div className="wk-actions">
+        <button
+          className="btn sm"
+          disabled={!title.trim() || (!body.trim() && !url.trim())}
+          title={!title.trim() ? 'Give it a title' : !body.trim() && !url.trim() ? 'Add the text, or a link to it' : undefined}
+          onClick={async () => (await act(`/v1/orgs/${org.id}/policies`, { title, body: body.trim() || null, url: url.trim() || null, dueOn: due || null }, 'Added to everyone’s to-do list.')) && (setTitle(''), setBody(''), setUrl(''), setDue(''))}
+        >
           <Plus size={14} /> Add
         </button>
       </div>
@@ -731,23 +746,7 @@ export function OrgInfo({ org }: { org: Org }) {
       {(policies.data?.policies.length ?? 0) > 0 && (
         <Card title="Policies">
           {policies.data!.policies.map((p) => (
-            <div key={p.id} className="wk-row">
-              <FileSignature size={16} />
-              <span className="wk-row-main">
-                <span className="wk-row-title">{p.title}</span>
-                <span className="wk-row-sub">{p.ackedAt ? `Acknowledged ${fmtWhen(p.ackedAt)}` : p.dueOn ? `By ${fmtDay(p.dueOn)}` : 'Please read and acknowledge'}</span>
-              </span>
-              {p.url && (
-                <a className="btn sm" href={p.url} target="_blank" rel="noreferrer">
-                  Read
-                </a>
-              )}
-              {!p.ackedAt && (
-                <button className="btn sm primary" onClick={() => act(`/v1/orgs/${org.id}/policies/${p.id}/ack`, {}, 'Acknowledged.')}>
-                  I’ve read it
-                </button>
-              )}
-            </div>
+            <PolicyRow key={p.id} org={org} p={p} />
           ))}
           {!open.length && <p className="muted af-small">All acknowledged.</p>}
         </Card>
@@ -759,7 +758,12 @@ export function OrgInfo({ org }: { org: Org }) {
               {m.name}
               {m.supporter && <SupporterBadge compact />}
               {m.role !== 'member' && <span className="muted"> · {ROLE[m.role]}</span>}
-              {m.phone && <span className="muted"> · {m.phone}</span>}
+              {m.phone && (
+                <span className="muted">
+                  {' '}
+                  · <a href={telHref(m.phone)}>{formatPhone(m.phone)}</a>
+                </span>
+              )}
             </span>
           ))}
         </div>
@@ -774,6 +778,57 @@ export function OrgInfo({ org }: { org: Org }) {
           </button>
         </div>
       </Card>
+    </div>
+  );
+}
+
+/**
+ * A policy to acknowledge: its text opens in place (or its link in the browser), and "I've read it" works once it has
+ * been opened, so nobody acknowledges something they never saw.
+ */
+function PolicyRow({ org, p }: { org: Org; p: Policy }) {
+  const focus = useWork((s) => s.focus);
+  const text = p.body?.trim() || '';
+  const [open, setOpen] = useState(focus?.view === 'policies' && !p.ackedAt && !!text);
+  const [seen, setSeen] = useState(open);
+  const canAck = seen || (!text && !p.url);
+  return (
+    <div className="wk-policy">
+      <div className="wk-row">
+        <FileSignature size={16} />
+        <span className="wk-row-main">
+          <span className="wk-row-title">{p.title}</span>
+          <span className="wk-row-sub">{p.ackedAt ? `Acknowledged ${fmtWhen(p.ackedAt)}` : p.dueOn ? `Read by ${fmtDay(p.dueOn)}` : 'Please read and acknowledge'}</span>
+        </span>
+        {text ? (
+          <button className="btn sm" onClick={() => (setOpen(!open), setSeen(true))}>
+            {open ? 'Hide' : 'Read'}
+          </button>
+        ) : (
+          p.url && (
+            <a className="btn sm" href={p.url} target="_blank" rel="noreferrer" onClick={() => setSeen(true)}>
+              Read
+            </a>
+          )
+        )}
+        {!p.ackedAt && (
+          <button className="btn sm primary" disabled={!canAck} title={canAck ? undefined : 'Read it first'} onClick={() => act(`/v1/orgs/${org.id}/policies/${p.id}/ack`, {}, 'Acknowledged.')}>
+            I’ve read it
+          </button>
+        )}
+      </div>
+      {open && text && (
+        <div className="wk-policy-body">
+          {text}
+          {p.url && (
+            <p>
+              <a href={p.url} target="_blank" rel="noreferrer">
+                Open the full policy
+              </a>
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

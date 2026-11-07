@@ -139,7 +139,8 @@ export function clock(iso: string | number, tz?: string) {
     .replace(' AM', 'am')
     .replace(' PM', 'pm');
 }
-export const fmtWhen = (ms: number, tz?: string) => new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: tz });
+/** "Nov 12, 6am": the same time style as everywhere else in Work. */
+export const fmtWhen = (ms: number, tz?: string) => `${new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: tz })}, ${clock(ms, tz)}`;
 /** "Due in 2 days", "Due in 5 hours", "2 days late". */
 export function countdown(msLeft: number | null, { due = 'Due', late = 'late' } = {}) {
   if (msLeft == null) return '';

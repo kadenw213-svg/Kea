@@ -1488,3 +1488,21 @@ select.input {
 .wk-verify p {
   margin: 0;
 }
+
+/* A policy's text, opened before "I've read it". */
+.wk-policy-body {
+  margin: 4px 0 10px 26px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  user-select: text;
+  max-height: 50vh;
+  overflow: auto;
+}
+.wk-policy-body p {
+  margin: 8px 0 0;
+}

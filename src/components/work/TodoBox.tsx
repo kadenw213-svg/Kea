@@ -133,7 +133,9 @@ export function TodoBox({ orgId }: { orgId?: string | null }) {
                 <span className="wk-todo-icon">{ICON[it.kind]}</span>
                 <span className="wk-todo-text">
                   <span className="wk-todo-title">{it.title}</span>
-                  <span className="wk-todo-detail">Back {new Date(it.snoozedUntil!).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>
+                  <span className="wk-todo-detail">
+                    Back {new Date(it.snoozedUntil!).toLocaleDateString(undefined, { weekday: 'short' })} {clock(it.snoozedUntil!)}
+                  </span>
                 </span>
               </span>
               <button className="btn sm" onClick={() => act('/v1/todo/snooze', { key: it.key, hours: 0 })}>
