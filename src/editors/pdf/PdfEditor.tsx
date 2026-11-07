@@ -53,7 +53,7 @@ import { loadPdf, PasswordError, getTextRects, PDFDocumentProxy, TextItemRect } 
 import { readOutline, takePdfTarget, findChapter, OutlineEntry } from '../../lib/pdfTarget';
 import type { Annotation, Box, DocState, PageInfo, PageRef, TextAnn, Tool, ImageAnn } from './types';
 import { DEFAULTS } from './types';
-import { setPagesDark, setting, usePagesDark, useSettings } from '../../lib/settings';
+import { setting, usePagesDark, useSettings } from '../../lib/settings';
 import { HandInButton } from '../../components/scholar/HandIn';
 import { QuizMeButton } from '../../components/scholar/QuizMe';
 import { PageView, ToolStyle, measureTextAnn } from './PageView';
@@ -63,7 +63,7 @@ import { buildPdf, readFormFields, isEncrypted, FormFieldInfo, FormValues } from
 import { pdfAutosaveHold, hasRedactions } from './autosaveHold';
 import { decryptPdf, encryptPdf, compressPdf, ocrPdf, pdfToDocHtml, Protection } from '../../lib/pdfSecurity';
 import { PasswordDialog } from './PasswordDialog';
-import { Lock, Minimize2, ScanText, FileType, Info } from 'lucide-react';
+import { Lock, Minimize2, ScanText, FileType, Info, Check } from 'lucide-react';
 import { formatBytes } from '../../lib/util';
 import { annBox, rotateAnn, translateAnn, baselineEm } from './geometry';
 import { uid, clamp, bytesToDataUrl, modKey, escapeHtml } from '../../lib/util';
@@ -218,7 +218,10 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   const [zoom, setZoom] = useState(1);
   // Pages take the theme's colours (a scan stays on white unless pages are set to always dark).
   const themePages = usePagesDark();
-  const darkPages = themePages && (!/[\/]scans[\/]/i.test(tab.path || '') || setting('pdf.darkPages') === 'dark');
+  const themeDarkPages = themePages && (!/[\\/]scans[\\/]/i.test(tab.path || '') || setting('pdf.darkPages') === 'dark');
+  // This PDF's own page colour (view only, this tab only): as the theme, white or dark. The app's theme isn't touched.
+  const [pageView, setPageView] = useState<'theme' | 'light' | 'dark'>('theme');
+  const darkPages = pageView === 'theme' ? themeDarkPages : pageView === 'dark';
   const [sidebar, setSidebar] = useState(() => setting('pdf.sidebar') !== false);
   // A textbook's chapters and sections (the PDF's bookmarks), shown in the side panel next to the pages.
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
@@ -392,6 +395,11 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
     if (t !== 'select') setSelectedId(null);
     window.getSelection()?.removeAllRanges();
   }, []);
+  // Editing on a dark page would show marks in the wrong colours (a black redaction box as white), so picking a tool
+  // turns this PDF's pages white. The moon button turns them dark again.
+  useEffect(() => {
+    if (tool !== 'select' && pageView === 'theme' && themeDarkPages) setPageView('light');
+  }, [tool]);
 
   const removeEmptyEditing = (id: string | null) => {
     if (!id) return;
@@ -1443,9 +1451,31 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
             <ClipboardList size={18} />
           </button>
         )}
-        <button className={`icon-btn ${darkPages ? 'active' : ''}`} title={darkPages ? 'Light pages (the whole app turns light)' : 'Dark pages (the whole app turns dark)'} onClick={() => setPagesDark(!darkPages)}>
-          <Moon size={18} />
-        </button>
+        <MenuButton
+          title="Page colour (this PDF only)"
+          button={() => (
+            <button className={`icon-btn ${darkPages ? 'active' : ''}`} aria-label="Page colour">
+              <Moon size={18} />
+            </button>
+          )}
+        >
+          {(close) => (
+            <>
+              <div className="menu-title">Page colour (view only)</div>
+              {(
+                [
+                  ['theme', 'As the theme'],
+                  ['light', 'White pages'],
+                  ['dark', 'Dark pages']
+                ] as const
+              ).map(([v, label]) => (
+                <button key={v} className={`menu-item ${pageView === v ? 'checked' : ''}`} onClick={() => (setPageView(v), close())}>
+                  {pageView === v ? <Check size={16} /> : <span style={{ width: 16 }} />} {label}
+                </button>
+              ))}
+            </>
+          )}
+        </MenuButton>
         <div className="tb-sep" />
         <button className="icon-btn" title="Zoom out (Ctrl+-)" onClick={() => zoomStep(-1)}>
           <ZoomOut size={18} />
