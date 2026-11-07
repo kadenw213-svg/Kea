@@ -446,6 +446,14 @@ export interface HubQuestionChapter {
   /** The date of the next test on it, if one is coming. */
   test: string | null;
 }
+/** A device signed in to this account (client: the app and version that signed in). */
+export interface HubSession {
+  id: string;
+  client: string | null;
+  createdAt: number;
+  lastSeen: number;
+  current: boolean;
+}
 export interface HubTermsStatus {
   current: number;
   accepted: number | null;
@@ -467,7 +475,7 @@ export interface HubStatus {
   reachable: boolean;
   me: HubMe | null;
   /** What Kea last saw (shown while the Hub is offline). */
-  cached: { email: string; name: string; emailVerified: boolean; verifiedBy?: string | null; owner?: boolean; canHost?: boolean; leaderboard?: HubAccount['leaderboard'] | null; supporter?: HubAccount['supporter'] | null; progress?: HubMe['progress'] | null; terms: HubTermsStatus | null; at?: number } | null;
+  cached: { id?: string; totpEnabled?: boolean; email: string; name: string; emailVerified: boolean; verifiedBy?: string | null; owner?: boolean; canHost?: boolean; leaderboard?: HubAccount['leaderboard'] | null; supporter?: HubAccount['supporter'] | null; progress?: HubMe['progress'] | null; terms: HubTermsStatus | null; at?: number } | null;
 }
 export interface TermsSection {
   id: string;
@@ -553,6 +561,15 @@ export interface HubApi {
   /** Needs the account's current password (the Hub asks for proof before changing sign-in). */
   totpSetup(a: { password: string }): Promise<HubResult<{ secret: string; uri: string }>>;
   totpEnable(a: { code: string }): Promise<HubResult<HubStatus>>;
+  totpDisable(a: { password: string; code: string }): Promise<HubResult<HubStatus>>;
+  setName(name: string): Promise<HubResult<HubStatus>>;
+  /** Signs out every other device. */
+  changePassword(a: { current: string; next: string }): Promise<HubResult<HubStatus>>;
+  sessions(): Promise<HubResult<{ sessions: HubSession[] }>>;
+  signOutOthers(a: { password: string }): Promise<HubResult<{ signedOut: number }>>;
+  /** Saves everything the Hub keeps about this account as one JSON file; the path, or null when cancelled. */
+  exportData(): Promise<HubResult<string | null>>;
+  deleteAccount(a: { confirm: 'DELETE'; password: string; code?: string }): Promise<HubResult<HubStatus>>;
   logout(): Promise<HubResult<HubStatus>>;
   /** Syncing through the Hub: on, when it last finished, the last error, and what moved. */
   syncStatus(): Promise<HubResult<HubSyncState>>;
@@ -576,7 +593,8 @@ export interface HubApi {
   consentRequest(parentEmail: string): Promise<HubResult<HubConsent>>;
   /** The parent signs in to Google here, as the email given. */
   consentGoogle(): Promise<HubResult<HubStatus>>;
-  setUrl(url: string): Promise<HubResult<HubStatus>>;
+  /** Only once a Hub answers there; moving to another Hub while signed in needs confirm (else 409, switchSignsOut). */
+  setUrl(url: string, confirm?: boolean): Promise<HubResult<HubStatus>>;
   /** This account's notifications (newest first). */
   notifications(): Promise<HubResult<HubNotifications>>;
   /** Marks some (ids) or all read. */
@@ -643,7 +661,10 @@ export interface AiState {
   models: AiModelState[];
 }
 export type AvatarCrop = { x: number; y: number; zoom: number; w: number; h: number };
-/** The Kea account (needed for school mode): verified when the email is signed in on this computer. */
+/**
+ * The Kea account as this computer shows it: email, name and verified from the Kea Hub, the picture kept here. School
+ * mode also counts the email as verified when it's signed in here to Claude, OneDrive or Google (verifiedHere).
+ */
 export interface KeaAccount {
   email: string;
   name: string;
@@ -652,18 +673,17 @@ export interface KeaAccount {
   crop: AvatarCrop | null;
   verified: boolean;
   verifiedBy: string | null;
+  verifiedHere?: boolean;
   /** Kea's creator. */
   owner: boolean;
 }
 export interface AccountApi {
+  /** null when signed out of the Kea account. */
   get(): Promise<KeaAccount | null>;
-  /** Emails signed in on this computer (Claude, OneDrive, Google), to pick from. */
-  suggest(): Promise<string[]>;
-  save(a: { email: string; name: string }): Promise<KeaAccount | null>;
-  verify(): Promise<KeaAccount>;
+  /** Looks for the account's email among this computer's sign-ins (for School mode). */
+  verifyHere(): Promise<KeaAccount | null>;
   avatar(clear?: boolean): Promise<KeaAccount | null>;
   crop(c: AvatarCrop | null): Promise<KeaAccount | null>;
-  signOut(): Promise<boolean>;
 }
 
 export interface AiGenerateRequest {

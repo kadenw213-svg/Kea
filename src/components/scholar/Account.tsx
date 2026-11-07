@@ -1,24 +1,33 @@
-import { useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Camera, Check, LogOut, Move, ShieldAlert, Trash2 } from 'lucide-react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
+import { BadgeCheck, Camera, Check, Laptop, Move, ShieldCheck, Trash2 } from 'lucide-react';
 import { create } from 'zustand';
 import { api, AvatarCrop, KeaAccount } from '../../lib/api';
-import { toast, ask } from '../../store';
+import { toast } from '../../store';
+import { accountOf, run, setHubStatus, useHubStatus } from '../account/hubStore';
 
-// The account, shared by every view that shows it (loaded once, refreshed after a change).
+// The Kea account as Kea shows it (name, picture, verified): one account, the Kea account. Its email, name and
+// verified come from the Kea Hub; the picture is kept on this computer (electron/account.cjs). Reloaded whenever the
+// Hub status says something about the account changed, so every view agrees right after signing in or out.
 const useAccountStore = create<{ account: KeaAccount | null | undefined; set(a: KeaAccount | null): void }>((set) => ({ account: undefined, set: (account) => set({ account }) }));
-let loading = false;
+let loadedFor = '';
+function load(key: string, force = false) {
+  if (loadedFor === key && !force) return;
+  loadedFor = key;
+  api.account
+    .get()
+    .then((a) => loadedFor === key && useAccountStore.getState().set(a))
+    .catch(() => loadedFor === key && useAccountStore.getState().set(null));
+}
+/** [account, set]: undefined while loading, null when signed out. */
 export function useAccount() {
+  const status = useHubStatus();
+  const a = accountOf(status);
+  const key = !status ? '' : a ? `${a.id}|${a.email}|${a.name}|${a.emailVerified}` : 'out';
   const { account, set } = useAccountStore();
   useEffect(() => {
-    if (account !== undefined || loading) return;
-    loading = true;
-    api.account
-      .get()
-      .then(set)
-      .catch(() => set(null))
-      .finally(() => (loading = false));
-  }, [account]);
-  return [account, set] as const;
+    if (key && key !== 'out') load(key);
+  }, [key]);
+  return [!key ? undefined : key === 'out' ? null : account, set] as const;
 }
 
 /** The verified mark beside a name; Kea's creator gets their own. */
@@ -110,97 +119,29 @@ function AdjustPicture({ account, onDone }: { account: KeaAccount; onDone(a: Kea
   );
 }
 
-/** Setting up or editing the account: email, name, picture, and verifying the email against this computer's sign-ins. */
-export function AccountCard({ onVerified }: { onVerified?(): void }) {
+/** The account page's head: the picture (click to change it), and beside it whatever the page puts there. */
+export function ProfileHead({ children }: { children: ReactNode }) {
   const [account, setAccount] = useAccount();
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [suggest, setSuggest] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
-  useEffect(() => {
-    api.account.suggest().then(setSuggest).catch(() => {});
-  }, []);
-  useEffect(() => {
-    if (account) (setEmail(account.email), setName(account.name));
-  }, [account]);
-
-  const act = async (fn: () => Promise<KeaAccount | null>, ok?: string) => {
+  if (!account) return <div className="acct-head">{children}</div>;
+  const act = async (fn: () => Promise<KeaAccount | null>) => {
     setBusy(true);
     try {
       const a = await fn();
-      setAccount(a);
-      if (a?.verified) {
-        if (ok) toast(ok, 'success');
-        onVerified?.();
-      }
+      if (a) setAccount(a);
       return a;
     } catch (err: any) {
       toast(String(err?.message || err), 'error');
+      return null;
     } finally {
       setBusy(false);
     }
   };
-
-  if (account === undefined) return null;
-  if (!account || editing)
-    return (
-      <div className="acct-card">
-        <div className="acct-form">
-          <label>
-            <span>Email</span>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" type="email" autoFocus />
-          </label>
-          {suggest.length > 0 && (
-            <div className="acct-suggest">
-              <span className="muted">Signed in on this computer:</span>
-              {suggest.map((s) => (
-                <button key={s} className={`chip ${s === email ? 'on' : ''}`} onClick={() => setEmail(s)}>
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-          <label>
-            <span>Name</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="What Kea calls you" />
-          </label>
-          <p className="muted acct-note">
-            Your email is verified by matching an account already signed in on this computer: the Claude account Kea uses, OneDrive or Google. It stays on this computer.
-          </p>
-          <div className="acct-actions">
-            <button
-              className="btn primary"
-              disabled={busy || !email.trim()}
-              onClick={async () => {
-                const a = await act(() => api.account.save({ email, name }), 'Your account is set up and verified.');
-                if (a) setEditing(false);
-                if (a && !a.verified) toast(`Saved, but ${a.email} isn't signed in on this computer yet, so it isn't verified.`, 'error');
-              }}
-            >
-              Save and verify
-            </button>
-            {account && (
-              <button className="btn" onClick={() => setEditing(false)}>
-                Cancel
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-
-  if (adjusting && account.avatar)
-    return (
-      <div className="acct-card">
-        <AdjustPicture account={account} onDone={(a) => (a && setAccount(a), setAdjusting(false))} />
-      </div>
-    );
-
+  if (adjusting && account.avatar) return <AdjustPicture account={account} onDone={(a) => (a && setAccount(a), setAdjusting(false))} />;
   return (
-    <div className="acct-card">
-      <div className="acct-head">
+    <div className="acct-head">
+      <div className="acct-pic-col">
         <button
           className="acct-pic"
           onClick={async () => {
@@ -209,7 +150,7 @@ export function AccountCard({ onVerified }: { onVerified?(): void }) {
             // A new picture goes straight to placing it.
             if (a?.avatar && a.avatar !== before) setAdjusting(true);
           }}
-          title="Change your picture"
+          title={account.avatar ? 'Change your picture' : 'Add a picture'}
           disabled={busy}
         >
           <Avatar account={account} size={64} />
@@ -217,55 +158,69 @@ export function AccountCard({ onVerified }: { onVerified?(): void }) {
             <Camera size={14} />
           </span>
         </button>
-        <div className="acct-who">
-          <div className="acct-name">
-            {account.name || account.email.split('@')[0]} <VerifiedBadge account={account} size={18} />
-          </div>
-          <div className="muted">{account.email}</div>
-          <div className={`acct-status ${account.verified ? 'ok' : 'bad'}`}>
-            {account.verified ? (
-              account.owner ? (
-                'Verified · Kea’s creator'
-              ) : (
-                `Verified through ${account.verifiedBy}`
-              )
-            ) : (
-              <>
-                <ShieldAlert size={13} /> Not verified: school mode stays off until it is
-              </>
-            )}
-          </div>
-        </div>
+        {account.avatar && (
+          <span className="acct-pic-btns">
+            <button className="icon-btn sm" title="Move or zoom the picture" disabled={busy} onClick={() => setAdjusting(true)}>
+              <Move size={13} />
+            </button>
+            <button className="icon-btn sm" title="Remove the picture" disabled={busy} onClick={() => act(() => api.account.avatar(true))}>
+              <Trash2 size={13} />
+            </button>
+          </span>
+        )}
       </div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Verifying the Kea account's email: with Google (on the Kea Hub, for everything), or, for School mode only, by the
+ * same email being signed in here to Claude, OneDrive or Google. `school`: offer the second way too.
+ */
+export function VerifyEmail({ school = false, compact = false }: { school?: boolean; compact?: boolean }) {
+  const [account, setAccount] = useAccount();
+  const [busy, setBusy] = useState(false);
+  if (!account) return null;
+  const hubVerified = account.verified && !account.verifiedHere;
+  if (hubVerified || (account.verified && school)) return null;
+  return (
+    <div className={`acct-verify ${compact ? 'compact' : ''}`}>
+      {!compact && <p className="muted acct-note">Verify {account.email} by signing in to Google with it. Joining an organization and Kea’s shared Claude need this.</p>}
       <div className="acct-actions">
-        {!account.verified && (
-          <button className="btn primary sm" disabled={busy} onClick={() => act(() => api.account.verify(), 'Verified.')}>
-            <BadgeCheck size={14} /> Verify
-          </button>
-        )}
-        <button className="btn sm" onClick={() => setEditing(true)}>
-          Edit
-        </button>
-        {account.avatar && (
-          <button className="btn sm" disabled={busy} onClick={() => setAdjusting(true)}>
-            <Move size={13} /> Adjust picture
-          </button>
-        )}
-        {account.avatar && (
-          <button className="btn sm" disabled={busy} onClick={() => act(() => api.account.avatar(true))}>
-            <Trash2 size={13} /> Remove picture
-          </button>
-        )}
         <button
-          className="btn sm"
+          className="btn primary sm"
+          disabled={busy}
           onClick={async () => {
-            if ((await ask('Sign out of your Kea account?', 'School mode stops scanning until you sign in again. Your classes stay on this computer.', [{ id: 'cancel', label: 'Cancel' }, { id: 'out', label: 'Sign out', primary: true }])) !== 'out') return;
-            await api.account.signOut();
-            setAccount(null);
+            setBusy(true);
+            const s = await run(api.hub.googleVerify());
+            setBusy(false);
+            if (s) (setHubStatus(s), toast('Email verified with Google.', 'success'));
           }}
         >
-          <LogOut size={13} /> Sign out
+          <ShieldCheck size={14} /> Verify with Google
         </button>
+        {school && !account.verified && (
+          <button
+            className="btn sm"
+            disabled={busy}
+            title="School mode also accepts your email when it’s signed in here to Claude, OneDrive or Google"
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const a = await api.account.verifyHere();
+                if (a) setAccount(a);
+                toast('Verified for School on this computer.', 'success');
+              } catch (err: any) {
+                toast(String(err?.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), 'error');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <Laptop size={14} /> Use this computer’s sign-ins
+          </button>
+        )}
       </div>
     </div>
   );

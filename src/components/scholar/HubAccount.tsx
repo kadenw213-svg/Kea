@@ -1,29 +1,18 @@
-import { useEffect, useState } from 'react';
-import { BadgeCheck, Bell, Check, ExternalLink, Heart, KeyRound, LogIn, LogOut, Phone, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
-import { create } from 'zustand';
+import { useEffect, useRef, useState } from 'react';
+import { BadgeCheck, Bell, Check, Copy, ExternalLink, Heart, KeyRound, LogIn, LogOut, Pencil, Phone, Trash2, UserPlus } from 'lucide-react';
 import { api, HubConsent, HubNotification, HubNotifications, HubPhoneVisibility, HubQuestionChapter, HubResult, HubScanJob, HubSectionRequest, HubServing, HubStatus, HubTerms, HubTermsChanges, TermsSection } from '../../lib/api';
 import { toast, ask } from '../../store';
-import { openScholar } from './scholarStore';
+import { formatBytes } from '../../lib/util';
+import { useKeaModes } from '../../lib/modes';
+import { useKeaCloud, watchKeaCloud } from '../../lib/keaCloud';
+import { formatPhone } from '../../lib/phone';
+import { hubStatusNow, openAccount, refreshHub, refreshNotifications, run, setHubNotifications, setHubStatus, useHubNotifications, useHubStatus } from '../account/hubStore';
+import { PasswordInput, passwordHint, SignInSecurity, YourData } from '../account/Security';
+import { ProfileHead, VerifiedBadge, VerifyEmail, useAccount } from './Account';
 
-// The Kea Hub account: one sign-in for Kea and KeaS. Shared state, so the account page and the terms gate agree.
-const useHub = create<{ status: HubStatus | null; set(s: HubStatus | null): void }>((set) => ({ status: null, set: (status) => set({ status }) }));
-export function refreshHub() {
-  return api.hub.status().then((r) => {
-    if (r.ok) useHub.getState().set(r.value);
-    return r;
-  });
-}
-export const useHubStatus = () => useHub((s) => s.status);
-
-// Notifications for this account: kept here so the account panel, wherever it shows, and the global listener agree.
-const useNotes = create<{ notes: HubNotifications | null; set(n: HubNotifications | null): void }>((set) => ({ notes: null, set: (notes) => set({ notes }) }));
-export const useHubNotifications = () => useNotes((s) => s.notes);
-export function refreshNotifications() {
-  return api.hub.notifications().then((r) => {
-    if (r.ok) useNotes.getState().set(r.value);
-    return r;
-  });
-}
+// The Kea Hub account: one sign-in for Kea and KeaS. Its state lives in account/hubStore.ts (shared with the title bar,
+// Work and School); these are re-exported for the screens that import them from here.
+export { refreshHub, refreshNotifications, useHubStatus, useHubNotifications };
 
 /** A Kea supporter's badge next to their name: a thank-you, nothing more. `compact`: the heart only. */
 export function SupporterBadge({ compact = false }: { compact?: boolean }) {
@@ -40,7 +29,6 @@ const sizeText = (b: number) => {
   const at = (unit: string, size: number) => `${(Math.round((b / size) * 10) / 10).toLocaleString()} ${unit}`;
   return b >= 1024 ** 3 ? at('GB', 1024 ** 3) : b >= 1024 ** 2 ? at('MB', 1024 ** 2) : b >= 1024 ? at('KB', 1024) : `${Math.max(0, b)} bytes`;
 };
-const usedText = (b: number) => (b >= 1024 ** 3 || b < 1024 ** 2 ? sizeText(b) : `${(b / 1024 ** 2).toFixed(1)} MB`);
 // (In UTC, the way the Hub writes dates in its notices, so both say the same day.)
 const dayText = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 function agoText(ms: number) {
@@ -50,14 +38,7 @@ function agoText(ms: number) {
   if (m < 24 * 60) return `${Math.round(m / 60)} h ago`;
   return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
-
-/** Shows a Hub error as a toast; returns the value or null. */
-async function run<T>(p: Promise<HubResult<T>>): Promise<T | null> {
-  const r = await p;
-  if (r.ok) return r.value;
-  toast(r.error, 'error');
-  return null;
-}
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Section text: lines starting "- " are a list, other lines are paragraphs. */
 function SectionBody({ body }: { body: string }) {
@@ -78,14 +59,17 @@ function SectionBody({ body }: { body: string }) {
   return <div className="hub-terms-body">{blocks}</div>;
 }
 
-/** Every section, each with its own "I agree" box. All must be ticked. */
+/** Every section, each with its own "I agree" box. All must be ticked; the footer counts them and finds the next one. */
 function TermsAgreement({ sections, onChange }: { sections: TermsSection[]; onChange(allAgreed: boolean): void }) {
   const [agreed, setAgreed] = useState<Set<string>>(new Set());
+  const list = useRef<HTMLDivElement>(null);
   useEffect(() => onChange(sections.every((s) => agreed.has(s.id))), [agreed, sections]);
+  const done = sections.filter((s) => agreed.has(s.id)).length;
+  const next = sections.find((s) => !agreed.has(s.id));
   return (
-    <div className="hub-terms-list">
+    <div className="hub-terms-list" ref={list}>
       {sections.map((s) => (
-        <section key={s.id} className={`hub-terms-section ${agreed.has(s.id) ? 'agreed' : ''}`}>
+        <section key={s.id} data-section={s.id} className={`hub-terms-section ${agreed.has(s.id) ? 'agreed' : ''}`}>
           <h4>{s.title}</h4>
           <SectionBody body={s.body} />
           <label className="hub-agree">
@@ -93,21 +77,31 @@ function TermsAgreement({ sections, onChange }: { sections: TermsSection[]; onCh
               type="checkbox"
               checked={agreed.has(s.id)}
               onChange={(e) => {
-                const next = new Set(agreed);
-                e.target.checked ? next.add(s.id) : next.delete(s.id);
-                setAgreed(next);
+                const n = new Set(agreed);
+                e.target.checked ? n.add(s.id) : n.delete(s.id);
+                setAgreed(n);
               }}
             />
             I agree to this section
           </label>
         </section>
       ))}
+      <div className={`hub-terms-count ${next ? '' : 'done'}`}>
+        <span>
+          {done} of {sections.length} agreed
+        </span>
+        {next && (
+          <button type="button" className="btn link sm" onClick={() => list.current?.querySelector(`[data-section="${CSS.escape(next.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+            Next one to read ↓
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
-function SignIn({ onDone }: { onDone(): void }) {
-  const [email, setEmail] = useState('');
+function SignIn({ onDone, initialEmail = '' }: { onDone(): void; initialEmail?: string }) {
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [needCode, setNeedCode] = useState(false);
@@ -118,41 +112,52 @@ function SignIn({ onDone }: { onDone(): void }) {
     const r = await p;
     setBusy(false);
     if (r.ok) {
-      useHub.getState().set(r.value);
+      setHubStatus(r.value);
       toast(ok, 'success');
       onDone();
     } else if (r.data?.totpRequired) {
-      setNeedCode(true);
+      // (The first time, the code box just appears with its explanation; after that, the Hub's message says what's wrong.)
       if (needCode) toast(r.error, 'error');
+      setNeedCode(true);
     } else toast(r.error, 'error');
   };
+  const codeBox = needCode && (
+    <label>
+      <span>Code from your authenticator app</span>
+      <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus />
+      <span className="acct-hint">Two-step sign-in is on for this account: open your authenticator app and enter the 6-digit code it shows for Kea.</span>
+    </label>
+  );
   if (resetting)
     return (
-      <div className="acct-form">
-        <p className="muted acct-note">Forgot your password? Sign in to Google with your Kea email to prove it's you, then pick a new password. Every other device gets signed out.</p>
+      <form
+        className="acct-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          finish(api.hub.googleReset({ email, password, code }), 'Password changed. You’re signed in.');
+        }}
+      >
+        <p className="muted acct-note">Forgot your password? Sign in to Google with your Kea email to prove it’s you, then pick a new password. Every other device gets signed out.</p>
+        <p className="hub-warn">This only works when your Kea email is a Google account (Gmail or a Google Workspace school or work address). For any other email, ask whoever runs your Kea Hub.</p>
         <label>
           <span>Your Kea email</span>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoFocus />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" autoFocus={!email} />
         </label>
         <label>
           <span>New password</span>
-          <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="new-password" placeholder="10+ characters; a few random words works well" />
+          <PasswordInput value={password} onChange={setPassword} autoComplete="new-password" autoFocus={!!email} />
+          {passwordHint(password) && <span className="acct-hint">{passwordHint(password)}</span>}
         </label>
-        {needCode && (
-          <label>
-            <span>Code from your authenticator app</span>
-            <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" maxLength={6} />
-          </label>
-        )}
+        {codeBox}
         <div className="acct-actions">
-          <button className="btn primary" disabled={busy || !password} onClick={() => finish(api.hub.googleReset({ email, password, code }), 'Password changed. You’re signed in.')}>
+          <button className="btn primary" type="submit" disabled={busy || !EMAIL.test(email.trim()) || !!passwordHint(password)}>
             <KeyRound size={14} /> Verify with Google and reset
           </button>
-          <button className="btn" onClick={() => setResetting(false)}>
+          <button className="btn" type="button" onClick={() => setResetting(false)}>
             Back
           </button>
         </div>
-      </div>
+      </form>
     );
   return (
     <form
@@ -164,39 +169,35 @@ function SignIn({ onDone }: { onDone(): void }) {
     >
       <label>
         <span>Email</span>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" autoFocus />
+        <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" autoFocus={!email} />
       </label>
       <label>
         <span>Password</span>
-        <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" />
+        <PasswordInput value={password} onChange={setPassword} autoFocus={!!email} />
       </label>
-      {needCode && (
-        <label>
-          <span>Code from your authenticator app</span>
-          <input value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" maxLength={6} autoFocus />
-        </label>
-      )}
+      {codeBox}
       <div className="acct-actions">
         <button className="btn primary" type="submit" disabled={busy || !email || !password}>
           <LogIn size={14} /> Sign in
         </button>
-        <button className="btn" type="button" disabled={busy} onClick={() => finish(api.hub.googleSignIn({ email, code: needCode ? code : undefined }), 'Signed in with Google.')}>
-          Sign in with Google
+        <button className="btn" type="button" disabled={busy} title="For a Kea account whose email is the same Google account" onClick={() => finish(api.hub.googleSignIn({ email, code: needCode ? code : undefined }), 'Signed in with Google.')}>
+          Continue with Google
         </button>
         <button className="btn link" type="button" onClick={() => setResetting(true)}>
           Forgot password?
         </button>
       </div>
+      <p className="muted acct-note">Continue with Google works for a Kea account whose email is that Google account.</p>
     </form>
   );
 }
 
-function CreateAccount({ onDone }: { onDone(): void }) {
+function CreateAccount({ onDone, onExists }: { onDone(): void; onExists(email: string): void }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [age13, setAge13] = useState(false);
   const [birthYear, setBirthYear] = useState('');
+  const [tried, setTried] = useState(false);
   const thisYear = new Date().getFullYear();
   const yearOk = /^\d{4}$/.test(birthYear) && Number(birthYear) >= 1900 && Number(birthYear) <= thisYear - 13;
   const [step, setStep] = useState<'details' | 'terms'>('details');
@@ -206,38 +207,48 @@ function CreateAccount({ onDone }: { onDone(): void }) {
   useEffect(() => {
     if (step === 'terms' && !terms) run(api.hub.terms()).then(setTerms);
   }, [step]);
+  // What's still missing, said beside the field (shown once Next was pressed, the password's rule always).
+  const problems: Record<string, string | null> = {
+    name: name.trim() ? null : 'Add your name.',
+    email: EMAIL.test(email.trim()) ? null : 'Add your email address.',
+    password: passwordHint(password),
+    year: yearOk ? null : /^\d{4}$/.test(birthYear) && Number(birthYear) > thisYear - 13 && Number(birthYear) <= thisYear ? 'Kea accounts are for people 13 and older.' : 'Add the year you were born (four digits).',
+  };
+  const show = (k: string) => (tried || (k === 'year' && birthYear.length === 4)) && problems[k] && <span className="acct-hint bad">{problems[k]}</span>;
   if (step === 'details')
     return (
       <form
         className="acct-form"
         onSubmit={(e) => {
           e.preventDefault();
-          setStep('terms');
+          setTried(true);
+          if (!Object.values(problems).some(Boolean)) setStep('terms');
         }}
       >
         <label>
           <span>Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="What people see" autoFocus />
+          {show('name')}
         </label>
         <label>
           <span>Email</span>
           <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" />
+          {show('email')}
         </label>
         <label>
           <span>Password</span>
-          <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="new-password" placeholder="10+ characters; a few random words works well" />
+          <PasswordInput value={password} onChange={setPassword} autoComplete="new-password" />
+          {problems.password && <span className={`acct-hint ${tried ? 'bad' : ''}`}>{problems.password}</span>}
         </label>
         <label>
           <span>Year you were born</span>
           <input value={birthYear} onChange={(e) => setBirthYear(e.target.value.replace(/\D/g, '').slice(0, 4))} inputMode="numeric" placeholder={String(thisYear - 20)} />
+          {show('year')}
         </label>
-        <label className="hub-agree">
-          <input type="checkbox" checked={age13} onChange={(e) => setAge13(e.target.checked)} /> I'm 13 or older
-        </label>
-        <p className="muted acct-note">Only the year is kept. Under 18, a parent or guardian signs off before Kea’s shared Claude works for you; everything else works without it.</p>
+        <p className="muted acct-note">Kea accounts are for people 13 and older. Only the year is kept. Under 18, a parent or guardian signs off before Kea’s shared Claude works for you; everything else works without it.</p>
         <p className="muted acct-note">Your password is never stored, only a scrambled form of it, so not even Kea's creator can read it.</p>
         <div className="acct-actions">
-          <button className="btn primary" type="submit" disabled={!name.trim() || !email.trim() || password.length < 10 || !age13 || !yearOk}>
+          <button className="btn primary" type="submit">
             Next: the terms
           </button>
         </div>
@@ -263,14 +274,19 @@ function CreateAccount({ onDone }: { onDone(): void }) {
         <button
           className="btn primary"
           disabled={busy || !allAgreed}
+          title={allAgreed ? undefined : 'Tick every section first'}
           onClick={async () => {
             setBusy(true);
-            const r = await api.hub.register({ name, email, password, age13, birthYear: Number(birthYear), termsVersion: terms.terms.version, termsSections: terms.terms.sections.map((s) => s.id) });
+            const r = await api.hub.register({ name, email, password, age13: yearOk, birthYear: Number(birthYear), termsVersion: terms.terms.version, termsSections: terms.terms.sections.map((s) => s.id) });
             setBusy(false);
             if (r.ok) {
-              useHub.getState().set(r.value);
+              setHubStatus(r.value);
               toast('Your Kea account is ready.', 'success');
               onDone();
+            } else if (r.data?.exists) {
+              // (Probably made before: straight to signing in, with the email filled in.)
+              toast('There may already be a Kea account with this email. Sign in, or use Forgot password.', 'info');
+              onExists(email.trim());
             } else {
               toast(r.error, 'error');
               if (r.status === 409 && r.data?.termsVersion) setTerms(null), setStep('details');
@@ -288,46 +304,111 @@ function CreateAccount({ onDone }: { onDone(): void }) {
   );
 }
 
-/** The Kea account section of the account page. */
+/** Signing in, or making an account; the two switch with the email carried over. */
+function SignInOrCreate({ mode, setMode, onDone }: { mode: 'signin' | 'create'; setMode(m: 'signin' | 'create'): void; onDone(): void }) {
+  const [email, setEmail] = useState('');
+  return mode === 'signin' ? (
+    <SignIn key={email} initialEmail={email} onDone={onDone} />
+  ) : (
+    <CreateAccount
+      onDone={onDone}
+      onExists={(e) => {
+        setEmail(e);
+        setMode('signin');
+      }}
+    />
+  );
+}
+
+/** The account's name, changed in place. */
+function NameLine({ name, badges }: { name: string; badges: JSX.Element | null }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  const [busy, setBusy] = useState(false);
+  if (!editing)
+    return (
+      <div className="acct-name">
+        {name} {badges}
+        <button className="icon-btn sm" title="Change your name" aria-label="Change your name" onClick={() => (setValue(name), setEditing(true))}>
+          <Pencil size={13} />
+        </button>
+      </div>
+    );
+  return (
+    <form
+      className="acct-name-edit"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        const s = await run(api.hub.setName(value));
+        setBusy(false);
+        if (s) (setHubStatus(s), setEditing(false), toast('Name changed.', 'success'));
+      }}
+    >
+      <input value={value} onChange={(e) => setValue(e.target.value)} maxLength={60} autoFocus aria-label="Your name" />
+      <button className="btn primary sm" type="submit" disabled={busy || !value.trim() || value.trim() === name}>
+        Save
+      </button>
+      <button className="btn sm" type="button" onClick={() => setEditing(false)}>
+        Cancel
+      </button>
+    </form>
+  );
+}
+
+/** Signing out: asked first, and what it means said plainly. */
+export async function signOutAsked() {
+  const s = hubStatusNow();
+  const who = s?.me?.account.email ?? s?.cached?.email;
+  if ((await ask(`Sign out${who ? ` of ${who}` : ''}?`, 'Kea goes back to its sign-in screen. Kea Cloud, classes and your organizations stop syncing here, and the copy of your shifts on this computer is removed. Documents saved on this computer stay.', [{ id: 'cancel', label: 'Cancel' }, { id: 'out', label: 'Sign out', primary: true }])) !== 'out') return;
+  const r = await run(api.hub.logout());
+  if (r) setHubStatus(r);
+}
+
+/**
+ * The account page (Settings → Kea account, and School's "Your account"): who you are, verifying your email,
+ * storage, notifications, the phone number, sign-in and security, your data, signing out, and the Hub's address.
+ */
 export function HubPanel() {
   const status = useHubStatus();
-  const notes = useHubNotifications();
+  const [account] = useAccount();
+  const modes = useKeaModes();
+  const kc = useKeaCloud((x) => x.status);
   const [mode, setMode] = useState<'signin' | 'create'>('signin');
-  const [busy, setBusy] = useState(false);
-  const [advanced, setAdvanced] = useState(false);
   useEffect(() => {
     refreshHub();
+    return watchKeaCloud();
   }, []);
+  // (Kea Cloud's figure is the newer one: when it moves, the account's is fetched again so both say the same.)
+  const kcUsed = kc?.storage?.used;
+  useEffect(() => {
+    if (kcUsed != null && status?.me && kcUsed !== status.me.storage.used) refreshHub();
+  }, [kcUsed]);
   if (!status) return null;
-
-  // (Shown openly while the Hub can't be reached: a wrong address is the usual reason on a new device.)
-  const advancedBox = (
-    <div className="hub-advanced">
-      {status.reachable && (
-        <button className="btn link sm" onClick={() => setAdvanced(!advanced)}>
-          {advanced ? 'Hide' : 'Advanced'}
-        </button>
-      )}
-      {(advanced || !status.reachable) && <HubAddress />}
-    </div>
-  );
 
   if (!status.signedIn)
     return (
       <div className="acct-card hub-card">
         <h3 className="hub-title">Your Kea account</h3>
-        <p className="muted acct-note">One account for Kea and KeaS: classes, study groups, leaderboards and your Kea storage.</p>
-        {!status.reachable && <p className="hub-warn">Can't reach the Kea Hub right now. You can still use Kea; sign in when it's back.</p>}
-        <div className="hub-tabs">
-          <button className={`chip ${mode === 'signin' ? 'on' : ''}`} onClick={() => setMode('signin')}>
-            Sign in
-          </button>
-          <button className={`chip ${mode === 'create' ? 'on' : ''}`} onClick={() => setMode('create')}>
-            Create an account
-          </button>
-        </div>
-        {mode === 'signin' ? <SignIn onDone={() => {}} /> : <CreateAccount onDone={() => {}} />}
-        {advancedBox}
+        <p className="muted acct-note">One account for Kea and KeaS: Kea Cloud, classes, study groups, organizations and work.</p>
+        {!status.reachable ? (
+          <>
+            <p className="hub-warn">Can’t reach the Kea Hub right now. You can still use Kea; sign in when it’s back.</p>
+            <HubAddress />
+          </>
+        ) : (
+          <>
+            <div className="hub-tabs" role="tablist">
+              <button role="tab" aria-selected={mode === 'signin'} className={`chip ${mode === 'signin' ? 'on' : ''}`} onClick={() => setMode('signin')}>
+                Sign in
+              </button>
+              <button role="tab" aria-selected={mode === 'create'} className={`chip ${mode === 'create' ? 'on' : ''}`} onClick={() => setMode('create')}>
+                Create an account
+              </button>
+            </div>
+            <SignInOrCreate mode={mode} setMode={setMode} onDone={() => {}} />
+          </>
+        )}
       </div>
     );
 
@@ -336,66 +417,106 @@ export function HubPanel() {
   const c = status.cached;
   const supporter = me?.account.supporter ?? c?.supporter ?? null;
   const who = me?.account ?? (c ? { displayName: c.name, email: c.email, emailVerified: c.emailVerified, verifiedBy: c.verifiedBy ?? null, owner: !!c.owner } : null);
+  const storage = me ? { used: kc?.storage?.used ?? me.storage.used, quota: kc?.storage?.quota ?? me.storage.quota } : null;
+  const games = modes.school || modes.personal;
+  const verifiedText = who?.owner ? 'Kea’s creator · Hub owner' : who?.emailVerified ? `Email verified (${who.verifiedBy})` : account?.verifiedHere ? `Email verified for School on this computer (${account.verifiedBy})` : 'Email not verified yet';
   return (
-    <div className="acct-card hub-card">
-      <h3 className="hub-title">Your Kea account</h3>
-      {!status.reachable && <p className="hub-warn">The Kea Hub is offline right now (its computer may be asleep or updating). You’re still signed in: Kea keeps working with what it last saw and catches up when it’s back.</p>}
-      {who && (
-        <>
-          <div className="acct-who">
-            <div className="acct-name">
-              {who.displayName} {who.emailVerified && <BadgeCheck size={16} className="hub-ok" />} {supporter?.active && <SupporterBadge />}
+    <div className="acct-page">
+      <div className="acct-card hub-card">
+        {!status.reachable && <p className="hub-warn">The Kea Hub is offline right now (its computer may be asleep or updating). You’re still signed in: Kea keeps working with what it last saw and catches up when it’s back.</p>}
+        {who && (
+          <ProfileHead>
+            <div className="acct-who">
+              {me ? (
+                <NameLine name={who.displayName} badges={<>{who.emailVerified && <VerifiedBadge account={account} size={16} />} {supporter?.active && <SupporterBadge />}</>} />
+              ) : (
+                <div className="acct-name">{who.displayName}</div>
+              )}
+              <div className="muted">{who.email}</div>
+              <div className={`acct-status ${who.emailVerified || account?.verifiedHere ? 'ok' : 'bad'}`}>{verifiedText}</div>
             </div>
-            <div className="muted">{who.email}</div>
-            <div className={`acct-status ${who.emailVerified ? 'ok' : 'bad'}`}>
-              {who.owner ? 'Kea’s creator · Hub owner' : who.emailVerified ? `Email verified (${who.verifiedBy})` : 'Email not verified yet'}
-            </div>
-          </div>
-          {me && (
-            <div className="hub-stats">
-              <span>Level {me.progress.level}</span>
-              <span>{me.progress.xp} XP</span>
-              <span>{me.progress.streak}-day streak</span>
-              <span>
-                Storage {usedText(me.storage.used)} of {sizeText(me.storage.quota)}
-              </span>
-            </div>
-          )}
-          {me?.storage.over && (
-            <p className="hub-warn">
-              Your Kea storage is over its limit: you’re using {usedText(me.storage.used)} of {sizeText(me.storage.quota)}. Nothing has been deleted, and you can still open, change and delete your files. New files wait until you’re under the limit, so delete some to make room.
-            </p>
-          )}
-          {supporter?.active && supporter.until && (
-            <p className="muted acct-note hub-supporter-note">
-              <Heart size={13} /> Thank you for supporting Kea. Until {dayText(supporter.until)} your storage is {me ? sizeText(me.storage.quota) : 'bigger'} and a supporter badge shows next to your name in classes and organizations.
-            </p>
-          )}
-        </>
-      )}
-      <div className="acct-actions">
-        {who && !who.emailVerified && (
-          <button className="btn primary sm" disabled={busy} onClick={async () => { setBusy(true); const s = await run(api.hub.googleVerify()); setBusy(false); if (s) (useHub.getState().set(s), toast('Email verified with Google.', 'success')); }}>
-            <ShieldCheck size={14} /> Verify with Google
-          </button>
+          </ProfileHead>
         )}
-        <button className="btn sm" onClick={() => api.hub.openTerms()}>
-          <ExternalLink size={13} /> Terms
+        {me && !me.account.emailVerified && <VerifyEmail />}
+        {me && (
+          <div className="hub-stats">
+            {games && (
+              <>
+                <span>Level {me.progress.level}</span>
+                <span>{me.progress.xp} XP</span>
+                <span>{me.progress.streak}-day streak</span>
+              </>
+            )}
+            {storage && (
+              <span title={me.account.emailVerified ? undefined : 'Storage grows once your email is verified'}>
+                Kea storage: {formatBytes(storage.used)} of {formatBytes(storage.quota)} used
+              </span>
+            )}
+          </div>
+        )}
+        {me?.storage.over && (
+          <p className="hub-warn">
+            Your Kea storage is over its limit: you’re using {formatBytes(me.storage.used)} of {formatBytes(me.storage.quota)}. Nothing has been deleted, and you can still open, change and delete your files. New files wait until you’re under the limit, so delete some to make room.
+          </p>
+        )}
+        {supporter?.active && supporter.until && (
+          <p className="muted acct-note hub-supporter-note">
+            <Heart size={13} /> Thank you for supporting Kea. Until {dayText(supporter.until)} your storage is {me ? sizeText(me.storage.quota) : 'bigger'} and a supporter badge shows next to your name in classes and organizations.
+          </p>
+        )}
+        <div className="acct-actions">
+          <button className="btn sm" onClick={() => api.hub.openTerms()}>
+            <ExternalLink size={13} /> Terms
+          </button>
+          <button className="btn sm" onClick={signOutAsked}>
+            <LogOut size={13} /> Sign out
+          </button>
+        </div>
+      </div>
+      {me && (
+        <div className="acct-card">
+          <NotificationList />
+        </div>
+      )}
+      {me && (
+        <div className="acct-card">
+          <PhoneSetting status={status} />
+        </div>
+      )}
+      {me && (
+        <div className="acct-card">
+          <SignInSecurity status={status} />
+        </div>
+      )}
+      {me && (
+        <div className="acct-card">
+          <YourData status={status} />
+        </div>
+      )}
+      <HubAddressBox />
+    </div>
+  );
+}
+
+/** The Hub's address on the account page: shown to copy (a phone needs it), changed under Advanced. */
+function HubAddressBox() {
+  const status = useHubStatus();
+  const [open, setOpen] = useState(false);
+  if (!status) return null;
+  return (
+    <div className="acct-card hub-advanced-card">
+      <div className="acct-row">
+        <span className="acct-row-main">
+          <b>Kea Hub</b> <span className="muted">{status.url}</span>
+        </span>
+        <button className="icon-btn sm" title="Copy the address (for Kea on your phone)" aria-label="Copy the Hub address" onClick={() => navigator.clipboard.writeText(status.url).then(() => toast('Hub address copied.', 'success'), () => {})}>
+          <Copy size={13} />
         </button>
-        <button
-          className="btn sm"
-          onClick={async () => {
-            if ((await ask('Sign out of your Kea account?', 'Classes, study groups and your Kea storage stop syncing on this computer until you sign in again.', [{ id: 'cancel', label: 'Cancel' }, { id: 'out', label: 'Sign out', primary: true }])) !== 'out') return;
-            const s = await run(api.hub.logout());
-            if (s) useHub.getState().set(s);
-          }}
-        >
-          <LogOut size={13} /> Sign out
+        <button className="btn link sm" onClick={() => setOpen(!open)}>
+          {open || !status.reachable ? 'Hide' : 'Advanced'}
         </button>
       </div>
-      {me && <PhoneSetting status={status} />}
-      {(me || notes) && <NotificationList />}
-      {advancedBox}
+      {(open || !status.reachable) && <HubAddress />}
     </div>
   );
 }
@@ -434,7 +555,7 @@ export function AccountGate() {
               </div>
             ) : (
               <div className="acct-card hub-card">
-                {mode === 'signin' ? <SignIn onDone={() => refreshHub()} /> : <CreateAccount onDone={() => refreshHub()} />}
+                <SignInOrCreate mode={mode} setMode={setMode} onDone={() => refreshHub()} />
                 <p className="account-gate-switch">
                   {mode === 'signin' ? 'New to Kea? ' : 'Already have an account? '}
                   <button className="btn link" onClick={() => setMode(mode === 'signin' ? 'create' : 'signin')}>
@@ -452,19 +573,22 @@ export function AccountGate() {
 
 /** The optional phone number, and who sees it. Never on leaderboards; nobody sees it unless chosen here. */
 function PhoneSetting({ status }: { status: HubStatus }) {
+  const modes = useKeaModes();
   const cur = status.me?.account.phone ?? { number: null, visibility: 'nobody' as HubPhoneVisibility };
+  // (No number yet: who'd see one starts at the people it's usually for: coworkers in Work, classmates in School.)
+  const suggested: HubPhoneVisibility = cur.number ? cur.visibility : modes.work && modes.school ? 'both' : modes.work ? 'orgs' : modes.school ? 'classes' : 'nobody';
   const [number, setNumber] = useState(cur.number || '');
-  const [visibility, setVisibility] = useState<HubPhoneVisibility>(cur.visibility);
+  const [visibility, setVisibility] = useState<HubPhoneVisibility>(suggested);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setNumber(cur.number || '');
-    setVisibility(cur.visibility);
+    setVisibility(suggested);
   }, [cur.number, cur.visibility]);
   const save = async (patch: { phone?: string | null; visibility?: HubPhoneVisibility }, done: string) => {
     setBusy(true);
     const s = await run(api.hub.setPhone(patch));
     setBusy(false);
-    if (s) (useHub.getState().set(s), toast(done, 'success'));
+    if (s) (setHubStatus(s), toast(done, 'success'));
   };
   const changed = number.trim() !== (cur.number || '') || visibility !== cur.visibility;
   return (
@@ -472,6 +596,11 @@ function PhoneSetting({ status }: { status: HubStatus }) {
       <h3 className="hub-title">
         <Phone size={14} /> Phone number <span className="muted hub-optional">optional</span>
       </h3>
+      {cur.number && (
+        <p className="acct-note">
+          Saved: <b>{formatPhone(cur.number)}</b>
+        </p>
+      )}
       <div className="hub-phone-row">
         <label>
           <span>Number</span>
@@ -479,7 +608,7 @@ function PhoneSetting({ status }: { status: HubStatus }) {
         </label>
         <label>
           <span>Who sees it</span>
-          <select value={visibility} onChange={(e) => setVisibility(e.target.value as HubPhoneVisibility)} disabled={!number.trim()}>
+          <select className="acct-select" value={visibility} onChange={(e) => setVisibility(e.target.value as HubPhoneVisibility)}>
             <option value="nobody">Nobody</option>
             <option value="classes">Classmates in my classes</option>
             <option value="orgs">Coworkers in my organizations</option>
@@ -489,7 +618,7 @@ function PhoneSetting({ status }: { status: HubStatus }) {
       </div>
       <p className="muted acct-note">It shows in class and organization member lists only for the people you pick, never on leaderboards and never publicly.</p>
       <div className="acct-actions">
-        <button className="btn sm primary" disabled={busy || !changed || !number.trim()} onClick={() => save({ phone: number.trim(), visibility }, 'Phone number saved.')}>
+        <button className="btn sm primary" disabled={busy || !changed || !number.trim()} title={!number.trim() ? 'Type a number first' : !changed ? 'Nothing changed' : undefined} onClick={() => save({ phone: number.trim(), visibility }, 'Phone number saved.')}>
           Save
         </button>
         {cur.number && (
@@ -513,7 +642,7 @@ function NotificationList() {
   const list = all ? notes.notifications : notes.notifications.slice(0, 5);
   const act = async (p: Promise<HubResult<HubNotifications>>) => {
     const r = await run(p);
-    if (r) useNotes.getState().set(r);
+    if (r) setHubNotifications(r);
   };
   return (
     <div className="hub-notes">
@@ -570,7 +699,8 @@ function NoteItem({ n, onRead }: { n: HubNotification; onRead(): void }) {
 }
 
 /** Where the Kea Hub is. Every device needs the Hub's public address (https://….ts.net); 127.0.0.1 only works on the
- * Hub's own computer. Empty goes back to the address this copy of Kea came with. */
+ * Hub's own computer. Empty goes back to the address this copy of Kea came with. A new address is kept only once a Hub
+ * answers there, and moving to another Hub while signed in is asked first (it signs out here). */
 export function HubAddress() {
   const status = useHubStatus();
   const [url, setUrl] = useState('');
@@ -581,14 +711,16 @@ export function HubAddress() {
   if (!status) return null;
   const save = async (to: string) => {
     setBusy(true);
-    const wasSignedIn = !!status.signedIn;
-    const s = await run(api.hub.setUrl(to));
+    let r = await api.hub.setUrl(to);
+    if (!r.ok && r.data?.switchSignsOut) {
+      const yes = (await ask('Switch to another Kea Hub?', r.error, [{ id: 'no', label: 'Cancel' }, { id: 'yes', label: 'Switch and sign out', primary: true }])) === 'yes';
+      r = yes ? await api.hub.setUrl(to, true) : r;
+      if (!yes) return setBusy(false);
+    }
     setBusy(false);
-    if (!s) return;
-    useHub.getState().set(s);
-    // (A different Hub never gets this one's sign-in: Kea signs out when the address changes.)
-    const signedOut = wasSignedIn && !s.signedIn ? ' You’re signed out: sign in to your account on this Hub.' : '';
-    toast(`${s.reachable ? 'Connected to the Kea Hub.' : 'Saved, but the Kea Hub doesn’t answer at that address yet.'}${signedOut}`, s.reachable ? 'success' : 'error');
+    if (!r.ok) return toast(r.error, 'error');
+    setHubStatus(r.value);
+    toast(r.value.signedIn ? 'Connected to the Kea Hub.' : 'Connected. Sign in to your account on this Hub.', 'success');
   };
   return (
     <form
@@ -603,11 +735,11 @@ export function HubAddress() {
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={status.defaultUrl || 'https://name.tailnet.ts.net'} spellCheck={false} />
       </label>
       <p className="muted acct-note">
-        {status.reachable ? 'Connected.' : 'Not answering at this address.'} Ask whoever runs your Kea Hub for its address if it isn’t this one.
+        {status.reachable ? 'Connected.' : 'Not answering at this address.'} Ask whoever runs your Kea Hub for its address if it isn’t this one. Kea checks a new address before using it.
       </p>
       <div className="acct-actions">
         <button className="btn sm" type="submit" disabled={busy || !url.trim() || url.trim() === status.url}>
-          Save address
+          {busy ? 'Checking…' : 'Save address'}
         </button>
         {status.defaultUrl && status.url !== status.defaultUrl && (
           <button className="btn sm" type="button" disabled={busy} onClick={() => save('')}>
@@ -656,8 +788,8 @@ export function TermsGate() {
     const t = setInterval(refreshHub, 30 * 60_000);
     // (Mounted once for the whole app, so these live here: account notifications from the main process, and a
     // clicked Windows notification opening the account page.)
-    const offNotes = api.hub.onNotifications((n) => useNotes.getState().set(n));
-    const offOpen = api.hub.onOpenAccount(() => openScholar({ name: 'account' }));
+    const offNotes = api.hub.onNotifications((n) => setHubNotifications(n));
+    const offOpen = api.hub.onOpenAccount(() => openAccount());
     return () => (clearInterval(t), offNotes(), offOpen());
   }, []);
   useEffect(() => {
@@ -699,7 +831,7 @@ export function TermsGate() {
           <button className="btn" onClick={() => api.hub.openTerms(changes.from ?? undefined)}>
             <ExternalLink size={13} /> Open in browser
           </button>
-          <button className="btn" onClick={async () => { const s = await run(api.hub.logout()); if (s) useHub.getState().set(s); }}>
+          <button className="btn" onClick={async () => { const s = await run(api.hub.logout()); if (s) setHubStatus(s); }}>
             Sign out
           </button>
           <button
@@ -709,7 +841,7 @@ export function TermsGate() {
               setBusy(true);
               const s = await run(api.hub.accept({ termsVersion: changes.to, termsSections: allIds }));
               setBusy(false);
-              if (s) (useHub.getState().set(s), toast('Thanks. You’re all set.', 'success'));
+              if (s) (setHubStatus(s), toast('Thanks. You’re all set.', 'success'));
             }}
           >
             Agree to the updated terms
@@ -756,9 +888,9 @@ export function SharedClaude() {
         Free and limited: Kea’s creator’s Claude sets up your classes once, in a queue. Your school password never leaves this computer: the scan reads your class site through this Kea, so keep Kea open while it runs. To rescan or rewrite anything later, connect your own Claude.
       </p>
       {!status?.signedIn ? (
-        <p className="hub-warn">Sign in to your Kea account first (your name → Your account), and verify your email with Google.</p>
+        <p className="hub-warn">Sign in to your Kea account first, and verify your email with Google.</p>
       ) : !status.me?.account.emailVerified ? (
-        <p className="hub-warn">Verify your email with Google first (your name → Your account).</p>
+        <div className="hub-warn">Verify your email with Google first. <VerifyEmail compact /></div>
       ) : status.me.account.birthYear == null || status.me.account.parentSignOff === 'needed' || status.me.account.parentSignOff === 'pending' ? (
         <ParentSignOff status={status} />
       ) : open ? (
