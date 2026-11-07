@@ -1,7 +1,7 @@
 // Classes withdrawn from (electron/scholar/withdrawn.cjs): a check that failed never marks or suspects anything; a
 // class gone from this term's list is only suspected, and asked about from its second day; a W grade marks it; the
 // student's own say (and undo) always wins; next term's classes are untouched.
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -18,7 +18,9 @@ const courses = [
   { id: 'old', code: 'MAT120', ou: '050', start: '2026-01-15', end: '2026-05-10' }
 ];
 const enr = (...ous) => ous.map((ou) => ({ OrgUnit: { Id: Number(ou), Name: ou }, Access: { IsActive: true, CanAccess: true } }));
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'kea-withdrawn-'));
+const made = [];
+const tmp = () => (made.push(fs.mkdtempSync(path.join(os.tmpdir(), 'kea-withdrawn-'))), made[made.length - 1]);
+after(() => made.forEach((d) => fs.rmSync(d, { recursive: true, force: true })));
 
 test('a check that failed decides nothing: unreadable, empty, or without any current class', () => {
   for (const enrollments of [null, undefined, [], enr('999')]) {
