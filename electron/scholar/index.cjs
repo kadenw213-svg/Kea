@@ -124,6 +124,8 @@ function applyMarks(phone) {
     }
   }
   if (phone.study && devices.mergeStudy(phone.study)) changed = true;
+  // Classes withdrawn from (or not) on the phone or another computer: the newer change wins (withdrawn.cjs).
+  if (phone.withdrawn && require('./withdrawn.cjs').merge(profiles.paths().dir, phone.withdrawn)) changed = true;
   // The theme picked on the phone, when it's newer than this computer's.
   const look = phone.look;
   if (look && typeof look.theme === 'string' && require('../themes.json')[look.theme] && look.at && look.at > settings.get('appearance.themeAt', '') && look.theme !== settings.get('appearance.theme', 'dark'))
@@ -181,7 +183,7 @@ async function snapshot() {
   return {
     // The theme (Settings → Appearance), so Kea on the phone looks the same; the newer choice wins either way.
     look: { theme: settings.get('appearance.theme', 'dark'), at: settings.get('appearance.themeAt', ''), classColors: settings.get('scholar.classColors', {}) },
-    ...fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, platform: browser.schoolInfo().platform, courses, items, details, grades, inbox, inboxDeleted, mail, doneLog }),
+    ...fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, platform: browser.schoolInfo().platform, courses, items, details, grades, inbox, inboxDeleted, mail, doneLog, withdrawn: require('./withdrawn.cjs').read(P.dir).log }),
     // The study folder as it is here (sets, saved questions, progress), for the phone to study from; its pictures are in
     // the library zip. A set still being written stays out until it's ready.
     study: studyFiles()
@@ -670,6 +672,26 @@ function register() {
   });
   // Class-site messages like email: read in full, draft and send from Kea (messages.cjs).
   require('./messages.cjs').register({ browser, precheck, db });
+  // Withdrawn classes: the student's own say ("I withdrew from this class", undo, "No, I'm still in it").
+  const W = require('./withdrawn.cjs');
+  const withdrawnNow = () => {
+    const v = W.read(p().dir);
+    return { log: v.log, ask: W.asking(v) };
+  };
+  const withdrawnChanged = () => (BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed')), syncSoon(3000));
+  ipcMain.handle('scholar:withdrawn', () => withdrawnNow());
+  ipcMain.handle('scholar:setWithdrawn', (_e, courseId, on, code) => {
+    if (typeof courseId !== 'string' || !/^[\w-]{1,80}$/.test(courseId)) throw new Error('Kea doesn’t know which class this is.');
+    W.set(p().dir, courseId, !!on, String(code || '').slice(0, 40));
+    withdrawnChanged();
+    return withdrawnNow();
+  });
+  ipcMain.handle('scholar:withdrawDismiss', (_e, courseId) => {
+    if (typeof courseId !== 'string' || !/^[\w-]{1,80}$/.test(courseId)) throw new Error('Kea doesn’t know which class this is.');
+    W.dismiss(p().dir, courseId);
+    withdrawnChanged();
+    return withdrawnNow();
+  });
   ipcMain.handle('scholar:replyMessage', async (_e, url, course) => {
     const ou = course ? (await db.watchList(p().db)).find((c) => c.code === course)?.ou : null;
     return browser.reply(typeof url === 'string' ? url : '', ou);

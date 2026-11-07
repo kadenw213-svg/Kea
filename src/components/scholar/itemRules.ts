@@ -244,7 +244,7 @@ export function relatedText(r: Related): { prefix: string; title: string } {
 const NOT_GUIDED = new Set(['reading', 'weekly_reading', 'lecture', 'recitation', 'seminar', 'office_hours', 'break', 'no_class', 'administrative_deadline', 'other_deadline']);
 /** Whether the daily check will write this item a guide (guides.cjs needing): work still ahead, or past and missing. */
 export function willGuide(it: ScholarItem, now = new Date()) {
-  if (NOT_GUIDED.has(it.type) || it.done || !it.date || it.hub) return false;
+  if (NOT_GUIDED.has(it.type) || it.done || !it.date || it.hub || it.withdrawn) return false;
   const pad = (n: number) => String(n).padStart(2, '0');
   const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   return it.date >= today || it.handIn === 'not_submitted';
@@ -255,6 +255,6 @@ export function willGuide(it: ScholarItem, now = new Date()) {
 const STUDY_KINDS = new Set(['exam', 'final_exam', 'midterm', 'quiz', 'pre_lab_quiz', 'lab_practical', 'reading', 'lecture', 'assignment']);
 /** The chapters an item can be studied for: its own ones (never guessed from its week), only for kinds Study fits. */
 export function studyChapters(it: ScholarItem, now = Date.now()): string[] {
-  if (!STUDY_KINDS.has(it.type) || isLocked(it, now)) return [];
+  if (!STUDY_KINDS.has(it.type) || isLocked(it, now) || it.withdrawn) return [];
   return it.readings.filter((r) => !r.inferred && !r.unlisted).map((r) => r.chapter);
 }

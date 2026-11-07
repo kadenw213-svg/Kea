@@ -47,7 +47,8 @@ function needing(all, guides = study.guidesAll(), today = localDay()) {
   return all.filter((it) => {
     // (Only the student's checkmark ends it: a class-site match can be the wrong part, like a discussion's initial
     // post for its response posts.)
-    if (NOT_WORK.has(it.type) || it.done || !it.date) return false;
+    // (Nor for a class the student withdrew from.)
+    if (NOT_WORK.has(it.type) || it.done || !it.date || it.withdrawn) return false;
     // (Past: only work Kea knows wasn't handed in.)
     if (it.date < today && it.handIn !== 'not_submitted') return false;
     const g = guides[it.id];

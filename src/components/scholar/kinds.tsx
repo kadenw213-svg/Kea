@@ -75,10 +75,10 @@ export { TODO, IN_CLASS, placeKind, assignmentDoc, typeLabel, TYPE_LABEL } from 
 export const isDone = (it: ScholarItem) => !!it.done;
 
 /** Missing: past due, and the class site shows nothing handed in. */
-export const isMissing = (it: ScholarItem, now = new Date()) => it.handIn === 'not_submitted' && !it.done && pastDue(it, now);
+export const isMissing = (it: ScholarItem, now = new Date()) => it.handIn === 'not_submitted' && !it.done && !it.withdrawn && pastDue(it, now);
 
 /** Past due and not checked off, but Kea can't confirm either way (no matching grade or assignment folder). */
-export const isUnconfirmed = (it: ScholarItem, now = new Date()) => !it.handIn && pastDue(it, now);
+export const isUnconfirmed = (it: ScholarItem, now = new Date()) => !it.handIn && !it.withdrawn && pastDue(it, now);
 
 function pastDue(it: ScholarItem, now: Date) {
   if (!TODO.has(it.type) || IN_CLASS.has(it.type) || isDone(it) || it.optional) return false;

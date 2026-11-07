@@ -41,12 +41,12 @@ import {
   Users
 } from 'lucide-react';
 import { inboxParts, kindOf } from './inboxFormat';
-import { api, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
+import { api, WithdrawnState, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
 import { openPaths } from '../../lib/open';
 import { setPdfTarget } from '../../lib/pdfTarget';
 import { useSetting, useSettings, useThemeDark } from '../../lib/settings';
 import { gradeColor } from '../../lib/themes';
-import { toast, prompt } from '../../store';
+import { toast, prompt, ask } from '../../store';
 import { useScholar, reloadScholar, bumpInbox, ScholarView } from './scholarStore';
 import { Picker as HandInPicker } from './HandIn';
 import { MenuButton } from '../Popover';
@@ -77,6 +77,8 @@ const parse = (s: string) => {
 };
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const today = () => iso(new Date());
+/** The local day of a time ("2026-11-07T03:00:00Z" read where the student is). */
+const dayOf = (at: string) => iso(new Date(at));
 /**
  * How far back missing work is looked for: the start of the term (the earliest class start), so work still missing
  * from five weeks ago never drops off the lists and badges. (Half a year when no class says when it started.)
@@ -316,7 +318,7 @@ export function ScholarScreen() {
               </span>
               <span className="sch-cname">{c.name}</span>
             </span>
-            {c.dueThisWeek > 0 && <span className="sch-badge" title={`${c.dueThisWeek} due this week`}>{c.dueThisWeek}</span>}
+            {c.withdrawn ? <span className="sch-badge withdrew" title="You withdrew from this class">Withdrew</span> : c.dueThisWeek > 0 && <span className="sch-badge" title={`${c.dueThisWeek} due this week`}>{c.dueThisWeek}</span>}
           </button>
         ))}
         <button className={`sch-link sch-add ${view.name === 'add' ? 'on' : ''}`} onClick={() => go({ name: 'add' })}>
@@ -556,11 +558,64 @@ function useToday() {
   return day;
 }
 
+// ---------- Classes withdrawn from ----------
+/** Which classes Kea suspects the student withdrew from (asked about), read again after every change. */
+function useWithdrawAsk() {
+  const version = useScholar((s) => s.version);
+  const [ask, setAsk] = useState<WithdrawnState['ask']>([]);
+  useEffect(() => {
+    let live = true;
+    api.scholar
+      .withdrawn()
+      .then((w) => live && setAsk(w.ask))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [version]);
+  return ask;
+}
+/** Mark a class withdrawn (after asking), or undo it. */
+async function setWithdrawn(c: { id: string; code: string }, on: boolean, asked = false) {
+  if (on && !asked) {
+    const yes = await ask(`Did you withdraw from ${c.code}?`, `Kea then shows ${c.code} as Withdrew for the rest of its term: no upcoming work, guides, reminders, Missing items or Study from it, and it isn't counted as due. Its past work, grades and files stay under the class. You can undo this.`, [
+      { id: 'no', label: 'Cancel' },
+      { id: 'yes', label: 'I withdrew', primary: true }
+    ]);
+    if (yes !== 'yes') return;
+  }
+  try {
+    await api.scholar.setWithdrawn(c.id, on, c.code);
+    toast(on ? `${c.code} is marked Withdrew.` : `${c.code} is back on your calendar.`, 'success');
+    reloadScholar();
+  } catch (err: any) {
+    toast(String(err?.message || err), 'error');
+  }
+}
+/** "Did you withdraw from BIO 111?" with the student's two answers. */
+function WithdrawQuestion({ q }: { q: WithdrawnState['ask'][number] }) {
+  return (
+    <div className="withdraw-ask">
+      <AlertTriangle size={15} />
+      <span>
+        {q.reason === 'not listed' ? `Your class site no longer lists ${q.code} among this term's classes.` : `Your class site no longer lets you into ${q.code}.`} Did you withdraw from it?
+      </span>
+      <button className="btn sm" onClick={() => setWithdrawn({ id: q.courseId, code: q.code }, true, true)}>
+        Yes, I withdrew
+      </button>
+      <button className="btn sm ghost" onClick={() => api.scholar.withdrawDismiss(q.courseId).then(() => reloadScholar(), () => {})}>
+        No, I'm still in it
+      </button>
+    </div>
+  );
+}
+
 // ---------- What needs you (above the calendar) ----------
 /** Missing work across every class, past items to check off, and this week's calendar changes. Each folds to one line. */
 function AttentionBar({ ctx }: { ctx: Ctx }) {
   const day = useToday();
   const past = useItems(missingSince(ctx.courses, day), day);
+  const askWithdraw = useWithdrawAsk();
   const [missOpen, setMissOpen] = useState(false);
   const [uncOpen, setUncOpen] = useState(false);
   if (!past) return null;
@@ -571,6 +626,9 @@ function AttentionBar({ ctx }: { ctx: Ctx }) {
   const unconfirmed = past.filter((i) => i.date >= recent && isUnconfirmed(i));
   return (
     <div className="cal-attention">
+      {askWithdraw.map((q) => (
+        <WithdrawQuestion key={q.courseId} q={q} />
+      ))}
       {missing.length > 0 && (
         <section className="miss-box">
           <button className="miss-head" onClick={() => setMissOpen(!missOpen)}>
@@ -1327,6 +1385,7 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
   }, [courseId, startTab]);
   const day = useToday();
   const items = useItems(missingSince(c ? [c] : ctx.courses, day), iso(addDays(parse(day), 20)), courseId);
+  const askWithdraw = useWithdrawAsk().find((q) => q.courseId === courseId);
   if (c === undefined) return <Loading />;
   if (!c)
     return (
@@ -1377,7 +1436,25 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
             <ExternalLink size={13} /> Class site
           </button>
         )}
+        {!c.withdrawn && (
+          <button className="btn sm ghost" onClick={() => setWithdrawn(c, true)} title="Mark this class Withdrew for the rest of its term (you can undo it)">
+            I withdrew…
+          </button>
+        )}
       </div>
+      {c.withdrawn && (
+        <div className="withdrew-banner">
+          <b>Withdrew</b>
+          <span>
+            {c.withdrawn.by === 'grade' ? 'Your class site shows a withdrawal grade for this class' : 'You withdrew from this class'}
+            {` (${shortDate(dayOf(c.withdrawn.at))})`}. Its upcoming work is off your calendar; its past work, grades and files stay here.
+          </span>
+          <button className="btn sm" onClick={() => setWithdrawn(c, false)}>
+            Undo
+          </button>
+        </div>
+      )}
+      {!c.withdrawn && askWithdraw && <WithdrawQuestion q={askWithdraw} />}
       {/* What needs doing first, above the fold: missing work and today's. */}
       {tab === 'weeks' && items && (missing.length > 0 || dueToday.length > 0) && (
         <div className="cls-now">

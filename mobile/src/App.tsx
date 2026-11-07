@@ -8,7 +8,7 @@ import { handInText, panelLinks, platformLine, quickVerb, relatedText, studyChap
 import { useSetting } from '../../src/lib/settings';
 import { useAreas } from '../../src/lib/areas';
 import { hubOn, hubSyncLibrary } from './hub';
-import { Kea, KeaData, PhoneMail, cachedData, doneOf, inboxKey, keaState, loadData, phoneDeleted, phoneDone, phoneRead, setPhoneDeleted, setPhoneDone, setPhoneRead, syncOut, watchClasses } from './kea';
+import { Kea, KeaData, PhoneMail, cachedData, doneOf, inboxKey, keaState, loadData, phoneDeleted, phoneDone, phoneRead, phoneWithdrawn, setPhoneDeleted, setPhoneDone, setPhoneRead, setPhoneWithdrawn, syncOut, watchClasses, withdrawnNow } from './kea';
 import { loadStudy, onStudyChange } from './study';
 import { setDesktopData, studyChanged } from './desktopApi';
 import { OpenedView, Reader, ReaderTarget, StudyHost } from './StudyTab';
@@ -34,6 +34,8 @@ const parse = (s: string) => {
 };
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const today = () => iso(new Date());
+/** The local day of a time. */
+const localDay = (at: string) => iso(new Date(at));
 const dayName = (s: string) => (s === today() ? 'Today' : s === iso(addDays(new Date(), 1)) ? 'Tomorrow' : parse(s).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }));
 const clock = (t: string | null) => {
   if (!t) return '';
@@ -100,6 +102,7 @@ export function App() {
   const [settings, setSettings] = useState(false);
   const [phoneInbox, setPhoneInbox] = useState<ScholarInboxItem[]>([]);
   const [done, setDone] = useState(phoneDone());
+  const [withdrawnMine, setWithdrawnMine] = useState(phoneWithdrawn());
   const [refreshing, setRefreshing] = useState(false);
   // Starting up with classes: which step it's on, and what went wrong (shown instead of an endless spinner).
   const [step, setStep] = useState(0);
@@ -185,7 +188,20 @@ export function App() {
   }, []);
 
   // Each item's checkmark: the PC's, unless the phone changed it more recently.
-  const items = useMemo(() => (data?.items || []).map((i) => ({ ...i, done: doneOf(i, data?.doneLog, done) })), [data, done]);
+  // A class withdrawn from (here or on the PC, the newer change winning): nothing from the day it was withdrawn on,
+  // and its past work kept, marked, never Missing (as electron/scholar/db.cjs does on the PC).
+  const gone = useMemo(() => withdrawnNow(data?.withdrawn, withdrawnMine), [data, withdrawnMine]);
+  const items = useMemo(
+    () =>
+      (data?.items || [])
+        .filter((i) => !gone.has(i.courseId) || i.date < localDay(gone.get(i.courseId)!.at))
+        .map((i) => ({ ...i, done: doneOf(i, data?.doneLog, done), ...(gone.has(i.courseId) ? { withdrawn: true } : {}) })),
+    [data, done, gone]
+  );
+  const withdraw = (courseId: string, on: boolean, code: string) => {
+    setPhoneWithdrawn(courseId, on, code);
+    setWithdrawnMine(phoneWithdrawn());
+  };
   const toggle = (it: ScholarItem) => {
     // (Only the student's own checkmark counts: what the class site shows never checks work off.)
     const on = !isDone(it);
@@ -301,7 +317,7 @@ export function App() {
   );
   if (!tabs.length) tabs.push(['files', Camera, 'Scan & PDFs', 0]);
   const current = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0];
-  const ctx = classes && { data: classes, items, inbox, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')), read: (t: ReaderTarget) => setReader(t), markRead, calendar: () => setTab('calendar') };
+  const ctx = classes && { data: classes, items, gone, withdraw, inbox, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')), read: (t: ReaderTarget) => setReader(t), markRead, calendar: () => setTab('calendar') };
   return (
     <div className="app">
       <header className="top">
@@ -404,7 +420,7 @@ function ClassesPitch({ onConnect }: { onConnect(): void }) {
   );
 }
 
-type Ctx = { data: KeaData; items: ScholarItem[]; inbox: ScholarInboxItem[]; open(it: ScholarItem): void; toggle(it: ScholarItem): void; openCourse(code: string): void; read(t: ReaderTarget): void; markRead(ids: string[]): void; calendar(): void };
+type Ctx = { data: KeaData; items: ScholarItem[]; gone: Map<string, { at: string; by: string }>; withdraw(courseId: string, on: boolean, code: string): void; inbox: ScholarInboxItem[]; open(it: ScholarItem): void; toggle(it: ScholarItem): void; openCourse(code: string): void; read(t: ReaderTarget): void; markRead(ids: string[]): void; calendar(): void };
 
 function Row({ ctx, it, date }: { ctx: Ctx; it: ScholarItem; date?: boolean }) {
   const miss = isMissing(it);
@@ -929,6 +945,7 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
                 <div className="mcard-body">
                   <b className="mcard-code">{d.code}</b>
                   <span className="mcard-name">{d.name}</span>
+                  {ctx.gone.has(d.id) && <span className="muted small">Withdrew</span>}
                 </div>
               </div>
             );
@@ -952,6 +969,18 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
           <h1 style={{ color: k }}>{c.code}</h1>
           <span className="muted">{c.name}</span>
           {(c.instructor || c.contact) && <span className="muted small block">{[c.instructor, c.contact].filter(Boolean).join(' · ')}</span>}
+          {ctx.gone.has(c.id) ? (
+            <span className="small block">
+              <b>Withdrew</b> · its upcoming work is off your calendar; past work and grades stay here.{' '}
+              <button className="link" onClick={() => ctx.withdraw(c.id, false, c.code)}>
+                Undo
+              </button>
+            </span>
+          ) : (
+            <button className="link small block" onClick={() => window.confirm(`Did you withdraw from ${c.code}? Kea then shows it as Withdrew for the rest of its term: no upcoming work, Missing items or Study from it. You can undo this.`) && ctx.withdraw(c.id, true, c.code)}>
+              I withdrew from this class…
+            </button>
+          )}
         </span>
         {grades?.final && (
           <button className="bigrade" style={{ color: gradeTint(grades.final.percent) }} onClick={() => setGrading(!grading)} aria-label="Your grades in this class">

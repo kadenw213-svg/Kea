@@ -450,6 +450,20 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
   // New class shells: the engine decides which enrollments are real, not-yet-imported classes.
   let newShells = [];
   const enrollments = isCanvas() ? await canvas().enrollments() : await allPages(`/d2l/api/lp/${v.lp}/enrollments/myenrollments/?orgUnitTypeId=3`);
+  // Classes the student withdrew from (withdrawn.cjs): a W grade marks one; a class gone from this term's list is only
+  // suspected, and asked about from its second day. A list that couldn't be read (null) decides nothing.
+  try {
+    const W = require('./withdrawn.cjs');
+    const a = W.assess({ courses: await db.termCourses(p.db), enrollments, grades: readGrades().byCourse || {}, today: day() });
+    const before = new Set(W.asking(W.read(p.dir)).map((x) => x.courseId));
+    const r = W.record(p.dir, a, day());
+    for (const s of r.ask.filter((x) => !before.has(x.courseId))) {
+      const { Notification } = require('electron');
+      if (Notification.isSupported()) new Notification({ title: `Did you withdraw from ${s.code}?`, body: s.reason === 'not listed' ? `Your class site no longer lists ${s.code} among this term's classes. Open the class in Kea to say.` : `Your class site no longer lets you into ${s.code}. Open the class in Kea to say.` }).show();
+    }
+  } catch (err) {
+    console.error('Withdrawn classes', err);
+  }
   if (enrollments) {
     const file = path.join(p.workspace, 'data', 'digests', `enrollments-${day()}.json`);
     fs.writeFileSync(file, JSON.stringify({ Items: enrollments }));

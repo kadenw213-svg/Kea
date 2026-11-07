@@ -182,6 +182,16 @@ function readingsFor(db, courseId, code, textbooks) {
   return { pdfs, titles, summaries, words, siblings };
 }
 
+/** Classes the student withdrew from (withdrawn.cjs), read beside the class database: Map courseId → { at, by }. */
+const withdrawnOf = (file) => {
+  try {
+    return require('./withdrawn.cjs').active(path.join(path.dirname(file), '..', '..'));
+  } catch {
+    return new Map();
+  }
+};
+const dayOf = (iso) => String(iso || '').slice(0, 10);
+
 /** The kinds of item counted as due (src/components/scholar/itemRules.ts COUNTS_AS_DUE: keep the two alike). */
 const DUE_KINDS = ['exam', 'final_exam', 'lab_practical', 'quiz', 'assignment', 'discussion', 'project', 'presentation', 'paper', 'draft', 'peer_review', 'pre_lab_quiz', 'lab_handout'];
 /** Classes in the profile, with what's coming up. */
@@ -191,6 +201,7 @@ async function courses(file, textbooks, done) {
   const today = localDay();
   const week = localDay(new Date(Date.now() + 7 * 864e5));
   const ev = evidence(db, file);
+  const gone = withdrawnOf(file);
   return rows(db, "SELECT * FROM courses WHERE status = 'active' AND course_code != 'MESSAGES' ORDER BY course_code").map((c) => {
     // Work that's due, the same kinds the window counts (itemRules.ts COUNTS_AS_DUE): never a class meeting (a lab
     // session, a recitation), a reminder, a reading, or work that doesn't open on the class site yet.
@@ -199,7 +210,9 @@ async function courses(file, textbooks, done) {
       `SELECT id, course_id, title, item_type, date, due_time FROM academic_items WHERE course_id = ? AND ${ACTIVE} AND item_type IN (${DUE_KINDS.map(() => '?').join(', ')}) AND date >= ? ORDER BY date, due_time LIMIT 40`,
       [c.id, ...DUE_KINDS, today]
     ).filter((i) => !opensAt(i, ev));
-    const open = due.filter((i) => !done[i.id]);
+    // (A class the student withdrew from has nothing coming and nothing due.)
+    const w = gone.get(c.id) || null;
+    const open = w ? [] : due.filter((i) => !done[i.id]);
     const { pdfs } = readingsFor(db, c.id, c.course_code, textbooks);
     return {
       id: c.id,
@@ -213,7 +226,8 @@ async function courses(file, textbooks, done) {
       end: c.end_date,
       next: open[0] ? { id: open[0].id, title: open[0].title, type: open[0].item_type, date: open[0].date, due: hhmm(open[0].due_time) } : null,
       dueThisWeek: open.filter((i) => i.date <= week).length,
-      chapters: pdfs.size
+      chapters: pdfs.size,
+      withdrawn: w ? { at: w.at, by: w.by } : null
     };
   });
 }
@@ -228,8 +242,11 @@ async function textbookChapters(file, textbooks) {
   const today = localDay();
   const out = [];
   const soon = new Map(); // "courseId|label" → date of the first coming test on it
+  const gone = withdrawnOf(file);
   for (const c of rows(db, "SELECT * FROM courses WHERE status = 'active' AND course_code != 'MESSAGES' ORDER BY course_code")) {
     if (c.end_date && String(c.end_date).slice(0, 10) < today) continue;
+    // (Nothing to practise for a class the student withdrew from.)
+    if (gone.has(c.id)) continue;
     const { pdfs } = readingsFor(db, c.id, c.course_code, textbooks);
     for (const label of [...pdfs.keys()].sort((a, b) => chapterNumber(a) - chapterNumber(b))) out.push({ courseId: c.id, label });
     for (const t of rows(db, `SELECT title, date, covered_chapters_json, study_focus_json FROM academic_items WHERE course_id = ? AND item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} AND date >= ? ORDER BY date`, [c.id, today]))
@@ -251,8 +268,9 @@ async function nextTests(file) {
   if (!db) return {};
   const today = localDay();
   const out = {};
+  const gone = withdrawnOf(file);
   for (const t of rows(db, `SELECT course_id, title, date, covered_chapters_json, study_focus_json FROM academic_items WHERE item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} AND date >= ? ORDER BY date`, [today]))
-    for (const label of coveredOf(t)) {
+    for (const label of gone.has(t.course_id) ? [] : coveredOf(t)) {
       const key = `${t.course_id}|${label}`;
       if (!out[key]) out[key] = { date: String(t.date).slice(0, 10), title: t.title };
     }
@@ -640,6 +658,17 @@ async function items(file, textbooks, done, { from, to, courseId }) {
     return itemOut(r, c, banner, reads(c), done, rooms, ev);
   });
   inheritPlatforms(out);
+  // A class the student withdrew from: nothing from the day they withdrew on (no upcoming work, guides or reminders),
+  // and its past work stays readable, marked, never Missing.
+  const gone = withdrawnOf(file);
+  if (gone.size) {
+    for (let k = out.length - 1; k >= 0; k--) {
+      const w = gone.get(out[k].courseId);
+      if (!w) continue;
+      if (out[k].date >= dayOf(w.at)) out.splice(k, 1);
+      else out[k].withdrawn = true;
+    }
+  }
   relateItems(out);
   // On the student's own due date (an extension the pre-check read from their class-site lists, extensions.json).
   try {
@@ -771,7 +800,8 @@ async function course(file, textbooks, done, id) {
   for (let i = chapters.length - 1; i >= 0; i--) if (/^\d+$/.test(chapters[i].label) && named.has(chapters[i].label)) chapters.splice(i, 1);
   const weeks = rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type = 'weekly_reading' AND ${ACTIVE} ORDER BY date`, [id]).map((r) => itemOut(r, c, null, readings, done));
   const portal = rows(db, 'SELECT kind, label, url FROM course_portal_links WHERE course_id = ? ORDER BY kind, label', [id]);
-  return { id: c.id, code: c.course_code, name: c.name, term: c.term, instructor: c.instructor, contact: c.instructor_contact, campus: c.campus, delivery: c.delivery_format, url: c.d2l_url, start: c.start_date, end: c.end_date, chapters, weeks, portal };
+  const w = withdrawnOf(file).get(c.id) || null;
+  return { id: c.id, code: c.course_code, name: c.name, term: c.term, instructor: c.instructor, contact: c.instructor_contact, campus: c.campus, delivery: c.delivery_format, url: c.d2l_url, start: c.start_date, end: c.end_date, chapters, weeks, portal, withdrawn: w ? { at: w.at, by: w.by } : null };
 }
 
 /**
@@ -795,7 +825,18 @@ async function gradesFromChecks(file, courseId) {
 async function watchList(file) {
   const db = await open(file);
   if (!db) return [];
-  return rows(db, "SELECT course_code AS code, d2l_identifier AS ou FROM courses WHERE status = 'active' AND COALESCE(is_synthetic, 0) = 0 AND d2l_identifier IS NOT NULL AND d2l_identifier != '' ORDER BY course_code");
+  // (Not a class the student withdrew from: its checks would only bring in work they no longer do.)
+  const gone = withdrawnOf(file);
+  return rows(db, "SELECT id, course_code AS code, d2l_identifier AS ou FROM courses WHERE status = 'active' AND COALESCE(is_synthetic, 0) = 0 AND d2l_identifier IS NOT NULL AND d2l_identifier != '' ORDER BY course_code")
+    .filter((c) => !gone.has(c.id))
+    .map(({ id, ...c }) => c);
+}
+
+/** Every class with its term and class-site id, for telling when the student withdrew (withdrawn.cjs assess). */
+async function termCourses(file) {
+  const db = await open(file);
+  if (!db) return [];
+  return rows(db, "SELECT id, course_code AS code, d2l_identifier AS ou, start_date AS start, end_date AS `end`, COALESCE(is_synthetic, 0) AS synthetic FROM courses WHERE status = 'active' AND course_code != 'MESSAGES'").map((c) => ({ ...c, start: c.start ? dayOf(c.start) : null, end: c.end ? dayOf(c.end) : null, synthetic: !!c.synthetic }));
 }
 
 /**
@@ -930,4 +971,4 @@ async function sourceText(file, id) {
   return r || null;
 }
 
-module.exports = { searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { handIn, norm, relateItems, labNumber, postBase, DUE_KINDS } };
+module.exports = { termCourses, searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { handIn, norm, relateItems, labNumber, postBase, DUE_KINDS } };

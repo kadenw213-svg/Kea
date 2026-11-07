@@ -138,6 +138,12 @@ export interface KeaApi {
     devicesFind(): Promise<{ found: DeviceShare[]; notes: string[]; me: string }>;
     /** Use one of those here (this device follows the primary). */
     devicesJoin(choice: DeviceShare): Promise<{ ok: boolean; primary?: boolean; from?: string; waiting?: string }>;
+    /** Classes withdrawn from (the log), and the ones Kea suspects and asks about. */
+    withdrawn(): Promise<WithdrawnState>;
+    /** The student withdrew from a class (on), or undoes it / says they're still in it (off). */
+    setWithdrawn(courseId: string, on: boolean, code?: string): Promise<WithdrawnState>;
+    /** "No, I'm still in it" for a suspicion. */
+    withdrawDismiss(courseId: string): Promise<WithdrawnState>;
     /** Make a device (by id) the one that scans. */
     makePrimary(id: string): Promise<DevicesStatus>;
     /** Sync through this drive: 'auto', 'onedrive', 'google', another drive's id, 'custom' or 'off'. */
@@ -786,6 +792,10 @@ export interface RunProgress {
   step?: string;
 }
 
+export interface WithdrawnState {
+  log: Record<string, { on: boolean; at: string; by: 'student' | 'grade'; code: string }>;
+  ask: { courseId: string; code: string; reason: 'not listed' | 'no access' }[];
+}
 export interface DevicesStatus {
   on: boolean;
   me: { id: string; name: string };
@@ -1189,6 +1199,8 @@ export interface ScholarItem {
   /** The work it goes with: the lab a discussion is built on, or the other half of a discussion. */
   /** Work it goes with: the other half of a discussion (post), the same lab's parts (lab: its pre-lab, handout, session, report, discussion, in that order), or work on the same topic (topic). */
   related?: { id: string; title: string; type: string; date: string; why: 'lab' | 'post' | 'topic'; done?: boolean; group?: string }[];
+  /** Past work of a class the student withdrew from: kept as history, never Missing, never studied or guided. */
+  withdrawn?: boolean;
   /** When it opens on the class site, while that's still ahead (its link leads to a locked page until then). */
   opensAt?: string | null;
   readings: ScholarReading[];
@@ -1208,6 +1220,8 @@ export interface ScholarCourse {
   next: { id: string; title: string; type: string; date: string; due: string | null } | null;
   dueThisWeek: number;
   chapters: number;
+  /** The student withdrew from it (for the rest of its term): when, and whether they said so or the class site showed a W. */
+  withdrawn?: { at: string; by: 'student' | 'grade' } | null;
   /** The class's picture from the class site (a small JPEG data address), when it has one. */
   image?: string | null;
 }
@@ -1223,6 +1237,8 @@ export interface ScholarChapter {
   pdf: ScholarReading['pdf'];
 }
 export interface ScholarCourseDetail {
+  /** The student withdrew from it (withdrawn.cjs). */
+  withdrawn?: { at: string; by: 'student' | 'grade' } | null;
   id: string;
   code: string;
   name: string;

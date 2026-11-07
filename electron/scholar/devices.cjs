@@ -25,7 +25,7 @@ const precheck = require('./precheck.cjs');
 
 // What the primary shares, relative to the profile folder. (kea.json and study progress are merged, not copied.)
 // (Assignment guides are written only on the primary, so its copy is everyone's.)
-const FILES = ['inbox.json', 'news.json', 'grades.json', 'submissions.json', 'precheck.json', 'sync-state.json', 'activity.json', 'extensions.json', path.join('study', 'guides.json')];
+const FILES = ['inbox.json', 'news.json', 'grades.json', 'submissions.json', 'precheck.json', 'sync-state.json', 'activity.json', 'extensions.json', 'withdrawn.json', path.join('study', 'guides.json')];
 const DIRS = [path.join('scholar', 'data', 'digests', 'kea-inbox'), path.join('study', 'sets'), path.join('study', 'images')];
 const MERGED = ['kea.json', path.join('study', 'index.json'), ...require('./studyMerge.cjs').PROGRESS.map((f) => path.join('study', f))];
 const HEARTBEAT = 5 * 60000;
@@ -182,7 +182,9 @@ function marksOf(st) {
     done: s.doneLog || {},
     read: readIds(true).filter((id) => wasUnread.has(id)),
     deleted: precheck.readInbox().deletedKeys || [],
-    study: progressOf(study)
+    study: progressOf(study),
+    // (Classes withdrawn from here, or undone: the newer change wins on the primary.)
+    withdrawn: require('./withdrawn.cjs').read(profiles.paths().dir).log
   };
 }
 
