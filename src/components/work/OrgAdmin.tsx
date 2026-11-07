@@ -7,7 +7,7 @@ import { act, bump, clock, get, post, wantText, fmtDay, fmtWhen, money, useHub, 
 import { formatPhone, telHref } from '../../lib/phone';
 import { Advanced, Card, Check, Empty, Field, Loading, Num, Problem, Seg } from './ui';
 import { RANK } from './types';
-import type { BudgetRow, Department, JoinCode, Member, Org, OrgSettings, Policy, Role, Structure, Swap } from './types';
+import type { BudgetPlan, BudgetRow, Department, JoinCode, Member, Org, OrgSettings, Policy, Role, Structure, Swap } from './types';
 import { SupporterBadge } from '../scholar/HubAccount';
 
 const ROLE: Record<Role, string> = { owner: 'Owner', admin: 'Admin', manager: 'Manager', member: 'Member' };
@@ -538,7 +538,14 @@ function SimpleList({ org, title, path, items, fields, labels }: { org: Org; tit
 
 // ---------- budgets ----------
 export function BudgetsTab({ org }: { org: Org }) {
-  const { data, error, reload } = useHub<{ budgets: BudgetRow[]; unbudgeted: { departmentId: string | null; scheduled: number; hours: number }[]; warnPct: number }>(`/v1/orgs/${org.id}/budgets`);
+  // (A manager gets `plans` instead: the Hub shows labor cost to admins only, since it comes from people's cost rates.)
+  const { data, error, reload } = useHub<{
+    budgets: BudgetRow[];
+    unbudgeted: { departmentId: string | null; scheduled: number; hours: number }[];
+    warnPct: number;
+    costHidden?: boolean;
+    plans?: BudgetPlan[];
+  }>(`/v1/orgs/${org.id}/budgets`);
   const st = useHub<Structure>(`/v1/orgs/${org.id}/structure`);
   const [dept, setDept] = useState('');
   const n = new Date();
@@ -549,6 +556,30 @@ export function BudgetsTab({ org }: { org: Org }) {
   if (error) return <Problem error={error} retry={reload} />;
   if (!data) return <Loading />;
   const names = new Map((st.data?.departments ?? []).map((d) => [d.id, d.name]));
+  if (data.costHidden)
+    return (
+      <div className="wk-stack">
+        <Card title="Budgets">
+          <p className="muted">Labor cost against these budgets is shown to admins, because it comes from people’s cost rates.</p>
+          {!data.plans?.length && <p className="muted">No budgets for these months.</p>}
+          {data.plans?.map((b) => (
+            <div key={b.id} className={`bud ${b.current ? '' : 'wk-dim'}`}>
+              <div className="bud-head">
+                <b>{b.departmentName}</b>
+                <span className="muted">
+                  {fmtDay(b.periodStart, { month: 'short', day: 'numeric' })} – {fmtDay(b.periodEnd, { month: 'short', day: 'numeric' })} · {b.label}
+                  {b.current ? '' : ' (replaced)'}
+                </span>
+                <span className="wk-spacer" />
+                <span>
+                  {money(b.amount)} · {b.hours} h scheduled
+                </span>
+              </div>
+            </div>
+          ))}
+        </Card>
+      </div>
+    );
   return (
     <div className="wk-stack">
       {isAdmin(org) && (

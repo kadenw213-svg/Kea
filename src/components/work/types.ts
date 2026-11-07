@@ -306,6 +306,8 @@ export interface BudgetRow {
   warn: boolean;
   over: boolean;
 }
+/** A budget as a manager sees it (the Hub shows labor cost to admins only): the budget, its dates and the hours. */
+export type BudgetPlan = Pick<BudgetRow, 'id' | 'departmentId' | 'departmentName' | 'periodStart' | 'periodEnd' | 'label' | 'note' | 'current' | 'amount' | 'hours'>;
 export interface SchedPerson {
   id: string;
   name: string;
