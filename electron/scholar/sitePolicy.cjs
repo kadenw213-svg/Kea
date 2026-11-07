@@ -81,8 +81,12 @@ const SCHOOL_PLATFORMS = /(^|\.)(aleks\.com|mheducation\.com|mcgraw-hill\.com|pe
 // Examity, Meazure Learning and Proctortrack (verificient.com).
 const PROCTORING = /(^|\.)(respondus\.com|respondus2\.com|honorlock\.com|proctorio\.com|proctorio\.net|getproctorio\.com|proctoru\.com|examity\.com|meazurelearning\.com|proctortrack\.com|verificient\.com)$/i;
 
+// Video assignment and live-class tools: students record or join a class on these, so they may ask for the camera and
+// microphone. They never get to ask for the screen.
+const RECORDING = /(^|\.)(voicethread\.com|flipgrid\.com|flip\.com|kaltura\.com|yuja\.com|zoom\.us)$/i;
+
 // Camera and microphone, and the screen: only the class site, the school's sign-in host and a proctoring service
-// may ask, and the student is asked once per site.
+// may ask (and, for the camera and microphone, a video tool above), and the student is asked once per site.
 const ASKED = { media: 'media', 'display-capture': 'screen' };
 // What school platforms get without asking: what course work needs (full screen for a quiz, a video's keys, storage).
 // Never: reading the clipboard, the file system, idle detection, or opening other programs (openExternal).
@@ -123,7 +127,7 @@ function decide(permission, url, ctx = {}) {
   }
   if (u.protocol !== 'https:') return 'deny';
   const host = u.hostname.toLowerCase();
-  if (ASKED[permission]) return mediaHost(host, ctx) ? { ask: ASKED[permission], origin: u.origin } : 'deny';
+  if (ASKED[permission]) return mediaHost(host, ctx) || (permission === 'media' && RECORDING.test(host)) ? { ask: ASKED[permission], origin: u.origin } : 'deny';
   if (!PLATFORM_PERMISSIONS.has(permission)) return 'deny';
   return trustedHost(host, ctx) ? 'allow' : 'deny';
 }

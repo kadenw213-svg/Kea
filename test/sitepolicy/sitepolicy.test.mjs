@@ -46,6 +46,14 @@ test('camera, microphone and screen: only the class site, its sign-in host and p
   for (const u of ['https://www.colostate.edu/', 'https://www.youtube.com/', 'https://www.aleks.com/', 'http://learn.colostate.edu/', 'file:///C:/x.html', 'not a url']) assert.equal(P.decide('media', u, ctx), 'deny', u);
 });
 
+test('video assignment tools may ask for the camera and microphone, never the screen', () => {
+  for (const h of ['voicethread.com', 'colostate.voicethread.com', 'flipgrid.com', 'flip.com', 'www.kaltura.com', 'colostate.yuja.com', 'colostate.zoom.us']) {
+    assert.deepEqual(P.decide('media', `https://${h}/x`, ctx), { ask: 'media', origin: `https://${h}` }, h);
+    assert.equal(P.decide('display-capture', `https://${h}/x`, ctx), 'deny', h);
+  }
+  for (const u of ['http://voicethread.com/', 'https://voicethread.com.evil.net/', 'https://notzoom.us/', 'https://zoom.us.evil.net/']) assert.equal(P.decide('media', u, ctx), 'deny', u);
+});
+
 test('school platforms keep what course work needs (full screen, storage), over https only', () => {
   assert.equal(P.decide('fullscreen', 'https://www.aleks.com/', ctx), 'allow');
   assert.equal(P.decide('fullscreen', 'https://www.colostate.edu/', ctx), 'allow');

@@ -146,7 +146,8 @@ function prepareSession(ses) {
   require('./adblock.cjs').enable(ses);
   // What pages may ask for: nothing by default (sitePolicy.cjs). School platforms get what course work needs (full
   // screen for a quiz, a video's keys); the camera, microphone and screen only on the class site, the school's sign-in
-  // and a proctoring service, and only once the student says yes for that site. Opening another program (a link to a
+  // and a proctoring service (the camera and microphone also on a video assignment tool), and only once the student
+  // says yes for that site. Opening another program (a link to a
   // Windows protocol handler) is never granted: a mailto: or https link goes through Kea's own question instead.
   // (Choosing a file to upload and downloads aren't permissions: they always work.)
   ses.setPermissionRequestHandler((wc, permission, callback, details) => {
