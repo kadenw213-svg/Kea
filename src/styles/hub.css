@@ -652,6 +652,11 @@
   max-width: none;
   margin: 0;
 }
+.acct-page .hub-phone,
+.acct-page .hub-notes {
+  border-top: none;
+  padding-top: 0;
+}
 .acct-section {
   display: flex;
   flex-direction: column;

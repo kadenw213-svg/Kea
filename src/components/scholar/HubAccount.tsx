@@ -6,6 +6,7 @@ import { formatBytes } from '../../lib/util';
 import { useKeaModes } from '../../lib/modes';
 import { useKeaCloud, watchKeaCloud } from '../../lib/keaCloud';
 import { formatPhone } from '../../lib/phone';
+import { useSettings } from '../../lib/settings';
 import { hubStatusNow, openAccount, refreshHub, refreshNotifications, run, setHubNotifications, setHubStatus, useHubNotifications, useHubStatus } from '../account/hubStore';
 import { PasswordInput, passwordHint, SignInSecurity, YourData } from '../account/Security';
 import { ProfileHead, VerifiedBadge, VerifyEmail, useAccount } from './Account';
@@ -531,6 +532,11 @@ export function AccountGate() {
   useEffect(() => {
     refreshHub();
   }, []);
+  // (Signed out: the sign-in screen is the one place to sign in, so Settings, open on the account page, closes.)
+  const signedOut = !!status && !status.signedIn;
+  useEffect(() => {
+    if (signedOut) useSettings.getState().ui({ open: false });
+  }, [signedOut]);
   // (While the Hub can't be reached, try again every 15 seconds.)
   const unreachable = !!status && !status.signedIn && !status.reachable;
   useEffect(() => {

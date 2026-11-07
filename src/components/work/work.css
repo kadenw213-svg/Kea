@@ -1488,6 +1488,10 @@ select.input {
 .wk-verify p {
   margin: 0;
 }
+.wk-empty .wk-verify {
+  max-width: 560px;
+  margin: 8px auto 12px;
+}
 
 /* A policy's text, opened before "I've read it". */
 .wk-policy-body {
