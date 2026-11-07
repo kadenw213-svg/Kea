@@ -135,9 +135,14 @@ Follow the kind's template, and put the class rules that apply into this assignm
 - **Written homework or worksheets:** what to solve or answer, by number, with the show-work rules.
 - **Discussions:** the prompt's actual questions, answered *for the student's topic*: what the initial post must say, the sources to bring, the length. Then replies: how many, by when, and *whose posts*. Name the classmates when the brief has their posts, with what each wrote about; never say a classmate's topic is close to the student's unless it really is.
   - **Spell out every question.** Each question or bullet the prompt asks appears in the guide in full, in the step that answers it (its `text` names the question, its `detail` says what a full answer covers). Never write "answer the three bullet points" or "answer the instructor's questions" without the questions.
-  - **A discussion built on a lab** (the prompt asks about a lab's Exploration, procedure, objectives or results): say which lab it is by its name in Kea ("Lab report #9: Using Buffers"), link the lab's platform page in the step where the student reads it, and for each question say which part of the lab it comes from ("the Exploration's buffer-capacity section", "Exercise 1 steps 3 to 6"). A results post says exactly which of the lab's data, tables and photos to post. Don't repeat the lab's procedure: the lab has its own guide.
+  - **A discussion built on a lab** (the prompt asks about a lab's Exploration, procedure, objectives or results): its steps go through the lab's own work, step by step, and each step points at it.
+    - The first step is the lab work the post needs, with `"item": { "id": "<the lab's Kea id>", "label": "<its name in Kea>" }` (the ids are in the brief's **Goes with** lines). Kea shows it as a button that opens that lab in Kea, with its own guide, hand-in and platform links. Name it the same way in the text ("Finish Lab report #9: Using Buffers first").
+    - Every later step says which part of the lab each question comes from ("the Exploration's buffer-capacity section", "Exercise 1 steps 3 to 6"), carries the same `item` when the student needs the lab open for it, and links the lab's platform page (from its **Goes with** links) where the student reads it.
+    - A results post says exactly which of the lab's data, tables and photos to post.
+    - **Due before the lab it needs?** When the discussion is due before the lab's session or report it draws on, say so in `notes` ("This is due Tue, before Lab 7 on Thu: post what the handout predicts, or ask your instructor").
+    - Don't repeat the lab's procedure: the lab has its own guide.
   - Only the initial post's questions go in the initial post's guide; only the reply or second-post requirements go in the replies' guide.
-- **Quizzes and exams:** when and where, time limit, attempts, format, what to bring or allow, the chapters and ideas covered, and what to review for each.
+- **Quizzes and exams:** when and where, time limit, attempts, format, what to bring or allow, the chapters and ideas covered, and what to review for each. **No step that only says "take the quiz" or "take the exam"**: Kea's panel already has the quiz's button and says where it's taken.
 - **Projects and presentations:** milestones in order, with their dates.
 
 **Each step holds:**
@@ -145,6 +150,7 @@ Follow the kind's template, and put the class rules that apply into this assignm
 - `text`: one or two plain sentences, always shown.
 - `detail` (optional): the specifics in short Markdown: sub-steps, amounts, what to record, the section's required parts. Don't repeat `text`.
 - `unlocks` (optional): `true` for a step that has to be done before the platform shows the rest of the instructions.
+- `item` (optional): another piece of work in Kea this step is about, as `{ "id", "label" }`: the lab a discussion is built on, the draft a final paper revises, the pre-lab quiz before a lab. The id must be one the brief lists (its **Goes with** lines or its own assignments); Kea removes any other. Kea shows it as a button that opens that work in Kea. Use it instead of only naming the other work in the text.
 - `links` (optional): the exact pages for this step, as `{ "label", "url" }`. URLs must come from the brief, `content.md`, the templates, or pages you actually opened. **Never build or guess a URL.** Kea removes links it can't trace.
   - **Never link the assignment's own hand-in page, quiz or discussion topic in a step.** Kea's panel has one button for it, and Kea removes it from steps.
   - **Every link must be of the right kind for the work.** A discussion never links a quiz; a lab's hand-in is its assignment folder; a quiz link only belongs to a quiz or exam. If the brief's hand-in link doesn't fit the work (a quiz address on a discussion), leave `submit.url` empty and say so in `notes`.
@@ -214,7 +220,7 @@ Write `out.json` with **every** assignment in the brief:
 { "guides": [
   { "id": "<item id from the brief>", "kind": "lab",
     "topic": "...", "goal": "...", "summary": "...", "notes": ["..."], "need": ["..."],
-    "steps": [{ "title": "...", "text": "...", "detail": "- ...", "links": [{ "label": "...", "url": "https://..." }] }],
+    "steps": [{ "title": "...", "text": "...", "detail": "- ...", "links": [{ "label": "...", "url": "https://..." }], "item": { "id": "<a Kea id from the brief>", "label": "..." } }],
     "procedure": "### Exercise 1: ...\n1. ...",
     "notebook": [{ "item": "...", "detail": "..." }],
     "submit": { "what": "...", "where": "...", "format": "...", "due": "...", "url": "https://..." },

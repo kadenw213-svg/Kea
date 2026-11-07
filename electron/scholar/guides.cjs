@@ -25,8 +25,10 @@ const MAX_BRIEF = 90000;
 // (2026-11-04): every guide opens with its topic and goal and the special notes; labs carry the whole procedure and
 // what this lab's notebook must hold; the class site's rubric comes with it. Older guides are written once more. v4
 // (2026-11-05): no "have ready" list or lecture-video steps, every question a discussion asks spelled out in its steps,
-// a discussion built on a lab tied to that lab, and no hand-in link inside a step.
-const GUIDE_V = 4;
+// a discussion built on a lab tied to that lab, and no hand-in link inside a step. v5 (2026-11-07): a step can point at
+// other work in Kea (`item`: the lab a discussion needs), the brief gives each related item's id and links, and a
+// quiz's guide has no step that only says to take it.
+const GUIDE_V = 5;
 const FOCUS_KINDS = new Set(['paper', 'discussion', 'project', 'presentation']);
 const outdated = (g) => !!g && (g.v || 1) < GUIDE_V;
 const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -309,6 +311,8 @@ async function brief(code, items, { rescan = false, own = '' } = {}) {
     }
   }
   L.push(`## The assignments (${items.length})`, '');
+  // (Related work may not need a guide itself: it's looked up among all of this class's items.)
+  const byId = new Map((await current().catch(() => items)).map((x) => [x.id, x]));
   for (const it of items) {
     L.push(`### ${it.title}`);
     L.push(`- id: \`${it.id}\``);
@@ -318,7 +322,13 @@ async function brief(code, items, { rescan = false, own = '' } = {}) {
     // (A hand-in link of the wrong kind, a quiz on a discussion, is never offered: the guide would repeat it.)
     const post = it.type === 'discussion' || it.type === 'peer_review';
     for (const l of it.links || []) if (!(post && /quiz_summary|quizzing/i.test(l.url))) L.push(`- link (${l.kind}): ${l.label} — ${l.url}${l.kind === 'submit' ? ' (its hand-in place: Kea shows it as a button, so never link it in a step)' : ''}`);
-    for (const r of it.related || []) L.push(`- goes with: ${r.why === 'lab' ? 'the lab' : 'the other half of this discussion'} "${r.title}" (${r.type}, ${r.date})`);
+    // (Each with its Kea id, for a step's `item`, and its own links, for a step that reads it.)
+    for (const r of it.related || []) {
+      const what = r.why === 'post' ? 'the other half of this discussion' : r.group ? `part of ${r.group}` : r.why === 'lab' ? 'the lab' : 'related work';
+      L.push(`- **Goes with** ${what}: "${r.title}" (${r.type}, ${r.date}) · Kea id \`${r.id}\`${r.done ? ' · checked off' : ''}`);
+      const other = byId.get(r.id);
+      for (const l of [...(other?.links || []), ...(other?.platformLinks || [])].slice(0, 6)) L.push(`  - its link (${l.kind}): ${l.label} — ${l.url}`);
+    }
     for (const l of it.platformLinks || []) L.push(`- done on: ${l.label || l.name || ''} — ${l.url || ''}`);
     if (it.readings?.length) L.push(`- readings: ${it.readings.map((r) => `${r.chapter}${r.title ? ` ${r.title}` : ''}`).join('; ')}`);
     if (it.studyFocus?.length) L.push(`- what it covers: ${it.studyFocus.join(' | ')}`);
@@ -366,9 +376,15 @@ function focusOf(f) {
  * One guide from Claude's answer, cleaned (or null when it's unusable). `ok(url)` says whether a link may stay: in Kea
  * only links that were in what Claude was given (or on a class platform) do, so a guessed address never shows.
  */
-function clean(g, ok = () => true) {
+function clean(g, ok = () => true, okItem = () => false) {
   if (!g || typeof g !== 'object') return null;
   const url = (v) => (typeof v === 'string' && /^https?:\/\/\S+$/i.test(v.trim()) && ok(v.trim()) ? v.trim() : '');
+  // Other work in Kea a step is about (`{ id, label }`, or just the id): kept only when `okItem` knows that id.
+  const stepItem = (v) => {
+    const id = typeof v === 'string' ? v : typeof v?.id === 'string' ? v.id : '';
+    if (!id || !okItem(id)) return {};
+    return { item: { id, label: str(typeof v === 'object' ? v.label : '', 80) || 'Open it in Kea' } };
+  };
   const links = (v) =>
     (Array.isArray(v) ? v : [])
       .map((l) => ({ label: str(l?.label, 80), url: url(l?.url) }))
@@ -376,7 +392,7 @@ function clean(g, ok = () => true) {
       .slice(0, 6);
   const steps = (Array.isArray(g.steps) ? g.steps : [])
     // (`unlocks`: work the platform wants done before it shows the rest; checking it off asks Kea to read the rest.)
-    .map((s) => ({ title: str(s?.title, 120), text: str(s?.text, 600), detail: str(s?.detail, 4000), links: links(s?.links), ...(s?.unlocks === true ? { unlocks: true } : {}) }))
+    .map((s) => ({ title: str(s?.title, 120), text: str(s?.text, 600), detail: str(s?.detail, 4000), links: links(s?.links), ...(s?.unlocks === true ? { unlocks: true } : {}), ...stepItem(s?.item) }))
     .filter((s) => s.title && (s.text || s.detail))
     .slice(0, 14);
   // (An answer in the older shape, with a separate `gate`: it becomes the first step.)
@@ -476,12 +492,14 @@ async function apply(code, model = 'opus') {
   const at = new Date().toISOString();
   for (const g of list) {
     const it = items.get(String(g?.id || ''));
-    const c = it && clean(g, ok);
+    // (A step's other work must be an item of this class Kea knows, never this one itself.)
+    const c = it && clean(g, ok, (id) => id !== it.id && items.has(id));
     if (!c) continue;
     // (The hand-in page Kea knows for it wins over one Claude names, when it's a place of the work's own kind: a
     // discussion's topic, never a quiz.)
     const post = it.type === 'discussion' || it.type === 'peer_review';
-    const fitting = (u) => (post ? /discussions\/topics\/\d|discussion_topics\/\d/i.test(u) : /dropbox|folder_submit|discussions\/topics|quiz_summary|quizzing/i.test(u));
+    // (A peer review is done on its assignment page, Canvas's usual place, as well as in a discussion topic.)
+    const fitting = (u) => (it.type === 'peer_review' ? /discussions\/topics\/\d|discussion_topics\/\d|dropbox|folder_submit|\/assignments\/\d/i.test(u) : post ? /discussions\/topics\/\d|discussion_topics\/\d/i.test(u) : /dropbox|folder_submit|discussions\/topics|quiz_summary|quizzing/i.test(u));
     const handIn = (it.links || []).find((l) => l.kind === 'submit' && fitting(l.url));
     if (handIn) c.submit.url = handIn.url;
     else if (post && c.submit.url && !fitting(c.submit.url)) c.submit.url = '';
