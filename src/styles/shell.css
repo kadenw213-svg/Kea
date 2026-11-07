@@ -1,6 +1,38 @@
 /* The adaptive shell: first-run "What will you use Kea for?" and the title-bar area buttons. Loaded at start-up (not lazily), because Home and the title bar use it.
    Colours come from theme tokens only, so every theme (dark, black, dim, light, sepia) works. */
 
+/* ---------- The Kea account, before anything else (covers everything under the title bar) ---------- */
+.account-gate {
+  position: fixed;
+  inset: var(--titlebar-h, 44px) 0 0 0;
+  z-index: 950;
+  overflow-y: auto;
+  display: grid;
+  place-items: center;
+  padding: 40px 24px;
+  background: var(--bg);
+}
+.account-gate-inner {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  text-align: center;
+}
+.account-gate h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 500;
+}
+.account-gate .acct-card {
+  text-align: left;
+}
+.account-gate-switch {
+  margin: 14px 0 0;
+  color: var(--text-2);
+}
+
 /* ---------- First run ---------- */
 .welcome {
   height: 100%;

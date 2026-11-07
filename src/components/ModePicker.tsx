@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Briefcase, Check, GraduationCap, Heart } from 'lucide-react';
 import { KeaMode, keaModes, setModes, useKeaModes, workAvailable } from '../lib/modes';
 import { useHubStatus } from './scholar/HubAccount';
+import { useSetupDone } from '../lib/areas';
 import { toast } from '../store';
 
 const CHOICES: { id: KeaMode; label: string; blurb: string; icon: JSX.Element }[] = [
@@ -54,7 +55,9 @@ export function ModePickerGate() {
   const modes = useKeaModes();
   const [pick, setPick] = useState<Record<KeaMode, boolean> | null>(null);
   const [busy, setBusy] = useState(false);
-  const show = !!status?.signedIn && !!status.me && !status.me.terms.needsAgreement && !modes.asked;
+  // (On a new computer the first-run screen asks the same question: never both at once.)
+  const setupDone = useSetupDone();
+  const show = setupDone && !!status?.signedIn && !!status.me && !status.me.terms.needsAgreement && !modes.asked;
   useEffect(() => {
     if (show && !pick) {
       const m = keaModes();

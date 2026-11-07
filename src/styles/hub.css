@@ -376,3 +376,62 @@
   font-size: 12px;
   white-space: nowrap;
 }
+
+/* The account card and its forms: here (loaded at start-up), since Kea opens with the sign-in. */
+.acct-card {
+  max-width: 560px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.acct-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.acct-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.acct-form input {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+.acct-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.acct-suggest .chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.acct-suggest .chip.on {
+  border-color: var(--info);
+}
+.acct-note {
+  font-size: 12.5px;
+  margin: 0;
+}

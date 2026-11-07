@@ -400,6 +400,56 @@ export function HubPanel() {
   );
 }
 
+/**
+ * Kea starts with the Kea account: sign in or create one, before anything else. Once signed in, Kea stays signed in on
+ * this computer (the Hub keeps a sign-in in use alive), also while the Hub is offline. Signing out brings this back.
+ */
+export function AccountGate() {
+  const status = useHubStatus();
+  const [mode, setMode] = useState<'signin' | 'create'>('signin');
+  useEffect(() => {
+    refreshHub();
+  }, []);
+  // (While the Hub can't be reached, try again every 15 seconds.)
+  const unreachable = !!status && !status.signedIn && !status.reachable;
+  useEffect(() => {
+    if (!unreachable) return;
+    const t = setInterval(() => refreshHub(), 15_000);
+    return () => clearInterval(t);
+  }, [unreachable]);
+  if (status?.signedIn) return null;
+  return (
+    <div className="account-gate">
+      <div className="account-gate-inner">
+        {!status ? (
+          <div className="spinner" />
+        ) : (
+          <>
+            <h1>{mode === 'signin' ? 'Sign in to Kea' : 'Create your Kea account'}</h1>
+            <p className="welcome-sub">One account for Kea and KeaS: your documents in Kea Cloud, classes, study groups and work. You stay signed in on this computer.</p>
+            {unreachable ? (
+              <div className="acct-card hub-card">
+                <p className="hub-warn">Kea can’t reach the Kea Hub right now, so it can’t sign you in yet. Check your internet connection, or the Hub’s address below if you were given a different one. Kea tries again by itself.</p>
+                <HubAddress />
+              </div>
+            ) : (
+              <div className="acct-card hub-card">
+                {mode === 'signin' ? <SignIn onDone={() => refreshHub()} /> : <CreateAccount onDone={() => refreshHub()} />}
+                <p className="account-gate-switch">
+                  {mode === 'signin' ? 'New to Kea? ' : 'Already have an account? '}
+                  <button className="btn link" onClick={() => setMode(mode === 'signin' ? 'create' : 'signin')}>
+                    {mode === 'signin' ? 'Create an account' : 'Sign in'}
+                  </button>
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** The optional phone number, and who sees it. Never on leaderboards; nobody sees it unless chosen here. */
 function PhoneSetting({ status }: { status: HubStatus }) {
   const cur = status.me?.account.phone ?? { number: null, visibility: 'nobody' as HubPhoneVisibility };
