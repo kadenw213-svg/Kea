@@ -448,7 +448,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
         {showDocs && (
         <section className="home-docs">
           <div className="section-head">
-            <h2>Documents</h2>
+            <h2>Files</h2>
           </div>
           <div className="files-area">
           <nav className="sources">
@@ -527,7 +527,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
               <MenuButton
                 align="right"
                 button={() => (
-                  <button className="icon-btn" title="Sort">
+                  <button className="icon-btn" title="Sort and view">
                     <ArrowUpDown size={17} />
                   </button>
                 )}
@@ -545,12 +545,14 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                         <span style={{ width: 16 }}>{sort === id && <Check size={15} />}</span> {label}
                       </button>
                     ))}
+                    <div className="menu-sep" />
+                    {/* How the file previews look (only the previews: the app's theme is in Settings). */}
+                    <button className="menu-item" onClick={() => (saveSettings({ tone: tone === 'dark' ? 'light' : 'dark' }), close())}>
+                      {tone === 'dark' ? <Sun size={15} /> : <Moon size={15} />} {tone === 'dark' ? 'Light previews' : 'Dark previews'}
+                    </button>
                   </>
                 )}
               </MenuButton>
-              <button className="icon-btn" title={tone === 'dark' ? 'Previews: dark (click for light)' : 'Previews: light (click for dark)'} onClick={() => saveSettings({ tone: tone === 'dark' ? 'light' : 'dark' })}>
-                {tone === 'dark' ? <Moon size={17} /> : <Sun size={17} />}
-              </button>
               {isCloud && (
                 <button className="icon-btn" title="Add files to Kea Cloud" onClick={addToCloud}>
                   <Upload size={17} />
