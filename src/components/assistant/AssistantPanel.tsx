@@ -8,7 +8,8 @@ import { ask, stop, clear } from '../../lib/assistant';
 import { addAttachment, isAttachable, ATTACHABLE, type Attachment } from '../../lib/attachments';
 import { useAssistant, setAssistantOpen, emptyChat, INTERNAL_STEPS, type ChatItem } from './assistantStore';
 import { AssignmentButton, AssignmentChip, AssignmentPicker } from './AssignmentPicker';
-import { assignmentOf } from '../../lib/assignmentContext';
+import { useAssignments, fileKey } from '../../lib/assignmentContext';
+import { useKeaModes } from '../../lib/modes';
 import '../../styles/ai.css';
 import '../../styles/assistant.css';
 
@@ -54,6 +55,24 @@ export function AssistantPanel() {
   // The assignment picker (which assignment this file is for, or a pasted rubric).
   const [picking, setPicking] = useState(false);
   useEffect(() => setPicking(false), [activeId]);
+  // Assignments belong to classes: the picker is there only when a class mode is on (or this file already has one).
+  const modes = useKeaModes();
+  const linked = useAssignments((s) => !!s.byFile[fileKey(activeId)]);
+  const classes = modes.school || modes.personal || linked;
+  // How much the file holds, so the suggestions fit it (an empty page isn't offered "make the introduction stronger").
+  const [paras, setParas] = useState<number | null>(null);
+  useEffect(() => {
+    setParas(null);
+    if (!open || !hooks || chat.items.length) return;
+    let live = true;
+    hooks
+      .getDocument()
+      .then((d) => live && setParas(d.full.split(/\n+/).filter((l) => l.trim()).length))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [open, activeId, !!hooks, chat.items.length]);
 
   useEffect(() => {
     if (open && !key) api.assistant.status().then((k) => useAssistant.getState().set({ key: k }));
@@ -194,8 +213,8 @@ export function AssistantPanel() {
                   </div>
                   {usable && hooks && (
                     <div className="as-starters">
-                      {starters(hooks.noun).map((s) => (
-                        <button key={s} className="ai-chip" onClick={() => (/rubric/i.test(s) && !assignmentOf(activeId) ? setPicking(true) : ask(activeId, s))}>
+                      {starters(hooks.noun, { linked, paras }).map((s) => (
+                        <button key={s} className="ai-chip" onClick={() => ask(activeId, s)}>
                           {s}
                         </button>
                       ))}
@@ -236,7 +255,7 @@ export function AssistantPanel() {
             {usable && <AssignmentChip tabId={activeId} onOpen={() => setPicking(true)} />}
             {picking && usable && <AssignmentPicker tabId={activeId} onClose={() => setPicking(false)} />}
             <div className="ai-composer">
-              {usable && !chat.busy && <AssignmentButton tabId={activeId} onOpen={() => setPicking((v) => !v)} />}
+              {usable && !chat.busy && classes && <AssignmentButton tabId={activeId} onOpen={() => setPicking((v) => !v)} />}
               {usable && !chat.busy && (
                 <button className="icon-btn sm" title="Attach an image or PDF: a flier to recreate, concept art, a brief (or paste / drop it here)" onClick={pickFiles}>
                   <Paperclip size={16} />
@@ -291,13 +310,22 @@ export function AssistantPanel() {
 
 const fmt = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 
-function starters(noun: string): string[] {
+/** Suggestions that fit this file: the rubric only for a file linked to an assignment, "the introduction" only for a written piece. */
+function starters(noun: string, f: { linked: boolean; paras: number | null }): string[] {
+  const empty = f.paras === 0;
   switch (noun) {
     case 'document':
-      return ['Review this against my assignment’s rubric', 'Proofread this and fix mistakes', 'Make the introduction stronger'];
+      if (empty) return ['Help me start: ask me what this is for', 'Make an outline I can fill in'];
+      return [
+        ...(f.linked ? ['Review this against my assignment’s rubric'] : []),
+        'Proofread this and fix mistakes',
+        ...((f.paras ?? 0) > 3 ? ['Make the introduction stronger'] : ['Make this clearer and easier to read'])
+      ];
     case 'spreadsheet':
+      if (empty) return ['Set up a sheet for me: ask what it’s for', 'Make a monthly budget'];
       return ['Finish this sheet and make it look polished', 'Explain what this sheet does', 'Find anything that looks wrong'];
     case 'presentation':
+      if (empty) return ['Make a deck for me: ask what it’s about', 'Turn my notes into slides'];
       return ['Turn my notes into a finished, well-designed deck', 'Redesign this slide so it looks professional', 'Add speaker notes'];
     case 'PDF':
       return ['Summarize this PDF', 'Highlight the key terms', 'Comment on anything unclear'];

@@ -123,6 +123,7 @@ import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
 import { docAiHooks } from './aiHooks';
 import { LookupButton } from '../../components/lookup/LookupButton';
+import { HandInButton } from '../../components/scholar/HandIn';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { LEGACY } from '../../lib/legacy';
@@ -650,6 +651,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     <div className={`doc-editor ${focusMode ? 'focus-mode' : ''}`}>
       <Toolbar
         editor={editor}
+        handIn={tab.path ? <HandInButton path={tab.path} dirty={tab.dirty} /> : null}
         zoom={zoom}
         setZoom={setZoom}
         onLink={setLink}
@@ -851,6 +853,8 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
 // ---------- Toolbar ----------
 function Toolbar(p: {
   editor: Editor;
+  /** Hand in to a class (shown only in School mode with an open assignment folder). */
+  handIn: React.ReactNode;
   zoom: number;
   setZoom(z: number): void;
   onLink(): void;
@@ -1171,6 +1175,7 @@ function Toolbar(p: {
       <B title="Find and replace (Ctrl+F)" onClick={p.onFind}>
         <Search size={18} />
       </B>
+      {p.handIn}
       <div className="tb-sep" />
       <div className="tb-end">
       <LookupButton />

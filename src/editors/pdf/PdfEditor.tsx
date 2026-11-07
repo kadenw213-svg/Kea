@@ -1434,7 +1434,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
         <div className="tb-spacer" />
 
         {tab.path && setting('scholar.enabled') !== false && <QuizMeButton path={tab.path} />}
-        {tab.path && setting('scholar.enabled') !== false && <HandInButton path={tab.path} dirty={tab.dirty} />}
+        {tab.path && <HandInButton path={tab.path} dirty={tab.dirty} />}
         <button className={`icon-btn ${searchOpen ? 'active' : ''}`} title="Find (Ctrl+F)" onClick={() => (setSearchOpen((o) => !o), setTimeout(() => searchInput.current?.focus(), 0))}>
           <Search size={18} />
         </button>

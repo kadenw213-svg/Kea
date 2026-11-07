@@ -223,8 +223,8 @@ export interface KeaApi {
     cloudDrives(): Promise<{ drives: { id: string; label: string; path: string }[]; target: string | null }>;
     /** Update the phone's copy now. */
     syncNow(): Promise<{ dir: string; hash: string } | null>;
-    /** Every class's assignment folders a file can be handed in to. */
-    handInTargets(): Promise<{ code: string; ou: string; folders: { id: number; name: string; due: string | null; closed: boolean; submitted: boolean }[] }[]>;
+    /** Every class's assignment folders a file can be handed in to (`peek`: only what is known already, no class-site look). */
+    handInTargets(opts?: { peek?: boolean }): Promise<{ code: string; ou: string; folders: { id: number; name: string; due: string | null; closed: boolean; submitted: boolean }[] }[]>;
     /** Open the assignment's hand-in page on the class site with the file in its upload box. The student presses Submit there. */
     handIn(ou: string, folderId: number, file: string): Promise<{ attached: boolean }>;
     /** A class's overall grade and graded items, or null before anything is known. */

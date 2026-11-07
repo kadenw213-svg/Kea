@@ -156,7 +156,7 @@ contextBridge.exposeInMainWorld('api', {
     deleteInbox: (ids) => ipcRenderer.invoke('scholar:deleteInbox', ids),
     checkInbox: () => ipcRenderer.invoke('scholar:checkInbox'),
     grades: (courseId, code) => ipcRenderer.invoke('scholar:grades', courseId, code),
-    handInTargets: () => ipcRenderer.invoke('scholar:handInTargets'),
+    handInTargets: (opts) => ipcRenderer.invoke('scholar:handInTargets', opts),
     cloudDrives: () => ipcRenderer.invoke('scholar:cloudDrives'),
     syncNow: () => ipcRenderer.invoke('scholar:syncNow'),
     handIn: (ou, folderId, file) => ipcRenderer.invoke('scholar:handIn', ou, folderId, file),
