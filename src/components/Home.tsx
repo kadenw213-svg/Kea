@@ -42,7 +42,7 @@ import { KeaCloudHeader, KeaCloudMark } from './home/KeaCloud';
 import { Trash2, Upload, AlertTriangle, CloudUpload, HardDrive } from 'lucide-react';
 import { useSetting } from '../lib/settings';
 import { useAreas } from '../lib/areas';
-import { cloudUsable, inKeaCloud, useKeaCloud, watchKeaCloud } from '../lib/keaCloud';
+import { cloudUsable, inKeaCloud, useKeaCloud, watchKeaCloud, friendlyPath, folderLabel } from '../lib/keaCloud';
 
 function greeting() {
   const h = new Date().getHours();
@@ -102,7 +102,6 @@ type FilterId = (typeof FILTERS)[number]['id'];
 
 const GOOGLE_EXT: Record<string, string> = { gdoc: 'doc', gsheet: 'sheet', gslides: 'slides' };
 const kindOf = (name: string) => GOOGLE_EXT[extOf(name)] || kindFor(name);
-const parentName = (p: string) => p.split(/[\\/]/).slice(-2, -1)[0] || p;
 const sep = (p: string) => (p.includes('\\') ? '\\' : '/');
 const under = (child: string, root: string) => {
   const c = child.toLowerCase();
@@ -174,12 +173,12 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     for (const k of known) list.push({ id: k.id, label: k.label, path: k.path, icon: icon(k.id) });
     for (const f of settings.folders || []) list.push({ id: 'folder:' + f, label: f.split(/[\\/]/).filter(Boolean).pop() || f, path: f, icon: <Folder size={17} />, removable: true });
     // Kea Cloud: the person's Kea storage, first among the cloud drives.
-    if (cloudOn && cloud) list.push({ id: 'keacloud', label: 'Kea Cloud', path: cloud.root, icon: <KeaCloudMark />, cloud: 'kea' });
+    if (cloudOn && cloud) list.push({ id: 'keacloud', label: cloud.signedIn ? 'Kea Cloud' : 'Kea Cloud · Sign in', path: cloud.root, icon: <KeaCloudMark />, cloud: 'kea' });
     for (const d of drives)
       for (const a of d.accounts)
         list.push({ id: `${d.id}:${a.path}`, label: d.accounts.length > 1 || a.label !== d.label ? `${d.label === a.label ? '' : d.label + ' · '}${a.label}` : d.label, path: a.path, icon: <DriveLogo id={d.id} size={17} />, cloud: d.id });
     return list;
-  }, [known, drives, settings.folders, cloudOn, cloud?.root]);
+  }, [known, drives, settings.folders, cloudOn, cloud?.root, cloud?.signedIn]);
 
   const source = sources.find((s) => s.id === sourceId) || sources[0];
   const isCloud = source.id === 'keacloud';
@@ -407,7 +406,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
   );
 
   const when = (it: Item) => (!dir && it.openedAt ? `Opened ${timeAgo(it.openedAt)}` : it.mtime ? `Edited ${timeAgo(it.mtime)}` : '');
-  const where = (it: Item) => (!dir || searchHits ? parentName(it.path) : '');
+  const where = (it: Item) => (!dir || searchHits ? folderLabel(it.path, cloud) : '');
 
   const emptyText = error
     ? error
@@ -613,7 +612,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                 {shown.map((it) => {
                   const desc = meta[it.path.toLowerCase()]?.description;
                   return (
-                    <div key={it.path} className="fcard" onClick={() => open(it)} title={it.path}>
+                    <div key={it.path} className="fcard" onClick={() => open(it)} title={friendlyPath(it.path, cloud)}>
                       <div className="fcard-thumb">
                         <Preview path={it.path} name={it.name} mtime={it.mtime} online={it.online} iconOnly={!showPreviews} />
                       </div>
@@ -658,7 +657,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                 {shown.map((it) => {
                   const desc = meta[it.path.toLowerCase()]?.description;
                   return (
-                    <div key={it.path} className="flist-row" onClick={() => open(it)} title={it.path}>
+                    <div key={it.path} className="flist-row" onClick={() => open(it)} title={friendlyPath(it.path, cloud)}>
                       <span className="flist-name">
                         <FileIcon kind={kindOf(it.name)} size={20} />
                         <span>

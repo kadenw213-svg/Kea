@@ -111,7 +111,7 @@ export const SECTIONS: Section[] = [
         type: 'select',
         default: 15,
         options: [0, 5, 10, 15, 30, 60, 120].map((m) => ({ value: m, label: m === 0 ? 'Don’t remind me' : m < 60 ? `${m} minutes before` : `${m / 60} hour${m > 60 ? 's' : ''} before` })),
-        help: 'A notification on this computer, with the meeting link one click away. Quiet hours from Scholar’s notifications apply.'
+        help: 'A notification on this computer, with the meeting link one click away. Quiet hours from School’s notifications apply.'
       },
       { key: 'hub.onCalendar', label: 'Show Kea Hub class sessions on my calendar', type: 'toggle', default: true, advanced: true, help: 'They stay on each class’s page either way.' },
       {
@@ -120,7 +120,7 @@ export const SECTIONS: Section[] = [
         label: 'Show account notifications on this computer',
         type: 'toggle',
         default: true,
-        help: 'For example when your storage changes or an organization approves you. They always stay in the list under Your account. Quiet hours from Scholar’s notifications apply.'
+        help: 'For example when your storage changes or an organization approves you. They always stay in the list under Your account. Quiet hours from School’s notifications apply.'
       },
       {
         key: 'hub.notifyEveryMinutes',
@@ -264,7 +264,7 @@ export const SECTIONS: Section[] = [
       { key: 'areas.auto', label: 'Turn areas on by themselves when I start using them', type: 'toggle', default: true, advanced: true, help: 'Joining a class turns on School.' },
       { key: 'areas.setupDone', label: 'First-run setup finished', type: 'toggle', default: false, advanced: true, help: 'Turn off to see the "What will you use Kea for?" screen again.' },
       { key: 'home.greeting', group: 'Today', label: 'Show greeting and date', type: 'toggle', default: true },
-      { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from Scholar and your Kea Hub classes.' },
+      { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from School and your Kea Hub classes.' },
       { key: 'home.showClasses', label: 'Show my classes', type: 'toggle', default: true },
       { key: 'home.showWork', label: 'Show Work (to-do and next shift)', type: 'toggle', default: true, when: (v) => v['modes.work'] === true },
       {
@@ -545,7 +545,7 @@ export const SECTIONS: Section[] = [
   },
   {
     id: 'scholar',
-    label: 'Scholar',
+    label: 'Classes and study',
     icon: 'GraduationCap',
     blurb: 'Your classes, their textbooks and calendar. Classes you add from your school are kept up to date by scans that run in the background through your own Claude account.',
     fields: [

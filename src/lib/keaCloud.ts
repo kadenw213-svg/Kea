@@ -68,6 +68,21 @@ export function inKeaCloud(p: string | null | undefined, s = useKeaCloud.getStat
 }
 
 /**
+ * How a path is shown to people: a Kea Cloud file as "Kea Cloud › Folder › name" (its real folder is hidden inside
+ * Kea's profile), anything else as it is.
+ */
+export function friendlyPath(p: string, s = useKeaCloud.getState().status) {
+  if (!inKeaCloud(p, s) || !s?.root) return p;
+  const rest = p.slice(s.root.replace(/[\\/]+$/, '').length).split(/[\\/]/).filter(Boolean);
+  return ['Kea Cloud', ...rest].join(' › ');
+}
+/** The folder a file is in, for "Opened just now · Documents": Kea Cloud files say Kea Cloud (and their sub-folder). */
+export function folderLabel(p: string, s = useKeaCloud.getState().status) {
+  if (inKeaCloud(p, s)) return friendlyPath(p, s).split(' › ').slice(0, -1).join(' › ') || 'Kea Cloud';
+  return p.split(/[\\/]/).slice(-2, -1)[0] || p;
+}
+
+/**
  * Asked before the Save dialog for a file that has no place yet: Kea Cloud or this PC (Settings → Kea Cloud →
  * "New files save to"). Returns the Kea Cloud path chosen, 'pc' for the usual dialog, or null when cancelled.
  */

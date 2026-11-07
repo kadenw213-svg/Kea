@@ -16,6 +16,7 @@ import { isMac } from '../lib/util';
 import { useUpdates, openUpdates } from './Updates';
 import { RefreshCw, Info, Github, BookOpen } from 'lucide-react';
 import { openSettings } from '../lib/settings';
+import { friendlyPath } from '../lib/keaCloud';
 import { openPalette } from './CommandPalette';
 import { Search } from 'lucide-react';
 import { openHistory } from './settings/VersionHistory';
@@ -116,7 +117,7 @@ export function TitleBar() {
               dragFrom.current = null;
             }}
             onDragEnd={() => (dragFrom.current = null)}
-            title={t.path || t.name}
+            title={t.path ? friendlyPath(t.path) : t.name}
           >
             {t.kind === 'home' ? <Home size={16} /> : t.kind === 'scholar' ? <GraduationCap size={15} /> : t.kind === 'work' ? <Briefcase size={15} /> : <FileIcon name={t.name} kind={t.kind} size={15} />}
             {t.kind !== 'home' && <span className="tab-label">{t.name}</span>}
