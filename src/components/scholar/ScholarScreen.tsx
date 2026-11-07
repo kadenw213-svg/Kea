@@ -54,6 +54,7 @@ import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, placeKind, assignmentDoc, extendedInfo, setClassColor, setTypeColor, useColors } from './kinds';
 import { AssignmentGuide, OriginalWording, useGuides } from './Guide';
+import { COUNTS_AS_DUE, relatedText, handInText, panelLinks, platformLine, platformName, quickVerb, shorten, studyChapters, typeLabel, folderIdOf } from './itemRules';
 import { StudyPlayer } from './Study';
 import { ResourcesView } from './Resources';
 import { MessagesView } from './Messages';
@@ -102,35 +103,8 @@ const timeAgo = (at: string) => {
 };
 
 // ---------- Kinds of item ----------
-const TYPE_LABEL: Record<string, string> = {
-  lecture: 'Lecture',
-  class_session: 'Class session',
-  lab: 'Lab',
-  recitation: 'Recitation',
-  seminar: 'Seminar',
-  exam: 'Exam',
-  final_exam: 'Final exam',
-  lab_practical: 'Lab practical',
-  quiz: 'Quiz',
-  assignment: 'Assignment',
-  discussion: 'Discussion',
-  project: 'Project',
-  presentation: 'Presentation',
-  paper: 'Paper',
-  draft: 'Draft',
-  peer_review: 'Peer review',
-  lab_handout: 'Lab handout',
-  pre_lab_quiz: 'Pre-lab quiz',
-  administrative_deadline: 'Deadline',
-  break: 'Break',
-  no_class: 'No class',
-  reading: 'Reading',
-  other_deadline: 'To do',
-  weekly_reading: 'This week'
-};
+// (Their names, and what each offers, are in itemRules.ts, shared with the phone.)
 const TEST = new Set(['exam', 'final_exam', 'lab_practical', 'quiz']);
-// Writing work: no "Study" button or box (practice questions don't help write a paper).
-const NO_STUDY = new Set(['administrative_deadline', 'break', 'no_class', 'paper', 'discussion', 'project', 'presentation']);
 /** A short room for tight spaces: "PPSC Rampart Range Campus, E112" → "E112". */
 const shortRoom = (loc: string) => (loc === 'Online' ? 'Online' : loc.split(',').pop()!.trim());
 
@@ -438,7 +412,8 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
   const todo = TODO.has(it.type);
   const missing = isMissing(it);
   const quick = primaryLink(it);
-  const reading = it.readings.find((r) => r.pdf);
+  // (Not a chapter only guessed from its week: "Bring lab coat and goggles" has nothing to read.)
+  const reading = it.readings.find((r) => r.pdf && !r.inferred);
   const accent = ctx.colors.item(it);
   return (
     <div className={`sch-row ${isDone(it) ? 'done' : ''} ${missing ? 'missing' : ''}`} style={{ ['--kc' as any]: accent }} onClick={() => ctx.open(it)}>
@@ -499,7 +474,7 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
         </div>
       </div>
       <div className="sch-row-actions">
-        {quick && !it.opensAt && (
+        {quick && (
           <button
             className="btn sm sch-quick"
             title={`${quick.label}: opens the page on your class site`}
@@ -523,13 +498,13 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
             <BookOpen size={14} /> Read
           </button>
         )}
-        {it.readings.length > 0 && !NO_STUDY.has(it.type) && (
+        {studyChapters(it).length > 0 && (
           <button
             className="btn sm"
-            title={`Practice questions on ${it.readings.map((r) => r.chapter).join(', ')}`}
+            title={`Practice questions on ${studyChapters(it).join(', ')}`}
             onClick={(e) => {
               e.stopPropagation();
-              openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: it.readings.map((r) => r.chapter), itemId: TEST.has(it.type) ? it.id : undefined });
+              openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: studyChapters(it), itemId: TEST.has(it.type) ? it.id : undefined });
             }}
           >
             <ClipboardCheck size={14} /> Study
@@ -543,8 +518,6 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
 /** "Mon, Oct 26, 12:01 AM": when locked work opens. */
 const opensText = (at: string) => new Date(at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-/** An item's kind in words (a lab report filed as a lab handout reads "Lab report"). */
-const typeLabel = (it: ScholarItem) => (it.type === 'lab_handout' && /\breport\b/i.test(it.title) ? 'Lab report' : TYPE_LABEL[it.type] || it.type);
 
 /**
  * Today's date ("2026-10-24"), which changes at midnight while the screen stays open (a timer to the next midnight,
@@ -1590,9 +1563,6 @@ function matchFolder<F extends { name: string }>(folders: F[], title: string): F
 
 // ---------- The item panel ----------
 function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; onClose(): void }) {
-  const links = useMemo(() => [...it.links, ...(it.platformLinks || []), ...it.weeklyLinks], [it]);
-  // Each outside platform it's done on (Science Interactive, ALEKS), besides its hand-in page.
-  const platforms = (it.platformLinks || []).filter((l) => l.url !== primaryLink(it)?.url);
   // (Some items' only description is their own title: nothing more to say.)
   // (Nor one that only repeats the title and the date: "Saturday, October 24, 2026 11:59 PM: <title> due".)
   const restOf = (t: string) =>
@@ -1608,22 +1578,18 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
   const toKnow = it.studyFocus.filter((f) => f !== format && f.trim());
   // (With a guide, its topic, goal and notes say it; and a stub of the class site's text adds nothing.)
   const guide = useGuides()?.[it.id];
-  // Anything that covers chapters (an exam, an assignment, a lab, a lecture) can be studied.
-  const practice = it.readings.length > 0 && !NO_STUDY.has(it.type);
+  // Only chapters that are its own, for work Study fits (itemRules.studyChapters): never a week's chapter guessed for a
+  // reminder or a handout.
+  const practiceChapters = studyChapters(it);
+  const practice = practiceChapters.length > 0;
   const missing = isMissing(it);
-  // Not open yet on the class site: its links lead to a locked page, so show when it opens instead.
-  const quick = it.opensAt ? null : primaryLink(it);
-  // Every address the guide's steps already open (shown there, beside the step it's for).
-  const inGuide = new Set((guide?.steps || []).flatMap((s) => (s.links || []).map((l) => l.url)).concat(guide?.submit?.url ? [guide.submit.url] : []));
-  const docRaw = it.opensAt ? null : assignmentDoc(it);
-  const doc = docRaw && !inGuide.has(docRaw.url) ? docRaw : null;
-  // Each link once: not again below when it's a button above or in a step. (A discussion's quiz link, matched to it by
-  // mistake, and the class site's other places that don't fit the work never show either.)
-  const shown = new Set([quick?.url, doc?.url, ...platforms.map((l) => l.url)].filter(Boolean) as string[]);
-  const rest = links.filter((l) => !shown.has(l.url) && !inGuide.has(l.url) && !(l.kind === 'submit' && l.url !== quick?.url) && !(/^(discussion|peer_review)$/.test(it.type) && placeKind(l.url) === 'quiz'));
+  // Its main button, the platforms it's done on, its own document and every other link, each once (itemRules.panelLinks:
+  // nothing for locked work; a hand-in link that isn't its main button stays under More; never a quiz on a discussion).
+  const { quick: q0, platforms, doc, rest } = useMemo(() => panelLinks(it, guide), [it, guide]);
+  const quick = q0 ? primaryLink(it) : null;
+  const handIn = handInText(it);
+  const doneOn = platformLine(it);
   const cat = categoryOf(it.type);
-  // Graded work with no hand-in page: say so, so a missing button doesn't look like a bug.
-  const handsIn = TODO.has(it.type) && !['weekly_reading', 'lecture', 'reading'].includes(it.type);
   // Handing in a file from here: pick it, and Kea opens this assignment's folder page with the file attached.
   const handInFile = async () => {
     const files = await api.openDialog({ title: 'Choose the file to hand in', filters: [{ name: 'Documents', extensions: ['pdf', 'docx', 'doc', 'pptx', 'xlsx', 'png', 'jpg', 'jpeg', 'txt'] }] }).catch(() => []);
@@ -1632,7 +1598,9 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
     try {
       const targets = await api.scholar.handInTargets();
       const course = targets.find((t) => t.code === it.courseCode);
-      const folder = course ? matchFolder(course.folders, it.title) : null;
+      // The folder Kea already knows from this work's own hand-in link (D2L ?db=, Canvas /assignments/), then by name.
+      const known = folderIdOf(quick?.url);
+      const folder = course ? course.folders.find((f) => known && String(f.id) === known) || matchFolder(course.folders, it.title) : null;
       // Not one clear folder: the student picks it, from this class's folders.
       if (!course || !folder) return setPickFile(file);
       const r = await api.scholar.handIn(course.ou, folder.id, file);
@@ -1648,6 +1616,17 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
     const found = (await api.scholar.items({ from: date, to: date }).catch(() => [] as ScholarItem[])).find((x) => x.id === id);
     if (found) ctx.open(found);
   };
+  // A guide step's other work ("Finish Lab report #9 first"), by its id: opened in this panel.
+  const openItem = async (id: string) => {
+    const known = (it.related || []).find((r) => r.id === id);
+    if (known) return openRelated(id, known.date);
+    const day = parse(it.date);
+    const found = (await api.scholar.items({ from: iso(addDays(day, -60)), to: iso(addDays(day, 60)), courseId: it.courseId }).catch(() => [] as ScholarItem[])).find((x) => x.id === id);
+    if (found) ctx.open(found);
+    else toast('Kea couldn’t find that work on your calendar any more.', 'error');
+  };
+  // (A guide is promised only while class checks run: they need a verified Kea account.)
+  const [account] = useAccount();
   return (
     <aside className="sch-panel" style={{ ['--kc' as any]: ctx.colors.item(it) }}>
       <div className="sch-panel-head">
@@ -1664,7 +1643,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
       <h2 className="sch-panel-title">{it.title}</h2>
       {missing && (
         <div className="miss-banner">
-          <AlertTriangle size={15} /> Missing: this was due {dayName(it.date).toLowerCase()}
+          <AlertTriangle size={15} /> Missing: this was due {/^(Today|Tomorrow|Yesterday)$/.test(dayName(it.date)) ? dayName(it.date).toLowerCase() : `on ${dayName(it.date)}`}
           {it.due ? ` at ${clock(it.due)}` : ''}, and your class site shows nothing handed in.
         </div>
       )}
@@ -1699,35 +1678,16 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
             <span>{it.module}</span>
           </div>
         )}
-        {(it.platformLinks || []).length > 0 && (
+        {doneOn && (
           <div>
             <Globe size={14} />
-            <span>Done on: {(it.platformLinks || []).map((l) => l.label.replace(/^Open /, '')).join(', ')}</span>
+            <span>{doneOn}</span>
           </div>
         )}
-        {handsIn && (
+        {handIn && (
           <div>
             <Upload size={14} />
-            <span>
-              {it.opensAt ? (
-                <b>Opens {opensText(it.opensAt)}</b>
-              ) : quick && quick.label === 'Hand in' ? (
-                'Hand in: the assignment folder on your class site'
-              ) : (it.platformLinks || []).length && !/\b(pdf|notebook|report|upload|scan\w*)\b/i.test(it.title) ? (
-                // (Work done on the platform is handed in there: ALEKS homework, an online quiz.)
-                `Hand in: on ${(it.platformLinks || [])[0].label.replace(/^Open /, '')}`
-              ) : quick && quick.label === 'Discussion' ? (
-                'Hand in: post in the discussion (the button below opens its topic)'
-              ) : quick && quick.label === 'Quiz' ? (
-                'Taken on your class site: the button below opens the quiz'
-              ) : quick && !(it.platformLinks || []).length ? (
-                `Done on: ${quick.label}`
-              ) : it.location && /class|lab|room|hall|in person/i.test(it.location) ? (
-                'Hand in: in class'
-              ) : (
-                <span className="muted">No hand-in page on your class site yet (it may still be hidden or locked)</span>
-              )}
-            </span>
+            <span>{handIn.opens && it.opensAt ? <b>Opens {opensText(it.opensAt)}</b> : handIn.muted ? <span className="muted">{handIn.text}</span> : handIn.text}</span>
           </div>
         )}
       </div>
@@ -1739,13 +1699,12 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
         )}
         {quick && (
           <button className="btn primary" onClick={() => openLink(quick.url)}>
-            <quick.icon size={15} /> {quick.label === 'Hand in' ? 'Open hand-in folder' : quick.label === 'Discussion' ? 'Open the discussion' : quick.label === 'Quiz' ? 'Open the quiz' : `Open ${quick.label}`}
+            <quick.icon size={15} /> {quickVerb(quick)}
           </button>
         )}
-        {!it.opensAt &&
-          platforms.map((l) => (
+        {platforms.map((l) => (
             <button key={l.url} className="btn" onClick={() => openLink(l.url)} title="Through your class's own link, so the platform knows which class it is">
-              <Globe size={15} /> {l.label}
+              <Globe size={15} /> {platformName(`${l.label} ${l.url}`) ? `Open ${platformName(`${l.label} ${l.url}`)}` : shorten(l.label, 30)}
             </button>
           ))}
         {doc && (
@@ -1753,7 +1712,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
             <FileText size={15} /> Open assignment
           </button>
         )}
-        {quick?.label === 'Hand in' && (
+        {quick?.kind === 'folder' && (
           <button className="btn" onClick={handInFile} title="Choose a file; Kea attaches it on the hand-in page, and you press Submit there">
             <Upload size={15} /> Hand in a file…
           </button>
@@ -1767,27 +1726,39 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           </button>
         </div>
       )}
-      {(it.related || []).length > 0 && (
-        <div className="pn-related">
-          {it.related!.map((r) => (
-            <button key={r.id} className="pn-rel" onClick={() => openRelated(r.id, r.date)} title="Open it">
-              <Link2 size={14} />
-              <span>
-                {r.why === 'lab' ? 'Goes with the lab: ' : /\(initial/i.test(r.title) ? 'Initial post: ' : /\((response|repl)/i.test(r.title) ? 'Replies: ' : 'Goes with: '}
-                <b>{r.title.replace(/\s*\((initial|response|replies|reply)[^)]*\)/i, '')}</b> · {shortDate(r.date)}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      {(() => {
+        // The same lab's parts in the lab's order (pre-lab, handout, session, report, discussion), then the other half
+        // of a discussion and work on the same topic: each opens in this panel.
+        const rel = it.related || [];
+        const lab = rel.filter((r) => r.why === 'lab' && r.group);
+        const other = rel.filter((r) => !(r.why === 'lab' && r.group));
+        if (!rel.length) return null;
+        return (
+          <div className="pn-related">
+            {lab.length > 0 && <div className="tb-h">{lab[0].group}: the whole lab</div>}
+            {[...lab, ...other].map((r) => {
+              const t = relatedText(r);
+              return (
+                <button key={r.id} className={`pn-rel ${r.done ? 'done' : ''}`} onClick={() => openRelated(r.id, r.date)} title="Open it">
+                  {r.done ? <CheckCircle2 size={14} /> : <Link2 size={14} />}
+                  <span>
+                    {t.prefix}
+                    <b>{t.title}</b> · {typeLabel(r)} · {shortDate(r.date)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
       {format && <p className="pn-format">{format.replace(/^(exam |test |quiz )?format:\s*/i, 'Format: ')}</p>}
       {/* How to do it, step by step (Claude's guide, written ahead of time). */}
-      <AssignmentGuide it={it} raw={instructions} onOpen={openLink} />
+      <AssignmentGuide it={it} raw={instructions} onOpen={openLink} onItem={openItem} checksOn={!!account?.verified} />
       {it.readings.length > 0 && (
-        <details className="pn-readings">
+        <details className="pn-readings" open={it.type === 'reading'}>
           <summary>
             <span className="tb-h">
-              {TEST.has(it.type) ? 'Covers' : 'Readings'} ({it.readings.length})
+              {TEST.has(it.type) ? 'Covers' : it.readings.every((r) => r.inferred) ? 'This week’s reading' : 'Readings'} ({it.readings.length})
             </span>
           </summary>
           {it.readings.map((r) => (
@@ -1802,7 +1773,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
                     <BookOpen size={14} /> Read
                   </button>
                 ) : (
-                  <span className="muted sch-nopdf">Being written</span>
+                  <span className="muted sch-nopdf">{r.unlisted ? 'No textbook for this class in Kea yet' : 'Being written'}</span>
                 )}
               </div>
               {r.summary && <div className="rd-summary">{r.summary}</div>}
@@ -1825,9 +1796,9 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           <div className="tb-h">Study for this</div>
           <button
             className="btn primary sm"
-            onClick={() => openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: it.readings.map((r) => r.chapter), itemId: TEST.has(it.type) ? it.id : undefined })}
+            onClick={() => openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: practiceChapters, itemId: TEST.has(it.type) ? it.id : undefined })}
           >
-            <ClipboardCheck size={14} /> Study {it.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ')}
+            <ClipboardCheck size={14} /> Study {practiceChapters.map((c) => c.replace(/^Chapter /, 'Ch ')).join(', ')}
           </button>
           <div className="muted st-hint">A practice exam on everything this covers, by chapter and topic, with a walkthrough for every question.</div>
         </section>

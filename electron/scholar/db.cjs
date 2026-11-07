@@ -486,7 +486,7 @@ function placeLinksFor(r, course) {
   if (!places.length) return [];
   const own = [r.submission_url, r.reference_url, r.resource_url].filter((u) => u && !LIST_PAGE.test(u));
   const area = r.item_type === 'discussion' || /\bdiscussion\b/i.test(r.title) ? 'discussion' : ['quiz', 'exam', 'final_exam', 'midterm'].includes(r.item_type) ? 'quiz' : 'dropbox';
-  const t = norm(r.title.replace(/\((initial|response|replies|reply)[^)]*\)/i, ''));
+  const t = norm(r.title.replace(POST_HALF, ''));
   const mine = numbered(r.title);
   const pick = (list) => {
     // (A discussion topic's name starts with its forum's, "Module 3 Discussions: …"; a folder's colon is part of its name.)
@@ -557,9 +557,13 @@ function itemOutRaw(r, course, banner, readings, done, rooms, ev) {
   const of = siblingKey(r.title) && readings.siblings?.get(siblingKey(r.title));
   if (!chapters.length && of && !skip) chapters = of.chapters.length ? of.chapters : topicChapters(of.topic, readings.words);
   if (!chapters.length && /lab/.test(r.item_type)) chapters = byTopic();
-  // Otherwise an item with no chapter of its own reads that week's chapters, then its topic.
-  if (!chapters.length && banner && !skip) chapters = chaptersIn(banner.title);
+  // Otherwise an item with no chapter of its own reads that week's chapters, then its topic. (Marked as a guess: the
+  // panel says "This week's reading" and never offers to study it as if the item said so.)
+  let inferred = false;
+  if (!chapters.length && banner && !skip) (chapters = chaptersIn(banner.title)), (inferred = chapters.length > 0);
   if (!chapters.length) chapters = byTopic();
+  // A class with no chapter list (no textbook in Kea yet): a chapter its title names has nothing to read or study.
+  const unlisted = !readings.titles.size && !readings.pdfs.size;
   return {
     id: r.id,
     courseId: r.course_id,
@@ -604,7 +608,7 @@ function itemOutRaw(r, course, banner, readings, done, rooms, ev) {
     readings: chapters
       .filter((ch) => !readings.titles.size || readings.titles.has(ch) || readings.pdfs.has(ch))
       .sort((a, b) => chapterNumber(a) - chapterNumber(b))
-      .map((ch) => ({ chapter: ch, title: readings.titles.get(ch) || null, summary: readings.summaries?.get(ch) || null, pdf: readings.pdfs.get(ch) || null }))
+      .map((ch) => ({ chapter: ch, title: readings.titles.get(ch) || null, summary: readings.summaries?.get(ch) || null, pdf: readings.pdfs.get(ch) || null, ...(inferred ? { inferred: true } : {}), ...(unlisted ? { unlisted: true } : {}) }))
   };
 }
 
@@ -646,36 +650,72 @@ async function items(file, textbooks, done, { from, to, courseId }) {
 /** Words that name a kind of work or a post, never what it's about. */
 const NOT_TOPIC = new Set(['online', 'assignment', 'assignments', 'report', 'reports', 'initial', 'response', 'responses', 'replies', 'reply', 'notebook', 'handout', 'discussion', 'module', 'chapter', 'using', 'with', 'from', 'about', 'their', 'final', 'review', 'quiz', 'exam', 'post', 'posts', 'includes', 'science', 'interactive', 'digital', 'observations', 'principle', 'identification']);
 const topicSet = (title) => new Set(String(title || '').replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter((w) => w.length >= 5 && !NOT_TOPIC.has(w)).map((w) => w.replace(/s$/, '')));
+/** The half of a discussion a title names, in brackets or after a dash or colon: "(Initial Post)", "- Replies". */
+const POST_HALF = /\s*(?:\((?:initial|response|replies|reply)[^)]*\)|[-–—:]\s*(?:initial\s+posts?|response\s+posts?|responses|replies|reply)\b[^]*)$/i;
+/** A discussion's name without the half it is ("Discussion 6 - Initial Post" → "discussion 6"). */
+const postBase = (t) => String(t || '').replace(POST_HALF, '').trim().toLowerCase();
 /**
- * The work an item goes with, so its panel can point there: a discussion built on a lab ("Online Assignment 9:
- * Buffers" on "Lab report #9: Using Buffers"), and the other half of a discussion (its initial post and its replies).
- * Same class, within ten days, and a topic word in both titles (not just "assignment" or a number).
+ * The lab an item is part of, by its number: "Lab 7: Enzyme Activity", "Lab 7 Handout", "Pre-lab Quiz 7", "Lab report
+ * #9", "Lab 9 Discussion: Buffer capacity". Never a lab practical (it covers many labs) or "lab coat".
+ */
+function labNumber(title) {
+  const t = String(title || '').toLowerCase();
+  if (/\blab(oratory)?\s+(practical|final|exam)\b/.test(t)) return null;
+  const m = /\b(?:pre-?\s*)?lab(?:oratory)?\b(?:\s+(?:report|quiz|handout|notebook|discussion|exercise|activity|assignment|worksheet|write-?up|session|results?|data))*\s*#?\s*(\d{1,2})\b/.exec(t);
+  return m ? Number(m[1]) : null;
+}
+/** Where a part of a lab comes in the lab's order: pre-lab, handout (and what to bring), the session, report, discussion. */
+function labRole(i) {
+  if (i.type === 'pre_lab_quiz' || /\bpre-?\s*lab\b/i.test(i.title)) return 0;
+  if (/\breport|notebook|write-?up\b/i.test(i.title)) return 3;
+  if (i.type === 'discussion' || i.type === 'peer_review') return 4;
+  if (i.type === 'lab_handout' || /\bhandout|manual|procedure\b/i.test(i.title)) return 1;
+  if (i.type === 'other_deadline') return 1.5;
+  if (i.type === 'lab') return 2;
+  return 2.5;
+}
+/**
+ * The work each item goes with, so its panel can point there (and a guide step can open it):
+ *   - the parts of the same lab, by its number ("Lab 7" session, handout, pre-lab quiz, report, results discussion),
+ *     with what to bring on the session's day ("Bring lab coat and goggles"), in the lab's order;
+ *   - work built on a lab without its number ("Online Assignment 9: Buffers" on "Lab report #9: Using Buffers"): a topic
+ *     word in both titles (not just "assignment" or a number), within ten days;
+ *   - the other half of a discussion (its initial post and its replies), however the title names them.
+ * Same class, within two weeks for a lab's parts.
  */
 function relateItems(items) {
   const POSTS = new Set(['discussion', 'peer_review']);
-  const LABS = new Set(['lab', 'lab_handout']);
+  const NEVER = new Set(['weekly_reading', 'break', 'no_class', 'administrative_deadline', 'lecture', 'recitation', 'seminar', 'class_session', 'work_shift']);
   const day = (d) => Date.parse(`${d}T12:00`) / 864e5;
-  const base = (t) => String(t || '').replace(/\((initial|response|replies|reply)[^)]*\)/i, '').trim().toLowerCase();
-  for (const a of items) {
-    if (!POSTS.has(a.type)) continue;
+  const near = (a, b, n) => Math.abs(day(a.date) - day(b.date)) <= n;
+  const entry = (b, why, group) => ({ id: b.id, title: b.title, type: b.type, date: b.date, why, done: !!b.done, ...(group ? { group } : {}) });
+  const cand = items.filter((i) => !NEVER.has(i.type) && !i.hub);
+  const num = new Map(cand.map((i) => [i, labNumber(i.title)]));
+  // What to bring on a lab's day belongs to that lab.
+  for (const i of cand) {
+    if (num.get(i) != null || i.type !== 'other_deadline') continue;
+    const session = cand.find((s) => s.type === 'lab' && s.courseId === i.courseId && s.date === i.date && num.get(s) != null);
+    if (session && /\b(bring|goggles|coat|lab|safety|apron|gloves)\b/i.test(i.title)) num.set(i, num.get(session));
+  }
+  const isLabWork = (i) => num.get(i) != null || i.type === 'lab' || i.type === 'lab_handout' || i.type === 'pre_lab_quiz';
+  for (const a of cand) {
+    const rel = new Map();
+    const n = num.get(a);
     const words = topicSet(a.title);
-    const rel = [];
-    for (const b of items) {
-      if (b === a || b.courseId !== a.courseId || Math.abs(day(a.date) - day(b.date)) > 10) continue;
-      const half = POSTS.has(b.type) && base(b.title) === base(a.title);
-      const lab = LABS.has(b.type) && b.points !== 0 && [...topicSet(b.title)].some((w) => words.has(w));
-      if (half || lab) rel.push({ id: b.id, title: b.title, type: b.type, date: b.date, why: half ? 'post' : 'lab' });
+    for (const b of cand) {
+      if (b === a || b.courseId !== a.courseId) continue;
+      if (n != null && num.get(b) === n && near(a, b, 14)) rel.set(b.id, { e: entry(b, 'lab', `Lab ${n}`), order: labRole(b) });
+      else if (POSTS.has(a.type) && POSTS.has(b.type) && near(a, b, 10) && postBase(b.title) === postBase(a.title) && (POST_HALF.test(a.title) || POST_HALF.test(b.title)))
+        rel.set(b.id, { e: entry(b, 'post'), order: 10 });
+      // (A topic word shared with a lab's work, when one of the two has no lab number: "Online Assignment 9: Buffers".)
+      else if ((n == null || num.get(b) == null) && (isLabWork(a) || isLabWork(b)) && !(isLabWork(a) && isLabWork(b) && n != null && num.get(b) != null) && near(a, b, 10) && [...topicSet(b.title)].some((w) => words.has(w)))
+        rel.set(b.id, { e: entry(b, n == null && isLabWork(b) ? 'lab' : 'topic', num.get(b) != null ? `Lab ${num.get(b)}` : undefined), order: num.get(b) != null ? labRole(b) : 5 });
     }
-    // (The lab, then the other half of the discussion; one entry per kind of lab item is plenty.)
-    rel.sort((x, y) => (x.why === y.why ? x.date.localeCompare(y.date) : x.why === 'lab' ? -1 : 1));
-    if (rel.length) a.related = rel.slice(0, 3);
-    for (const r of rel) if (r.why === 'lab') {
-      const b = items.find((i) => i.id === r.id);
-      if (b) (b.related = b.related || []).some((x) => x.id === a.id) || b.related.push({ id: a.id, title: a.title, type: a.type, date: a.date, why: 'post' });
-    }
+    if (!rel.size) continue;
+    a.related = [...rel.values()].sort((x, y) => x.order - y.order || x.e.date.localeCompare(y.e.date)).slice(0, 8).map((x) => x.e);
+    if (n != null) a.labGroup = `Lab ${n}`;
   }
 }
-
 /**
  * An item that doesn't name its platform ("HW: Final Review Ch1-Ch3") but whose siblings all do ("HW: 4.5", "HW: 4.6",
  * every one done in ALEKS) is done there too: same class, same name before the colon, at least three siblings, all on
@@ -885,4 +925,4 @@ async function sourceText(file, id) {
   return r || null;
 }
 
-module.exports = { searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { handIn, norm } };
+module.exports = { searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { handIn, norm, relateItems, labNumber, postBase } };

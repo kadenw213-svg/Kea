@@ -995,7 +995,8 @@ export interface Guide {
   notebook?: { item: string; detail: string }[];
   rubric?: GuideRubric | null;
   /** `unlocks`: work the platform wants done before it shows the rest; checking it off asks Kea to read the rest. */
-  steps: { title: string; text: string; detail?: string; links?: { label: string; url: string }[]; unlocks?: boolean }[];
+  /** `item`: other work in Kea the step is about (the lab a discussion needs), shown as a button that opens it in Kea. */
+  steps: { title: string; text: string; detail?: string; links?: { label: string; url: string }[]; unlocks?: boolean; item?: { id: string; label: string } }[];
   submit: { what: string; where: string; format: string; due: string; url?: string };
   graded: { criterion: string; points: number | null; how: string }[];
   gaps: string[];
@@ -1137,12 +1138,18 @@ export interface ScholarReading {
   summary?: string | null;
   /** The chapter's study PDF in the class textbook, when one has been made. */
   pdf: { file: string; pages: number | null; title: string } | null;
+  /** Guessed from the week it falls in (the week's reading), not named by the item itself: never offered as its Study. */
+  inferred?: boolean;
+  /** The class has no chapter list (no textbook in Kea yet): a chapter its title names, with nothing to read or study. */
+  unlisted?: boolean;
 }
 export interface ScholarLink {
   label: string;
   url: string;
   kind: string;
   chapter?: string | null;
+  /** Where the panel lists it, when that isn't what its kind says (a hand-in link that isn't the item's own: More). */
+  group?: 'submit' | 'reading' | 'video' | 'slides' | 'practice' | 'study' | 'platform' | 'other';
 }
 export interface ScholarItem {
   id: string;
@@ -1180,7 +1187,8 @@ export interface ScholarItem {
   /** The outside platforms it's done on (Science Interactive, ALEKS…), through the class's own link. */
   platformLinks?: ScholarLink[];
   /** The work it goes with: the lab a discussion is built on, or the other half of a discussion. */
-  related?: { id: string; title: string; type: string; date: string; why: 'lab' | 'post' }[];
+  /** Work it goes with: the other half of a discussion (post), the same lab's parts (lab: its pre-lab, handout, session, report, discussion, in that order), or work on the same topic (topic). */
+  related?: { id: string; title: string; type: string; date: string; why: 'lab' | 'post' | 'topic'; done?: boolean; group?: string }[];
   /** When it opens on the class site, while that's still ahead (its link leads to a locked page until then). */
   opensAt?: string | null;
   readings: ScholarReading[];
