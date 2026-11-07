@@ -46,13 +46,15 @@ export async function practiceSources(_db: string, _tb: string, { courseId, chap
   const detail = data.details.find((d) => d.id === c?.id);
   if (!c || !detail) return null;
   const want = new Set(labels);
+  // (A class with no chapters is studied as a whole: every test of it. The PC adds its outcomes and work to the brief.)
+  const whole = !detail.chapters.length && !want.size;
   const out = detail.chapters
     .filter((ch) => want.has(ch.label))
     .map((ch) => ({ label: ch.label, title: ch.title, summary: ch.summary, sections: ch.sections, objectives: ch.objectives, vocabulary: ch.vocabulary, reading_url: ch.readingUrl, textbook_source: null, depth_gaps: null, review_links: [] }));
   const tests = data.items
-    .filter((i) => i.courseId === c.id && TESTS.has(i.type) && (i.id === itemId || i.readings.some((r) => want.has(r.chapter))))
+    .filter((i) => i.courseId === c.id && TESTS.has(i.type) && (whole || i.id === itemId || i.readings.some((r) => want.has(r.chapter))))
     .map((i) => ({ id: i.id, title: i.title, type: i.type, date: i.date, chapters: i.readings.map((r) => r.chapter), study_focus: i.studyFocus, description: i.description, review_links: [] }));
-  return { course: { id: c.id, code: c.code, name: c.name }, item, chapters: out, tests };
+  return { course: { id: c.id, code: c.code, name: c.name }, item, chapters: out, tests, course_outcomes: [] as unknown[], ...(whole ? { whole: true, work: [] as unknown[] } : {}) };
 }
 
 export default { setData, courses, nextTests, practiceSources };

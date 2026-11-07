@@ -141,6 +141,55 @@ function coveredOf(r, known) {
 const chapterNumber = (label) => parseFloat(String(label).replace(/[^\d.]/g, '')) || 0;
 
 const ACTIVE = "status NOT IN ('superseded', 'cancelled')";
+const TEST_TYPES = "('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz')";
+// Work whose description says what the class practices (for Study on a class with no chapters).
+const WORK_TYPES = "('assignment', 'paper', 'lab', 'lab_handout', 'discussion', 'peer_review', 'project', 'presentation', 'homework', 'reading')";
+
+/**
+ * A chapter label as its kind and number: "Chapter 3", "Ch. 3", "Module 1", "Unit 2" or a bare "3". Labels that aren't
+ * numbered compare as their lowercased text.
+ */
+function labelKey(label) {
+  const s = String(label ?? '').trim();
+  const m = /^(?:(chapter|chap\.?|ch\.?|module|mod\.?|unit)\s*)?(\d+[a-z]?)$/i.exec(s);
+  if (!m) return { kind: null, n: s.toLowerCase() };
+  return { kind: !m[1] ? null : /^ch/i.test(m[1]) ? 'chapter' : /^mod/i.test(m[1]) ? 'module' : 'unit', n: m[2].toLowerCase() };
+}
+/** Two labels name the same chapter: same number and kind, or one of them a bare number ("33" is "Chapter 33"). */
+function sameChapter(a, b) {
+  const x = labelKey(a);
+  const y = labelKey(b);
+  return x.n !== '' && x.n === y.n && (!x.kind || !y.kind || x.kind === y.kind);
+}
+
+const OUTCOME_ORDER = { course: 0, module: 1, outline: 2, recommended: 3 };
+/**
+ * A class's objectives from its syllabus and course pages, as the scan saved them (course_outcomes): each
+ * { kind: 'course' | 'module' | 'outline' | 'recommended', ref, text, chapters }, "all" dropped from chapters. The ones
+ * marked not tested (a lab or communication skill, with the reason) are left out. Empty for a database from before
+ * the table.
+ */
+function outcomesOf(db, courseId) {
+  try {
+    if (!rows(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'course_outcomes'").length) return [];
+    return rows(db, 'SELECT * FROM course_outcomes WHERE course_id = ?', [courseId])
+      .filter((o) => String(o.text || '').trim() && (o.not_tested == null || /^\s*(0|false)?\s*$/i.test(String(o.not_tested))))
+      .map((o) => ({
+        kind: String(o.kind || 'course'),
+        ref: String(o.ref ?? ''),
+        text: String(o.text).trim(),
+        chapters: json(o.chapters_json, []).filter((x) => typeof x === 'string' && x.trim() && x.trim().toLowerCase() !== 'all')
+      }))
+      .sort((a, b) => (OUTCOME_ORDER[a.kind] ?? 9) - (OUTCOME_ORDER[b.kind] ?? 9) || a.ref.localeCompare(b.ref, undefined, { numeric: true }));
+  } catch (err) {
+    console.error('Course outcomes', err.message);
+    return [];
+  }
+}
+/** An outcome for the whole class, given once: a course outcome, or one tied to no chapter. */
+const courseWide = (o) => o.kind === 'course' || !o.chapters.length;
+/** The outcomes tied to one chapter. */
+const outcomesFor = (list, label) => list.filter((o) => !courseWide(o) && o.chapters.some((ch) => sameChapter(ch, label))).map(({ kind, ref, text }) => ({ kind, ref, text }));
 
 /** A course's study PDFs by chapter, and its chapter titles. Missing files are looked for in the textbook folder. */
 function readingsFor(db, courseId, code, textbooks) {
@@ -801,7 +850,10 @@ async function course(file, textbooks, done, id) {
   const weeks = rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type = 'weekly_reading' AND ${ACTIVE} ORDER BY date`, [id]).map((r) => itemOut(r, c, null, readings, done));
   const portal = rows(db, 'SELECT kind, label, url FROM course_portal_links WHERE course_id = ? ORDER BY kind, label', [id]);
   const w = withdrawnOf(file).get(c.id) || null;
-  return { id: c.id, code: c.course_code, name: c.name, term: c.term, instructor: c.instructor, contact: c.instructor_contact, campus: c.campus, delivery: c.delivery_format, url: c.d2l_url, start: c.start_date, end: c.end_date, chapters, weeks, portal, withdrawn: w ? { at: w.at, by: w.by } : null };
+  // (What Study works from when the class has no chapters: its objectives and its tests.)
+  const outcomes = outcomesOf(db, c.id).length;
+  const tests = rows(db, `SELECT COUNT(*) AS n FROM academic_items WHERE course_id = ? AND item_type IN ${TEST_TYPES} AND ${ACTIVE}`, [id])[0]?.n || 0;
+  return { outcomes, tests, id: c.id, code: c.course_code, name: c.name, term: c.term, instructor: c.instructor, contact: c.instructor_contact, campus: c.campus, delivery: c.delivery_format, url: c.d2l_url, start: c.start_date, end: c.end_date, chapters, weeks, portal, withdrawn: w ? { at: w.at, by: w.by } : null };
 }
 
 /**
@@ -872,6 +924,10 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
   // (Every chapter, for the textbook run: then every test counts too; an empty set here dropped every test from the
   // textbook notes, so they were written without the tests' focus or review sheets.)
   const want = new Set(allChapters ? rows(db, 'SELECT chapter_label FROM chapter_topics WHERE course_id = ?', [courseId]).map((x) => x.chapter_label) : labels);
+  const outcomes = outcomesOf(db, courseId);
+  const knownLabels = new Set(rows(db, 'SELECT chapter_label FROM chapter_topics WHERE course_id = ?', [courseId]).map((x) => x.chapter_label));
+  // A class with no chapters at all is studied as a whole: from its objectives, every test, and its work's descriptions.
+  const whole = !knownLabels.size && !want.size;
   const out = rows(db, 'SELECT * FROM chapter_topics WHERE course_id = ?', [courseId])
     .filter((t) => allChapters || want.has(t.chapter_label))
     .sort((a, b) => chapterNumber(a.chapter_label) - chapterNumber(b.chapter_label))
@@ -881,6 +937,8 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
       summary: t.summary || null,
       sections: json(t.sections_json, []),
       objectives: [...json(t.objectives_json, []), ...json(t.added_objectives_json, [])],
+      // The syllabus's module outcomes and topical outline for this chapter (course_outcomes).
+      outcomes: outcomesFor(outcomes, t.chapter_label),
       vocabulary: [t.vocabulary, t.added_vocabulary].filter(Boolean).join('; '),
       reading_url: t.reading_url || null,
       textbook_source: sources.get(t.chapter_label) || null,
@@ -895,11 +953,11 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
     }));
   // Every test that covers these chapters, with what the instructor said it covers (scraped from the class site) and
   // its review sheets: the questions should look like these tests.
-  const knownLabels = new Set(rows(db, 'SELECT chapter_label FROM chapter_topics WHERE course_id = ?', [courseId]).map((x) => x.chapter_label));
-  const tests = rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} ORDER BY date`, [courseId])
+  const tests = rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type IN ${TEST_TYPES} AND ${ACTIVE} ORDER BY date`, [courseId])
     .map((r) => ({ r, covered: coveredOf(r, knownLabels), focus: json(r.study_focus_json, []) }))
-    // (Every test on these chapters counts, even with no study focus posted yet: its format and date still matter.)
-    .filter(({ r, covered }) => (item && r.id === item.id) || covered.some((ch) => want.has(ch)))
+    // (Every test on these chapters counts, even with no study focus posted yet: its format and date still matter. A
+    // class with no chapters: every test.)
+    .filter(({ r, covered }) => whole || (item && r.id === item.id) || covered.some((ch) => want.has(ch)))
     .map(({ r, covered, focus }) => ({
       id: r.id,
       title: r.title,
@@ -911,8 +969,16 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
       review_links: [...json(r.weekly_links_json, []), ...[r.reference_url && { label: r.reference_url_label, url: r.reference_url }, r.resource_url && { label: r.resource_url_label, url: r.resource_url }].filter(Boolean)].map((l) => ({ label: l.label || '', url: l.url }))
     }))
     // The test the set is for first, then the ones that cover the most of these chapters.
-    .sort((a, b) => (b.id === item?.id) - (a.id === item?.id) || b.chapters.filter((ch) => want.has(ch)).length / b.chapters.length - a.chapters.filter((ch) => want.has(ch)).length / a.chapters.length);
-  return { course: { id: c.id, code: c.course_code, name: c.name }, item, chapters: out, tests };
+    .sort((a, b) => (b.id === item?.id) - (a.id === item?.id) || (whole ? 0 : b.chapters.filter((ch) => want.has(ch)).length / b.chapters.length - a.chapters.filter((ch) => want.has(ch)).length / a.chapters.length));
+  // The class's outcomes that belong to no one chapter, once (with no chapters, every one, with what it names).
+  const course_outcomes = outcomes.filter((o) => whole || courseWide(o));
+  // With no chapters, what the class's work asks for says what it practices.
+  const work = whole
+    ? rows(db, `SELECT id, title, item_type, date, description FROM academic_items WHERE course_id = ? AND item_type IN ${WORK_TYPES} AND ${ACTIVE} AND description IS NOT NULL AND trim(description) != '' ORDER BY date`, [courseId])
+        .slice(0, 40)
+        .map((r) => ({ id: r.id, title: r.title, type: r.item_type, date: r.date, description: r.description }))
+    : [];
+  return { course: { id: c.id, code: c.course_code, name: c.name }, item, chapters: out, tests, course_outcomes, ...(whole ? { whole: true, work } : {}) };
 }
 
 /**
@@ -971,4 +1037,4 @@ async function sourceText(file, id) {
   return r || null;
 }
 
-module.exports = { termCourses, searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { handIn, norm, relateItems, labNumber, postBase, DUE_KINDS } };
+module.exports = { termCourses, searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { sameChapter, outcomesOf, handIn, norm, relateItems, labNumber, postBase, DUE_KINDS } };

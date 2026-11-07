@@ -1274,6 +1274,10 @@ export interface ScholarCourseDetail {
   chapters: ScholarChapter[];
   weeks: ScholarItem[];
   portal: { kind: string; label: string; url: string }[];
+  /** How many syllabus outcomes the scan saved for it (not counting ones marked not tested). */
+  outcomes?: number;
+  /** How many tests and quizzes it has. */
+  tests?: number;
 }
 
 export interface WikiCandidate {

@@ -155,6 +155,8 @@ Every question has:
 - `section`: the textbook section that teaches the answer, exactly as the chapter's `Sections:` line in the brief
   writes it ("5.1 The Gaseous State"). Kea opens the textbook there when the student taps the book icon, so pick the
   section a student should read to answer it.
+  A class with no chapters (the brief says so): leave `chapter` out and put the outcome or unit it tests, in a few
+  words, in `section`, so the student can pick topics to study.
 - `source`: where it came from: "FunSheet Ch 5", "Study focus", "Objective", "Textbook 5.3".
 - `level`: how hard it is: `recall` (remember a term or fact), `apply` (use one idea: calculate, classify, predict,
   interpret), or `multistep` (chain two or more steps or concepts: a unit conversion before a gas law, grams of an

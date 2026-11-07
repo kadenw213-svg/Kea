@@ -20,6 +20,8 @@ export interface StudyScope {
   itemId?: string;
   /** The chapters ticked when it opens (all of them when not given and there are three or fewer). */
   selected?: string[];
+  /** A class with no chapters: studied as a whole, its questions grouped by topic. */
+  whole?: boolean;
 }
 
 /** Open the Study page for a scope (in the full-window player). */
@@ -29,7 +31,9 @@ export const openStudyHub = (scope: StudyScope) => useScholar.getState().set({ s
  * the chapters given instead (a chapter's own Study button).
  */
 export const openClassStudy = (c: { id: string; code: string }, chapters: string[], selected?: string[], stream?: boolean) =>
-  stream && selected?.length ? openStream({ courseId: c.id, code: c.code, chapters: selected }) : openStudyHub({ courseId: c.id, code: c.code, title: 'Study', chapters, selected: selected || [] });
+  stream && selected?.length
+    ? openStream({ courseId: c.id, code: c.code, chapters: selected })
+    : openStudyHub({ courseId: c.id, code: c.code, title: 'Study', chapters, selected: selected || [], ...(chapters.length ? {} : { whole: true }) });
 export const parseScope = (id: string): StudyScope | null => {
   try {
     return JSON.parse(decodeURIComponent(id.slice(STUDY_PAGE.length)));
@@ -80,6 +84,10 @@ function weakSpots(pool: PoolItem[]) {
 }
 
 export function StudyHub({ scope }: { scope: StudyScope }) {
+  // (A class with no chapters: one group, the whole class, its questions by topic. Its key is the empty chapter.)
+  const whole = !!scope.whole && !scope.chapters.length && !scope.itemId;
+  const groups = whole ? [''] : scope.chapters;
+  const keyOf = (p: PoolItem) => (whole ? `${SEP}${p.section || 'Other'}` : topicOf(p));
   const sets = useStudySets();
   const canMake = useCanMake();
   const [q, setQ] = useState<ReviewQueue | null>(null);
@@ -88,7 +96,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   // The class's chapters in curriculum order.
   const [curriculum, setCurriculum] = useState<string[] | null>(null);
   const [busy, setBusy] = useState('');
-  const [open, setOpen] = useState<string[]>(() => (scope.chapters.length === 1 ? scope.chapters : []));
+  const [open, setOpen] = useState<string[]>(() => (whole ? [''] : scope.chapters.length === 1 ? scope.chapters : []));
   // What's ticked: topics, as "chapter \0 section" (and BOOKMARKS). Filled in once the questions are read.
   const [ticked, setTicked] = useState<Set<string> | null>(null);
 
@@ -114,9 +122,9 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
 
   // Each chapter's topics (textbook sections) and their questions.
   const tree = useMemo(() => {
-    const by = new Map<string, Map<string, PoolItem[]>>(scope.chapters.map((ch) => [ch, new Map()]));
+    const by = new Map<string, Map<string, PoolItem[]>>(groups.map((ch) => [ch, new Map()]));
     for (const p of pool || []) {
-      const ch = p.chapter || scope.chapters[0];
+      const ch = whole ? '' : p.chapter || scope.chapters[0];
       if (!by.has(ch)) by.set(ch, new Map());
       const t = p.section || 'Other';
       by.get(ch)!.set(t, [...(by.get(ch)!.get(t) || []), p]);
@@ -126,6 +134,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   }, [pool, scope.chapters.join('|')]);
   useEffect(() => {
     if (!pool || ticked) return;
+    if (whole) return setTicked(new Set(pool.map(keyOf)));
     const start = scope.selected ?? (scope.itemId || scope.chapters.length <= 3 ? scope.chapters : []);
     setTicked(new Set(pool.filter((p) => start.includes(p.chapter || scope.chapters[0])).map(topicOf)));
   }, [pool]);
@@ -133,23 +142,24 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   const weak = useMemo(() => weakSpots(pool || []), [pool]);
   const weakKeys = useMemo(() => new Set(weak.keys), [weak]);
   const sel = ticked || new Set<string>();
-  const inPick = (pool || []).filter((p) => sel.has(topicOf(p)) || (sel.has(BOOKMARKS) && p.starred) || (sel.has(WEAK) && weakKeys.has(p.k)));
+  const inPick = (pool || []).filter((p) => sel.has(keyOf(p)) || (sel.has(BOOKMARKS) && p.starred) || (sel.has(WEAK) && weakKeys.has(p.k)));
   const bookmarked = (pool || []).filter((p) => p.starred).length;
   const c = q?.counts[scope.courseId];
   const days = c?.test ? Math.round((Date.parse(`${c.test.date}T12:00`) - Date.now()) / 864e5) : null;
   // The chapters ticked (by any of their topics, or the chapter itself when it has no questions yet).
-  const tickedChapters = scope.chapters.filter((ch) => [...sel].some((k) => k.startsWith(`${ch}${SEP}`)));
-  const target = scope.itemId ? { itemId: scope.itemId } : { chapters: tickedChapters.length ? tickedChapters : scope.chapters };
-  // A chapter being written now (a set still being made for it alone).
-  const writing = (ch: string) => (sets || []).some((st) => st.courseId === scope.courseId && st.status === 'making' && st.kind === 'exam' && st.chapters.length === 1 && st.chapters[0] === ch);
-  const toWrite = tickedChapters.filter((ch) => !writing(ch));
+  const tickedChapters = groups.filter((ch) => [...sel].some((k) => k.startsWith(`${ch}${SEP}`) && k !== BOOKMARKS && k !== WEAK));
+  const target = scope.itemId ? { itemId: scope.itemId } : whole ? { chapters: [] } : { chapters: tickedChapters.length ? tickedChapters : scope.chapters };
+  // A chapter being written now (a set still being made for it alone; for the whole class, one on no chapter).
+  const writing = (ch: string) =>
+    (sets || []).some((st) => st.courseId === scope.courseId && st.status === 'making' && st.kind === 'exam' && (ch ? st.chapters.length === 1 && st.chapters[0] === ch : !st.chapters.length && !st.itemId));
+  const toWrite = whole ? (writing('') ? [] : ['']) : tickedChapters.filter((ch) => !writing(ch));
   // 25 new questions for each ticked chapter (one set each, written one after another on your Claude plan).
   const writeTicked = async () => {
     setBusy('write');
     try {
-      for (const ch of toWrite) await api.scholar.studyMake({ kind: 'exam', courseId: scope.courseId, chapters: [ch], count: 25, mode: 'new' });
+      for (const ch of toWrite) await api.scholar.studyMake({ kind: 'exam', courseId: scope.courseId, chapters: ch ? [ch] : [], count: 25, mode: 'new' });
       useScholar.getState().set({ version: useScholar.getState().version + 1 });
-      toast(`Writing 25 questions for ${toWrite.length === 1 ? short(toWrite[0]) : `each of ${toWrite.length} chapters`}, each with its walkthrough. A chapter takes a few minutes.`, 'success');
+      toast(whole ? 'Writing 25 questions for this class, each with its walkthrough. It takes a few minutes.' : `Writing 25 questions for ${toWrite.length === 1 ? short(toWrite[0]) : `each of ${toWrite.length} chapters`}, each with its walkthrough. A chapter takes a few minutes.`, 'success');
     } catch (err: any) {
       toast(err?.message || 'Kea couldn’t start that.', 'error');
     } finally {
@@ -171,15 +181,28 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   // Start: the stream on what's ticked. Every chapter of the class ticked (Select all, or one by one): the class in
   // curriculum order, one chapter at a time, the next once this one is learned.
   const start = () => {
+    if (whole) {
+      const all = allKeys.every((k) => sel.has(k));
+      openStream({
+        courseId: scope.courseId,
+        code: scope.code,
+        chapters: [],
+        whole: true,
+        ...(all ? {} : { topics: chapterKeys }),
+        ...(sel.has(BOOKMARKS) ? { bookmarks: true } : {}),
+        ...(sel.has(WEAK) && weak.keys.length ? { weak: weak.keys } : {})
+      });
+      return;
+    }
     const order = curriculum?.length ? [...curriculum.filter((ch) => tickedChapters.includes(ch)), ...tickedChapters.filter((ch) => !curriculum.includes(ch))] : tickedChapters;
-    const whole = tickedChapters.every((ch) => keysOf(ch, tree.get(ch) || new Map()).every((k) => sel.has(k)));
+    const allTopics = tickedChapters.every((ch) => keysOf(ch, tree.get(ch) || new Map()).every((k) => sel.has(k)));
     // (The Study page of a test shows only its chapters: that isn't the whole class.)
     const everyChapter = !scope.itemId && allKeys.length > 0 && allKeys.every((k) => sel.has(k)) && (curriculum || []).every((ch) => scope.chapters.includes(ch));
     openStream({
       courseId: scope.courseId,
       code: scope.code,
       chapters: order,
-      ...(whole ? {} : { topics: chapterKeys }),
+      ...(allTopics ? {} : { topics: chapterKeys }),
       ...(sel.has(BOOKMARKS) ? { bookmarks: true } : {}),
       ...(sel.has(WEAK) && weak.keys.length ? { weak: weak.keys } : {}),
       ...(everyChapter ? { progression: true } : {})
@@ -192,14 +215,14 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
         <span className="hub-code">{scope.code}</span>
         <h2>{scope.title}</h2>
         <div className="muted">
-          {scope.chapters.length === 1 ? `${short(scope.chapters[0])}${chapterTitle(scope.chapters[0]) && scope.title !== `${scope.chapters[0]}: ${chapterTitle(scope.chapters[0])}` ? `: ${chapterTitle(scope.chapters[0])}` : ''}` : 'Pick the chapters or topics to study'}
+          {whole ? 'The whole class, by topic' : scope.chapters.length === 1 ? `${short(scope.chapters[0])}${chapterTitle(scope.chapters[0]) && scope.title !== `${scope.chapters[0]}: ${chapterTitle(scope.chapters[0])}` ? `: ${chapterTitle(scope.chapters[0])}` : ''}` : 'Pick the chapters or topics to study'}
           {c?.test && days != null && days >= 0 ? ` · ${c.test.title} ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`}` : ''}
         </div>
       </div>
 
       <div className="hub-tree">
         <div className="hub-tree-head">
-          <span className="tb-h">Chapters</span>
+          <span className="tb-h">{whole ? 'Topics' : 'Chapters'}</span>
           {allKeys.length > 0 && (
             <button className="link-btn" onClick={() => toggle(allKeys, chapterKeys.length < allKeys.length)}>
               {chapterKeys.length < allKeys.length ? 'Select all' : 'Clear'}
@@ -256,7 +279,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
                     </button>
                     <button className="hub-ch-main" onClick={() => (topics.size > 1 ? setOpen(isOpen ? open.filter((x) => x !== ch) : [...open, ch]) : toggle(keys, state !== 'all'))}>
                       <span className="hub-ch-title">
-                        <b>{short(ch)}</b> {chapterTitle(ch)}
+                        <b>{ch ? short(ch) : 'Whole class'}</b> {chapterTitle(ch)}
                       </span>
                       <span className="hub-ch-sub muted">{writing(ch) ? 'Being written…' : count ? `${count} questions${topics.size > 1 ? ` · ${topics.size} topics` : ''}` : 'No questions yet'}</span>
                       {topics.size > 1 && (isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />)}
@@ -299,7 +322,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
           title={canMake === false ? 'Connect your Claude account in Scans to write questions' : 'Each chapter gets its own set of 25 new questions (multiple choice, fill in the blank, matching and more), each with its walkthrough'}
         >
           {busy === 'write' ? <Loader2 size={13} className="spin" /> : <Sparkles size={13} />}{' '}
-          {toWrite.length ? `Write 25 questions for ${toWrite.length === 1 ? short(toWrite[0]) : `each of ${toWrite.length} chapters`}` : 'Tick chapters to write questions for'}
+          {whole ? (toWrite.length ? 'Write 25 questions for this class' : 'Being written…') : toWrite.length ? `Write 25 questions for ${toWrite.length === 1 ? short(toWrite[0]) : `each of ${toWrite.length} chapters`}` : 'Tick chapters to write questions for'}
         </button>
         {toWrite.length > 1 && <span className="muted hub-write-which">{chapterList(toWrite)}</span>}
         <button
