@@ -17,6 +17,7 @@ const HUB = ['../../../KeaS/hub/index.mjs', '../../../orgs-keas/hub/index.mjs'].
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kea-work-'));
 const handlers = {};
 const sent = [];
+let signedInAs = null;
 let hubReq = async (method, p, body) => {
   sent.push({ method, p, body });
   return { events: [] };
@@ -26,7 +27,7 @@ const fakeElectron = { app: { getPath: () => dir }, ipcMain: { handle: (n, f) =>
 const load = Module._load;
 Module._load = function (req, parent, ...rest) {
   if (req === 'electron') return fakeElectron;
-  if (req === './hub.cjs' && parent?.filename?.endsWith('hubOrg.cjs')) return { req: (...a) => hubReq(...a) };
+  if (req === './hub.cjs' && parent?.filename?.endsWith('hubOrg.cjs')) return { req: (...a) => hubReq(...a), cached: () => signedInAs };
   return load.call(this, req, parent, ...rest);
 };
 const hubOrg = require('../../electron/hubOrg.cjs');
@@ -93,6 +94,20 @@ test('shifts are kept on this PC for when the Hub is unreachable', async () => {
   assert.deepEqual([off.ok, off.value.offline, off.value.events[0].id], [true, true, 'shift:9']);
   hubReq = async () => { throw Object.assign(new Error('Sign in again.'), { status: 401 }); };
   assert.equal((await handlers['hubOrg:events']({}, {})).ok, false, 'other errors are not hidden');
+});
+
+test('the saved shifts belong to the account that fetched them', async () => {
+  const ev = { id: 'shift:7', kind: 'shift', orgId: 'o', orgName: 'Pool', title: 'Lifeguard', start: '2026-12-03T12:00:00.000Z', end: '2026-12-03T16:00:00.000Z', date: '2026-12-03' };
+  const range = { from: '2026-12-01T00:00:00Z', to: '2026-12-31T00:00:00Z' };
+  signedInAs = { id: 'ana' };
+  hubReq = async () => ({ events: [ev] });
+  await handlers['hubOrg:events']({}, range);
+  hubReq = async () => { throw Object.assign(new Error("Can't reach the Kea Hub"), { status: 0 }); };
+  assert.deepEqual((await handlers['hubOrg:events']({}, range)).value.events.map((e) => e.id), ['shift:7']);
+  // Someone else signed in on this PC, offline: nothing of Ana's.
+  signedInAs = { id: 'max' };
+  assert.deepEqual((await handlers['hubOrg:events']({}, range)).value.events, []);
+  signedInAs = null;
 });
 
 test('live: make an org, join it with a code, see it in the to-do box', { skip: !HUB && 'No KeaS checkout beside this one' }, async () => {

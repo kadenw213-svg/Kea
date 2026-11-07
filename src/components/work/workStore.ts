@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { api } from '../../lib/api';
 import { toast } from '../../store';
 import type { Org } from './types';
-import { useHubStatus } from '../scholar/HubAccount';
+import { useHubStatus } from '../account/hubStore';
 
 export class WorkError extends Error {
   constructor(message: string, public status: number | null, public data: any) {
@@ -33,7 +33,7 @@ export async function act<T = any>(path: string, body: unknown = {}, done?: stri
 }
 
 // ---------- shared state ----------
-export type Tab = 'today' | 'schedule' | 'availability' | 'certs' | 'org' | 'forms' | 'scheduling' | 'people' | 'training' | 'structure' | 'budgets' | 'settings';
+export type Tab = 'schedule' | 'availability' | 'certs' | 'org' | 'forms' | 'scheduling' | 'people' | 'training' | 'structure' | 'budgets' | 'settings';
 interface WorkState {
   version: number;
   orgs: Org[] | null;
@@ -54,7 +54,7 @@ export const useWork = create<WorkState>((set) => ({
       return null;
     }
   })(),
-  tab: 'today',
+  tab: 'schedule',
   focus: null,
   setOrgs: (orgs) => set((s) => ({ orgs, orgId: s.orgId && orgs.some((o) => o.id === s.orgId) ? s.orgId : orgs[0]?.id ?? null })),
   go: (orgId, tab, focus = null) =>
@@ -62,7 +62,7 @@ export const useWork = create<WorkState>((set) => ({
       try {
         if (orgId) localStorage.setItem('kea.work.org', orgId);
       } catch {}
-      return { orgId, tab: tab ?? (orgId === s.orgId ? s.tab : 'today'), focus };
+      return { orgId, tab: tab ?? (orgId === s.orgId ? s.tab : 'schedule'), focus };
     })
 }));
 /** Something changed on the Hub: everything showing org data reloads. */
