@@ -6,8 +6,8 @@ import { useSetupDone } from '../lib/areas';
 import { toast } from '../store';
 
 const CHOICES: { id: KeaMode; label: string; blurb: string; icon: JSX.Element }[] = [
-  { id: 'personal', label: 'Personal', blurb: 'Your own study tools on this computer: your own classes, notes and practice. No class codes.', icon: <Heart size={22} /> },
-  { id: 'school', label: 'School', blurb: 'Your school’s classes from its class site, plus classes you join on the Kea Hub with a code.', icon: <GraduationCap size={22} /> },
+  { id: 'personal', label: 'Personal', blurb: 'Study on your own: notes and practice for things you learn. No school account.', icon: <Heart size={22} /> },
+  { id: 'school', label: 'School', blurb: 'Connects to your school’s class site, plus classes you join with a code.', icon: <GraduationCap size={22} /> },
   { id: 'work', label: 'Work', blurb: 'Join your organization with a code. Its classes, trainings and shifts show up in Kea.', icon: <Briefcase size={22} /> },
 ];
 // (Work only where this copy of Kea has the Work area.)
@@ -42,7 +42,7 @@ export function ModeSettings() {
     <ModeChoices
       value={value}
       onChange={async (v) => {
-        if (!v.personal && !v.school && !v.work) return toast('Keep at least one.', 'error');
+        // (None is fine: Kea is then just documents, spreadsheets, slides and PDFs.)
         await setModes(v);
       }}
     />
@@ -65,17 +65,16 @@ export function ModePickerGate() {
     }
   }, [show]);
   if (!show || !pick) return null;
-  const any = pick.personal || pick.school || pick.work;
   return (
     <div className="scrim">
       <div className="dialog modes-dialog" role="dialog" aria-label="How do you use Kea?">
         <h2>How do you use Kea?</h2>
-        <p>Pick any that apply. You can change this any time in Settings → Kea account.</p>
+        <p>Pick any that apply, or none for just documents. You can change this any time in Settings → Kea account.</p>
         <ModeChoices value={pick} onChange={setPick} />
         <div className="dialog-actions">
           <button
             className="btn primary"
-            disabled={!any || busy}
+            disabled={busy}
             onClick={async () => {
               setBusy(true);
               await setModes(pick).catch((e) => toast(String(e.message || e), 'error'));

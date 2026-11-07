@@ -14,7 +14,8 @@ import { toast } from '../store';
 export function Welcome() {
   const loaded = useSettings((s) => s.loaded);
   const [checking, setChecking] = useState(true);
-  const [picked, setPicked] = useState<Record<KeaMode, boolean>>({ personal: false, school: true, work: false });
+  // Nothing is ticked for the person: leaving all of them off is "just documents".
+  const [picked, setPicked] = useState<Record<KeaMode, boolean>>({ personal: false, school: false, work: false });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -43,10 +44,10 @@ export function Welcome() {
       <div className="welcome-inner">
         <Logo size={40} />
         <h1>How do you use Kea?</h1>
-        <p className="welcome-sub">Pick any that apply. Documents, spreadsheets, slides and PDFs are always included. You can change this later in Settings.</p>
+        <p className="welcome-sub">Documents, spreadsheets, slides and PDFs are always here. Add any of these, or none. You can change it later in Settings.</p>
         <ModeChoices value={picked} onChange={setPicked} />
-        <button className="btn primary welcome-go" disabled={!any || busy} onClick={start}>
-          Start using Kea
+        <button className="btn primary welcome-go" disabled={busy} onClick={start}>
+          {any ? 'Start using Kea' : 'Just documents'}
         </button>
       </div>
     </div>
