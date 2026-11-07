@@ -694,7 +694,8 @@ export interface AiApi {
 }
 
 export interface UpdateState {
-  status: 'idle' | 'checking' | 'available' | 'latest' | 'downloading' | 'ready' | 'error' | 'dev';
+  /** manual: this copy can't update itself (portable or unzipped); a new version comes from the installer. */
+  status: 'idle' | 'checking' | 'available' | 'latest' | 'downloading' | 'ready' | 'error' | 'dev' | 'manual';
   version?: string;
   percent?: number;
   message?: string;

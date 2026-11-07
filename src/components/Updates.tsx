@@ -21,6 +21,7 @@ export const useUpdates = create<UpdateStore>((set) => ({
 }));
 
 let silent = false;
+const RELEASES = 'https://github.com/kadenw213-svg/kea/releases';
 
 /** Wire updater events once, and quietly check a few seconds after launch. */
 export function initUpdates() {
@@ -38,7 +39,7 @@ export function initUpdates() {
     if (!setting('updates.autoCheck')) return;
     silent = true;
     api.checkForUpdates().then((r) => {
-      if (r.status === 'dev' || r.status === 'error') silent = false;
+      if (r.status === 'dev' || r.status === 'error' || r.status === 'manual') silent = false;
     });
   }, 6000);
 }
@@ -50,7 +51,7 @@ export function openUpdates(check = true) {
     silent = false;
     s.set({ state: { status: 'checking' } });
     api.checkForUpdates().then((r) => {
-      if (r.status === 'dev') s.set({ state: { status: 'dev' } });
+      if (r.status === 'dev' || r.status === 'manual') s.set({ state: { status: r.status } });
       else if (r.status === 'error') s.set({ state: { status: 'error', message: r.message } });
     });
   }
@@ -161,6 +162,21 @@ export function UpdateDialog() {
           </button>
           <button className="btn primary" onClick={() => openUpdates(true)}>
             Try again
+          </button>
+        </>
+      );
+      break;
+    case 'manual':
+      icon = <Download size={28} color="var(--accent)" />;
+      title = 'This copy of Kea can’t update itself';
+      body = 'Get the installer from the release notes. Installed, Kea keeps itself up to date.';
+      actions = (
+        <>
+          <button className="btn" onClick={close}>
+            Close
+          </button>
+          <button className="btn primary" onClick={() => (window.open(RELEASES), close())}>
+            Release notes
           </button>
         </>
       );
