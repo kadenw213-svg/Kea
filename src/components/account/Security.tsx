@@ -2,7 +2,7 @@
 // download and deleting the account. Each uses the Kea Hub's own routes; the Hub asks for the password again before
 // anything that changes how you sign in.
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Eye, EyeOff, KeyRound, LogOut, Monitor, ShieldCheck, Smartphone, Trash2 } from 'lucide-react';
+import { Copy, Download, Eye, EyeOff, KeyRound, LogOut, Monitor, ShieldCheck, Smartphone, Trash2 } from 'lucide-react';
 import qrcode from 'qrcode-generator';
 import { api, HubSession, HubStatus } from '../../lib/api';
 import { ask, toast } from '../../store';
@@ -89,14 +89,71 @@ function ChangePassword({ status, onDone }: { status: HubStatus; onDone(): void 
   );
 }
 
+/** New backup codes, shown once: Copy, Save as text, and "I saved these" before they go. */
+function BackupCodesShown({ codes, email, onDone }: { codes: string[]; email: string; onDone(): void }) {
+  const [saved, setSaved] = useState(false);
+  const text = () =>
+    [`Kea two-step sign-in backup codes for ${email}`, `Made ${new Date().toLocaleString()}`, '', 'Each code works once, in place of the code from your authenticator app. Keep them somewhere safe.', '', ...codes, ''].join('\r\n');
+  return (
+    <div className="acct-form acct-sub">
+      <p>
+        <b>Your backup codes.</b> If you lose your phone, each one signs you in once instead of the code from your authenticator app. They’re shown only now, so keep them somewhere safe.
+      </p>
+      <ol className="acct-codes">
+        {codes.map((c) => (
+          <li key={c}>
+            <code>{c}</code>
+          </li>
+        ))}
+      </ol>
+      <div className="acct-actions">
+        <button
+          className="btn sm"
+          type="button"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(codes.join('\n'));
+              toast('Copied.', 'success');
+            } catch {
+              toast('Select the codes to copy them.', 'error');
+            }
+          }}
+        >
+          <Copy size={14} /> Copy
+        </button>
+        <button
+          className="btn sm"
+          type="button"
+          onClick={async () => {
+            const p = await api.saveDialog({ title: 'Save your backup codes', defaultPath: 'Kea backup codes.txt', filters: [{ name: 'Text', extensions: ['txt'] }] });
+            if (p && (await api.writeFile(p, new TextEncoder().encode(text())))) toast('Saved.', 'success');
+          }}
+        >
+          <Download size={14} /> Save as text…
+        </button>
+      </div>
+      <label className="acct-check">
+        <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} /> I saved these
+      </label>
+      <div className="acct-actions">
+        <button className="btn primary sm" type="button" disabled={!saved} onClick={onDone}>
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function TwoStep({ status }: { status: HubStatus }) {
   const a = status.me!.account;
-  const [step, setStep] = useState<'idle' | 'password' | 'scan' | 'off'>('idle');
+  const [step, setStep] = useState<'idle' | 'password' | 'scan' | 'off' | 'regen' | 'codes'>('idle');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null);
+  const [codes, setCodes] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const reset = () => (setStep('idle'), setPassword(''), setCode(''), setSetup(null));
+  const reset = () => (setStep('idle'), setPassword(''), setCode(''), setSetup(null), setCodes(null));
+  if (step === 'codes' && codes) return <BackupCodesShown codes={codes} email={a.email} onDone={reset} />;
   const go = async <T,>(p: Promise<any>, then: (v: T) => void) => {
     setBusy(true);
     const v = await run<T>(p);
@@ -118,6 +175,52 @@ function TwoStep({ status }: { status: HubStatus }) {
           )}
         </div>
         {a.owner && <p className="muted acct-note">The Hub owner’s account keeps it on.</p>}
+        {/* (Only with a Hub that has backup codes: it says how many are left.) */}
+        {a.backupCodesLeft != null && step === 'idle' && (
+          <div className="acct-row">
+            <KeyRound size={16} />
+            <span className="acct-row-main">
+              <b>Backup codes:</b> {a.backupCodesLeft === 0 ? 'none left.' : `${a.backupCodesLeft} left.`} Each signs you in once if you lose your phone.
+            </span>
+            <button className="btn sm" onClick={() => setStep('regen')}>
+              New backup codes
+            </button>
+          </div>
+        )}
+        {step === 'regen' && (
+          <form
+            className="acct-form acct-sub"
+            onSubmit={(e) => (
+              e.preventDefault(),
+              go<{ backupCodes: string[] }>(api.hub.backupCodes({ password, code }), async (v) => {
+                setCodes(v.backupCodes);
+                setStep('codes');
+                setPassword('');
+                setCode('');
+                const s = await api.hub.status();
+                if (s.ok) setHubStatus(s.value);
+              })
+            )}
+          >
+            <p className="muted acct-note">New backup codes replace the old ones, which stop working.</p>
+            <label>
+              <span>Your password</span>
+              <PasswordInput value={password} onChange={setPassword} autoFocus />
+            </label>
+            <label>
+              <span>Code from your authenticator app</span>
+              <CodeInput value={code} onChange={setCode} />
+            </label>
+            <div className="acct-actions">
+              <button className="btn sm primary" type="submit" disabled={busy || !password || code.length !== 6}>
+                Make new backup codes
+              </button>
+              <button className="btn sm" type="button" onClick={reset}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
         {step === 'off' && (
           <form className="acct-form acct-sub" onSubmit={(e) => (e.preventDefault(), go<HubStatus>(api.hub.totpDisable({ password, code }), (s) => (setHubStatus(s), toast('Two-step sign-in is off.', 'success'), reset())))}>
             <label>
@@ -170,7 +273,13 @@ function TwoStep({ status }: { status: HubStatus }) {
         </form>
       )}
       {step === 'scan' && setup && (
-        <form className="acct-form acct-sub" onSubmit={(e) => (e.preventDefault(), go<HubStatus>(api.hub.totpEnable({ code }), (s) => (setHubStatus(s), toast('Two-step sign-in is on.', 'success'), reset())))}>
+        <form className="acct-form acct-sub" onSubmit={(e) => (e.preventDefault(), go<HubStatus & { backupCodes?: string[] }>(api.hub.totpEnable({ code }), ({ backupCodes, ...s }) => {
+              setHubStatus(s);
+              toast('Two-step sign-in is on.', 'success');
+              // (A Hub with backup codes made ten: shown once, before anything else.)
+              if (backupCodes?.length) (setCodes(backupCodes), setStep('codes'), setCode(''), setPassword(''), setSetup(null));
+              else reset();
+            }))}>
           <div className="acct-totp">
             <Qr text={setup.uri} />
             <div className="acct-totp-text">

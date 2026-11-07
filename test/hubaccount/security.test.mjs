@@ -86,3 +86,33 @@ test('deleting the account sends the confirmation and forgets everything about i
   assert.deepEqual(asked.find((a) => a.p === '/v1/me/delete').body, { confirm: 'DELETE', password: 'pw', code: '123456' });
   for (const f of [token, cache, work]) assert.ok(!fs.existsSync(f), f);
 });
+
+test('two-step backup codes: shown once after turning it on, new ones on request, and an older Hub said plainly', async () => {
+  const me = { account: { id: 'a1', email: 'ana@x.org', displayName: 'Ana', totpEnabled: true, backupCodesLeft: 10 }, notifications: { latest: 0 } };
+  routes['/v1/me'] = [200, me];
+  const codes = Array.from({ length: 10 }, (_, i) => `ABCDE-FGH${String(i).padStart(2, '2')}`);
+  routes['/v1/me/totp/enable'] = [200, { ok: true, backupCodes: codes }];
+  let r = await handlers['hub:totpEnable']({}, { code: '123456' });
+  assert.equal(r.ok, true);
+  assert.deepEqual([r.value.signedIn, r.value.me.account.totpEnabled, r.value.backupCodes.length], [true, true, 10]);
+  // An older Hub: no codes, just the status as before.
+  routes['/v1/me/totp/enable'] = [200, { ok: true }];
+  r = await handlers['hub:totpEnable']({}, { code: '123456' });
+  assert.equal(r.value.backupCodes, undefined);
+
+  routes['/v1/me/totp/backup-codes'] = [200, { backupCodes: codes, left: 10 }];
+  r = await handlers['hub:backupCodes']({}, { password: 'pw', code: '123456' });
+  assert.deepEqual([r.ok, r.value.left], [true, 10]);
+  assert.deepEqual(asked.at(-1), { p: '/v1/me/totp/backup-codes', body: { password: 'pw', code: '123456' } });
+  // A wrong password or code there keeps Kea signed in.
+  routes['/v1/me/totp/backup-codes'] = [401, { error: 'Your password or the code from your authenticator app is wrong.' }];
+  r = await handlers['hub:backupCodes']({}, { password: 'pw', code: '000000' });
+  assert.deepEqual([r.ok, r.status], [false, 401]);
+  assert.ok(fs.existsSync(token));
+  // A Hub without the route: a plain message, still signed in.
+  delete routes['/v1/me/totp/backup-codes'];
+  r = await handlers['hub:backupCodes']({}, { password: 'pw', code: '123456' });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /doesn’t have backup codes yet/);
+  assert.ok(fs.existsSync(token));
+});

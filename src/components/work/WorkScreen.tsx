@@ -105,14 +105,6 @@ export function WorkScreen() {
           adding ? null : (
             <Empty title="You’re not in an organization yet">
               <p className="muted">Ask your manager for a join code, or set up your own organization.</p>
-              {!verified && (
-                <div className="wk-verify">
-                  <p>
-                    <b>First, verify your email.</b> Joining or making an organization needs a verified email, so your manager knows it’s really you.
-                  </p>
-                  <VerifyEmail compact />
-                </div>
-              )}
               <div className="wk-actions center">
                 <button className="btn primary" onClick={() => setAdding('join')}>
                   <KeyRound size={15} /> Join with a code
@@ -124,20 +116,23 @@ export function WorkScreen() {
             </Empty>
           )
         ) : org ? (
-          <OrgBody org={org} tabs={tabs} current={current} />
+          <OrgBody org={org} tabs={tabs} current={current} verified={verified} />
         ) : null}
       </div>
     </div>
   );
 }
 
-function OrgBody({ org, tabs, current }: { org: Org; tabs: typeof TABS; current: Tab }) {
+function OrgBody({ org, tabs, current, verified }: { org: Org; tabs: typeof TABS; current: Tab; verified: boolean }) {
   const go = useWork((s) => s.go);
   const me = useMyId();
   if (org.memberStatus === 'pending')
     return (
       <Card title={org.name}>
-        <p>Your request to join is waiting for a manager to approve it.</p>
+        <p>
+          <Clock3 size={14} /> Request sent. Your manager approves it.
+        </p>
+        {!verified && <p className="muted af-small">Your email isn’t verified yet. Your manager can verify it when they approve, or you can verify it with Google in Settings → Kea account.</p>}
         <div className="wk-actions">
           <LeaveButton org={org} label="Cancel request" />
         </div>
@@ -200,23 +195,26 @@ function LeaveButton({ org, label = 'Leave' }: { org: Org; label?: string }) {
   );
 }
 
-/** The Hub's "verify first" answer names a place that isn't in Kea; say where it is. */
+/** The Hub's "verify first" answer names a place that isn't in Kea; say where it is. (An older Hub says it on joining too.) */
 const VERIFY_FIRST = /^Verify your email first/;
 const verifyText = (what: string) => `Verify your email first (Settings → Kea account → Verify with Google), then ${what}.`;
 
 function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
+  // An older Kea Hub still refuses an unverified email: then the old way, verifying first, shows here.
+  const [needVerify, setNeedVerify] = useState(false);
   const ready = code.replace(/[^A-Za-z0-9]/g, '').length >= 10;
   const join = async () => {
     setBusy(true);
     try {
       const r = await post<{ org: Org; alreadyMember: boolean; pending?: boolean }>('/v1/orgs/join', { code });
-      toast(r.alreadyMember ? `You’re already in ${r.org.name}.` : r.pending ? `Asked to join ${r.org.name}. A manager will approve it.` : `Welcome to ${r.org.name}.`);
+      toast(r.alreadyMember ? (r.org.memberStatus === 'pending' ? `You already asked to join ${r.org.name}. Your manager approves it.` : `You’re already in ${r.org.name}.`) : r.pending ? 'Request sent. Your manager approves it.' : `Welcome to ${r.org.name}.`);
       await refreshOrgs();
       useWork.getState().go(r.org.id, 'schedule');
       onDone();
     } catch (e: any) {
+      if (VERIFY_FIRST.test(e.message)) setNeedVerify(true);
       toast(VERIFY_FIRST.test(e.message) ? verifyText('join the organization') : e.message, 'error');
     } finally {
       setBusy(false);
@@ -224,26 +222,21 @@ function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
   };
   return (
     <Card title="Join an organization" className="wk-narrow">
-      {!verified && (
+      {needVerify && !verified && (
         <div className="wk-verify">
-          <p>
-            <b>1. Verify your email.</b> Joining needs a verified email, so your manager knows it’s really you.
-          </p>
+          <p>This Kea Hub needs a verified email to join.</p>
           <VerifyEmail compact />
-          <p>
-            <b>2. Enter your code.</b>
-          </p>
         </div>
       )}
-      <Field label="Join code" hint="From your manager. Dashes and spaces don’t matter.">
-        <input className="input wk-codein" autoFocus value={code} placeholder="ABCD-EFGH-JKMN" onChange={(e) => setCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && ready && verified && join()} />
+      <Field label="Join code" hint={verified || needVerify ? 'From your manager. Dashes and spaces don’t matter.' : 'From your manager. Your email isn’t verified, so your manager approves your request first.'}>
+        <input className="input wk-codein" autoFocus value={code} placeholder="ABCD-EFGH-JKMN" onChange={(e) => setCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && ready && !busy && join()} />
       </Field>
       <div className="wk-actions">
         <button className="btn" onClick={onDone}>
           Cancel
         </button>
-        <button className="btn primary" disabled={busy || !ready || !verified} title={!verified ? 'Verify your email first' : !ready ? 'Enter the whole code (10 letters and numbers)' : undefined} onClick={join}>
-          Join
+        <button className="btn primary" disabled={busy || !ready} title={!ready ? 'Enter the whole code (10 letters and numbers)' : undefined} onClick={join}>
+          {verified ? 'Join' : 'Ask to join'}
         </button>
       </div>
     </Card>

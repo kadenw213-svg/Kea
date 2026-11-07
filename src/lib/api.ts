@@ -412,6 +412,8 @@ export interface HubAccount {
   identityVerified: boolean;
   canHost: boolean;
   totpEnabled: boolean;
+  /** Backup codes not used yet (a Hub without backup codes leaves it out). */
+  backupCodesLeft?: number;
   /** Under 18 (by birth year): a parent's or guardian's sign-off comes before Kea's shared Claude. */
   birthYear?: number | null;
   minor?: boolean;
@@ -573,7 +575,10 @@ export interface HubApi {
   googleReset(a: { email?: string; password: string; code?: string }): Promise<HubResult<HubStatus>>;
   /** Needs the account's current password (the Hub asks for proof before changing sign-in). */
   totpSetup(a: { password: string }): Promise<HubResult<{ secret: string; uri: string }>>;
-  totpEnable(a: { code: string }): Promise<HubResult<HubStatus>>;
+  /** With a Hub that has them, the ten new backup codes come along (shown once). */
+  totpEnable(a: { code: string }): Promise<HubResult<HubStatus & { backupCodes?: string[] }>>;
+  /** New backup codes (the old ones stop working): the password and a code from the authenticator app. */
+  backupCodes(a: { password: string; code: string }): Promise<HubResult<{ backupCodes: string[]; left: number }>>;
   totpDisable(a: { password: string; code: string }): Promise<HubResult<HubStatus>>;
   setName(name: string): Promise<HubResult<HubStatus>>;
   /** Signs out every other device. */
