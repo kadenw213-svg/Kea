@@ -443,7 +443,7 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
       {todo ? (
         <button
           className="sch-check"
-          title={it.done ? 'Mark as not done' : isDone(it) ? (it.handIn === 'graded' ? 'Graded on your class site' : 'Handed in on your class site') : 'Mark as done'}
+          title={it.done ? 'Mark as not done' : 'Mark as done'}
           onClick={(e) => {
             e.stopPropagation();
             ctx.toggleDone(it);
@@ -489,7 +489,11 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
             </span>
           )}
           {it.opensAt && <span className="opens-tag" title={`Opens on your class site ${opensText(it.opensAt)}`}>Opens {new Date(it.opensAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
-          {!it.done && (it.handIn === 'graded' || it.handIn === 'submitted') && <span className="hand-tag">{it.handIn === 'graded' ? 'Graded' : 'Handed in'}</span>}
+          {!it.done && (it.handIn === 'graded' || it.handIn === 'submitted') && (
+            <span className="hand-tag" title="What your class site shows. Kea doesn't check work off for you: check it off once it's really done.">
+              {it.handIn === 'graded' ? 'Class site: graded' : 'Class site: handed in'}
+            </span>
+          )}
         </div>
       </div>
       <div className="sch-row-actions">
@@ -1728,7 +1732,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
       <div className="pn-actions">
         {TODO.has(it.type) && (
           <button className={`btn ${isDone(it) ? '' : 'tonal'}`} onClick={() => ctx.toggleDone(it)}>
-            {isDone(it) ? <CheckCircle2 size={16} /> : <Circle size={16} />} {it.done ? 'Done' : it.handIn === 'graded' ? 'Graded' : it.handIn === 'submitted' ? 'Handed in' : 'Mark as done'}
+            {isDone(it) ? <CheckCircle2 size={16} /> : <Circle size={16} />} {it.done ? 'Done' : 'Mark as done'}
           </button>
         )}
         {quick && (

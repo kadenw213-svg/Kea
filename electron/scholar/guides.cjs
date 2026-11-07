@@ -39,12 +39,13 @@ function hashOf(it) {
 
 /**
  * The items that need a guide: work (not lectures or readings) due from today on, or past due in the last four weeks
- * and still not handed in; none checked off. `all`: the items (db.items shape).
+ * and still not handed in; none checked off by the student. `all`: the items (db.items shape).
  */
 function needing(all, guides = study.guidesAll(), today = localDay()) {
   return all.filter((it) => {
+    // (Only the student's checkmark ends it: a class-site match can be the wrong part, like a discussion's initial
+    // post for its response posts.)
     if (NOT_WORK.has(it.type) || it.done || !it.date) return false;
-    if (it.handIn === 'graded' || it.handIn === 'submitted') return false;
     // (Past: only work Kea knows wasn't handed in.)
     if (it.date < today && it.handIn !== 'not_submitted') return false;
     const g = guides[it.id];

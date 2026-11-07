@@ -397,10 +397,11 @@ function handIn(r, ev) {
   const ahead = r.date && Date.parse(`${r.date}T23:59`) > Date.now() + 2 * 864e5;
   const exact = ahead ? [] : list.filter((x) => x.t === t);
   let close = ahead ? aheadEvidence(r, t, list) : exact.length ? exact : list.filter((x) => sameWork(x.t, t));
-  // What the gradebook calls it may lack the item's own qualifiers: a discussion's grade covers both its initial and
-  // response posts, and a lab handout is graded as the lab ("Lab 4 Handout" → "Lab 4 Prokaryotes").
+  // What the gradebook calls it may lack the item's own qualifiers: a lab handout is graded as the lab ("Lab 4
+  // Handout" → "Lab 4 Prokaryotes"). A discussion's initial and response posts are never matched to the discussion's
+  // grade: it can come in after the initial post alone, and would then say the response posts were done.
   if (!close.length && !ahead) {
-    const bare = t.replace(/ (initial|response|responses|reply|replies|peer review)( posts?)?$/, '').replace(/ handout$/, '').trim();
+    const bare = t.replace(/ handout$/, '').trim();
     if (bare !== t && bare.split(' ').length >= 2) close = list.filter((x) => x.state === 'graded' && sameWork(x.t, bare));
   }
   if (!close.length) return null;

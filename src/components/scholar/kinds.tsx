@@ -69,8 +69,12 @@ export const TODO = new Set(['exam', 'final_exam', 'lab_practical', 'quiz', 'ass
 /** Taken in class, so they can't be "missing" afterwards the way homework can. */
 const IN_CLASS = new Set(['exam', 'final_exam', 'lab_practical']);
 
-/** Done: checked off in Kea, or graded or handed in according to the class site. */
-export const isDone = (it: ScholarItem) => !!it.done || it.handIn === 'graded' || it.handIn === 'submitted';
+/**
+ * Done: checked off by the student, and nothing else. What the class site shows (graded, handed in) is only a hint
+ * next to the item: matching it to Kea's items can be wrong (a discussion's grade or initial post isn't its response
+ * posts), and crossing off work that isn't done is worse than leaving a checkmark to the student.
+ */
+export const isDone = (it: ScholarItem) => !!it.done;
 
 /** Missing: past due, and the class site shows nothing handed in. */
 export const isMissing = (it: ScholarItem, now = new Date()) => it.handIn === 'not_submitted' && !it.done && pastDue(it, now);

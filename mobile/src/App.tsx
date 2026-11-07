@@ -184,11 +184,11 @@ export function App() {
   // Each item's checkmark: the PC's, unless the phone changed it more recently.
   const items = useMemo(() => (data?.items || []).map((i) => ({ ...i, done: doneOf(i, data?.doneLog, done) })), [data, done]);
   const toggle = (it: ScholarItem) => {
-    // Graded or handed-in work counts as done already; a tap there still records the phone's own checkmark.
+    // (Only the student's own checkmark counts: what the class site shows never checks work off.)
     const on = !isDone(it);
     setPhoneDone(it.id, on);
     setDone(phoneDone());
-    if (item?.id === it.id) setItem({ ...it, done: on ? new Date().toISOString() : null, handIn: on ? it.handIn : null });
+    if (item?.id === it.id) setItem({ ...it, done: on ? new Date().toISOString() : null });
   };
   const [deleted, setDeleted] = useState<string[]>(phoneDeleted);
   const inbox = useMemo(() => {

@@ -10,7 +10,7 @@ const guides = require('../../electron/scholar/guides.cjs');
 const TODAY = '2026-11-01';
 const item = (over = {}) => ({ id: 'a', type: 'assignment', title: 'Lab report #7', date: '2026-11-07', due: '23:59', points: 25, description: 'Submit the SI PDF and notebook.', sourceWording: '', links: [{ url: 'https://x.edu/folder' }], done: null, handIn: null, courseCode: 'CHE1011', ...over });
 
-test('upcoming work and missing work get a guide; done, handed-in, past and lecture items do not', () => {
+test('upcoming work and missing work get a guide, even when the class site says graded; checked-off, past and lecture items do not', () => {
   const list = [
     item({ id: 'up' }),
     item({ id: 'missing', date: '2026-10-24', handIn: 'not_submitted' }),
@@ -20,7 +20,7 @@ test('upcoming work and missing work get a guide; done, handed-in, past and lect
     item({ id: 'lecture', type: 'lecture' }),
     item({ id: 'reading', type: 'weekly_reading' })
   ];
-  assert.deepEqual(guides.needing(list, {}, TODAY).map((i) => i.id), ['up', 'missing']);
+  assert.deepEqual(guides.needing(list, {}, TODAY).map((i) => i.id), ['up', 'missing', 'graded']);
 });
 
 test('a guide is written again only when the teacher changes the assignment', () => {
