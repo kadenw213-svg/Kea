@@ -66,3 +66,14 @@ test('help text folds to one line', () => {
   assert.equal(h.more, true);
   assert.ok(h.hint.length < long.length && h.hint.endsWith('.'));
 });
+
+test('the obvious answer comes first: exact words and synonyms before near-spellings', () => {
+  assert.equal(top('print', 1)[0], 'a-print', 'print: the Print action, not "points"');
+  assert.equal(top('printing', 1)[0], 'a-print', 'printing');
+  assert.equal(top('turn off claude', 1)[0], 'assistant.enabled', 'turn off claude');
+  assert.equal(top('hide claude', 1)[0], 'assistant.enabled', 'hide claude');
+  assert.equal(top('word count', 1)[0], 'p-wordcount', 'word count');
+  assert.ok(top('check for updates', 2).includes('a-updates'), 'check for updates offers checking now');
+  assert.deepEqual(S.searchSettings('zebra crossing'), [], 'a coincidence is not a match');
+  assert.ok(!S.searchSettings('notifications', { values: { 'scholar.enabled': false } }).some((h) => h.key.startsWith('scholar.')), 'School settings stay out while School is off');
+});

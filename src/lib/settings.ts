@@ -317,7 +317,6 @@ export const SECTIONS: Section[] = [
         ],
         help: 'Printing and PDFs are always on white.'
       },
-      { key: 'doc.replyToClaude', label: 'Replying to Claude’s comments asks Claude', type: 'toggle', default: true, help: 'A reply in the thread of one of Claude’s comments (or one that says “Claude”) goes to Claude, which answers in the thread and makes the small fix you ask for.' },
       { key: 'doc.font', label: 'Font', type: 'select', default: 'Arial', options: ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Segoe UI', 'Times New Roman', 'Trebuchet MS', 'Verdana'].map((f) => ({ value: f, label: f })) },
       { key: 'doc.size', label: 'Font size', type: 'number', default: 11, min: 6, max: 72, step: 0.5, unit: 'pt' },
       {
@@ -350,6 +349,7 @@ export const SECTIONS: Section[] = [
       { key: 'doc.pageless', label: 'Pageless (one long page, no page breaks)', type: 'toggle', default: false },
       { key: 'doc.zoom', label: 'Zoom', type: 'select', default: 1, options: pct([0.75, 0.9, 1, 1.1, 1.25, 1.5]), advanced: true },
       { key: 'doc.citationStyle', label: 'Citation style', type: 'select', default: 'mla', options: [{ value: 'mla', label: 'MLA 9' }, { value: 'apa', label: 'APA 7' }, { value: 'chicago', label: 'Chicago (author-date)' }] },
+      { key: 'doc.replyToClaude', label: 'Replying to Claude’s comments asks Claude', type: 'toggle', default: true, help: 'A reply in the thread of one of Claude’s comments (or one that says “Claude”) goes to Claude, which answers in the thread and makes the small fix you ask for.' },
       { key: 'doc.statusHints', label: 'Show keyboard hints in the status bar', type: 'toggle', default: true, advanced: true }
     ]
   },
