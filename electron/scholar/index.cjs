@@ -209,7 +209,7 @@ function studyFiles() {
 }
 // The phone copy is written by the computer that scans; any other computer only sends its changes to that one.
 const syncSoon = (delay) => {
-  if (!devices.follower()) cloud.schedule(snapshot, delay);
+  if (devices.publishes()) cloud.schedule(snapshot, delay);
   devices.soon(delay);
 };
 // A new theme goes to the phone with the next copy (the phone takes it when it's newer than its own).
@@ -307,7 +307,8 @@ async function tick() {
   if (devices.follower()) return;
   // What the phone changed (checkmarks, read messages) comes in through the drive folder.
   try {
-    if (mergePhone()) syncSoon(5000);
+    // (Not the phone of another device whose classes this one hasn't joined.)
+    if (devices.publishes() && mergePhone()) syncSoon(5000);
   } catch (err) {
     console.error('Phone merge', err);
   }
@@ -798,7 +799,7 @@ function register() {
   ipcMain.handle('scholar:cloudDrives', () => ({ drives: cloud.drives(), target: cloud.target() }));
   ipcMain.handle('scholar:syncNow', async () => {
     await devices.step();
-    return devices.follower() ? null : cloud.sync(snapshot);
+    return devices.publishes() ? cloud.sync(snapshot) : null;
   });
   // Worker mode (a shared-Claude job for someone else): no schedule of its own; worker.cjs runs the one job.
   if (require('./remote.cjs').active()) return;
@@ -808,7 +809,7 @@ function register() {
   setInterval(async () => {
     await devices.step();
     try {
-      if (!devices.follower() && mergePhone()) syncSoon(5000);
+      if (devices.publishes() && mergePhone()) syncSoon(5000);
     } catch {}
   }, 60000);
   setTimeout(tick, 60000);
@@ -818,7 +819,7 @@ function register() {
 /** Publish now: as the primary, share the classes (devices.cjs) and write the data file (cloud.cjs). */
 async function publish() {
   await devices.step();
-  return devices.follower() ? null : cloud.sync(snapshot);
+  return devices.publishes() ? cloud.sync(snapshot) : null;
 }
 
 module.exports = { register, publish };

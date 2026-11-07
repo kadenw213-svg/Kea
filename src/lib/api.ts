@@ -738,6 +738,8 @@ export interface DeviceShare {
   mine: boolean;
   /** Its class database has fully arrived on this device. */
   ready: boolean;
+  /** Set only once the student has said yes to using that device's classes here (joining refuses without it). */
+  confirmed?: boolean;
 }
 
 export interface CloudDrive {
@@ -790,7 +792,9 @@ export interface DevicesStatus {
   drive: CloudDrive | null;
   drives: CloudDrive[];
   choice: string;
-  role: 'primary' | 'follower' | 'alone';
+  /** offer: another device shares classes in this profile's folder and this one hasn't joined them (it asks first). */
+  role: 'primary' | 'follower' | 'alone' | 'offer';
+  offer?: DeviceShare;
   folder?: string;
   primary: { id: string; name: string; at: string; online: boolean } | null;
   devices: DeviceInfo[];

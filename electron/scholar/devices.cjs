@@ -81,17 +81,41 @@ const primaryInfo = (dir = folder()) => (dir ? readJson(path.join(dir, 'primary.
 // This device's own record of syncing (per profile, never shared).
 const stateFile = () => path.join(profiles.paths().dir, 'devices.json');
 
+/**
+ * Whether this device may take its classes from a primary that isn't itself. Only when the student chose it ("Use
+ * these classes", which names the other device), when this device was already part of the sync (Kea remembers the
+ * primary it last followed or was: scholar.lastPrimary), or when the primary is Kea's shared Claude running this
+ * student's own job. A Devices folder that just happens to be in the drive under the same profile name is never
+ * joined by itself: its classes would replace this computer's.
+ */
+function joined(p) {
+  return !!settings.get('scholar.lastPrimary', '') || !!p?.worker;
+}
+const remember = (id) => settings.get('scholar.lastPrimary', '') !== id && settings.set({ 'scholar.lastPrimary': id });
+
 /** True when another device is the primary, so this one mustn't scan, poll the class site or write the phone copy. */
 function follower() {
   const p = primaryInfo();
   if (p && p.id) {
+    if (p.id !== me() && !joined(p)) return false;
     // Remembered, so a drive that isn't mounted yet (or a file mid-sync) never turns this device into a scanner.
-    if (settings.get('scholar.lastPrimary', '') !== p.id) settings.set({ 'scholar.lastPrimary': p.id });
+    remember(p.id);
     return p.id !== me();
   }
   const last = settings.get('scholar.lastPrimary', '');
   return settings.get('scholar.pcSync', true) !== false && !!last && last !== me();
 }
+
+/**
+ * True when another device shares classes in this profile's folder and this one hasn't joined them: Kea keeps to
+ * this computer's own classes, writes nothing into that folder (no device card, no phone copy) and asks the student.
+ */
+function standsAside() {
+  const p = primaryInfo();
+  return !!(p && p.id && p.id !== me() && !joined(p));
+}
+/** Whether this device writes the phone copy and takes in the phone's changes (it's the one that scans for the folder). */
+const publishes = () => !follower() && !standsAside();
 
 function copyIfChanged(a, b) {
   const sa = fs.statSync(a);
@@ -187,10 +211,14 @@ function writeCard(dir, marks) {
 function claim(dir, id = me(), name = myName(), extra = {}) {
   const p = primaryInfo(dir);
   writeJson(path.join(dir, 'primary.json'), { id, name, since: new Date().toISOString(), at: new Date().toISOString(), db: p?.db || null, run: null, queue: [], ...extra });
+  remember(id);
   console.log(`Devices: ${id === me() ? 'this device' : name} is now the primary`);
 }
 
-/** Decide (and, when nobody is, take) the primary role. Returns 'primary' or 'follower'. */
+/**
+ * Decide (and, when nobody is, take) the primary role. Returns 'primary', 'follower', 'offer' (another device shares
+ * classes here and this one hasn't joined: the student is asked) or 'alone' (nothing to do in the folder yet).
+ */
 async function decide(dir) {
   const p = primaryInfo(dir);
   const hasDb = fs.existsSync(profiles.paths().db);
@@ -198,16 +226,17 @@ async function decide(dir) {
   // Kea's shared Claude ran a job as this profile's primary and handed the role back when it finished: the student's
   // own device (one with the classes) takes it again.
   if (p?.worker && p.released && hasDb && !require('./remote.cjs').active()) return claim(dir), 'primary';
+  if (p?.id && !joined(p)) return 'offer';
   if (!p) {
     // Kea 0.27 kept this in a PCs folder: the device that scanned there stays the primary.
     const old = readJson(path.join(path.dirname(dir), 'PCs', 'scanner.json'), null);
-    if (old?.id && old.id !== me() && ago(old.at) < 864e5) return 'follower';
+    if (old?.id && old.id !== me() && ago(old.at) < 864e5) return joined() ? 'follower' : 'alone';
     // Another device scanned before and its file just can't be read right now (mid-sync): stay a follower.
     const last = settings.get('scholar.lastPrimary', '');
     if (last && last !== me()) return 'follower';
     // Nobody scans yet: the first device with classes does.
     if (hasDb) return claim(dir), 'primary';
-    return 'follower';
+    return joined() ? 'follower' : 'alone';
   }
   // Taking over from a primary that's been off for a long time, only if the student chose that (Settings → Advanced).
   const hours = Number(settings.get('scholar.pcTakeover', '0'));
@@ -221,6 +250,8 @@ function makePrimary(id) {
   if (!dir) throw new Error('Choose a drive to sync through first.');
   const card = readJson(path.join(dir, 'devices', `${id}.json`), null);
   if (id !== me() && !card) throw new Error('That device isn’t in the folder any more.');
+  // (A device that hasn't joined these classes can't take them over either.)
+  if (standsAside()) throw new Error(`${primaryInfo(dir).name} shares these classes and this device hasn’t joined them. Use its classes here first.`);
   if (id === me() && !fs.existsSync(profiles.paths().db)) throw new Error('This device has no classes yet. Bring them in from your other device first, then make it the primary.');
   claim(dir, id, id === me() ? myName() : card.name);
   soon(500);
@@ -627,7 +658,9 @@ function find() {
  * Use the classes shared in that folder on this device: Kea syncs through that drive and profile from now on and
  * follows the primary (this device's own older classes, if any, are kept aside), and the first copy is made right away.
  */
-async function join({ drive, root, profile }) {
+async function join({ drive, root, profile, confirmed }) {
+  // Only ever on the student's say-so, after Kea named the device whose classes come in (ScansView asks).
+  if (confirmed !== true) throw new Error('Kea needs you to confirm which device’s classes to use first.');
   const patch = { 'scholar.pcSync': true, 'scholar.cloud': drive };
   if (drive === 'custom') patch['scholar.cloudPath'] = root;
   // A share this device started by itself (under another drive or profile name) stops, so it doesn't keep scanning.
@@ -644,6 +677,7 @@ async function join({ drive, root, profile }) {
   const dir = folder();
   if (!dir || !fs.existsSync(path.join(dir, 'primary.json'))) throw new Error('That folder isn’t there any more. Check the drive is still syncing, then try again.');
   const p = primaryInfo(dir);
+  remember(p.id);
   if (p.id === me()) return { ok: true, primary: true };
   while (busy) await new Promise((r) => setTimeout(r, 200));
   await step();
@@ -659,24 +693,15 @@ async function step() {
   if (!dir || busy || !hooks) return;
   busy = true;
   try {
-    // A new device with no classes of its own, whose profile isn't shared yet but exactly one other is in the same
-    // drive (its profile has another name): that's this student's classes, so it joins them by itself.
-    if (!fs.existsSync(path.join(dir, 'primary.json')) && !fs.existsSync(profiles.paths().db)) {
-      const d = cloud.drive();
-      const others = find().found.filter((x) => !x.mine && x.drive === d?.id);
-      if (others.length === 1) {
-        busy = false;
-        return void (await join(others[0]));
-      }
-    }
-    fs.mkdirSync(dir, { recursive: true });
+    // (Classes another device shares, under this profile's name or another, are never joined by themselves: the
+    // Devices card offers them, naming that device, and the student chooses.)
     const role = await decide(dir);
     if (role !== lastRole) {
       lastRole = role;
       changed();
     }
     if (role === 'primary') await lead(dir);
-    else await follow(dir);
+    else if (role === 'follower') await follow(dir);
   } catch (err) {
     console.error('Devices', err);
   } finally {
@@ -727,7 +752,16 @@ function status() {
     elsewhere = find().found.filter((x) => !x.mine && path.resolve(x.root, 'Kea', x.profile, 'Devices') !== path.resolve(dir));
   } catch {}
   const st = readJson(stateFile(), {});
-  const role = !p ? 'alone' : p.id === me() ? 'primary' : 'follower';
+  const role = !p ? 'alone' : p.id === me() ? 'primary' : joined(p) ? 'follower' : 'offer';
+  if (role === 'offer') {
+    // Another device's classes, offered by name; nothing of theirs is shown or taken in until the student says yes.
+    let ready = false;
+    try {
+      ready = !!p.db && fs.statSync(path.join(dir, 'classes.db')).size === p.db.size;
+    } catch {}
+    const offer = { drive: d.id, label: d.label, account: d.account, root: d.path, profile: path.basename(path.dirname(dir)), primary: p.name, at: p.at, mine: false, ready };
+    return { ...base, role, folder: path.dirname(dir), primary: { id: p.id, name: p.name, at: p.at, online: ago(p.at) < ONLINE }, devices: [], phone: null, run: null, queue: [], pending: null, elsewhere: [], offer, waiting: null, pulledAt: null };
+  }
   return { ...base, role, folder: path.dirname(dir), primary: p ? { id: p.id, name: p.name, at: p.at, online: p.id === me() || ago(p.at) < ONLINE } : null, devices, phone, run: role === 'follower' ? p.run || null : null, queue: role === 'follower' ? p.queue || [] : [], pending: role === 'follower' ? p.pending || null : null, elsewhere, waiting: role === 'follower' ? st.waiting || null : null, pulledAt: st.pulledAt || null };
 }
 
@@ -751,4 +785,4 @@ function forgetHere() {
   if (dir) fs.rmSync(path.join(dir, 'devices', `${me()}.json`), { force: true });
 }
 
-module.exports = { serveRequest, configure, follower, step, soon, relay, status, mergeStudy, find, join, makePrimary, claimHere, releaseHere, forgetHere };
+module.exports = { serveRequest, configure, follower, standsAside, publishes, step, soon, relay, status, mergeStudy, find, join, makePrimary, claimHere, releaseHere, forgetHere };

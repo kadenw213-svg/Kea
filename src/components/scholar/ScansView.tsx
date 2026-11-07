@@ -2,8 +2,26 @@ import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, XCircle, Loader2, Play, Square, RefreshCw, BookOpen, Bell, Activity, Clock, Smartphone, Monitor, Search, Download, Crown, Cloud, ChevronDown, ChevronRight, Settings2 } from 'lucide-react';
 import { api, DeviceShare, DevicesStatus, QueuedRun, RunProgress, ScholarNews, ScholarPending, ScholarRun } from '../../lib/api';
 import { useSetting, openSettings } from '../../lib/settings';
-import { toast } from '../../store';
+import { ask, toast } from '../../store';
 import { reloadScholar } from './scholarStore';
+
+/**
+ * Joining another device's classes is always the student's choice, asked here by that device's name: they replace
+ * this computer's classes (a copy is kept), and from then on that device does the class checks. Every "use these
+ * classes" button goes through this; the main process refuses a join without `confirmed`.
+ */
+async function joinAfterAsking(s: DeviceShare) {
+  const yes = await ask(
+    `Use ${s.primary}’s classes on this computer?`,
+    `Kea on ${s.primary} shares classes as “${s.profile}” in ${s.account ? `${s.label} (${s.account})` : s.label}. If you use them here, they replace this computer’s classes (Kea keeps a copy of this computer’s own), and from then on ${s.primary} does the class checks while this computer keeps in step with it. Only do this if ${s.primary} is your own device.`,
+    [
+      { id: 'no', label: 'Not now' },
+      { id: 'yes', label: `Use ${s.primary}’s classes`, primary: true }
+    ]
+  );
+  if (yes !== 'yes') return null;
+  return api.scholar.devicesJoin({ ...s, confirmed: true });
+}
 
 /** Whether version a is newer than b ("0.46.0" vs "0.31.0"). */
 const newer = (a: string, b: string) => {
@@ -257,18 +275,29 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
         </div>
       )}
 
+      {dev.role === 'offer' && dev.offer && (
+        <div className="alert-row">
+          <div>
+            <b>{dev.offer.primary}</b> already shares classes as “{dev.offer.profile}” in {dev.offer.label}. This computer keeps its own classes and doesn’t sync until you choose. Use {dev.offer.primary}’s classes here, or pick “Don’t sync” above to keep this computer separate.
+          </div>
+          <button className="btn sm primary" disabled={!!busy} onClick={() => act('join', async () => (await joinAfterAsking(dev.offer!)) && toast(`Using ${dev.offer!.primary}’s classes here.`, 'success'))}>
+            Use {dev.offer.primary}’s classes…
+          </button>
+        </div>
+      )}
+
       {dev.elsewhere.map((s) => (
         <div key={s.root + s.profile} className="alert-row">
           <div>
             <b>{s.primary}</b> shares classes as “{s.profile}” in {s.label}, separately from this device.
           </div>
-          <button className="btn sm primary" disabled={!!busy} onClick={() => act('join', () => api.scholar.devicesJoin(s), `Using ${s.primary}'s classes here.`)}>
-            Use those
+          <button className="btn sm primary" disabled={!!busy} onClick={() => act('join', async () => (await joinAfterAsking(s)) && toast(`Using ${s.primary}’s classes here.`, 'success'))}>
+            Use those…
           </button>
         </div>
       ))}
 
-      {dev.drive && dev.on && (
+      {dev.drive && dev.on && dev.role !== 'offer' && (
         <div className="dev-list">
           {dev.devices.map((d) => (
             <div key={d.id} className={`dev-row ${d.online ? '' : 'off'}`}>
@@ -353,7 +382,8 @@ export function FromAnotherDevice({ onDone }: { onDone?: () => void }) {
   const use = async (s: DeviceShare) => {
     setBusy(s.root + s.profile);
     try {
-      const r = await api.scholar.devicesJoin(s);
+      const r = await joinAfterAsking(s);
+      if (!r) return setBusy(null);
       if (r.primary) toast('This device is already the primary for these classes.', 'success');
       else if (r.ok) toast(`Your classes from ${r.from} are here. This device now keeps in step with it.`, 'success');
       else toast(r.waiting || 'Still waiting for the drive.', 'success');
