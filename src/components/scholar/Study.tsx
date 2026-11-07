@@ -6,6 +6,7 @@ import { api, StudyCard, StudyHistory, StudyKind, StudyQuestion, StudySet, Study
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
 import { useScholar } from './scholarStore';
+import { studyRoute } from './studyIds';
 import { Bar, progressOf, span, useLiveRun, useNow } from './ScansView';
 import { ReadingButton, ReadingContext, ReadingTarget, useMissReading } from './ReadingPane';
 import { StudySideContext, useStudySideState } from './StudySide';
@@ -276,7 +277,7 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
   const [id, startMode] = fullId.split('#') as [string, DeckMode | undefined];
   const [set, setSet] = useState<StudySetFull | null>(null);
   const [mode, setMode] = useState<DeckMode>(startMode || 'cards');
-  const hub = id.startsWith('hub:') ? parseScope(id) : null;
+  const hub = studyRoute(id).kind === 'page' ? parseScope(id) : null;
   // "stream:<scope>": the Study stream; "saved:<courseId|all>": the bookmarked questions.
   const stream = id.startsWith('stream:') ? parseStream(id) : null;
   const saved = id.startsWith('saved:') ? id.slice(6) : null;

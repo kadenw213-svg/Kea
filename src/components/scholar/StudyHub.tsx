@@ -9,6 +9,7 @@ import { toast } from '../../store';
 import { useScholar } from './scholarStore';
 import { useCanMake, useStudySets } from './Study';
 import { openStream } from './StudyStream';
+import { STUDY_PAGE, studyPageId } from './studyIds';
 
 export interface StudyScope {
   courseId: string;
@@ -22,7 +23,7 @@ export interface StudyScope {
 }
 
 /** Open the Study page for a scope (in the full-window player). */
-export const openStudyHub = (scope: StudyScope) => useScholar.getState().set({ study: `hub:${encodeURIComponent(JSON.stringify(scope))}` });
+export const openStudyHub = (scope: StudyScope) => useScholar.getState().set({ study: studyPageId(scope) });
 /**
  * A class's Study page: every chapter, none ticked yet (or the ones given). `stream`: straight into the Study stream on
  * the chapters given instead (a chapter's own Study button).
@@ -31,7 +32,7 @@ export const openClassStudy = (c: { id: string; code: string }, chapters: string
   stream && selected?.length ? openStream({ courseId: c.id, code: c.code, chapters: selected }) : openStudyHub({ courseId: c.id, code: c.code, title: 'Study', chapters, selected: selected || [] });
 export const parseScope = (id: string): StudyScope | null => {
   try {
-    return JSON.parse(decodeURIComponent(id.slice(4)));
+    return JSON.parse(decodeURIComponent(id.slice(STUDY_PAGE.length)));
   } catch {
     return null;
   }

@@ -59,6 +59,7 @@ import { ResourcesView } from './Resources';
 import { MessagesView } from './Messages';
 import { ChangesBox, ItemHistory } from './History';
 import { openClassStudy, openStudyHub } from './StudyHub';
+import { studyRoute } from './studyIds';
 import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
 import { HubPanel, SharedClaude } from './HubAccount';
 import { HubNav, HubView, HubPractice, useHubClassList } from './HubClasses';
@@ -358,13 +359,14 @@ export function ScholarScreen() {
       </main>
       {item && <ItemPanel ctx={ctx} item={item} onClose={() => setItem(null)} />}
       {study &&
-        (study.startsWith('hub:') ? (
-          <HubPractice setId={study.slice(4)} onClose={() => set({ study: null })} />
-        ) : study.startsWith('readings:') ? (
-          <ReadingsPlayer courseId={study.slice(9)} onClose={() => set({ study: null })} />
-        ) : (
-          <StudyPlayer id={study} onClose={() => set({ study: null })} />
-        ))}
+        (() => {
+          // (Routed by studyIds.ts, the one place the prefixes are defined.)
+          const r = studyRoute(study);
+          const close = () => set({ study: null });
+          if (r.kind === 'hubSet') return <HubPractice setId={r.setId} onClose={close} />;
+          if (r.kind === 'readings') return <ReadingsPlayer courseId={r.courseId} onClose={close} />;
+          return <StudyPlayer id={study} onClose={close} />;
+        })()}
     </div>
   );
 }

@@ -27,6 +27,7 @@ import { hubc, useHubClasses, HubClass, HubClassDetail, HubSession, HubSetInfo, 
 import { HubResult, api } from '../../lib/api';
 import { toast, ask } from '../../store';
 import { useScholar } from './scholarStore';
+import { hubSetId } from './studyIds';
 import { useHubStatus, refreshHub, SupporterBadge } from './HubAccount';
 import { openLink } from './kinds';
 import { MathText } from './MathText';
@@ -649,7 +650,7 @@ function SetRow({ s, teacher, offline, reload }: { s: HubSetInfo; teacher: boole
           {!s.leaderboard && ' · practice only'}
         </div>
       </div>
-      <button className="btn sm primary" disabled={offline} onClick={() => useScholar.getState().set({ study: `hub:${s.id}` })} title={offline ? 'Needs the Kea Hub (answers are checked there)' : ''}>
+      <button className="btn sm primary" disabled={offline} onClick={() => useScholar.getState().set({ study: hubSetId(s.id) })} title={offline ? 'Needs the Kea Hub (answers are checked there)' : ''}>
         {s.due ? 'Study' : 'Practice'} <ArrowRight size={13} />
       </button>
       {teacher && (
