@@ -78,6 +78,7 @@ import {
 import { colName, addr, parseAddr, shiftFormula, adjustForInsert, renameSheetRefs, FormulaError, FUNCTION_NAMES, formulaRefs, compare, dateToSerial } from './formula';
 import { readWorkbook, writeXlsx, writeCsv, writeOds, parseCsv } from './io';
 import { csvLosses } from './csv';
+import { useOfficeLossGuard } from '../../lib/officeLosses';
 import { saveTabFile, exportFile, SaveFormat, isSilentSave } from '../../lib/save';
 import { extOf, baseName } from '../../lib/fileTypes';
 import { api } from '../../lib/api';
@@ -1042,9 +1043,10 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
     const ext = tab.path ? extOf(tab.path) : '';
     return ext === 'csv' || ext === 'tsv' ? csvLosses(h.get(), si) : null;
   };
+  const loss = useOfficeLossGuard(tab);
   const holdReason = () => {
     const lost = !csvOk.current && csvLoss();
-    return lost ? `Autosave paused: a ${extOf(tab.path || '').toUpperCase()} file can’t keep ${lost}.` : null;
+    return lost ? `Autosave paused: a ${extOf(tab.path || '').toUpperCase()} file can’t keep ${lost}.` : loss.holdReason();
   };
   const saveAsExcel = () => saveTabFile(tab.id, formats().filter((f) => f.ext === 'xlsx'), true);
   const save = async (saveAs: boolean) => {
@@ -1063,7 +1065,7 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
       csvOk.current = true;
       setCsvTick((n) => n + 1);
     }
-    return saveTabFile(tab.id, formats(), saveAs);
+    return loss.save(saveAs, (as, opts) => saveTabFile(tab.id, formats(), as, opts));
   };
 
   const printHtml = () => {
@@ -2109,9 +2111,11 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
         {tab.dirty && heldBy && (
           <div className="sheet-hold" role="status">
             {heldBy}
-            <button className="btn tonal sm" onClick={saveAsExcel}>
-              Save as Excel
-            </button>
+            {!csvOk.current && csvLoss() && (
+              <button className="btn tonal sm" onClick={saveAsExcel}>
+                Save as Excel
+              </button>
+            )}
           </div>
         )}
         {showStats && stats && (

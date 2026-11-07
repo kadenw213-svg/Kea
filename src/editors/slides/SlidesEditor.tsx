@@ -48,6 +48,7 @@ import { SlideView, SLIDE_CSS } from './SlideView';
 import { readPptx } from './pptxImport';
 import { writePptx } from './pptxExport';
 import { saveTabFile, exportFile, isSilentSave } from '../../lib/save';
+import { useOfficeLossGuard } from '../../lib/officeLosses';
 import { extOf, baseName } from '../../lib/fileTypes';
 import { uid, clamp, modKey, bytesToDataUrl, escapeHtml } from '../../lib/util';
 import { api } from '../../lib/api';
@@ -484,10 +485,26 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
       .join('');
     return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(baseName(tab.name))}</title><style>@page{size:${d.w / 72}in ${d.h / 72}in;margin:0}html,body{margin:0;padding:0}.pg{width:${d.w}px;height:${d.h}px;overflow:hidden;break-after:page;page-break-after:always;zoom:${96 / 72}}.pg:last-child{break-after:auto;page-break-after:auto}${SLIDE_CSS}</style></head><body>${pages}</body></html>`;
   };
+  // A new presentation is offered its first slide's title as the file name.
+  const firstTitle = () => {
+    const first = h.get().slides[0];
+    const texts = (first?.els || []).filter((e: any) => e.type === 'text' && e.html).sort((a: any, b: any) => a.y - b.y);
+    for (const t of texts) {
+      const s = htmlText((t as any).html).split('\n')[0].trim();
+      if (s) return s;
+    }
+    return '';
+  };
+  const loss = useOfficeLossGuard(tab);
   const save = async (saveAs: boolean) => {
     if (editingId && isSilentSave()) return false;
     if (editingId) finishEditing();
-    return saveTabFile(tab.id, [{ name: 'PowerPoint presentation', ext: 'pptx', build: () => writePptx(h.get()) }], saveAs || (!!tab.path && extOf(tab.path) !== 'pptx'));
+    return loss.save(saveAs, (as, opts) =>
+      saveTabFile(tab.id, [{ name: 'PowerPoint presentation', ext: 'pptx', build: () => writePptx(h.get()) }], as || (!!tab.path && extOf(tab.path) !== 'pptx'), {
+        suggestedName: !tab.path ? firstTitle() : undefined,
+        ...opts
+      })
+    );
   };
   const exportPdf = () => exportFile(`${baseName(tab.name)}.pdf`, { name: 'PDF', ext: 'pdf', build: () => api.pdfFromHtml(staticHtml()) });
   const print = async () => {
@@ -653,10 +670,10 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
       return true;
     }
   };
-  const handlers = useRef({ save, print });
-  handlers.current = { save, print };
+  const handlers = useRef({ save, print, hold: loss.holdReason });
+  handlers.current = { save, print, hold: loss.holdReason };
   useEffect(() => {
-    editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), print: () => handlers.current.print(), debugBuild: () => writePptx(h.get()), ai: proxyAi(aiRef) });
+    editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), holdAutosave: () => handlers.current.hold(), print: () => handlers.current.print(), debugBuild: () => writePptx(h.get()), ai: proxyAi(aiRef) });
   }, [tab.id]);
 
   // Report highlighted text (while editing) or the selected box's text to the AI sidebar.
@@ -1063,7 +1080,8 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
           Slide {idx + 1} of {deck.slides.length}
         </span>
         <span className="grow" />
-        <span>Double-click text to edit · drag to move · F5 to present</span>
+        {tab.dirty && loss.holdReason() && <span className="sb-hold">{loss.holdReason()}</span>}
+        <span>Click text to edit · drag to move · F5 to present</span>
       </div>
 
       {presenting !== null && <Presenter deck={deck} start={presenting} onExit={(i) => (setPresenting(null), setIdx(i))} />}

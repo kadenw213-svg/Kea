@@ -113,6 +113,7 @@ import { odtToHtml, rtfToHtml, docToHtml } from './otherFormats';
 import { markdownToHtml, jsonToMarkdown } from './markdown';
 import { jsonToDocx } from './docxExport';
 import { saveTabFile, exportFile, SaveFormat } from '../../lib/save';
+import { useOfficeLossGuard } from '../../lib/officeLosses';
 import { extOf, baseName } from '../../lib/fileTypes';
 import { bytesToText, textToBytes, bytesToDataUrl, escapeHtml, modKey, clamp } from '../../lib/util';
 import { api } from '../../lib/api';
@@ -435,7 +436,19 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     return ext === 'html' || ext === 'htm' ? [{ ...html, ext }, docx] : [docx, html];
   };
 
-  const save = (saveAs: boolean) => saveTabFile(tab.id, formats(), saveAs);
+  // A new document is offered its first line as the file name ("My Essay on Ecology.docx"), like Word.
+  const firstLine = () => {
+    let out = '';
+    editor?.state.doc.descendants((n) => {
+      if (out) return false;
+      if (n.isTextblock && n.textContent.trim()) out = n.textContent.trim();
+      return !out;
+    });
+    return out;
+  };
+  const loss = useOfficeLossGuard(tab);
+  const save = (saveAs: boolean) =>
+    loss.save(saveAs, (as, opts) => saveTabFile(tab.id, formats(), as, { suggestedName: !tab.path ? firstLine() : undefined, ...opts }));
 
   const exportPdf = () =>
     exportFile(`${baseName(tab.name)}.pdf`, {
@@ -462,11 +475,12 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   // AI "Comment" mode adds threads through the same path as the comment rail.
   const updateMetaRef = useRef(updateMeta);
   updateMetaRef.current = updateMeta;
-  const handlers = useRef({ save, print, exportPdf });
-  handlers.current = { save, print, exportPdf };
+  const handlers = useRef({ save, print, exportPdf, hold: loss.holdReason });
+  handlers.current = { save, print, exportPdf, hold: loss.holdReason };
   useEffect(() => {
     editorRegistry.set(tab.id, {
       save: (a) => handlers.current.save(a),
+      holdAutosave: () => handlers.current.hold(),
       print: () => handlers.current.print(),
       exportPdf: async () => void (await handlers.current.exportPdf()),
       debugPdf: () => {
@@ -812,6 +826,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
         </button>
         <span>{counts.chars.toLocaleString()} characters</span>
         <span className="grow" />
+        {tab.dirty && loss.holdReason() && <span className="sb-hold">{loss.holdReason()}</span>}
         {showHints && (
           <span>
             <span className="kbd-chip">Enter</span> new paragraph · <span className="kbd-chip">Shift+Enter</span> line break · <span className="kbd-chip">Ctrl+Enter</span> page break

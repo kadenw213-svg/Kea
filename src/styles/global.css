@@ -656,6 +656,10 @@ body.col-resizing * {
 .statusbar .grow {
   flex: 1;
 }
+/* Autosave is waiting for an explicit Save (it would drop something). */
+.statusbar .sb-hold {
+  color: var(--text-2);
+}
 
 /* ---------- Side panels ---------- */
 .side-panel {
