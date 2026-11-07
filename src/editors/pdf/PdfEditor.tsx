@@ -74,6 +74,7 @@ import { ColorPicker } from '../../components/ColorPicker';
 import { imagesToPdf, imageToPng, mimeFor } from '../../lib/pdfTools';
 import { extOf, baseName } from '../../lib/fileTypes';
 import './pdf.css';
+import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
@@ -1508,6 +1509,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
           <ZoomIn size={18} />
         </button>
         <div className="tb-sep" />
+        <ToolbarFit />
         <div className="tb-end">
         <LookupButton />
         <AssistantButton />

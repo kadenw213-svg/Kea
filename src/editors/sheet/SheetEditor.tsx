@@ -86,6 +86,7 @@ import { clamp, escapeHtml, modKey } from '../../lib/util';
 import { MenuButton, Popover } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
 import './sheet.css';
+import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
@@ -2641,6 +2642,7 @@ function SheetToolbar(p: {
         <Search size={18} />
       </B>
       <div className="tb-sep" />
+      <ToolbarFit />
       <div className="tb-end">
       <LookupButton />
       <AssistantButton />

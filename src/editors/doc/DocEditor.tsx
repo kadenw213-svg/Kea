@@ -122,6 +122,7 @@ import { ColorPicker } from '../../components/ColorPicker';
 import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
 import { docAiHooks } from './aiHooks';
+import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
 import { HandInButton } from '../../components/scholar/HandIn';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
@@ -1177,6 +1178,7 @@ function Toolbar(p: {
       </B>
       {p.handIn}
       <div className="tb-sep" />
+      <ToolbarFit />
       <div className="tb-end">
       <LookupButton />
       <AssistantButton />

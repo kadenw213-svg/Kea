@@ -25,6 +25,7 @@ import { extOf, baseName } from '../../lib/fileTypes';
 import { api } from '../../lib/api';
 import { MenuButton } from '../../components/Popover';
 import './code.css';
+import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
@@ -316,6 +317,7 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
             <FileType size={15} /> Make .md
           </button>
         )}
+        <ToolbarFit />
         <div className="tb-end">
         <LookupButton />
         <AssistantButton />

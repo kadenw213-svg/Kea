@@ -56,6 +56,7 @@ import { mimeFor } from '../../lib/pdfTools';
 import { MenuButton } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
 import './slides.css';
+import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
@@ -969,6 +970,7 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
         <B on={notesOpen} title="Speaker notes" onClick={() => setNotesOpen((o) => !o)}>
           <StickyNote size={18} />
         </B>
+        <ToolbarFit />
         <div className="tb-end">
         <button className="btn tonal sm" onClick={() => (finishEditing(), setPresenting(idx))} title="Present from this slide (Shift+F5) — F5 from start">
           <Play size={15} /> Present

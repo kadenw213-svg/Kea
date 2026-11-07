@@ -72,6 +72,14 @@ export function MenuButton({
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLSpanElement | null>(null);
   const close = () => setOpen(false);
+  // Screen readers: the button inside is named by `title` and says it opens a menu.
+  useLayoutEffect(() => {
+    const b = anchor?.querySelector('button');
+    if (!b) return;
+    if (title && !b.getAttribute('aria-label') && !b.textContent?.trim()) b.setAttribute('aria-label', title);
+    b.setAttribute('aria-haspopup', 'menu');
+    b.setAttribute('aria-expanded', String(open));
+  });
   return (
     <>
       <span
