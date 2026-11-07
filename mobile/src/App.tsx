@@ -3,6 +3,8 @@ import { AlertTriangle, Award, Bell, BookOpen, Brain, CalendarDays, Camera, Chec
 import type { ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
 import { CATEGORIES, CLASS_COLORS, LinkGroups, TODO, categoryOf, extendedInfo, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
+// (What each item offers, the same rules as the PC: src/components/scholar/itemRules.ts.)
+import { handInText, panelLinks, platformLine, quickVerb, relatedText, studyChapters, typeLabel } from '../../src/components/scholar/itemRules';
 import { useSetting } from '../../src/lib/settings';
 import { useAreas } from '../../src/lib/areas';
 import { hubOn, hubSyncLibrary } from './hub';
@@ -54,7 +56,8 @@ const classColor = (data: KeaData, id: string) => {
   const i = Math.max(0, data.courses.findIndex((c) => c.id === id));
   return ink(chosen[id] || CLASS_COLORS[i % CLASS_COLORS.length], THEMES[getLook().theme]?.dark !== false);
 };
-const LABEL: Record<string, string> = { lecture: 'Lecture', lab: 'Lab', exam: 'Exam', final_exam: 'Final exam', lab_practical: 'Lab practical', quiz: 'Quiz', assignment: 'Assignment', discussion: 'Discussion', paper: 'Paper', peer_review: 'Peer review', lab_handout: 'Lab handout', other_deadline: 'To do', administrative_deadline: 'Deadline', break: 'Break', reading: 'Reading', weekly_reading: 'This week', project: 'Project' };
+// (Every kind's name, from the PC's list, so a kind never shows as its raw id.)
+const LABEL = new Proxy({} as Record<string, string>, { get: (_t, k: string) => typeLabel({ type: String(k), title: '' }) });
 
 /** The PC's copy into the shared study code and screens (and once, what changes here goes back to the PC). */
 let studyHooked = false;
@@ -435,6 +438,9 @@ function Row({ ctx, it, date }: { ctx: Ctx; it: ScholarItem; date?: boolean }) {
           {date && <span>{dayName(it.date)}</span>}
           {whenOf(it) && <span>{whenOf(it)}</span>}
           {extendedInfo(it) && <span className="ext-tag">{extendedInfo(it)!.tag}</span>}
+          {it.opensAt && <span className="ext-tag">Opens {new Date(it.opensAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
+          {/* (What the class site shows, as on the PC: a hint, never a checkmark.) */}
+          {!it.done && (it.handIn === 'graded' || it.handIn === 'submitted') && <span className="ext-tag">{it.handIn === 'graded' ? 'Class site: graded' : 'Class site: handed in'}</span>}
           {room(it.location) && (
             <span>
               <MapPin size={11} /> {room(it.location)}
@@ -1012,7 +1018,13 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
 const TEST = new Set(['exam', 'final_exam', 'lab_practical', 'quiz']);
 
 function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): void }) {
+  // Its button, platforms, document and other links, each once, by the PC's rules: nothing on locked work, never a
+  // quiz on a discussion, the hand-in page not repeated below its button.
   const quick = primaryLink(it);
+  const { platforms, doc, rest } = panelLinks(it, useGuides()?.[it.id]);
+  const handIn = handInText(it);
+  const doneOn = platformLine(it);
+  const chapters = studyChapters(it);
   // (Not one that only repeats the title and the date, as on the PC.)
   const restOf = (t: string) =>
     t
@@ -1023,13 +1035,15 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
   const format = it.studyFocus.find((f) => /^(exam |test |quiz )?format\b/i.test(f));
   // The phone is for learning, seeing what's coming and handing in paper work: the guide's short version, Study up top.
   const guide = useGuides()?.[it.id];
-  const studyable = it.readings.length > 0 && !['administrative_deadline', 'break', 'no_class'].includes(it.type);
+  const studyable = chapters.length > 0;
+  // "Scan & hand in" only for work done on paper (the guide's hand-in says so), never typed work.
+  const paper = /handwritten|hand-written|on paper|paper copy|scan|photo|worksheet|notebook/i.test(`${guide?.submit?.what || ''} ${guide?.submit?.format || ''}`) || guide?.kind === 'written-homework';
   const study = (
     <button
       className="btn primary"
-      onClick={() => (onClose(), openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: it.readings.map((r) => r.chapter), itemId: TEST.has(it.type) ? it.id : undefined }))}
+      onClick={() => (onClose(), openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters, itemId: TEST.has(it.type) ? it.id : undefined }))}
     >
-      <ClipboardCheck size={16} /> Study {it.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ')}
+      <ClipboardCheck size={16} /> Study {chapters.map((r) => r.replace(/^Chapter /, 'Ch ')).join(', ')}
     </button>
   );
   return (
@@ -1054,6 +1068,8 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           {it.location ? ` · ${it.location}` : ''}
         </p>
         {extendedInfo(it) && <p className="ext-line small">{extendedInfo(it)!.text}</p>}
+        {doneOn && <p className="muted small">{doneOn}</p>}
+        {handIn && <p className={`small ${handIn.muted ? 'muted' : ''}`}>{handIn.opens && it.opensAt ? <b>Opens {new Date(it.opensAt).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</b> : handIn.text}</p>}
         {format && <p className="muted small">{format.replace(/^(exam |test |quiz )?format:\s*/i, 'Format: ')}</p>}
         <div className="actions">
           {TODO.has(it.type) && (
@@ -1063,10 +1079,20 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           )}
           {quick && (
             <button className="btn primary" onClick={() => Kea.open({ url: quick.url })}>
-              <quick.icon size={16} /> {quick.label}
+              <quick.icon size={16} /> {quickVerb(quick)}
             </button>
           )}
-          {quick?.label === 'Hand in' && guide?.kind !== 'paper' && (
+          {platforms.map((l) => (
+            <button key={l.url} className="btn" onClick={() => Kea.open({ url: l.url })}>
+              <ExternalLink size={16} /> {l.label}
+            </button>
+          ))}
+          {doc && (
+            <button className="btn" onClick={() => Kea.open({ url: doc.url })}>
+              <BookOpen size={16} /> Open assignment
+            </button>
+          )}
+          {quick?.kind === 'folder' && paper && (
             <button
               className="btn primary"
               onClick={async () => {
@@ -1083,6 +1109,23 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           )}
         </div>
         {studyable && TEST.has(it.type) && study}
+        {(it.related || []).length > 0 && (
+          <div className="sheet-related">
+            {it.related!.map((r) => {
+              const t = relatedText(r);
+              const other = ctx.items.find((x) => x.id === r.id);
+              return (
+                <button key={r.id} className="card link" disabled={!other} onClick={() => other && ctx.open(other)}>
+                  {r.done ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                  <span>
+                    {r.group ? `${r.group} · ` : t.prefix}
+                    <b>{t.title}</b> <span className="muted small">· {typeLabel(r)} · {dayName(r.date)}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         <AssignmentGuide it={it} raw={instructions} onOpen={(url) => Kea.open({ url })} compact />
         {it.readings.length > 0 && (
           <details className="pn-readings sheet-fold">
@@ -1103,7 +1146,7 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           </details>
         )}
         {studyable && !TEST.has(it.type) && study}
-        <LinkGroups links={[...it.links, ...(it.platformLinks || []), ...it.weeklyLinks]} onOpen={(url) => Kea.open({ url })} />
+        <LinkGroups links={rest} onOpen={(url) => Kea.open({ url })} />
         {!guide && <OriginalWording text={instructions} />}
         {(it.instructor || it.contact) && <p className="muted small">{[it.instructor, it.contact].filter(Boolean).join(' · ')}</p>}
       </div>
