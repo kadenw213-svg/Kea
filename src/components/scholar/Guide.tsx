@@ -128,6 +128,37 @@ function useStepChecks(itemId: string) {
   };
 }
 
+// Steps the student opened or folded themselves, by item and step title, on this device. A step they never touched
+// follows the default (open until checked off). Nothing else changes them: a background refresh of the guides, a
+// sync or a checkmark elsewhere never reopens a step that was folded.
+const FOLD_KEY = 'kea.guideFolds';
+function readFolds(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(FOLD_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+function useStepFolds(itemId: string) {
+  const [all, setAll] = useState(readFolds);
+  const key = (title: string) => `${itemId}|${title}`;
+  return {
+    /** true: opened, false: folded, undefined: never touched. */
+    choice: (title: string): boolean | undefined => all[key(title)],
+    set(changes: [string, boolean][]) {
+      const next = { ...readFolds() };
+      for (const [title, open] of changes) next[key(title)] = open;
+      // (Kept small: the oldest choices go first once there are many.)
+      const keys = Object.keys(next);
+      for (const k of keys.slice(0, Math.max(0, keys.length - 3000))) delete next[k];
+      try {
+        localStorage.setItem(FOLD_KEY, JSON.stringify(next));
+      } catch {}
+      setAll(next);
+    }
+  };
+}
+
 type GuideStep = Guide['steps'][number];
 function Step({ n, s, open, done, onDone, onToggle, onOpen }: { n: number; s: GuideStep; open: boolean; done: boolean; onDone(on: boolean): void; onToggle(): void; onOpen(url: string): void }) {
   const more = !!(s.detail || s.links?.length);
@@ -182,7 +213,6 @@ export function supplies(need: string[] | undefined, kind?: string, type?: strin
  * (the phone, for seeing what's coming and handing in paper work): what it's about, the notes and the hand-in.
  */
 export function GuideView({ it, g, onOpen, compact = false }: { it: ScholarItem; g: Guide; onOpen(url: string): void; compact?: boolean }) {
-  const [open, setOpen] = useState<Set<number>>(new Set());
   // (A guide from before v0.66.1 kept what unlocks the instructions as a separate gate: it's the first step here.)
   const gated: GuideStep[] =
     g.gate && !g.steps.some((s) => s.unlocks) ? [{ title: g.gate.label || 'Do this first', text: g.gate.what, links: g.gate.url ? [{ label: g.gate.label || 'Open it', url: g.gate.url }] : [], unlocks: true }, ...g.steps] : g.steps;
@@ -194,20 +224,24 @@ export function GuideView({ it, g, onOpen, compact = false }: { it: ScholarItem;
   const tidy = (s: GuideStep): GuideStep => ({ ...s, links: (s.links || []).filter((l) => !own.has(l.url) && !(post && /quiz_summary|quizzing/i.test(l.url))) });
   const steps: GuideStep[] = (get.length ? [{ title: 'Get your supplies', text: get.join('; '), links: [] }, ...gated] : gated).map(tidy);
   const checks = useStepChecks(it.id);
+  const folds = useStepFolds(it.id);
   const [, bump] = useState(0);
-  // Checking off the last step that unlocks the instructions asks Kea to read them now.
+  const expandable = steps.map((s, i) => (s.detail || s.links?.length ? i : -1)).filter((i) => i >= 0);
+  // A step the student never opened or folded is open until it's checked off: the questions to answer and the links
+  // are the instructions, not extras behind a click. Their own choice always wins.
+  const isOpen = (i: number) => folds.choice(steps[i].title) ?? (!compact && !checks.done(steps[i].title));
+  // Checking a step off folds it and opens the next step still to do (only then, never by itself); the last step that
+  // unlocks the instructions also asks Kea to read them now.
   const check = (s: GuideStep, on: boolean) => {
     checks.set(s.title, on);
+    if (on && !compact) {
+      const at = steps.indexOf(s);
+      const next = expandable.find((i) => i > at && !checks.done(steps[i].title));
+      folds.set([[s.title, false], ...(next != null ? ([[steps[next].title, true]] as [string, boolean][]) : [])]);
+    }
     if (on && s.unlocks && steps.filter((x) => x.unlocks && x !== s).every((x) => checks.done(x.title))) rescan(it).then(() => bump((n) => n + 1), () => {});
   };
-  const expandable = steps.map((s, i) => (s.detail || s.links?.length ? i : -1)).filter((i) => i >= 0);
-  // Every step open to start with: the questions to answer and the links are the instructions, not extras behind a
-  // click. (Steps already checked off stay folded.)
-  useEffect(() => {
-    if (!compact) setOpen(new Set(expandable.filter((i) => !checks.done(steps[i].title))));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [it.id, g]);
-  const all = expandable.length > 0 && expandable.every((i) => open.has(i));
+  const all = expandable.length > 0 && expandable.every((i) => isOpen(i));
   const total = g.graded.reduce((n, c) => n + (c.points || 0), 0);
   // (Guides written before v0.66 kept the topic and goal in the writing focus.)
   const topic = g.topic || g.focus?.topic || '';
@@ -267,7 +301,7 @@ export function GuideView({ it, g, onOpen, compact = false }: { it: ScholarItem;
           <div className="gd-top">
             <div className="tb-h">What to do</div>
             {expandable.length > 1 && (
-              <button className="gd-all" onClick={() => setOpen(all ? new Set() : new Set(expandable))}>
+              <button className="gd-all" onClick={() => folds.set(expandable.map((i) => [steps[i].title, !all]))}>
                 {all ? 'Fold all steps' : 'Open all steps'}
               </button>
             )}
@@ -278,11 +312,11 @@ export function GuideView({ it, g, onOpen, compact = false }: { it: ScholarItem;
                 key={i}
                 n={i + 1}
                 s={s}
-                open={open.has(i)}
+                open={isOpen(i)}
                 done={checks.done(s.title)}
                 onDone={(on) => check(s, on)}
                 onOpen={onOpen}
-                onToggle={() => setOpen((o) => (o.has(i) ? new Set([...o].filter((x) => x !== i)) : new Set([...o, i])))}
+                onToggle={() => folds.set([[s.title, !isOpen(i)]])}
               />
             ))}
           </ol>
