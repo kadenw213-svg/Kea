@@ -171,11 +171,17 @@ function Workspace({ tab, active, e }: { tab: Tab; active: boolean; e: Engine })
 
   const aiRef = useRef<AiHooks>(null as any);
   if (!aiRef.current) aiRef.current = photoAi(e);
-  const handlers = useRef({ save, print });
-  handlers.current = { save, print };
+  // A layered picture in a flat format waits for Save, which asks whether to flatten it or keep a PSD.
+  const holdReason = () => {
+    const ext = extOf(tabRef.current.path || tabRef.current.name);
+    return ext !== 'psd' && isLayered(e.doc) && !flattenOk.current ? 'Layers are kept until you press Save.' : null;
+  };
+  const handlers = useRef({ save, print, holdReason });
+  handlers.current = { save, print, holdReason };
   useEffect(() => {
     editorRegistry.set(tab.id, {
       save: (a) => handlers.current.save(a),
+      holdAutosave: () => handlers.current.holdReason(),
       print: () => handlers.current.print(),
       debugBuild: () => encode(e, extOf(tabRef.current.name) || 'png'),
       ai: proxyAi(aiRef)
@@ -376,7 +382,7 @@ function Workspace({ tab, active, e }: { tab: Tab; active: boolean; e: Engine })
           </DockSection>
         </div>
       </div>
-      <StatusBar e={e} />
+      <StatusBar e={e} hold={holdReason()} />
       {dialog && <PhotoDialog spec={dialog} engine={e} close={() => setDialog(null)} />}
     </div>
   );
@@ -393,7 +399,7 @@ function viaCopy(e: Engine) {
   e.commit('Layer via copy');
 }
 
-function StatusBar({ e }: { e: Engine }) {
+function StatusBar({ e, hold }: { e: Engine; hold: string | null }) {
   const [, force] = useState(0);
   useEffect(() => e.subscribeCursor(() => force((n) => n + 1)), [e]);
   const c = e.cursor;
@@ -413,7 +419,7 @@ function StatusBar({ e }: { e: Engine }) {
       {e.selection && <span>Selection {selectionArea(e.selection)}</span>}
       {e.editTarget === 'mask' && <span style={{ color: 'var(--warning)' }}>Painting on mask</span>}
       <span className="grow" />
-      {e.dirty && <span style={{ color: 'var(--accent)' }}>Edited · save to keep changes</span>}
+      {e.dirty && <span style={{ color: 'var(--accent)' }}>{hold || 'Edited · save to keep changes'}</span>}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { setting } from './settings';
 import { silently } from './save';
 import { extOf, baseName } from './fileTypes';
 import { openPaths } from './open';
+import { nextAutosaveStep, AUTOSAVE_RETRY_MS } from './autosavePolicy';
 
 /**
  * Keeps work safe without the user thinking about it:
@@ -26,6 +27,8 @@ export async function autosaveNow(tabId: string): Promise<boolean> {
   const tab = useTabs.getState().tabs.find((t) => t.id === tabId);
   const handle = editorRegistry.get(tabId);
   if (!tab || !tab.dirty || (!tab.path && !tab.remote) || !handle) return false;
+  // Changes that would destroy or drop something wait for the user's own Save.
+  if (isHeld(tabId)) return false;
   try {
     return await silently(() => handle.save(false));
   } catch {
@@ -33,18 +36,28 @@ export async function autosaveNow(tabId: string): Promise<boolean> {
   }
 }
 
-function scheduleAutosave(tabId: string) {
+const isHeld = (tabId: string) => {
+  try {
+    return !!editorRegistry.get(tabId)?.holdAutosave?.();
+  } catch {
+    return true;
+  }
+};
+
+function scheduleAutosave(tabId: string, tries = 0) {
   if (!setting('files.autosave')) return;
   clearTimeout(autosaveTimers.get(tabId));
-  const delay = Math.max(1, Number(setting('files.autosaveDelay')) || 3) * 1000;
+  const delay = tries ? AUTOSAVE_RETRY_MS : Math.max(1, Number(setting('files.autosaveDelay')) || 3) * 1000;
   autosaveTimers.set(
     tabId,
     setTimeout(async () => {
       autosaveTimers.delete(tabId);
-      const ok = await autosaveNow(tabId);
-      // Couldn't save right now (e.g. mid-edit in a cell): try again shortly.
+      const held = isHeld(tabId);
+      const saved = held ? false : await autosaveNow(tabId);
       const tab = useTabs.getState().tabs.find((t) => t.id === tabId);
-      if (!ok && tab?.dirty && (tab.path || tab.remote)) setTimeout(() => scheduleAutosave(tabId), 4000);
+      const step = nextAutosaveStep({ held, saved, stillDirty: !!tab?.dirty && !!(tab.path || tab.remote), tries });
+      // Couldn't save this moment (e.g. mid-edit in a cell): try again shortly, but not forever.
+      if (step === 'retry') scheduleAutosave(tabId, tries + 1);
     }, delay)
   );
 }

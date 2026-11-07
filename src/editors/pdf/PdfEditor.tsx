@@ -60,9 +60,10 @@ import { PageView, ToolStyle, measureTextAnn } from './PageView';
 import { Thumbnails } from './Thumbnails';
 import { SignatureModal } from './SignatureModal';
 import { buildPdf, readFormFields, isEncrypted, FormFieldInfo, FormValues } from './save';
+import { pdfAutosaveHold, hasRedactions } from './autosaveHold';
 import { decryptPdf, encryptPdf, compressPdf, ocrPdf, pdfToDocHtml, Protection } from '../../lib/pdfSecurity';
 import { PasswordDialog } from './PasswordDialog';
-import { Lock, Minimize2, ScanText, FileType } from 'lucide-react';
+import { Lock, Minimize2, ScanText, FileType, Info } from 'lucide-react';
 import { formatBytes } from '../../lib/util';
 import { annBox, rotateAnn, translateAnn, baselineEm } from './geometry';
 import { uid, clamp, bytesToDataUrl, modKey, escapeHtml } from '../../lib/util';
@@ -1079,15 +1080,55 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
       toast('Converted to a document. Check the layout, then save it as Word.', 'success');
     });
 
+  // Changes autosave must leave for the user's own Save (redactions, page changes that drop bookmarks or form fields).
+  const holdReason = () =>
+    pdfAutosaveHold({
+      annots: history.get().annots,
+      pages: history.get().pages,
+      originalPageCount: sources[0]?.doc?.numPages ?? null,
+      hasForm: formFields.length > 0,
+      hasOutline: outline.length > 0
+    });
+
   const save = async (saveAs: boolean) => {
-    // Autosave never interrupts typing in a text box, and never shows dialogs.
-    if (isSilentSave() && (encrypted || editingId)) return false;
+    // Autosave never interrupts typing in a text box, never shows dialogs, and never redacts or rebuilds the file.
+    if (isSilentSave() && (encrypted || editingId || holdReason())) return false;
     if (encrypted) {
       await ask('This PDF is locked', "Kea couldn't unlock this PDF for editing, so it can only be viewed. If you know its password, close it and open it again.", [{ id: 'ok', label: 'OK', primary: true }]);
       return false;
     }
+    let suggestedName: string | undefined;
+    if (hasRedactions(history.get().annots)) {
+      // Redacting is permanent: say so once, and offer a redacted copy so the original stays as it was.
+      const inPlace = !saveAs && !!tab.path && extOf(tab.path) === 'pdf';
+      const choice = inPlace
+        ? await ask('Redact this PDF?', 'The covered content is removed for good. This can’t be undone.', [
+            { id: 'cancel', label: 'Cancel' },
+            { id: 'replace', label: `Redact ${tab.name}`, danger: true },
+            { id: 'copy', label: 'Save a redacted copy…', primary: true }
+          ])
+        : await ask('Redactions are permanent', 'The covered content is removed from the saved file for good.', [
+            { id: 'cancel', label: 'Cancel' },
+            { id: 'replace', label: 'Save', primary: true }
+          ]);
+      if (choice !== 'replace' && choice !== 'copy') return false;
+      if (choice === 'copy') {
+        saveAs = true;
+        suggestedName = `${baseName(tab.name)} (redacted)`;
+      }
+    }
     setEditingId(null);
-    return saveTabFile(tab.id, [{ name: 'PDF document', ext: 'pdf', build }], saveAs);
+    const redacting = hasRedactions(history.get().annots);
+    const ok = await saveTabFile(tab.id, [{ name: 'PDF document', ext: 'pdf', build }], saveAs, { suggestedName });
+    // Show what was written: the redacted pages as they now are, so the boxes aren't applied a second time.
+    const saved = useTabs.getState().tabs.find((x) => x.id === tab.id);
+    if (ok && redacting && saved?.path && !saved.dirty && !protection?.userPassword) {
+      try {
+        const f = await api.readFile(saved.path);
+        if (f?.data) useTabs.getState().updateTab(tab.id, { data: f.data, version: saved.version + 1 });
+      } catch {}
+    }
+    return ok;
   };
 
   const print = async () => {
@@ -1179,11 +1220,12 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
       return true;
     }
   };
-  const latestHandlers = useRef({ save, print, build });
-  latestHandlers.current = { save, print, build };
+  const latestHandlers = useRef({ save, print, build, holdReason });
+  latestHandlers.current = { save, print, build, holdReason };
   useEffect(() => {
     editorRegistry.set(tab.id, {
       save: (a) => latestHandlers.current.save(a),
+      holdAutosave: () => latestHandlers.current.holdReason(),
       print: () => latestHandlers.current.print(),
       debugBuild: () => latestHandlers.current.build(),
       ai: proxyAi(aiRef)
@@ -1307,6 +1349,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   const pageCount = doc.pages.length;
   const showOptions = tool !== 'select' || !!selected;
   const optType: string = selected ? selected.type : tool;
+  const hold = holdReason();
 
   const ToolBtn = ({ t, icon, label, keyHint }: { t: Tool; icon: React.ReactNode; label: string; keyHint?: string }) => (
     <button className={`icon-btn ${tool === t ? 'active' : ''}`} title={`${label}${keyHint ? ` (${keyHint})` : ''}`} onClick={() => setTool(t)}>
@@ -1544,6 +1587,12 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {tab.dirty && hold && (
+        <div className="pdf-hold-bar" role="status">
+          <Info size={15} /> {hold}
         </div>
       )}
 
