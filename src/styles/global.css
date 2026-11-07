@@ -656,6 +656,10 @@ body.col-resizing * {
 .statusbar .grow {
   flex: 1;
 }
+/* Autosave is waiting for an explicit Save (it would drop something). */
+.statusbar .sb-hold {
+  color: var(--text-2);
+}
 
 /* ---------- Side panels ---------- */
 .side-panel {
@@ -907,6 +911,31 @@ body.col-resizing * {
   z-index: 1;
 }
 
+/* Narrow windows (ToolbarFit): Encyclopedia and Claude shrink to icons first, then tools tuck behind ». */
+.toolbar [data-tb-hidden] {
+  display: none !important;
+}
+.toolbar[data-tb-compact] .ai-toolbar-btn {
+  font-size: 0;
+  gap: 0;
+}
+.toolbar[data-tb-open] {
+  height: auto;
+  min-height: var(--toolbar-h);
+  flex-wrap: wrap;
+  row-gap: 2px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-radius: 22px;
+}
+.toolbar[data-tb-open] .tb-end {
+  position: static;
+  box-shadow: none;
+  height: auto;
+}
+.tb-more {
+  flex-shrink: 0;
+}
 /* ---------- Voice typing ---------- */
 .voice-panel {
   position: fixed;

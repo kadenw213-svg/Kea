@@ -56,19 +56,28 @@ export async function openWithDialog() {
   for (const f of files) await openEntry(f);
 }
 
-let untitledCounter = 1;
+const UNTITLED: Record<string, [base: string, ext: string]> = {
+  doc: ['Untitled document', ''],
+  sheet: ['Untitled spreadsheet', ''],
+  slides: ['Untitled presentation', ''],
+  code: ['Untitled', '.txt'],
+  pdf: ['Untitled PDF', ''],
+  image: ['Untitled image', '.png'],
+  video: ['Untitled video', '.keavideo']
+};
+/**
+ * The name for a new file: numbered per kind, with the number before the extension ("Untitled image 2.png"), using
+ * the lowest number no open tab has, so the first spreadsheet is never "Untitled spreadsheet 2".
+ */
+export function untitledName(kind: string, openNames: string[]) {
+  const [base, ext] = UNTITLED[kind] || ['Untitled', ''];
+  const nameFor = (n: number) => `${base}${n === 1 ? '' : ` ${n}`}${ext}`;
+  const taken = new Set(openNames.map((x) => x.toLowerCase()));
+  let n = 1;
+  while (taken.has(nameFor(n).toLowerCase())) n++;
+  return nameFor(n);
+}
 export function newFile(kind: EditorKind) {
-  const names: Record<string, string> = {
-    doc: 'Untitled document',
-    sheet: 'Untitled spreadsheet',
-    slides: 'Untitled presentation',
-    code: 'Untitled',
-    pdf: 'Untitled',
-    image: 'Untitled image.png',
-    video: 'Untitled video.keavideo'
-  };
-  const n = untitledCounter++;
-  let name = n === 1 ? names[kind] : `${names[kind]} ${n}`;
-  if (kind === 'code') name += '.txt';
+  const name = untitledName(kind, useTabs.getState().tabs.filter((t) => !t.path).map((t) => t.name));
   useTabs.getState().addTab({ kind, name, path: null, data: null });
 }

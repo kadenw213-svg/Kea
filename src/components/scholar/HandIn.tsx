@@ -5,6 +5,7 @@ import { Upload, Loader2, CheckCircle2, Lock } from 'lucide-react';
 import { api } from '../../lib/api';
 import { MenuButton } from '../Popover';
 import { toast } from '../../store';
+import { useKeaModes } from '../../lib/modes';
 import '../../styles/handin.css';
 
 type Targets = Awaited<ReturnType<typeof api.scholar.handInTargets>>;
@@ -84,7 +85,44 @@ export function Picker({ path, dirty, close, only, title }: { path: string; dirt
   );
 }
 
+// Whether any class has an open assignment folder, from what Kea already knows (no class-site look). Shared by every
+// editor's Hand in button and refreshed at most every few minutes.
+let known: { at: number; open: boolean } | null = null;
+let asking: Promise<boolean> | null = null;
+function anyOpenFolder(): Promise<boolean> {
+  if (known && Date.now() - known.at < 5 * 60_000) return Promise.resolve(known.open);
+  asking ||= api.scholar
+    .handInTargets({ peek: true })
+    .then((t) => t.some((c) => c.folders.some((f) => !f.closed)))
+    .catch(() => false)
+    .then((open) => {
+      known = { at: Date.now(), open };
+      asking = null;
+      return open;
+    });
+  return asking;
+}
+
+/**
+ * Hand in only makes sense for someone in School mode whose classes have a folder open for hand-ins: a bank
+ * statement or a Personal user's notes get no Hand in button.
+ */
+export function useCanHandIn(path: string | null) {
+  const school = useKeaModes().school;
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let live = true;
+    if (school && path) anyOpenFolder().then((o) => live && setOpen(o));
+    else setOpen(false);
+    return () => {
+      live = false;
+    };
+  }, [school, path]);
+  return school && !!path && open;
+}
+
 export function HandInButton({ path, dirty }: { path: string; dirty: boolean }) {
+  if (!useCanHandIn(path)) return null;
   return (
     <MenuButton
       button={() => (

@@ -77,6 +77,8 @@ import {
 } from './model';
 import { colName, addr, parseAddr, shiftFormula, adjustForInsert, renameSheetRefs, FormulaError, FUNCTION_NAMES, formulaRefs, compare, dateToSerial } from './formula';
 import { readWorkbook, writeXlsx, writeCsv, writeOds, parseCsv } from './io';
+import { csvLosses } from './csv';
+import { useOfficeLossGuard } from '../../lib/officeLosses';
 import { saveTabFile, exportFile, SaveFormat, isSilentSave } from '../../lib/save';
 import { extOf, baseName } from '../../lib/fileTypes';
 import { api } from '../../lib/api';
@@ -84,6 +86,7 @@ import { clamp, escapeHtml, modKey } from '../../lib/util';
 import { MenuButton, Popover } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
 import './sheet.css';
+import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
@@ -1034,25 +1037,36 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
     if (ext === 'ods') return [ods, xlsx, csv];
     return [xlsx, csv, tsv, ods];
   };
+  // A CSV can't hold formatting, formulas or other sheets. Asked once per tab; after "Keep CSV" autosave writes the values.
+  const csvOk = useRef(false);
+  const [, setCsvTick] = useState(0);
+  const csvLoss = () => {
+    const ext = tab.path ? extOf(tab.path) : '';
+    return ext === 'csv' || ext === 'tsv' ? csvLosses(h.get(), si) : null;
+  };
+  const loss = useOfficeLossGuard(tab);
+  const holdReason = () => {
+    const lost = !csvOk.current && csvLoss();
+    return lost ? `Autosave paused: a ${extOf(tab.path || '').toUpperCase()} file can’t keep ${lost}.` : loss.holdReason();
+  };
+  const saveAsExcel = () => saveTabFile(tab.id, formats().filter((f) => f.ext === 'xlsx'), true);
   const save = async (saveAs: boolean) => {
     if (editing && isSilentSave()) return false;
     if (editing) commitEdit();
-    const ext = tab.path ? extOf(tab.path) : '';
-    if (!saveAs && (ext === 'csv' || ext === 'tsv') && (h.get().sheets.length > 1 || Object.values(sheet.cells).some((c) => c.s || c.f))) {
+    const lost = !saveAs && !csvOk.current && csvLoss();
+    if (lost) {
       if (isSilentSave()) return false;
-      const choice = await ask(
-        'Save as CSV?',
-        'CSV files only keep the values of the current sheet. Formatting, formulas and other sheets will be lost. Save as an Excel workbook to keep everything.',
-        [
-          { id: 'cancel', label: 'Cancel' },
-          { id: 'csv', label: 'Keep CSV' },
-          { id: 'xlsx', label: 'Save as Excel', primary: true }
-        ]
-      );
-      if (choice === 'cancel') return false;
-      if (choice === 'xlsx') return saveTabFile(tab.id, formats().filter((f) => f.ext === 'xlsx'), true);
+      const choice = await ask('Keep it as CSV?', `A CSV file keeps only the values of this sheet, not its ${lost}. Save as Excel to keep everything.`, [
+        { id: 'cancel', label: 'Cancel' },
+        { id: 'csv', label: 'Keep CSV' },
+        { id: 'xlsx', label: 'Save as Excel', primary: true }
+      ]);
+      if (choice === 'xlsx') return saveAsExcel();
+      if (choice !== 'csv') return false;
+      csvOk.current = true;
+      setCsvTick((n) => n + 1);
     }
-    return saveTabFile(tab.id, formats(), saveAs);
+    return loss.save(saveAs, (as, opts) => saveTabFile(tab.id, formats(), as, opts));
   };
 
   const printHtml = () => {
@@ -1382,10 +1396,11 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
       return false;
     }
   };
-  const handlers = useRef({ save, print });
-  handlers.current = { save, print };
+  const handlers = useRef({ save, print, holdReason });
+  handlers.current = { save, print, holdReason };
+  const heldBy = holdReason();
   useEffect(() => {
-    editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), print: () => handlers.current.print(), debugBuild: () => writeXlsx(h.get()), ai: proxyAi(aiRef) });
+    editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), holdAutosave: () => handlers.current.holdReason(), print: () => handlers.current.print(), debugBuild: () => writeXlsx(h.get()), ai: proxyAi(aiRef) });
   }, [tab.id]);
 
   // Report the selected cells (as tab-separated text) to the AI sidebar.
@@ -2094,6 +2109,16 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
           )}
         </div>
         <div className="grow" />
+        {tab.dirty && heldBy && (
+          <div className="sheet-hold" role="status">
+            {heldBy}
+            {!csvOk.current && csvLoss() && (
+              <button className="btn tonal sm" onClick={saveAsExcel}>
+                Save as Excel
+              </button>
+            )}
+          </div>
+        )}
         {showStats && stats && (
           <div className="sheet-stats">
             {stats.nums > 0 && <span>Sum: {formatValue(stats.sum)}</span>}
@@ -2617,6 +2642,7 @@ function SheetToolbar(p: {
         <Search size={18} />
       </B>
       <div className="tb-sep" />
+      <ToolbarFit />
       <div className="tb-end">
       <LookupButton />
       <AssistantButton />

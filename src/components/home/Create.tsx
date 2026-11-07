@@ -9,7 +9,8 @@ import { MenuButton } from '../Popover';
 
 async function merge() {
   const picked = await api.openDialog({ title: 'Choose PDFs to combine', multi: true, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
-  if (picked.length < 1) return;
+  if (!picked.length) return;
+  if (picked.length < 2) return toast('Choose two or more PDFs to combine (hold Ctrl to pick several).');
   try {
     const bytes = await mergePdfs(picked.map((f) => f.data));
     useTabs.getState().addTab({ kind: 'pdf', name: 'Combined.pdf', path: null, data: bytes });

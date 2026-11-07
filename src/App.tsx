@@ -40,6 +40,13 @@ const SlidesEditor = lazy(() => import('./editors/slides/SlidesEditor'));
 const PhotoEditor = lazy(() => import('./editors/photo/PhotoEditor'));
 const VideoEditor = lazy(() => import('./editors/video/VideoEditor'));
 
+/** Keys a focused editor documents for itself (its menus list them), which then beat the app-wide shortcut. */
+const EDITOR_KEYS: [selector: string, keys: string[]][] = [['.doc-editor .ProseMirror', [',']]];
+function ownsShortcut(target: EventTarget | null, key: string) {
+  const el = target instanceof Element ? target : null;
+  return !!el && EDITOR_KEYS.some(([sel, keys]) => keys.includes(key) && !!el.closest(sel));
+}
+
 function EditorFor({ tab, active }: { tab: Tab; active: boolean }) {
   switch (tab.kind) {
     case 'pdf':
@@ -109,7 +116,8 @@ export function App() {
     };
   }, []);
 
-  // Global shortcuts. Capture phase so they work inside editors too.
+  // Global shortcuts. Capture phase so they work inside editors too, except where the focused editor documents the
+  // same keys for itself (ownsShortcut).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Command palette: Ctrl+Shift+P or Alt+/
@@ -128,6 +136,9 @@ export function App() {
         return;
       }
       if (k === ',') {
+        // Typing in a document, Ctrl+, is Subscript (as its menu says): the editor's own shortcut wins there.
+        // Settings stays one click away in the Kea menu and the command palette.
+        if (ownsShortcut(e.target, ',')) return;
         e.preventDefault();
         openSettings();
         return;

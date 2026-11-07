@@ -11,11 +11,12 @@ import { SECTIONS, Field, Section, useSettings, DEFAULTS } from '../../lib/setti
 import { CATEGORIES, POPULAR, Hit, categoryOf, sectionById, searchSettings, suggestChange, hintOf, modelAvailable, askModel } from '../../lib/settingsSearch';
 import { api } from '../../lib/api';
 import { ModelSettings } from '../lookup/ModelSettings';
-import { toast, ask, useTabs } from '../../store';
+import { toast, ask, useTabs, editorRegistry } from '../../store';
 import { formatBytes } from '../../lib/util';
 import { SHORTCUTS } from './shortcuts';
 import { GooglePanel } from './GooglePanel';
-import { useUpdates } from '../Updates';
+import { useUpdates, openUpdates } from '../Updates';
+import { useKeaModes } from '../../lib/modes';
 import { VoiceSettingsExtras } from '../VoiceTyping';
 import { FeedbackPanel } from './FeedbackPanel';
 import { ControlPanel } from '../control/ControlPanel';
@@ -289,11 +290,25 @@ const where = (s: Section) => {
 
 /** A search result that's a page or a panel rather than one setting. */
 function PanelRow({ hit, go }: { hit: Extract<Hit, { kind: 'panel' }>; go: (id: string) => void }) {
+  const p = hit.panel;
+  // An action ("Check for updates now", "Print the open file") runs right away; the rest open their page.
+  const run = () => {
+    if (p.action === 'checkUpdates') {
+      useSettings.getState().ui({ open: false });
+      openUpdates(true);
+    } else if (p.action === 'print') {
+      const handle = editorRegistry.get(useTabs.getState().activeId);
+      if (!handle?.print) return toast('Open a document, sheet, slide or PDF to print it.');
+      useSettings.getState().ui({ open: false });
+      handle.print();
+    } else go(hit.section.id);
+  };
   return (
-    <button className="srow srow-link" onClick={() => go(hit.section.id)}>
+    <button className="srow srow-link" onClick={run}>
       <div className="srow-text">
         <span className="srow-where">{where(hit.section)}</span>
-        <div className="srow-label">{hit.panel.label}</div>
+        <div className="srow-label">{p.label}</div>
+        {p.hint && <div className="srow-help">{p.hint}</div>}
       </div>
       <ArrowRight size={16} className="muted" />
     </button>
@@ -342,7 +357,9 @@ function SettingsStart({ q, setQ, go }: { q: string; setQ: (q: string) => void; 
   const shortcuts = query.length > 1 ? SHORTCUTS.flatMap((g) => g.items.filter(([k, d]) => (k + ' ' + d).toLowerCase().includes(query.toLowerCase()))).slice(0, 4) : [];
   const rest = hits.filter((h) => !aiKeys.has(h.key));
   const shown = all ? rest : rest.slice(0, 7);
-  const popular = POPULAR.map((k) => SECTIONS.flatMap((s) => s.fields).find((f) => f.key === k)).filter((f): f is Field => !!f && (!f.when || f.when(values)) && !(f.key.startsWith('scholar.') && values['scholar.enabled'] === false));
+  // "Most used" follows the modes that are on: class-site notifications only for School.
+  const modes = useKeaModes();
+  const popular = POPULAR.map((k) => SECTIONS.flatMap((s) => s.fields).find((f) => f.key === k)).filter((f): f is Field => !!f && (!f.when || f.when(values)) && !(f.key.startsWith('scholar.') && !modes.school));
 
   return (
     <div className="sstart">

@@ -111,7 +111,7 @@ export const SECTIONS: Section[] = [
         type: 'select',
         default: 15,
         options: [0, 5, 10, 15, 30, 60, 120].map((m) => ({ value: m, label: m === 0 ? 'Don’t remind me' : m < 60 ? `${m} minutes before` : `${m / 60} hour${m > 60 ? 's' : ''} before` })),
-        help: 'A notification on this computer, with the meeting link one click away. Quiet hours from Scholar’s notifications apply.'
+        help: 'A notification on this computer, with the meeting link one click away. Quiet hours from School’s notifications apply.'
       },
       { key: 'hub.onCalendar', label: 'Show Kea Hub class sessions on my calendar', type: 'toggle', default: true, advanced: true, help: 'They stay on each class’s page either way.' },
       {
@@ -264,7 +264,7 @@ export const SECTIONS: Section[] = [
       { key: 'areas.auto', label: 'Turn areas on by themselves when I start using them', type: 'toggle', default: true, advanced: true, help: 'Joining a class turns on School.' },
       { key: 'areas.setupDone', label: 'First-run setup finished', type: 'toggle', default: false, advanced: true, help: 'Turn off to see the "What will you use Kea for?" screen again.' },
       { key: 'home.greeting', group: 'Today', label: 'Show greeting and date', type: 'toggle', default: true },
-      { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from Scholar and your Kea Hub classes.' },
+      { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from School and your Kea Hub classes.' },
       { key: 'home.showClasses', label: 'Show my classes', type: 'toggle', default: true },
       { key: 'home.showWork', label: 'Show Work (to-do and next shift)', type: 'toggle', default: true, when: (v) => v['modes.work'] === true },
       {
@@ -317,7 +317,6 @@ export const SECTIONS: Section[] = [
         ],
         help: 'Printing and PDFs are always on white.'
       },
-      { key: 'doc.replyToClaude', label: 'Replying to Claude’s comments asks Claude', type: 'toggle', default: true, help: 'A reply in the thread of one of Claude’s comments (or one that says “Claude”) goes to Claude, which answers in the thread and makes the small fix you ask for.' },
       { key: 'doc.font', label: 'Font', type: 'select', default: 'Arial', options: ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Segoe UI', 'Times New Roman', 'Trebuchet MS', 'Verdana'].map((f) => ({ value: f, label: f })) },
       { key: 'doc.size', label: 'Font size', type: 'number', default: 11, min: 6, max: 72, step: 0.5, unit: 'pt' },
       {
@@ -350,7 +349,8 @@ export const SECTIONS: Section[] = [
       { key: 'doc.pageless', label: 'Pageless (one long page, no page breaks)', type: 'toggle', default: false },
       { key: 'doc.zoom', label: 'Zoom', type: 'select', default: 1, options: pct([0.75, 0.9, 1, 1.1, 1.25, 1.5]), advanced: true },
       { key: 'doc.citationStyle', label: 'Citation style', type: 'select', default: 'mla', options: [{ value: 'mla', label: 'MLA 9' }, { value: 'apa', label: 'APA 7' }, { value: 'chicago', label: 'Chicago (author-date)' }] },
-      { key: 'doc.statusHints', label: 'Show keyboard hints in the status bar', type: 'toggle', default: true, advanced: true }
+      { key: 'doc.replyToClaude', label: 'Replying to Claude’s comments asks Claude', type: 'toggle', default: true, help: 'A reply in the thread of one of Claude’s comments (or one that says “Claude”) goes to Claude, which answers in the thread and makes the small fix you ask for.' },
+      { key: 'doc.statusHints', label: 'Show keyboard hints in the status bar', type: 'toggle', default: true, advanced: true, help: 'They show for your first few documents, then step aside.' }
     ]
   },
   {
@@ -545,7 +545,7 @@ export const SECTIONS: Section[] = [
   },
   {
     id: 'scholar',
-    label: 'Scholar',
+    label: 'Classes and study',
     icon: 'GraduationCap',
     blurb: 'Your classes, their textbooks and calendar. Classes you add from your school are kept up to date by scans that run in the background through your own Claude account.',
     fields: [
@@ -891,7 +891,7 @@ export const SECTIONS: Section[] = [
     icon: 'RefreshCw',
     fields: [
       { key: 'updates.autoCheck', label: 'Check for updates when Kea starts', type: 'toggle', default: true },
-      { key: 'updates.autoDownload', label: 'Download updates automatically', type: 'toggle', default: true, help: 'Every computer stays on the same version, so your classes, guides and progress stay in step.' },
+      { key: 'updates.autoDownload', label: 'Download updates automatically', type: 'toggle', default: true, help: 'Every computer stays on the same version, so your files and settings work the same on each.' },
       { key: 'updates.autoInstall', label: 'Install downloaded updates by themselves', type: 'toggle', default: true, help: 'Only while Kea’s window is closed (it’s in the notification area by the clock) and nothing is running; otherwise you choose when to restart.' },
       { key: 'updates.prerelease', label: 'Get early test versions', type: 'toggle', default: false, advanced: true }
     ]

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { toggleVoice } from './VoiceTyping';
-import { Search, FileText, Sheet, Presentation, FileCode2, FolderOpen, Settings, History, RefreshCw, BookOpen, Home, LayoutTemplate, FileSearch, Loader2, AppWindow, Columns2, Mic } from 'lucide-react';
-import { useTabs } from '../store';
+import { Search, FileText, Sheet, Presentation, FileCode2, FolderOpen, Settings, History, RefreshCw, BookOpen, Home, LayoutTemplate, FileSearch, Loader2, AppWindow, Columns2, Mic, Save, Printer, FileDown, X } from 'lucide-react';
+import { useTabs, editorRegistry, toast } from '../store';
+import { requestCloseTab } from '../lib/closing';
 import { api, RecentEntry } from '../lib/api';
 import { newFile, openWithDialog, openPaths } from '../lib/open';
-import { openSettings, SECTIONS } from '../lib/settings';
+import { openSettings, SECTIONS, setting, useSettings } from '../lib/settings';
 import { openHistory } from './settings/VersionHistory';
 import { openUpdates } from './Updates';
 import { toggleLookup } from './lookup/lookupStore';
@@ -38,6 +39,7 @@ export function CommandPalette() {
   const [searching, setSearching] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const tabs = useTabs((s) => s.tabs);
+  const active = useTabs((s) => s.activeId);
 
   useEffect(() => {
     if (!open) return;
@@ -71,6 +73,8 @@ export function CommandPalette() {
 
   const items = useMemo<Item[]>(() => {
     const close = () => usePalette.getState().set(false);
+    const activeId = useTabs.getState().activeId;
+    const handle = editorRegistry.get(activeId);
     const act = (fn: () => void) => () => (close(), fn());
     const list: Item[] = [
       { id: 'new-doc', group: 'Create', label: 'New document', hint: 'Ctrl+N', icon: <FileText size={16} color="#8ab4f8" />, run: act(() => newFile('doc')) },
@@ -78,6 +82,16 @@ export function CommandPalette() {
       { id: 'new-slides', group: 'Create', label: 'New presentation', icon: <Presentation size={16} color="#fcad70" />, run: act(() => newFile('slides')) },
       { id: 'new-text', group: 'Create', label: 'New text file', icon: <FileCode2 size={16} color="#c58af9" />, run: act(() => newFile('code')) },
       ...TEMPLATES.map((t) => ({ id: 'tpl-' + t.id, group: 'Create', label: `New from template: ${t.name}`, hint: t.group, icon: <LayoutTemplate size={16} />, run: act(() => openTemplate(t)) })),
+      // The open file's own commands first: what people reach for most.
+      ...(handle
+        ? [
+            { id: 'save', group: 'This file', label: 'Save', hint: 'Ctrl+S', icon: <Save size={16} />, run: act(() => handle.save(false)) },
+            { id: 'save-as', group: 'This file', label: 'Save as…', hint: 'Ctrl+Shift+S', icon: <Save size={16} />, run: act(() => handle.save(true)) },
+            ...(handle.print ? [{ id: 'print', group: 'This file', label: 'Print…', hint: 'Ctrl+P', icon: <Printer size={16} />, run: act(() => handle.print!()) }] : []),
+            ...(handle.exportPdf ? [{ id: 'export-pdf', group: 'This file', label: 'Export as PDF…', icon: <FileDown size={16} />, run: act(() => handle.exportPdf!()) }] : []),
+            { id: 'close-tab', group: 'This file', label: 'Close tab', hint: 'Ctrl+W', icon: <X size={16} />, run: act(() => requestCloseTab(activeId)) }
+          ]
+        : []),
       { id: 'open', group: 'Files', label: 'Open a file…', hint: 'Ctrl+O', icon: <FolderOpen size={16} />, run: act(() => openWithDialog()) },
       { id: 'home', group: 'Files', label: 'Go to Home', icon: <Home size={16} />, run: act(() => useTabs.getState().setActive('home')) },
       { id: 'history', group: 'Files', label: 'Version history of this file', hint: 'Ctrl+Shift+H', icon: <History size={16} />, run: act(() => openHistory()) },
@@ -89,23 +103,41 @@ export function CommandPalette() {
         ? { id: 'split-close', group: 'Tools', label: 'Close split view', hint: 'Ctrl+\\', icon: <Columns2 size={16} />, run: act(() => useTabs.getState().closeSplit()) }
         : { id: 'split', group: 'Tools', label: 'Split view: two tabs side by side', hint: 'Ctrl+\\', icon: <Columns2 size={16} />, run: act(() => useTabs.getState().openSplit()) },
       ...tabs
+        .filter((t) => t.kind !== 'home')
+        .map((t) => ({ id: 'tab-' + t.id, group: 'Open tabs', label: t.name, hint: 'Switch to tab', icon: <AppWindow size={16} />, run: act(() => useTabs.getState().setActive(t.id)) })),
+      ...tabs
         .filter((t) => t.id !== useTabs.getState().activeId)
         .map((t) => ({ id: 'beside-' + t.id, group: 'Open tabs', label: `Open beside: ${t.name}`, hint: 'Split view', icon: <Columns2 size={16} />, run: act(() => (useTabs.getState().closeSplit(), useTabs.getState().openSplit(t.id))) })),
       { id: 'feedback', group: 'Tools', label: 'Send feedback: report a bug or request a feature', icon: <Settings size={16} />, run: act(() => openSettings('feedback')) },
       { id: 'voice', group: 'Tools', label: 'Voice typing', hint: 'Ctrl+Alt+V', icon: <Mic size={16} />, run: act(() => toggleVoice()) },
       { id: 'updates', group: 'Tools', label: 'Check for updates', icon: <RefreshCw size={16} />, run: act(() => openUpdates()) },
+      { id: 'settings', group: 'Settings', label: 'Settings', hint: 'Ctrl+,', icon: <Settings size={16} />, run: act(() => openSettings()) },
       ...SECTIONS.map((s) => ({ id: 'set-' + s.id, group: 'Settings', label: `Settings: ${s.label}`, icon: <Settings size={16} />, run: act(() => openSettings(s.id)) })),
-      ...SECTIONS.flatMap((s) => s.fields.map((f) => ({ id: 'opt-' + f.key, group: 'Settings', label: f.label, hint: s.label, icon: <Settings size={16} />, run: act(() => openSettings(s.id)) }))),
-      ...tabs
-        .filter((t) => t.kind !== 'home')
-        .map((t) => ({ id: 'tab-' + t.id, group: 'Open tabs', label: t.name, hint: 'Switch to tab', icon: <AppWindow size={16} />, run: act(() => useTabs.getState().setActive(t.id)) })),
+      // A switch is flipped right here ("Spell check: turn off"); other settings open their page.
+      ...SECTIONS.flatMap((s) =>
+        s.fields.map((f) => {
+          if (f.type !== 'toggle') return { id: 'opt-' + f.key, group: 'Settings', label: f.label, hint: s.label, icon: <Settings size={16} />, run: act(() => openSettings(s.id)) };
+          const on = setting(f.key) !== false;
+          return {
+            id: 'opt-' + f.key,
+            group: 'Settings',
+            label: `${f.label}: turn ${on ? 'off' : 'on'}`,
+            hint: s.label,
+            icon: <Settings size={16} />,
+            run: act(() => {
+              useSettings.getState().set({ [f.key]: !on });
+              toast(`${f.label}: ${on ? 'off' : 'on'}`);
+            })
+          };
+        })
+      ),
       ...recent.map((r) => ({ id: 'rec-' + r.path, group: 'Recent files', label: r.name, hint: timeAgo(r.openedAt), icon: <FileIcon name={r.name} size={16} />, run: act(() => openPaths([r.path])) }))
     ];
     const query = q.trim().toLowerCase();
     const shown = query ? list.filter((i) => match(`${i.label} ${i.group} ${i.hint || ''}`, query)) : list.filter((i) => !i.id.startsWith('opt-') && !i.id.startsWith('tpl-')).slice(0, 40);
     const content = (hits || []).map((h) => ({ id: 'in-' + h.path, group: 'Inside files', label: h.name, hint: h.snippet, icon: <FileSearch size={16} />, run: act(() => openPaths([h.path])) }));
     return [...shown.slice(0, 60), ...content];
-  }, [q, tabs, recent, hits]);
+  }, [q, tabs, active, open, recent, hits]);
 
   useEffect(() => setSel(0), [q]);
   useEffect(() => {

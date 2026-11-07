@@ -39,6 +39,10 @@ export interface Panel {
   label: string;
   section: string;
   words: string;
+  /** A one-line answer shown under the label (for things that live outside Settings). */
+  hint?: string;
+  /** Something to do right away instead of opening the page. */
+  action?: 'checkUpdates' | 'print';
 }
 export const PANELS: Panel[] = [
   { id: 'p-google', label: 'Google account: sign in, Drive and Docs', section: 'google', words: 'google drive docs gmail sign in connect' },
@@ -50,6 +54,9 @@ export const PANELS: Panel[] = [
   { id: 'p-history', label: 'Version history on this PC', section: 'files', words: 'version history space disk storage delete versions' },
   { id: 'p-privacy', label: 'Clear recent files, previews and descriptions', section: 'privacy', words: 'clear recent previews history data folder delete forget' },
   { id: 'p-shortcuts', label: 'Keyboard shortcuts', section: 'shortcuts', words: 'keys hotkeys shortcut keyboard ctrl' },
+  { id: 'a-updates', label: 'Check for updates now', section: 'updates', words: 'check update updates new version upgrade latest', action: 'checkUpdates' },
+  { id: 'a-print', label: 'Print the open file', section: 'docs', words: 'print printer printing paper copies', hint: 'Ctrl+P in any document, sheet, slide or PDF.', action: 'print' },
+  { id: 'p-wordcount', label: 'Word count and word goal', section: 'docs', words: 'word count words characters goal length how long essay limit', hint: 'At the bottom of every document. Click it to set a word goal.' },
   { id: 'p-feedback', label: 'Send feedback', section: 'feedback', words: 'bug report problem idea suggestion feedback contact help' },
   { id: 'p-about', label: 'About Kea and licenses', section: 'about', words: 'version license open source about credits' },
 ];
@@ -95,7 +102,7 @@ const KEYWORDS: Record<string, string> = {
   'keaCloud.enabled': 'storage sync cloud documents',
   'keaCloud.saveTo': 'save where cloud storage',
   'study.sound': 'sound audio beep noise',
-  'assistant.enabled': 'claude ai chat assistant',
+  'assistant.enabled': 'claude ai chat assistant turn off claude hide claude disable claude remove claude no ai',
   'lookup.useModel': 'ai model local llama',
   'grammar.enabled': 'grammar check writing',
 };
@@ -142,6 +149,12 @@ const SYNONYMS: Record<string, string[]> = {
   ai: ['model', 'claude', 'assistant'],
   claude: ['assistant'],
   update: ['updates', 'version'],
+  upgrade: ['update', 'version'],
+  printer: ['print'],
+  printing: ['print'],
+  count: ['word', 'length'],
+  length: ['count', 'word'],
+  goal: ['target', 'count'],
   password: ['account', 'sign'],
   login: ['account', 'sign'],
   signin: ['account', 'sign'],
@@ -266,24 +279,45 @@ function index(): Doc[] {
 /** The words of a request that carry meaning (no "I want to", "please", "turn off"). */
 export const queryWords = (q: string) => words(q).filter((x) => !STOP.has(x));
 
+/** Below this, a match is a coincidence ("zebra crossing" finding "Crossref"), not an answer. */
+const MIN_SCORE = 0.9;
+
 /**
  * Settings that match what was typed, best first. `loose` keeps anything that matches any word (the candidates the
- * local model chooses from); otherwise at least half the words must match.
+ * local model chooses from); otherwise at least half the words must match and weak matches are left out.
+ *
+ * Ranking: a word found as typed (or as one of its synonyms) anywhere beats a near-spelling, which only counts when
+ * nothing has the word itself ("print" finds printing, not "points"). Label words count more than help text, a label
+ * the request names almost entirely ranks first, and "turn off / hide / show X" prefers the switch for X.
  */
 export function searchSettings(q: string, opts: { values?: Record<string, any>; loose?: boolean; limit?: number } = {}): Hit[] {
   const qw = queryWords(q);
   const phrase = norm(q);
   if (!qw.length) return [];
+  const all = index();
+  const schoolOff = opts.values?.['scholar.enabled'] === false;
+  const tries = (t: string): [string, number][] => [[t, 1], ...(SYNONYMS[t] || []).map((x) => [stem(x), 0.8] as [string, number])];
+  // Typo tolerance only for words nothing contains as typed.
+  const typos = new Map(qw.map((t) => [t, !all.some((d) => tries(t).some(([x]) => [...d.w.keys()].some((dw) => sim(x, dw) >= 0.85)))]));
+  const toggleIntent = NEG.test(' ' + q.toLowerCase() + ' ') || POS.test(' ' + q.toLowerCase() + ' ');
   const out: Hit[] = [];
-  for (const d of index()) {
+  for (const d of all) {
     if (d.hit.kind === 'field' && d.hit.field.when && opts.values && !d.hit.field.when(opts.values)) continue;
+    // School's settings stay out of the way while School is off.
+    if (schoolOff && categoryOf(d.hit.section.id).id === 'school') continue;
     let total = 0;
     let matched = 0;
+    const labelWords = words(d.label).filter((x) => !STOP.has(x));
+    let labelHits = 0;
     for (const t of qw) {
       let best = 0;
-      const tries: [string, number][] = [[t, 1], ...(SYNONYMS[t] || []).map((x) => [stem(x), 0.8] as [string, number])];
-      for (const [x, k] of tries) for (const [dw, weight] of d.w) best = Math.max(best, sim(x, dw) * weight * k);
+      for (const [x, k] of tries(t))
+        for (const [dw, weight] of d.w) {
+          const s = sim(x, dw);
+          if (s >= 0.85 || typos.get(t)) best = Math.max(best, s * weight * k);
+        }
       if (best > 0) matched++;
+      if (tries(t).some(([x]) => labelWords.some((lw) => sim(x, lw) >= 0.85))) labelHits++;
       total += best;
     }
     if (!matched) continue;
@@ -291,14 +325,20 @@ export function searchSettings(q: string, opts: { values?: Record<string, any>; 
     if (!opts.loose && coverage < 0.5) continue;
     let score = total * (0.4 + 0.6 * coverage);
     if (phrase.length > 2 && (d.label.includes(phrase) || d.extra.includes(phrase))) score += 4;
-    if (POPULAR.includes(d.hit.key)) score *= 1.1;
+    // A label made almost entirely of the request's words is the obvious answer.
+    if (labelWords.length) score += 1.5 * Math.min(1, labelHits / labelWords.length);
+    if (toggleIntent && d.hit.kind === 'field' && d.hit.field.type === 'toggle') {
+      score *= 1.25;
+      if (/\.enabled$/.test(d.hit.key) || /^(show|use)\b/i.test(d.hit.field.label)) score *= 1.3;
+    }
+    if (POPULAR.includes(d.hit.key) || (d.hit.kind === 'panel' && d.hit.panel.action)) score *= 1.1;
     if (d.hit.kind === 'field' && d.hit.field.advanced) score *= 0.85;
     out.push({ ...d.hit, score } as Hit);
   }
   out.sort((a, b) => b.score - a.score);
   // Weak tails add noise: keep what's within reach of the best match.
   const top = out[0]?.score ?? 0;
-  const kept = opts.loose ? out : out.filter((h) => h.score >= top * 0.3);
+  const kept = opts.loose ? out : out.filter((h) => h.score >= Math.max(top * 0.3, MIN_SCORE));
   return kept.slice(0, opts.limit ?? 40);
 }
 

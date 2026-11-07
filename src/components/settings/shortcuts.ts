@@ -10,10 +10,11 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Ctrl+W', 'Close tab'],
       ['Ctrl+P', 'Print'],
       ['Ctrl+Tab / Ctrl+Shift+Tab', 'Next / previous tab'],
-      ['Ctrl+,', 'Settings'],
+      ['Ctrl+,', 'Settings (in a document it is Subscript)'],
       ['Ctrl+Shift+P / Alt+/', 'Command palette: run anything, find files, search inside files'],
       ['Ctrl+Shift+H', 'Version history'],
       ['Ctrl+J', 'Show or hide the Encyclopedia'],
+      ['Ctrl+Shift+J', 'Show or hide Claude'],
       ['Ctrl+Alt+V', 'Voice typing: talk and Kea types (Esc stops)'],
       ['Ctrl+\\', 'Split view: two tabs side by side (again to close)']
     ]
@@ -29,6 +30,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     group: 'Documents',
     items: [
       ['Ctrl+B / Ctrl+I / Ctrl+U', 'Bold / italic / underline'],
+      ['Ctrl+. / Ctrl+,', 'Superscript / subscript'],
       ['Ctrl+F', 'Find'],
       ['Ctrl+H', 'Find and replace'],
       ['Ctrl+K', 'Insert link'],

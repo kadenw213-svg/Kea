@@ -3,7 +3,16 @@ import { extOf, baseName } from './fileTypes';
 import { useTabs, toast, editSeq } from '../store';
 import { setting } from './settings';
 import { saveToGoogle } from './google';
-import { chooseSaveTarget } from './keaCloud';
+import { chooseSaveTarget, inKeaCloud } from './keaCloud';
+
+/** Turn a title (a document's first line, a slide's title) into a file name: no characters Windows refuses, at most ~60 long. */
+export function safeFileName(title: string) {
+  const clean = title.replace(/[\u0000-\u001f<>:"/\\|?*]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '');
+  if (clean.length <= 60) return clean;
+  const cut = clean.slice(0, 60);
+  const sp = cut.lastIndexOf(' ');
+  return (sp > 30 ? cut.slice(0, sp) : cut).trim();
+}
 
 let silentDepth = 0;
 /** True while an autosave is running: saves must not show dialogs or toasts. */
@@ -28,7 +37,7 @@ export interface SaveFormat {
  * Shared save flow for every editor. Saves in place when the current file's
  * extension is one of `formats`, otherwise asks for a location.
  */
-export async function saveTabFile(tabId: string, formats: SaveFormat[], saveAs: boolean): Promise<boolean> {
+export async function saveTabFile(tabId: string, formats: SaveFormat[], saveAs: boolean, opts: { suggestedName?: string } = {}): Promise<boolean> {
   const seq = editSeq.get(tabId) || 0;
   const tab = useTabs.getState().tabs.find((t) => t.id === tabId);
   if (!tab) return false;
@@ -58,8 +67,9 @@ export async function saveTabFile(tabId: string, formats: SaveFormat[], saveAs: 
 
   if (saveAs || !target || !format) {
     if (isSilentSave()) return false;
-    const suggested = `${baseName(tab.name)}.${(format || formats[0]).ext}`;
-    const dir = tab.path ? tab.path.replace(/[\\/][^\\/]*$/, '') : '';
+    const suggested = `${safeFileName(opts.suggestedName || '') || baseName(tab.name)}.${(format || formats[0]).ext}`;
+    // Kea Cloud's folder is hidden inside Kea's profile: Save as from there starts in the usual save folder instead.
+    const dir = tab.path && !inKeaCloud(tab.path) ? tab.path.replace(/[\\/][^\\/]*$/, '') : '';
     // A file with no place yet: Kea Cloud or this PC (asked only when signed in to a Kea account).
     const where = !tab.path ? await chooseSaveTarget(suggested) : 'pc';
     if (where === null) return false;

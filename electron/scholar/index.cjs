@@ -621,10 +621,11 @@ function register() {
     return true;
   });
   // Handing in a file: the folders it can go to, then the class site's own hand-in page with the file in its upload box.
-  ipcMain.handle('scholar:handInTargets', async () => {
+  // (`peek`: only what is already known, for deciding whether to show a Hand in button at all.)
+  ipcMain.handle('scholar:handInTargets', async (_e, opts) => {
     let t = await precheck.handInTargets();
     // Nothing known yet: take a quick look at the class site first (no Claude).
-    if (!t.some((c) => c.folders.length) && !devices.follower()) {
+    if (!opts?.peek && !t.some((c) => c.folders.length) && !devices.follower()) {
       await precheck.pollAnnouncements().catch(() => false);
       t = await precheck.handInTargets();
     }

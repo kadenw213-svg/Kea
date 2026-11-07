@@ -53,16 +53,17 @@ import { loadPdf, PasswordError, getTextRects, PDFDocumentProxy, TextItemRect } 
 import { readOutline, takePdfTarget, findChapter, OutlineEntry } from '../../lib/pdfTarget';
 import type { Annotation, Box, DocState, PageInfo, PageRef, TextAnn, Tool, ImageAnn } from './types';
 import { DEFAULTS } from './types';
-import { setPagesDark, setting, usePagesDark, useSettings } from '../../lib/settings';
+import { setting, usePagesDark, useSettings } from '../../lib/settings';
 import { HandInButton } from '../../components/scholar/HandIn';
 import { QuizMeButton } from '../../components/scholar/QuizMe';
 import { PageView, ToolStyle, measureTextAnn } from './PageView';
 import { Thumbnails } from './Thumbnails';
 import { SignatureModal } from './SignatureModal';
 import { buildPdf, readFormFields, isEncrypted, FormFieldInfo, FormValues } from './save';
+import { pdfAutosaveHold, hasRedactions } from './autosaveHold';
 import { decryptPdf, encryptPdf, compressPdf, ocrPdf, pdfToDocHtml, Protection } from '../../lib/pdfSecurity';
 import { PasswordDialog } from './PasswordDialog';
-import { Lock, Minimize2, ScanText, FileType } from 'lucide-react';
+import { Lock, Minimize2, ScanText, FileType, Info, Check } from 'lucide-react';
 import { formatBytes } from '../../lib/util';
 import { annBox, rotateAnn, translateAnn, baselineEm } from './geometry';
 import { uid, clamp, bytesToDataUrl, modKey, escapeHtml } from '../../lib/util';
@@ -73,6 +74,7 @@ import { ColorPicker } from '../../components/ColorPicker';
 import { imagesToPdf, imageToPng, mimeFor } from '../../lib/pdfTools';
 import { extOf, baseName } from '../../lib/fileTypes';
 import './pdf.css';
+import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
@@ -217,7 +219,10 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   const [zoom, setZoom] = useState(1);
   // Pages take the theme's colours (a scan stays on white unless pages are set to always dark).
   const themePages = usePagesDark();
-  const darkPages = themePages && (!/[\/]scans[\/]/i.test(tab.path || '') || setting('pdf.darkPages') === 'dark');
+  const themeDarkPages = themePages && (!/[\\/]scans[\\/]/i.test(tab.path || '') || setting('pdf.darkPages') === 'dark');
+  // This PDF's own page colour (view only, this tab only): as the theme, white or dark. The app's theme isn't touched.
+  const [pageView, setPageView] = useState<'theme' | 'light' | 'dark'>('theme');
+  const darkPages = pageView === 'theme' ? themeDarkPages : pageView === 'dark';
   const [sidebar, setSidebar] = useState(() => setting('pdf.sidebar') !== false);
   // A textbook's chapters and sections (the PDF's bookmarks), shown in the side panel next to the pages.
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
@@ -391,6 +396,11 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
     if (t !== 'select') setSelectedId(null);
     window.getSelection()?.removeAllRanges();
   }, []);
+  // Editing on a dark page would show marks in the wrong colours (a black redaction box as white), so picking a tool
+  // turns this PDF's pages white. The moon button turns them dark again.
+  useEffect(() => {
+    if (tool !== 'select' && pageView === 'theme' && themeDarkPages) setPageView('light');
+  }, [tool]);
 
   const removeEmptyEditing = (id: string | null) => {
     if (!id) return;
@@ -1079,15 +1089,55 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
       toast('Converted to a document. Check the layout, then save it as Word.', 'success');
     });
 
+  // Changes autosave must leave for the user's own Save (redactions, page changes that drop bookmarks or form fields).
+  const holdReason = () =>
+    pdfAutosaveHold({
+      annots: history.get().annots,
+      pages: history.get().pages,
+      originalPageCount: sources[0]?.doc?.numPages ?? null,
+      hasForm: formFields.length > 0,
+      hasOutline: outline.length > 0
+    });
+
   const save = async (saveAs: boolean) => {
-    // Autosave never interrupts typing in a text box, and never shows dialogs.
-    if (isSilentSave() && (encrypted || editingId)) return false;
+    // Autosave never interrupts typing in a text box, never shows dialogs, and never redacts or rebuilds the file.
+    if (isSilentSave() && (encrypted || editingId || holdReason())) return false;
     if (encrypted) {
       await ask('This PDF is locked', "Kea couldn't unlock this PDF for editing, so it can only be viewed. If you know its password, close it and open it again.", [{ id: 'ok', label: 'OK', primary: true }]);
       return false;
     }
+    let suggestedName: string | undefined;
+    if (hasRedactions(history.get().annots)) {
+      // Redacting is permanent: say so once, and offer a redacted copy so the original stays as it was.
+      const inPlace = !saveAs && !!tab.path && extOf(tab.path) === 'pdf';
+      const choice = inPlace
+        ? await ask('Redact this PDF?', 'The covered content is removed for good. This can’t be undone.', [
+            { id: 'cancel', label: 'Cancel' },
+            { id: 'replace', label: `Redact ${tab.name}`, danger: true },
+            { id: 'copy', label: 'Save a redacted copy…', primary: true }
+          ])
+        : await ask('Redactions are permanent', 'The covered content is removed from the saved file for good.', [
+            { id: 'cancel', label: 'Cancel' },
+            { id: 'replace', label: 'Save', primary: true }
+          ]);
+      if (choice !== 'replace' && choice !== 'copy') return false;
+      if (choice === 'copy') {
+        saveAs = true;
+        suggestedName = `${baseName(tab.name)} (redacted)`;
+      }
+    }
     setEditingId(null);
-    return saveTabFile(tab.id, [{ name: 'PDF document', ext: 'pdf', build }], saveAs);
+    const redacting = hasRedactions(history.get().annots);
+    const ok = await saveTabFile(tab.id, [{ name: 'PDF document', ext: 'pdf', build }], saveAs, { suggestedName });
+    // Show what was written: the redacted pages as they now are, so the boxes aren't applied a second time.
+    const saved = useTabs.getState().tabs.find((x) => x.id === tab.id);
+    if (ok && redacting && saved?.path && !saved.dirty && !protection?.userPassword) {
+      try {
+        const f = await api.readFile(saved.path);
+        if (f?.data) useTabs.getState().updateTab(tab.id, { data: f.data, version: saved.version + 1 });
+      } catch {}
+    }
+    return ok;
   };
 
   const print = async () => {
@@ -1179,11 +1229,12 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
       return true;
     }
   };
-  const latestHandlers = useRef({ save, print, build });
-  latestHandlers.current = { save, print, build };
+  const latestHandlers = useRef({ save, print, build, holdReason });
+  latestHandlers.current = { save, print, build, holdReason };
   useEffect(() => {
     editorRegistry.set(tab.id, {
       save: (a) => latestHandlers.current.save(a),
+      holdAutosave: () => latestHandlers.current.holdReason(),
       print: () => latestHandlers.current.print(),
       debugBuild: () => latestHandlers.current.build(),
       ai: proxyAi(aiRef)
@@ -1307,6 +1358,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
   const pageCount = doc.pages.length;
   const showOptions = tool !== 'select' || !!selected;
   const optType: string = selected ? selected.type : tool;
+  const hold = holdReason();
 
   const ToolBtn = ({ t, icon, label, keyHint }: { t: Tool; icon: React.ReactNode; label: string; keyHint?: string }) => (
     <button className={`icon-btn ${tool === t ? 'active' : ''}`} title={`${label}${keyHint ? ` (${keyHint})` : ''}`} onClick={() => setTool(t)}>
@@ -1391,7 +1443,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
         <div className="tb-spacer" />
 
         {tab.path && setting('scholar.enabled') !== false && <QuizMeButton path={tab.path} />}
-        {tab.path && setting('scholar.enabled') !== false && <HandInButton path={tab.path} dirty={tab.dirty} />}
+        {tab.path && <HandInButton path={tab.path} dirty={tab.dirty} />}
         <button className={`icon-btn ${searchOpen ? 'active' : ''}`} title="Find (Ctrl+F)" onClick={() => (setSearchOpen((o) => !o), setTimeout(() => searchInput.current?.focus(), 0))}>
           <Search size={18} />
         </button>
@@ -1400,9 +1452,31 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
             <ClipboardList size={18} />
           </button>
         )}
-        <button className={`icon-btn ${darkPages ? 'active' : ''}`} title={darkPages ? 'Light pages (the whole app turns light)' : 'Dark pages (the whole app turns dark)'} onClick={() => setPagesDark(!darkPages)}>
-          <Moon size={18} />
-        </button>
+        <MenuButton
+          title="Page colour (this PDF only)"
+          button={() => (
+            <button className={`icon-btn ${darkPages ? 'active' : ''}`} aria-label="Page colour">
+              <Moon size={18} />
+            </button>
+          )}
+        >
+          {(close) => (
+            <>
+              <div className="menu-title">Page colour (view only)</div>
+              {(
+                [
+                  ['theme', 'As the theme'],
+                  ['light', 'White pages'],
+                  ['dark', 'Dark pages']
+                ] as const
+              ).map(([v, label]) => (
+                <button key={v} className={`menu-item ${pageView === v ? 'checked' : ''}`} onClick={() => (setPageView(v), close())}>
+                  {pageView === v ? <Check size={16} /> : <span style={{ width: 16 }} />} {label}
+                </button>
+              ))}
+            </>
+          )}
+        </MenuButton>
         <div className="tb-sep" />
         <button className="icon-btn" title="Zoom out (Ctrl+-)" onClick={() => zoomStep(-1)}>
           <ZoomOut size={18} />
@@ -1435,6 +1509,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
           <ZoomIn size={18} />
         </button>
         <div className="tb-sep" />
+        <ToolbarFit />
         <div className="tb-end">
         <LookupButton />
         <AssistantButton />
@@ -1544,6 +1619,12 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {tab.dirty && hold && (
+        <div className="pdf-hold-bar" role="status">
+          <Info size={15} /> {hold}
         </div>
       )}
 

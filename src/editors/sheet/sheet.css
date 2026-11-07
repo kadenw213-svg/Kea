@@ -406,6 +406,15 @@
 .sheet-tabs .grow {
   flex: 1;
 }
+.sheet-hold {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  padding-right: 10px;
+  white-space: nowrap;
+}
 .sheet-stats {
   display: flex;
   gap: 16px;

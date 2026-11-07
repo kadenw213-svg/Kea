@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { X, History, RotateCcw, Eye, Tag, Trash2, Plus } from 'lucide-react';
 import { api, VersionInfo } from '../../lib/api';
@@ -33,6 +33,25 @@ export function VersionHistoryDialog() {
     setList(null);
     if (open) refresh();
   }, [open, tab?.path]);
+  // It's about one file: Esc closes it, and so does switching to another tab.
+  const activeId = useTabs((s) => s.activeId);
+  const openedOn = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) return (openedOn.current = null), undefined;
+    if (openedOn.current === null) openedOn.current = activeId;
+    else if (openedOn.current !== activeId) useHistoryUi.getState().set(false);
+  }, [open, activeId]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        useHistoryUi.getState().set(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   if (!open) return null;
   const close = () => useHistoryUi.getState().set(false);

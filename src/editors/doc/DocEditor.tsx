@@ -113,6 +113,7 @@ import { odtToHtml, rtfToHtml, docToHtml } from './otherFormats';
 import { markdownToHtml, jsonToMarkdown } from './markdown';
 import { jsonToDocx } from './docxExport';
 import { saveTabFile, exportFile, SaveFormat } from '../../lib/save';
+import { useOfficeLossGuard } from '../../lib/officeLosses';
 import { extOf, baseName } from '../../lib/fileTypes';
 import { bytesToText, textToBytes, bytesToDataUrl, escapeHtml, modKey, clamp } from '../../lib/util';
 import { api } from '../../lib/api';
@@ -121,7 +122,9 @@ import { ColorPicker } from '../../components/ColorPicker';
 import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
 import { docAiHooks } from './aiHooks';
+import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
+import { HandInButton } from '../../components/scholar/HandIn';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { LEGACY } from '../../lib/legacy';
@@ -244,7 +247,17 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   const [grIssue, setGrIssue] = useState<{ issue: GrammarIssue; rect: DOMRect } | null>(null);
   const [reading, setReading] = useState(false);
   const [mathEdit, setMathEdit] = useState<{ pos: number | null; latex: string; display: boolean } | null>(null);
-  const showHints = useSetting<boolean>('doc.statusHints');
+  // The typing hints help while Kea is new: shown for the first few documents, then they step aside.
+  const [hintsFresh] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem('kea.docHintsSeen') || 0) + 1;
+      localStorage.setItem('kea.docHintsSeen', String(n));
+      return n <= 5;
+    } catch {
+      return true;
+    }
+  });
+  const showHints = useSetting<boolean>('doc.statusHints') && hintsFresh;
   const userName = useSetting<string>('user.name');
   const updateMeta = (m: DocMeta) => {
     metaRef.current = m;
@@ -435,7 +448,19 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     return ext === 'html' || ext === 'htm' ? [{ ...html, ext }, docx] : [docx, html];
   };
 
-  const save = (saveAs: boolean) => saveTabFile(tab.id, formats(), saveAs);
+  // A new document is offered its first line as the file name ("My Essay on Ecology.docx"), like Word.
+  const firstLine = () => {
+    let out = '';
+    editor?.state.doc.descendants((n) => {
+      if (out) return false;
+      if (n.isTextblock && n.textContent.trim()) out = n.textContent.trim();
+      return !out;
+    });
+    return out;
+  };
+  const loss = useOfficeLossGuard(tab);
+  const save = (saveAs: boolean) =>
+    loss.save(saveAs, (as, opts) => saveTabFile(tab.id, formats(), as, { suggestedName: !tab.path ? firstLine() : undefined, ...opts }));
 
   const exportPdf = () =>
     exportFile(`${baseName(tab.name)}.pdf`, {
@@ -462,11 +487,12 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   // AI "Comment" mode adds threads through the same path as the comment rail.
   const updateMetaRef = useRef(updateMeta);
   updateMetaRef.current = updateMeta;
-  const handlers = useRef({ save, print, exportPdf });
-  handlers.current = { save, print, exportPdf };
+  const handlers = useRef({ save, print, exportPdf, hold: loss.holdReason });
+  handlers.current = { save, print, exportPdf, hold: loss.holdReason };
   useEffect(() => {
     editorRegistry.set(tab.id, {
       save: (a) => handlers.current.save(a),
+      holdAutosave: () => handlers.current.hold(),
       print: () => handlers.current.print(),
       exportPdf: async () => void (await handlers.current.exportPdf()),
       debugPdf: () => {
@@ -636,6 +662,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     <div className={`doc-editor ${focusMode ? 'focus-mode' : ''}`}>
       <Toolbar
         editor={editor}
+        handIn={tab.path ? <HandInButton path={tab.path} dirty={tab.dirty} /> : null}
         zoom={zoom}
         setZoom={setZoom}
         onLink={setLink}
@@ -812,6 +839,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
         </button>
         <span>{counts.chars.toLocaleString()} characters</span>
         <span className="grow" />
+        {tab.dirty && loss.holdReason() && <span className="sb-hold">{loss.holdReason()}</span>}
         {showHints && (
           <span>
             <span className="kbd-chip">Enter</span> new paragraph · <span className="kbd-chip">Shift+Enter</span> line break · <span className="kbd-chip">Ctrl+Enter</span> page break
@@ -836,6 +864,8 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
 // ---------- Toolbar ----------
 function Toolbar(p: {
   editor: Editor;
+  /** Hand in to a class (shown only in School mode with an open assignment folder). */
+  handIn: React.ReactNode;
   zoom: number;
   setZoom(z: number): void;
   onLink(): void;
@@ -1156,7 +1186,9 @@ function Toolbar(p: {
       <B title="Find and replace (Ctrl+F)" onClick={p.onFind}>
         <Search size={18} />
       </B>
+      {p.handIn}
       <div className="tb-sep" />
+      <ToolbarFit />
       <div className="tb-end">
       <LookupButton />
       <AssistantButton />

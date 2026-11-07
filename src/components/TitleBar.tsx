@@ -6,7 +6,7 @@ import { Home, Plus, X, GraduationCap, Briefcase } from 'lucide-react';
 import { useAreas, useSetupDone } from '../lib/areas';
 import { openScholar } from './scholar/scholarStore';
 import { openWork, useKeaModes, workAvailable } from '../lib/modes';
-import { useTabs } from '../store';
+import { useTabs, editorRegistry } from '../store';
 import { FileIcon } from './FileIcon';
 import { MenuButton } from './Popover';
 import { newFile, openWithDialog } from '../lib/open';
@@ -14,12 +14,13 @@ import { FileText, Sheet, FileCode2, FolderOpen, Presentation } from 'lucide-rea
 import { requestCloseTab } from '../lib/closing';
 import { isMac } from '../lib/util';
 import { useUpdates, openUpdates } from './Updates';
-import { RefreshCw, Info, Github, BookOpen } from 'lucide-react';
+import { RefreshCw, Info, Github } from 'lucide-react';
 import { openSettings } from '../lib/settings';
+import { friendlyPath } from '../lib/keaCloud';
 import { openPalette } from './CommandPalette';
 import { Search } from 'lucide-react';
 import { openHistory } from './settings/VersionHistory';
-import { Settings as SettingsIcon, History } from 'lucide-react';
+import { Settings as SettingsIcon, History, Keyboard, Save, Printer } from 'lucide-react';
 import { AccountButton } from './account/AccountButton';
 import { openAccount } from './account/hubStore';
 import { UserCircle } from 'lucide-react';
@@ -33,6 +34,8 @@ export function TitleBar() {
   const inSplit = (id: string) => !!split && (split.left === id || split.right === id);
   const upd = useUpdates();
   const hasUpdate = ['available', 'downloading', 'ready'].includes(upd.state.status);
+  // The open file's commands (Save, Print, Close) in the Kea menu too.
+  const handle = activeId !== 'home' ? editorRegistry.get(activeId) : undefined;
 
   return (
     <div className={`titlebar ${isMac() ? 'mac' : ''}`}>
@@ -65,9 +68,28 @@ export function TitleBar() {
               <button className="menu-item" onClick={() => (openHistory(), close())}>
                 <History size={16} /> Version history <span className="kbd">Ctrl+Shift+H</span>
               </button>
-              <button className="menu-item" onClick={() => (openSettings('lookup'), close())}>
-                <BookOpen size={16} /> Encyclopedia settings
+              <button className="menu-item" onClick={() => (openSettings('shortcuts'), close())}>
+                <Keyboard size={16} /> Keyboard shortcuts
               </button>
+              {handle && (
+                <>
+                  <div className="menu-sep" />
+                  <button className="menu-item" onClick={() => (handle.save(false), close())}>
+                    <Save size={16} /> Save <span className="kbd">Ctrl+S</span>
+                  </button>
+                  <button className="menu-item" onClick={() => (handle.save(true), close())}>
+                    <Save size={16} /> Save as… <span className="kbd">Ctrl+Shift+S</span>
+                  </button>
+                  {handle.print && (
+                    <button className="menu-item" onClick={() => (handle.print!(), close())}>
+                      <Printer size={16} /> Print… <span className="kbd">Ctrl+P</span>
+                    </button>
+                  )}
+                  <button className="menu-item" onClick={() => (requestCloseTab(activeId), close())}>
+                    <X size={16} /> Close tab <span className="kbd">Ctrl+W</span>
+                  </button>
+                </>
+              )}
               <div className="menu-sep" />
               <button className="menu-item" onClick={() => (newFile('doc'), close())}>
                 <FileText size={16} color="#8ab4f8" /> New document <span className="kbd">Ctrl+N</span>
@@ -77,6 +99,9 @@ export function TitleBar() {
               </button>
               <button className="menu-item" onClick={() => (newFile('slides'), close())}>
                 <Presentation size={16} color="#fcad70" /> New presentation
+              </button>
+              <button className="menu-item" onClick={() => (newFile('code'), close())}>
+                <FileCode2 size={16} color="#c58af9" /> New text file
               </button>
               <button className="menu-item" onClick={() => (openWithDialog(), close())}>
                 <FolderOpen size={16} /> Open file… <span className="kbd">Ctrl+O</span>
@@ -122,7 +147,7 @@ export function TitleBar() {
               dragFrom.current = null;
             }}
             onDragEnd={() => (dragFrom.current = null)}
-            title={t.path || t.name}
+            title={t.path ? friendlyPath(t.path) : t.name}
           >
             {t.kind === 'home' ? <Home size={16} /> : t.kind === 'scholar' ? <GraduationCap size={15} /> : t.kind === 'work' ? <Briefcase size={15} /> : <FileIcon name={t.name} kind={t.kind} size={15} />}
             {t.kind !== 'home' && <span className="tab-label">{t.name}</span>}

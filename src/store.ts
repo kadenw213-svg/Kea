@@ -18,6 +18,11 @@ export interface Tab {
 
 export interface EditorHandle {
   save(saveAs: boolean): Promise<boolean>;
+  /**
+   * A short reason when this tab's changes must wait for an explicit Save (autosave would lose or destroy
+   * something the user didn't ask to lose), or null when autosave is safe. The editor shows the reason itself.
+   */
+  holdAutosave?(): string | null;
   print?(): Promise<void>;
   exportPdf?(): Promise<void>;
   /** Produce the file bytes without saving (used by automated checks). */

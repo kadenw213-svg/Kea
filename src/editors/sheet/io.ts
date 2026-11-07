@@ -13,6 +13,8 @@ const writeBorder = (b?: Border) => (b ? { style: b.style as any, color: b.color
 import { extOf } from '../../lib/fileTypes';
 import { bytesToText, textToBytes } from '../../lib/util';
 import { LEGACY } from '../../lib/legacy';
+import { readCsvSheet } from './csv';
+export { parseCsv, writeCsv } from './csv';
 
 // ---------- Format mapping ----------
 function fmtFromCode(code: string | undefined): Partial<CellStyle> {
@@ -60,7 +62,7 @@ const excelDateToSerial = (d: Date) => d.getTime() / 86400000 + 25569;
 // ---------- Reading ----------
 export async function readWorkbook(name: string, bytes: Uint8Array): Promise<Workbook> {
   const ext = extOf(name);
-  if (ext === 'csv' || ext === 'tsv' || ext === 'txt') return { sheets: [readCsv(bytesToText(bytes), ext === 'tsv' ? '\t' : undefined, name)] };
+  if (ext === 'csv' || ext === 'tsv' || ext === 'txt') return { sheets: [readCsvSheet(bytes, ext === 'tsv' ? '\t' : undefined, name)] };
   if (ext === 'xlsx' || ext === 'xlsm') {
     try {
       return await readXlsx(bytes);
@@ -271,61 +273,6 @@ function readWithSheetJs(bytes: Uint8Array): Workbook {
   return { sheets: sheets.length ? sheets : [newSheet('Sheet1')] };
 }
 
-export function parseCsv(text: string, delim?: string): string[][] {
-  if (!delim) {
-    const first = text.slice(0, 2000).split(/\r?\n/)[0] || '';
-    const counts = [',', ';', '\t', '|'].map((d) => [d, first.split(d).length] as const);
-    delim = counts.sort((a, b) => b[1] - a[1])[0][1] > 1 ? counts[0][0] : ',';
-  }
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let q = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (q) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else q = false;
-      } else field += ch;
-    } else if (ch === '"' && field === '') q = true;
-    else if (ch === delim) {
-      row.push(field);
-      field = '';
-    } else if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && text[i + 1] === '\n') i++;
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
-    } else field += ch;
-  }
-  if (field !== '' || row.length) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows;
-}
-
-function readCsv(text: string, delim: string | undefined, name: string): Sheet {
-  const sheet = newSheet(name.replace(/\.[^.]+$/, '').slice(0, 31) || 'Sheet1');
-  parseCsv(text, delim).forEach((row, r) =>
-    row.forEach((raw, c) => {
-      if (raw === '') return;
-      // Keep leading-zero values (zip codes, IDs) as text; don't treat "=..." in data as formulas.
-      if (/^0\d+$/.test(raw.trim()) || raw.startsWith('=')) {
-        sheet.cells[key(r, c)] = { v: raw };
-        return;
-      }
-      const parsed = parseInput(raw);
-      sheet.cells[key(r, c)] = parsed.fmt ? { ...parsed.cell, s: parsed.fmt as CellStyle } : parsed.cell;
-    })
-  );
-  return sheet;
-}
-
 // ---------- Writing ----------
 export async function writeXlsx(wb: Workbook): Promise<Uint8Array> {
   const calc = new Calc(wb);
@@ -459,25 +406,6 @@ export async function writeXlsx(wb: Workbook): Promise<Uint8Array> {
   }
   const buf = await out.xlsx.writeBuffer();
   return new Uint8Array(buf as ArrayBuffer);
-}
-
-export function writeCsv(wb: Workbook, sheetIndex: number, delim = ','): Uint8Array {
-  const sheet = wb.sheets[sheetIndex];
-  const calc = new Calc(wb);
-  const { rows, cols } = usedRange(sheet);
-  const lines: string[] = [];
-  for (let r = 0; r < rows; r++) {
-    const fields: string[] = [];
-    for (let c = 0; c < cols; c++) {
-      const cell = sheet.cells[key(r, c)];
-      const v = calc.value(sheet, r, c);
-      let s = v === null ? '' : typeof v === 'number' && (!cell?.s?.fmt || cell.s.fmt === 'general') ? String(v) : formatValue(v, cell?.s);
-      if (s.includes(delim) || s.includes('"') || s.includes('\n') || s.includes('\r')) s = `"${s.replace(/"/g, '""')}"`;
-      fields.push(s);
-    }
-    lines.push(fields.join(delim));
-  }
-  return textToBytes(lines.join('\r\n') + '\r\n');
 }
 
 export function writeOds(wb: Workbook): Uint8Array {

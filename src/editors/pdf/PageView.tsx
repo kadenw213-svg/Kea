@@ -461,9 +461,11 @@ function PageViewInner(p: Props) {
           {p.searchRects.map((s, i) => (
             <rect key={i} x={s.rect.x - 1} y={s.rect.y - 1} width={s.rect.w + 2} height={s.rect.h + 2} rx={2} className={s.active ? 'search-hit active' : 'search-hit'} />
           ))}
-          {all.map((a) => (
-            <SvgAnn key={a.id} a={a} interactive={interactive} />
-          ))}
+          {all.map((a) => (a.type === 'redact' ? null : <SvgAnn key={a.id} a={a} interactive={interactive} />))}
+        </svg>
+        {/* Redaction boxes always show as they will be saved (black), even on a dark page. */}
+        <svg className="ann-svg ann-true" width={p.width} height={p.height} viewBox={`0 0 ${p.width} ${p.height}`}>
+          {all.map((a) => (a.type === 'redact' ? <SvgAnn key={a.id} a={a} interactive={interactive} /> : null))}
         </svg>
         {all.map((a) =>
           a.type === 'text' || a.type === 'image' || a.type === 'note' ? (

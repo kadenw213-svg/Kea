@@ -9,11 +9,11 @@ import { toast } from '../../store';
 import { timeAgo } from '../../lib/util';
 
 export function KeaCloudMark({ size = 17 }: { size?: number }) {
-  // A cloud with Kea's accent: Kea's own storage, set apart from OneDrive and Google Drive.
+  // A plain cloud in Kea's accent: Kea's own storage, set apart from OneDrive and Google Drive. (No tick: whether it's
+  // up to date is shown beside the files, and a tick on a signed-out cloud read as "synced".)
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="kc-mark">
       <path d="M7 18.5h10.2a4.3 4.3 0 0 0 .6-8.56A6 6 0 0 0 6.2 9.3 4.6 4.6 0 0 0 7 18.5Z" fill="var(--accent)" opacity="0.22" stroke="var(--accent)" strokeWidth="1.7" strokeLinejoin="round" />
-      <path d="M9.4 14.2l2 2 3.6-4" fill="none" stroke="var(--accent)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

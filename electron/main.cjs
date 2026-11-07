@@ -715,7 +715,7 @@ let downloaded = null;
  * computer stays on the same version without anyone being restarted mid-work.
  */
 function updateLoop() {
-  if (!app.isPackaged) return;
+  if (!canSelfUpdate()) return;
   const check = () => {
     if (settings.get('updates.autoCheck', true) === false) return;
     const u = getUpdater();
@@ -760,9 +760,23 @@ function getUpdater() {
   return updater;
 }
 
+/**
+ * Only an installed Kea can update itself: the installer leaves app-update.yml beside the app. A portable or unzipped
+ * copy (or a test build) has none, so it says so in a sentence instead of failing with a file error.
+ */
+function canSelfUpdate() {
+  if (!app.isPackaged) return false;
+  try {
+    return fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'));
+  } catch {
+    return false;
+  }
+}
+
 function friendlyUpdateError(err) {
   const msg = String((err && err.message) || err);
-  if (/ENOTFOUND|ETIMEDOUT|ECONNREFUSED|net::ERR/i.test(msg)) return "Couldn't reach GitHub. Check your internet connection and try again.";
+  if (/ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|EAI_AGAIN|net::ERR/i.test(msg)) return "You're offline, or GitHub can't be reached. Kea tries again later.";
+  if (/ENOENT|app-update\.yml/i.test(msg)) return "This copy of Kea can't update itself.";
   if (/404|latest\.yml/i.test(msg)) return 'No published releases were found yet.';
   return msg.split('\n')[0].slice(0, 200);
 }
@@ -770,6 +784,7 @@ function friendlyUpdateError(err) {
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('update:check', async () => {
   if (!app.isPackaged) return { status: 'dev' };
+  if (!canSelfUpdate()) return { status: 'manual' };
   try {
     const u = getUpdater();
     u.autoDownload = settings.get('updates.autoDownload', true) !== false;

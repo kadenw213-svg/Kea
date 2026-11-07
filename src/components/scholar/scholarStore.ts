@@ -43,5 +43,5 @@ export function openScholar(view: ScholarView = { name: 'calendar' }) {
   const tabs = useTabs.getState();
   const existing = tabs.tabs.find((t) => t.kind === 'scholar');
   if (existing) tabs.setActive(existing.id);
-  else tabs.addTab({ kind: 'scholar', name: 'Scholar', path: null, data: null });
+  else tabs.addTab({ kind: 'scholar', name: 'School', path: null, data: null });
 }

@@ -1,11 +1,18 @@
 import { X, GraduationCap, Briefcase, Heart, FileText } from 'lucide-react';
-import { TEMPLATES, templateBytes, Template } from '../../editors/doc/templates';
+import { TEMPLATES, templateBytes, Template, templateName, rememberAccountName } from '../../editors/doc/templates';
+import { api } from '../../lib/api';
+import { useHubStatus } from '../scholar/HubAccount';
 import { useTabs } from '../../store';
 import { setting, openSettings } from '../../lib/settings';
 
 const GROUP_ICON = { School: GraduationCap, Work: Briefcase, Personal: Heart } as const;
 
-export function openTemplate(t: Template) {
+export async function openTemplate(t: Template) {
+  // No name in Settings: the Kea account's name fills the template (the MLA header and so on).
+  if (!templateName()) {
+    const r = await api.hub.status().catch(() => null);
+    if (r?.ok) rememberAccountName(r.value.me?.account.displayName || r.value.cached?.name);
+  }
   const { name, data } = templateBytes(t);
   useTabs.getState().addTab({ kind: 'doc', name, path: null, data });
 }
@@ -13,7 +20,9 @@ export function openTemplate(t: Template) {
 /** Gallery of ready-made documents. */
 export function TemplateGallery({ onClose }: { onClose(): void }) {
   const groups = ['School', 'Work', 'Personal'] as const;
-  const named = !!(setting<string>('user.name') || '').trim();
+  const hub = useHubStatus();
+  rememberAccountName(hub?.me?.account.displayName || hub?.cached?.name);
+  const named = !!templateName();
   return (
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog tpl-dialog">
