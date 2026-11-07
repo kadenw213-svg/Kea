@@ -26,8 +26,8 @@ export const IN_CLASS = new Set(['exam', 'final_exam', 'lab_practical']);
 export const POSTS = new Set(['discussion', 'peer_review']);
 /** Tests: taken in a quiz (or in class). */
 export const TESTS = new Set(['quiz', 'exam', 'final_exam', 'midterm', 'pre_lab_quiz', 'lab_practical']);
-/** Due work, as counted in "N due": TODO, without reminders and readings. (Class meetings never count.) */
-export const COUNTS_AS_DUE = new Set([...TODO].filter((t) => t !== 'other_deadline'));
+/** Due work, as counted in "N due": TODO, without reminders and readings. (Class meetings never count; db.cjs DUE_KINDS is the same list.) */
+export const COUNTS_AS_DUE = new Set([...TODO].filter((t) => t !== 'other_deadline' && t !== 'reading'));
 
 export const TYPE_LABEL: Record<string, string> = {
   lecture: 'Lecture',

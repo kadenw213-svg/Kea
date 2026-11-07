@@ -21,7 +21,7 @@ const unsectioned = (code) => String(code || '').replace(/^(.*\d)[\s.-]+[A-Za-z]
 
 /**
  * The class here with this course code: the same code however it's written ("BIO 1010" and "bio-1010"), else the same
- * code with or without a section number ("CHEM1110" and "CHEM 1110-002"). Whole codes are compared, never one code
+ * code with a section number on only one side ("CHEM1110" and "CHEM 1110-002"), never another section ("-001" and "-002"). Whole codes are compared, never one code
  * starting with another, and a code that can't be a folder name ("BIO1010\..\..\x") never matches anything.
  */
 function matchCourse(courses, code) {
@@ -29,7 +29,10 @@ function matchCourse(courses, code) {
   const mine = courses.filter((c) => validCode(c.code));
   const want = norm(code);
   if (!want) return null;
-  return mine.find((c) => norm(c.code) === want) || mine.find((c) => norm(unsectioned(c.code)) === norm(unsectioned(code))) || null;
+  // (Two different sections, 001 and 002, are different classes: other instructors, schedules and tests. The code
+  // without its section counts only when one of the two names no section at all.)
+  const sectioned = (x) => norm(unsectioned(x)) !== norm(x);
+  return mine.find((c) => norm(c.code) === want) || mine.find((c) => !(sectioned(c.code) && sectioned(code)) && norm(unsectioned(c.code)) === norm(unsectioned(code))) || null;
 }
 
 /** Every file under Shared/, relative to it (forward slashes), with its size and time. */

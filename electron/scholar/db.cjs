@@ -182,18 +182,23 @@ function readingsFor(db, courseId, code, textbooks) {
   return { pdfs, titles, summaries, words, siblings };
 }
 
+/** The kinds of item counted as due (src/components/scholar/itemRules.ts COUNTS_AS_DUE: keep the two alike). */
+const DUE_KINDS = ['exam', 'final_exam', 'lab_practical', 'quiz', 'assignment', 'discussion', 'project', 'presentation', 'paper', 'draft', 'peer_review', 'pre_lab_quiz', 'lab_handout'];
 /** Classes in the profile, with what's coming up. */
 async function courses(file, textbooks, done) {
   const db = await open(file);
   if (!db) return [];
   const today = localDay();
   const week = localDay(new Date(Date.now() + 7 * 864e5));
+  const ev = evidence(db, file);
   return rows(db, "SELECT * FROM courses WHERE status = 'active' AND course_code != 'MESSAGES' ORDER BY course_code").map((c) => {
+    // Work that's due, the same kinds the window counts (itemRules.ts COUNTS_AS_DUE): never a class meeting (a lab
+    // session, a recitation), a reminder, a reading, or work that doesn't open on the class site yet.
     const due = rows(
       db,
-      `SELECT id, title, item_type, date, due_time FROM academic_items WHERE course_id = ? AND ${ACTIVE} AND item_type NOT IN ('weekly_reading', 'reading', 'lecture', 'break', 'no_class') AND date >= ? ORDER BY date, due_time LIMIT 40`,
-      [c.id, today]
-    );
+      `SELECT id, course_id, title, item_type, date, due_time FROM academic_items WHERE course_id = ? AND ${ACTIVE} AND item_type IN (${DUE_KINDS.map(() => '?').join(', ')}) AND date >= ? ORDER BY date, due_time LIMIT 40`,
+      [c.id, ...DUE_KINDS, today]
+    ).filter((i) => !opensAt(i, ev));
     const open = due.filter((i) => !done[i.id]);
     const { pdfs } = readingsFor(db, c.id, c.course_code, textbooks);
     return {
@@ -925,4 +930,4 @@ async function sourceText(file, id) {
   return r || null;
 }
 
-module.exports = { searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { handIn, norm, relateItems, labNumber, postBase } };
+module.exports = { searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { handIn, norm, relateItems, labNumber, postBase, DUE_KINDS } };

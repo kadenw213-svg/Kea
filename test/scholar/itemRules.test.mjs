@@ -150,3 +150,10 @@ test('a lab’s parts are tied together by its number, in the lab’s order', ()
   assert.equal(relatedText(by.d1.related[0]).prefix, 'Replies: ');
   assert.equal(relatedText(by.d1.related[0]).title, 'Discussion 6');
 });
+
+test('the PC�s "N due" in the main process counts the same kinds as the window', async () => {
+  const { COUNTS_AS_DUE } = await import('../../src/components/scholar/itemRules.ts');
+  const { DUE_KINDS } = require('../../electron/scholar/db.cjs')._test;
+  assert.deepEqual([...DUE_KINDS].sort(), [...COUNTS_AS_DUE].sort());
+  for (const t of ['lab', 'recitation', 'class_session', 'other_deadline', 'reading', 'lecture']) assert.ok(!COUNTS_AS_DUE.has(t), t);
+});
