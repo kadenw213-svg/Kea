@@ -54,6 +54,14 @@ function Body({ p, name }: { p: FilePreview; name: string }) {
   switch (p.type) {
     case 'image': {
       const isPage = extOf(name) === 'pdf';
+      // (A PDF page with its own dark version: that one with a dark theme, so a black box saved in it stays black.)
+      if (isPage && p.dark)
+        return (
+          <>
+            <img className="pv-img page pv-light" src={p.src} alt="" draggable={false} />
+            <img className="pv-img page pv-dark" src={p.dark} alt="" draggable={false} />
+          </>
+        );
       return <img className={`pv-img ${isPage ? 'page' : 'photo'}`} src={p.src} alt="" draggable={false} />;
     }
     case 'doc':

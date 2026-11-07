@@ -50,7 +50,14 @@ export interface DriveProgress {
   error?: string;
 }
 export type FilePreview =
-  | { type: 'image'; src: string; w: number; h: number }
+  | {
+      type: 'image';
+      src: string;
+      w: number;
+      h: number;
+      /** A PDF page's dark version (darkPage.ts: inverted, but a black box saved into the page stays black). */
+      dark?: string;
+    }
   | { type: 'doc'; html: string }
   | { type: 'text'; text: string }
   | { type: 'grid'; rows: string[][] }

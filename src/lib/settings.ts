@@ -949,17 +949,8 @@ export function pagesDark(v: Record<string, any> = useSettings.getState().values
 }
 export const usePagesDark = () => useSettings((s) => pagesDark(s.values));
 export const useThemeDark = () => useSettings((s) => themeDark(s.values));
-/**
- * Pages turned light or dark from a reader (the textbook, a PDF): the whole app follows, so the book and the quiz
- * beside it always match. A light theme turned dark goes to Dark; a dark one turned light goes to Light (or Sepia
- * stays when it's already light).
- */
-export function setPagesDark(dark: boolean) {
-  const v = useSettings.getState().values;
-  const t = v['appearance.theme'] || 'dark';
-  const next = dark ? (themeOf(t).dark ? t : 'dark') : themeOf(t).dark ? 'light' : t;
-  useSettings.getState().set({ 'appearance.theme': next, 'appearance.themeAt': new Date().toISOString(), 'pdf.darkPages': 'match' });
-}
+// (A reader's page colour is its own view setting, PdfEditor and ReadingPane: it never changes the theme or
+// pdf.darkPages.)
 
 export function setting<T = any>(key: string): T {
   const v = useSettings.getState().values[key];
