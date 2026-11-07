@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Building2, Clock3, KeyRound, Plus } from 'lucide-react';
 import { ask, toast } from '../../store';
-import { HubPanel, refreshHub, useHubStatus } from '../scholar/HubAccount';
+import { refreshHub, useHubStatus } from '../scholar/HubAccount';
 import { VerifyEmail } from '../scholar/Account';
 import { accountOf } from '../account/hubStore';
 import { localTz, post, useMyId, useWork, Tab } from './workStore';
@@ -57,8 +57,8 @@ export function WorkScreen() {
       <div className="work">
         <div className="work-inner wk-narrow">
           <h1 className="work-title">Work</h1>
-          <p className="muted">Sign in with your Kea account to join your organization: schedules, availability, certs and classes.</p>
-          <HubPanel />
+          {/* (Kea's sign-in screen covers this while signed out: one place to sign in.) */}
+          <p className="muted">Sign in with your Kea account to see your organizations: schedules, availability, certs and classes.</p>
         </div>
       </div>
     );
