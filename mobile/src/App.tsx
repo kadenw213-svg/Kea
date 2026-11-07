@@ -3,10 +3,12 @@ import { AlertTriangle, Award, Bell, BookOpen, Brain, CalendarDays, Camera, Chec
 import type { ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
 import { CATEGORIES, CLASS_COLORS, LinkGroups, TODO, categoryOf, extendedInfo, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
+// (What each item offers, the same rules as the PC: src/components/scholar/itemRules.ts.)
+import { handInText, panelLinks, platformLine, quickVerb, relatedText, studyChapters, typeLabel } from '../../src/components/scholar/itemRules';
 import { useSetting } from '../../src/lib/settings';
 import { useAreas } from '../../src/lib/areas';
 import { hubOn, hubSyncLibrary } from './hub';
-import { Kea, KeaData, PhoneMail, cachedData, doneOf, inboxKey, keaState, loadData, phoneDeleted, phoneDone, phoneRead, setPhoneDeleted, setPhoneDone, setPhoneRead, syncOut, watchClasses } from './kea';
+import { Kea, KeaData, PhoneMail, cachedData, doneOf, inboxKey, keaState, loadData, phoneDeleted, phoneDone, phoneRead, phoneWithdrawn, setPhoneDeleted, setPhoneDone, setPhoneRead, setPhoneWithdrawn, syncOut, watchClasses, withdrawnNow } from './kea';
 import { loadStudy, onStudyChange } from './study';
 import { setDesktopData, studyChanged } from './desktopApi';
 import { OpenedView, Reader, ReaderTarget, StudyHost } from './StudyTab';
@@ -32,6 +34,8 @@ const parse = (s: string) => {
 };
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const today = () => iso(new Date());
+/** The local day of a time. */
+const localDay = (at: string) => iso(new Date(at));
 const dayName = (s: string) => (s === today() ? 'Today' : s === iso(addDays(new Date(), 1)) ? 'Tomorrow' : parse(s).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }));
 const clock = (t: string | null) => {
   if (!t) return '';
@@ -54,7 +58,8 @@ const classColor = (data: KeaData, id: string) => {
   const i = Math.max(0, data.courses.findIndex((c) => c.id === id));
   return ink(chosen[id] || CLASS_COLORS[i % CLASS_COLORS.length], THEMES[getLook().theme]?.dark !== false);
 };
-const LABEL: Record<string, string> = { lecture: 'Lecture', lab: 'Lab', exam: 'Exam', final_exam: 'Final exam', lab_practical: 'Lab practical', quiz: 'Quiz', assignment: 'Assignment', discussion: 'Discussion', paper: 'Paper', peer_review: 'Peer review', lab_handout: 'Lab handout', other_deadline: 'To do', administrative_deadline: 'Deadline', break: 'Break', reading: 'Reading', weekly_reading: 'This week', project: 'Project' };
+// (Every kind's name, from the PC's list, so a kind never shows as its raw id.)
+const LABEL = new Proxy({} as Record<string, string>, { get: (_t, k: string) => typeLabel({ type: String(k), title: '' }) });
 
 /** The PC's copy into the shared study code and screens (and once, what changes here goes back to the PC). */
 let studyHooked = false;
@@ -97,6 +102,7 @@ export function App() {
   const [settings, setSettings] = useState(false);
   const [phoneInbox, setPhoneInbox] = useState<ScholarInboxItem[]>([]);
   const [done, setDone] = useState(phoneDone());
+  const [withdrawnMine, setWithdrawnMine] = useState(phoneWithdrawn());
   const [refreshing, setRefreshing] = useState(false);
   // Starting up with classes: which step it's on, and what went wrong (shown instead of an endless spinner).
   const [step, setStep] = useState(0);
@@ -182,7 +188,20 @@ export function App() {
   }, []);
 
   // Each item's checkmark: the PC's, unless the phone changed it more recently.
-  const items = useMemo(() => (data?.items || []).map((i) => ({ ...i, done: doneOf(i, data?.doneLog, done) })), [data, done]);
+  // A class withdrawn from (here or on the PC, the newer change winning): nothing from the day it was withdrawn on,
+  // and its past work kept, marked, never Missing (as electron/scholar/db.cjs does on the PC).
+  const gone = useMemo(() => withdrawnNow(data?.withdrawn, withdrawnMine), [data, withdrawnMine]);
+  const items = useMemo(
+    () =>
+      (data?.items || [])
+        .filter((i) => !gone.has(i.courseId) || i.date < localDay(gone.get(i.courseId)!.at))
+        .map((i) => ({ ...i, done: doneOf(i, data?.doneLog, done), ...(gone.has(i.courseId) ? { withdrawn: true } : {}) })),
+    [data, done, gone]
+  );
+  const withdraw = (courseId: string, on: boolean, code: string) => {
+    setPhoneWithdrawn(courseId, on, code);
+    setWithdrawnMine(phoneWithdrawn());
+  };
   const toggle = (it: ScholarItem) => {
     // (Only the student's own checkmark counts: what the class site shows never checks work off.)
     const on = !isDone(it);
@@ -298,7 +317,7 @@ export function App() {
   );
   if (!tabs.length) tabs.push(['files', Camera, 'Scan & PDFs', 0]);
   const current = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0];
-  const ctx = classes && { data: classes, items, inbox, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')), read: (t: ReaderTarget) => setReader(t), markRead, calendar: () => setTab('calendar') };
+  const ctx = classes && { data: classes, items, gone, withdraw, inbox, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')), read: (t: ReaderTarget) => setReader(t), markRead, calendar: () => setTab('calendar') };
   return (
     <div className="app">
       <header className="top">
@@ -401,7 +420,7 @@ function ClassesPitch({ onConnect }: { onConnect(): void }) {
   );
 }
 
-type Ctx = { data: KeaData; items: ScholarItem[]; inbox: ScholarInboxItem[]; open(it: ScholarItem): void; toggle(it: ScholarItem): void; openCourse(code: string): void; read(t: ReaderTarget): void; markRead(ids: string[]): void; calendar(): void };
+type Ctx = { data: KeaData; items: ScholarItem[]; gone: Map<string, { at: string; by: string }>; withdraw(courseId: string, on: boolean, code: string): void; inbox: ScholarInboxItem[]; open(it: ScholarItem): void; toggle(it: ScholarItem): void; openCourse(code: string): void; read(t: ReaderTarget): void; markRead(ids: string[]): void; calendar(): void };
 
 function Row({ ctx, it, date }: { ctx: Ctx; it: ScholarItem; date?: boolean }) {
   const miss = isMissing(it);
@@ -435,6 +454,9 @@ function Row({ ctx, it, date }: { ctx: Ctx; it: ScholarItem; date?: boolean }) {
           {date && <span>{dayName(it.date)}</span>}
           {whenOf(it) && <span>{whenOf(it)}</span>}
           {extendedInfo(it) && <span className="ext-tag">{extendedInfo(it)!.tag}</span>}
+          {it.opensAt && <span className="ext-tag">Opens {new Date(it.opensAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
+          {/* (What the class site shows, as on the PC: a hint, never a checkmark.) */}
+          {!it.done && (it.handIn === 'graded' || it.handIn === 'submitted') && <span className="ext-tag">{it.handIn === 'graded' ? 'Class site: graded' : 'Class site: handed in'}</span>}
           {room(it.location) && (
             <span>
               <MapPin size={11} /> {room(it.location)}
@@ -923,6 +945,7 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
                 <div className="mcard-body">
                   <b className="mcard-code">{d.code}</b>
                   <span className="mcard-name">{d.name}</span>
+                  {ctx.gone.has(d.id) && <span className="muted small">Withdrew</span>}
                 </div>
               </div>
             );
@@ -946,6 +969,18 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
           <h1 style={{ color: k }}>{c.code}</h1>
           <span className="muted">{c.name}</span>
           {(c.instructor || c.contact) && <span className="muted small block">{[c.instructor, c.contact].filter(Boolean).join(' · ')}</span>}
+          {ctx.gone.has(c.id) ? (
+            <span className="small block">
+              <b>Withdrew</b> · its upcoming work is off your calendar; past work and grades stay here.{' '}
+              <button className="link" onClick={() => ctx.withdraw(c.id, false, c.code)}>
+                Undo
+              </button>
+            </span>
+          ) : (
+            <button className="link small block" onClick={() => window.confirm(`Did you withdraw from ${c.code}? Kea then shows it as Withdrew for the rest of its term: no upcoming work, Missing items or Study from it. You can undo this.`) && ctx.withdraw(c.id, true, c.code)}>
+              I withdrew from this class…
+            </button>
+          )}
         </span>
         {grades?.final && (
           <button className="bigrade" style={{ color: gradeTint(grades.final.percent) }} onClick={() => setGrading(!grading)} aria-label="Your grades in this class">
@@ -1012,7 +1047,13 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
 const TEST = new Set(['exam', 'final_exam', 'lab_practical', 'quiz']);
 
 function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): void }) {
+  // Its button, platforms, document and other links, each once, by the PC's rules: nothing on locked work, never a
+  // quiz on a discussion, the hand-in page not repeated below its button.
   const quick = primaryLink(it);
+  const { platforms, doc, rest } = panelLinks(it, useGuides()?.[it.id]);
+  const handIn = handInText(it);
+  const doneOn = platformLine(it);
+  const chapters = studyChapters(it);
   // (Not one that only repeats the title and the date, as on the PC.)
   const restOf = (t: string) =>
     t
@@ -1023,13 +1064,15 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
   const format = it.studyFocus.find((f) => /^(exam |test |quiz )?format\b/i.test(f));
   // The phone is for learning, seeing what's coming and handing in paper work: the guide's short version, Study up top.
   const guide = useGuides()?.[it.id];
-  const studyable = it.readings.length > 0 && !['administrative_deadline', 'break', 'no_class'].includes(it.type);
+  const studyable = chapters.length > 0;
+  // "Scan & hand in" only for work done on paper (the guide's hand-in says so), never typed work.
+  const paper = /handwritten|hand-written|on paper|paper copy|scan|photo|worksheet|notebook/i.test(`${guide?.submit?.what || ''} ${guide?.submit?.format || ''}`) || guide?.kind === 'written-homework';
   const study = (
     <button
       className="btn primary"
-      onClick={() => (onClose(), openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters: it.readings.map((r) => r.chapter), itemId: TEST.has(it.type) ? it.id : undefined }))}
+      onClick={() => (onClose(), openStudyHub({ courseId: it.courseId, code: it.courseCode, title: it.title, chapters, itemId: TEST.has(it.type) ? it.id : undefined }))}
     >
-      <ClipboardCheck size={16} /> Study {it.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ')}
+      <ClipboardCheck size={16} /> Study {chapters.map((r) => r.replace(/^Chapter /, 'Ch ')).join(', ')}
     </button>
   );
   return (
@@ -1054,6 +1097,8 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           {it.location ? ` · ${it.location}` : ''}
         </p>
         {extendedInfo(it) && <p className="ext-line small">{extendedInfo(it)!.text}</p>}
+        {doneOn && <p className="muted small">{doneOn}</p>}
+        {handIn && <p className={`small ${handIn.muted ? 'muted' : ''}`}>{handIn.opens && it.opensAt ? <b>Opens {new Date(it.opensAt).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</b> : handIn.text}</p>}
         {format && <p className="muted small">{format.replace(/^(exam |test |quiz )?format:\s*/i, 'Format: ')}</p>}
         <div className="actions">
           {TODO.has(it.type) && (
@@ -1063,10 +1108,20 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           )}
           {quick && (
             <button className="btn primary" onClick={() => Kea.open({ url: quick.url })}>
-              <quick.icon size={16} /> {quick.label}
+              <quick.icon size={16} /> {quickVerb(quick)}
             </button>
           )}
-          {quick?.label === 'Hand in' && guide?.kind !== 'paper' && (
+          {platforms.map((l) => (
+            <button key={l.url} className="btn" onClick={() => Kea.open({ url: l.url })}>
+              <ExternalLink size={16} /> {l.label}
+            </button>
+          ))}
+          {doc && (
+            <button className="btn" onClick={() => Kea.open({ url: doc.url })}>
+              <BookOpen size={16} /> Open assignment
+            </button>
+          )}
+          {quick?.kind === 'folder' && paper && (
             <button
               className="btn primary"
               onClick={async () => {
@@ -1083,6 +1138,23 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           )}
         </div>
         {studyable && TEST.has(it.type) && study}
+        {(it.related || []).length > 0 && (
+          <div className="sheet-related">
+            {it.related!.map((r) => {
+              const t = relatedText(r);
+              const other = ctx.items.find((x) => x.id === r.id);
+              return (
+                <button key={r.id} className="card link" disabled={!other} onClick={() => other && ctx.open(other)}>
+                  {r.done ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                  <span>
+                    {r.group ? `${r.group} · ` : t.prefix}
+                    <b>{t.title}</b> <span className="muted small">· {typeLabel(r)} · {dayName(r.date)}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         <AssignmentGuide it={it} raw={instructions} onOpen={(url) => Kea.open({ url })} compact />
         {it.readings.length > 0 && (
           <details className="pn-readings sheet-fold">
@@ -1103,7 +1175,7 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
           </details>
         )}
         {studyable && !TEST.has(it.type) && study}
-        <LinkGroups links={[...it.links, ...(it.platformLinks || []), ...it.weeklyLinks]} onOpen={(url) => Kea.open({ url })} />
+        <LinkGroups links={rest} onOpen={(url) => Kea.open({ url })} />
         {!guide && <OriginalWording text={instructions} />}
         {(it.instructor || it.contact) && <p className="muted small">{[it.instructor, it.contact].filter(Boolean).join(' · ')}</p>}
       </div>

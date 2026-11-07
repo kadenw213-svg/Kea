@@ -3,8 +3,10 @@
 // settings for those who run it.
 import { useEffect, useState } from 'react';
 import { Building2, Clock3, KeyRound, Plus } from 'lucide-react';
-import { toast } from '../../store';
-import { HubPanel, refreshHub, useHubStatus } from '../scholar/HubAccount';
+import { ask, toast } from '../../store';
+import { refreshHub, useHubStatus } from '../scholar/HubAccount';
+import { VerifyEmail } from '../scholar/Account';
+import { accountOf } from '../account/hubStore';
 import { localTz, post, useMyId, useWork, Tab } from './workStore';
 import { RANK } from './types';
 import type { Org } from './types';
@@ -39,12 +41,15 @@ export function WorkScreen() {
   const tab = useWork((s) => s.tab);
   const go = useWork((s) => s.go);
   const [adding, setAdding] = useState<'join' | 'create' | null>(null);
+  const me = accountOf(status);
   useEffect(() => {
     if (!status) refreshHub();
   }, []);
+  // (A different account, or signed out: what the last one had open goes.)
   useEffect(() => {
+    setAdding(null);
     if (status?.signedIn) refreshOrgs();
-  }, [status?.signedIn]);
+  }, [status?.signedIn, me?.id]);
 
   if (!status) return <Loading />;
   if (!status.signedIn)
@@ -52,14 +57,16 @@ export function WorkScreen() {
       <div className="work">
         <div className="work-inner wk-narrow">
           <h1 className="work-title">Work</h1>
-          <p className="muted">Sign in with your Kea account to join your organization: schedules, availability, certs and classes.</p>
-          <HubPanel />
+          {/* (Kea's sign-in screen covers this while signed out: one place to sign in.) */}
+          <p className="muted">Sign in with your Kea account to see your organizations: schedules, availability, certs and classes.</p>
         </div>
       </div>
     );
   const org = orgs?.find((o) => o.id === orgId) ?? null;
   const tabs = org && org.memberStatus === 'active' ? TABS.filter((t) => RANK[org.role] >= RANK[t.min]) : [];
   const current = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id ?? 'schedule';
+  const verified = !!me?.emailVerified;
+  const hasOrgs = !!orgs?.length;
 
   return (
     <div className="work">
@@ -75,17 +82,22 @@ export function WorkScreen() {
             ))}
           </div>
           <span className="wk-spacer" />
-          <button className="btn sm" onClick={() => setAdding(adding === 'join' ? null : 'join')}>
-            <KeyRound size={14} /> Join with a code
-          </button>
-          <button className="btn sm" onClick={() => setAdding(adding === 'create' ? null : 'create')}>
-            <Plus size={14} /> New organization
-          </button>
+          {/* (With no organization yet, the empty state below has these.) */}
+          {hasOrgs && (
+            <>
+              <button className="btn sm" onClick={() => setAdding(adding === 'join' ? null : 'join')}>
+                <KeyRound size={14} /> Join with a code
+              </button>
+              <button className="btn sm" onClick={() => setAdding(adding === 'create' ? null : 'create')}>
+                <Plus size={14} /> New organization
+              </button>
+            </>
+          )}
         </header>
-        {adding === 'join' && <JoinOrg onDone={() => setAdding(null)} />}
-        {adding === 'create' && <CreateOrg onDone={() => setAdding(null)} verified={!!status.me?.account.emailVerified || !!status.cached?.emailVerified} />}
+        {adding === 'join' && <JoinOrg onDone={() => setAdding(null)} verified={verified} />}
+        {adding === 'create' && <CreateOrg onDone={() => setAdding(null)} verified={verified} />}
 
-        <TodoBox orgId={orgId} />
+        {hasOrgs && <TodoBox orgId={orgId} />}
 
         {!orgs ? (
           <Loading />
@@ -93,6 +105,14 @@ export function WorkScreen() {
           adding ? null : (
             <Empty title="You’re not in an organization yet">
               <p className="muted">Ask your manager for a join code, or set up your own organization.</p>
+              {!verified && (
+                <div className="wk-verify">
+                  <p>
+                    <b>First, verify your email.</b> Joining or making an organization needs a verified email, so your manager knows it’s really you.
+                  </p>
+                  <VerifyEmail compact />
+                </div>
+              )}
               <div className="wk-actions center">
                 <button className="btn primary" onClick={() => setAdding('join')}>
                   <KeyRound size={15} /> Join with a code
@@ -160,10 +180,12 @@ function OrgBody({ org, tabs, current }: { org: Org; tabs: typeof TABS; current:
 }
 
 function LeaveButton({ org, label = 'Leave' }: { org: Org; label?: string }) {
+  const pending = org.memberStatus === 'pending';
   return (
     <button
       className="btn danger"
       onClick={async () => {
+        if ((await ask(pending ? `Cancel your request to join ${org.name}?` : `Leave ${org.name}?`, pending ? 'You’d need the join code again to ask later.' : 'Your upcoming shifts open up again, and you’ll need a new code to come back.', [{ id: 'no', label: 'Keep it' }, { id: 'yes', label, danger: true, primary: true }])) !== 'yes') return;
         try {
           await post(`/v1/orgs/${org.id}/leave`);
           await refreshOrgs();
@@ -178,9 +200,14 @@ function LeaveButton({ org, label = 'Leave' }: { org: Org; label?: string }) {
   );
 }
 
-function JoinOrg({ onDone }: { onDone(): void }) {
+/** The Hub's "verify first" answer names a place that isn't in Kea; say where it is. */
+const VERIFY_FIRST = /^Verify your email first/;
+const verifyText = (what: string) => `Verify your email first (Settings → Kea account → Verify with Google), then ${what}.`;
+
+function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
+  const ready = code.replace(/[^A-Za-z0-9]/g, '').length >= 10;
   const join = async () => {
     setBusy(true);
     try {
@@ -190,21 +217,32 @@ function JoinOrg({ onDone }: { onDone(): void }) {
       useWork.getState().go(r.org.id, 'schedule');
       onDone();
     } catch (e: any) {
-      toast(e.message, 'error');
+      toast(VERIFY_FIRST.test(e.message) ? verifyText('join the organization') : e.message, 'error');
     } finally {
       setBusy(false);
     }
   };
   return (
     <Card title="Join an organization" className="wk-narrow">
+      {!verified && (
+        <div className="wk-verify">
+          <p>
+            <b>1. Verify your email.</b> Joining needs a verified email, so your manager knows it’s really you.
+          </p>
+          <VerifyEmail compact />
+          <p>
+            <b>2. Enter your code.</b>
+          </p>
+        </div>
+      )}
       <Field label="Join code" hint="From your manager. Dashes and spaces don’t matter.">
-        <input className="input wk-codein" autoFocus value={code} placeholder="ABCD-EFGH-JKMN" onChange={(e) => setCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && code.length >= 10 && join()} />
+        <input className="input wk-codein" autoFocus value={code} placeholder="ABCD-EFGH-JKMN" onChange={(e) => setCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && ready && verified && join()} />
       </Field>
       <div className="wk-actions">
         <button className="btn" onClick={onDone}>
           Cancel
         </button>
-        <button className="btn primary" disabled={busy || code.replace(/[^A-Za-z0-9]/g, '').length < 10} onClick={join}>
+        <button className="btn primary" disabled={busy || !ready || !verified} title={!verified ? 'Verify your email first' : !ready ? 'Enter the whole code (10 letters and numbers)' : undefined} onClick={join}>
           Join
         </button>
       </div>
@@ -227,14 +265,19 @@ function CreateOrg({ onDone, verified }: { onDone(): void; verified: boolean }) 
       useWork.getState().go(r.org.id, 'structure');
       onDone();
     } catch (e: any) {
-      toast(e.message, 'error');
+      toast(VERIFY_FIRST.test(e.message) ? verifyText('make the organization') : e.message, 'error');
     } finally {
       setBusy(false);
     }
   };
   return (
     <Card title="New organization" className="wk-narrow">
-      {!verified && <p className="af-info">Verify your email first: Settings, then Account, then Verify with Google.</p>}
+      {!verified && (
+        <div className="wk-verify">
+          <p>Making an organization needs a verified email first.</p>
+          <VerifyEmail compact />
+        </div>
+      )}
       <div className="wk-form-grid">
         <Field label="Name">
           <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="For example Westside Pool" />
@@ -260,7 +303,7 @@ function CreateOrg({ onDone, verified }: { onDone(): void; verified: boolean }) 
         <button className="btn" onClick={onDone}>
           Cancel
         </button>
-        <button className="btn primary" disabled={busy || name.trim().length < 2} onClick={make}>
+        <button className="btn primary" disabled={busy || name.trim().length < 2 || !verified} title={!verified ? 'Verify your email first' : name.trim().length < 2 ? 'Give it a name' : undefined} onClick={make}>
           Make organization
         </button>
       </div>

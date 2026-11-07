@@ -435,3 +435,353 @@
   font-size: 12.5px;
   margin: 0;
 }
+
+/* The account's picture, name and verified mark: here (loaded at start-up), since the title bar and Settings show them. */
+.acct-avatar {
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+}
+.acct-avatar.placed {
+  background-repeat: no-repeat;
+}
+.acct-adjust {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+.acct-adjust-view {
+  position: relative;
+  border-radius: 50%;
+  background-repeat: no-repeat;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 1px var(--surface-4);
+}
+.acct-adjust-view:active {
+  cursor: grabbing;
+}
+.acct-adjust-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 11.5px;
+  pointer-events: none;
+}
+.acct-adjust-zoom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 220px;
+}
+.acct-adjust-zoom input {
+  flex: 1;
+}
+.acct-avatar.letter {
+  background: linear-gradient(160deg, #f6f7f8, #8b9199);
+  color: #101215;
+  font-weight: 700;
+}
+.acct-badge {
+  display: inline-flex;
+  color: var(--info);
+  flex-shrink: 0;
+}
+.acct-badge.owner {
+  color: #e8b931;
+}
+.acct-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.acct-pic {
+  position: relative;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.acct-pic-cam {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.acct-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.acct-name {
+  font-size: 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.acct-status {
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.acct-status.ok {
+  color: var(--info);
+}
+.acct-status.bad {
+  color: var(--danger, #e5534b);
+}
+.acct-pic-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.acct-pic-btns {
+  display: flex;
+  gap: 2px;
+}
+.acct-name-edit {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.acct-name-edit input {
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  min-width: 200px;
+}
+
+/* Sign in / Create an account: the chosen one is filled. */
+.hub-tabs .chip {
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.hub-tabs .chip.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* A password box with its show/hide button; hints under a field. */
+.acct-pw {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.acct-pw input {
+  flex: 1;
+  min-width: 0;
+}
+.acct-hint {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.acct-hint.bad {
+  color: var(--danger, #e5534b);
+}
+.acct-form select.acct-select {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+/* The terms: how many are ticked, and the way to the next one. */
+.hub-terms-count {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+}
+.hub-terms-count.done {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The account page: one card per part. */
+.acct-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 600px;
+}
+.acct-page .acct-card {
+  max-width: none;
+  margin: 0;
+}
+.acct-page .hub-phone,
+.acct-page .hub-notes {
+  border-top: none;
+  padding-top: 0;
+}
+.acct-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.acct-row-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.acct-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.acct-row > svg {
+  flex: none;
+  color: var(--text-2);
+}
+.acct-row-main {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.45;
+}
+.acct-sub {
+  margin-left: 26px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.acct-sub input {
+  background: var(--surface);
+}
+.acct-danger {
+  border: 1px solid var(--danger, #e5534b);
+}
+.acct-code {
+  max-width: 140px;
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
+}
+.acct-totp {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.acct-totp-text {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.acct-totp-text p {
+  margin: 0;
+}
+.acct-qr {
+  flex: none;
+  border-radius: 8px;
+}
+.acct-secret {
+  user-select: all;
+  font-size: 12.5px;
+}
+.acct-devices {
+  list-style: none;
+  margin: 0 0 0 26px;
+  padding: 0;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.acct-devices li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.acct-verify {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.acct-verify.compact .acct-actions {
+  flex-wrap: nowrap;
+}
+.hub-advanced-card {
+  gap: 10px;
+  padding: 12px 20px;
+}
+.hub-advanced-card .muted {
+  user-select: text;
+}
+
+/* The account in the title bar. */
+.titlebar-fill {
+  flex: 1;
+}
+.acct-tb {
+  -webkit-app-region: no-drag;
+  position: relative;
+  padding: 2px;
+  border-radius: 50%;
+}
+.acct-tb .update-dot {
+  top: 0;
+  right: 0;
+}
+.acct-tb-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 280px;
+}
+.acct-tb-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+  font-weight: 600;
+}
+.acct-tb-warn {
+  color: var(--danger, #e5534b);
+  font-size: 12px;
+}

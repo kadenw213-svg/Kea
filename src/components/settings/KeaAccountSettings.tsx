@@ -1,20 +1,23 @@
-// Settings → Kea account: how you use Kea (the same choices as after signing in), where the Kea Hub is, and how you
-// show on class leaderboards.
+// Settings → Kea account: the account page itself (who you are, verifying your email, notifications, phone, sign-in
+// and security, your data, signing out, the Hub's address), how you use Kea, and how you show on class leaderboards.
 import { ModeSettings } from '../ModePicker';
-import { HubAddress, useHubStatus } from '../scholar/HubAccount';
+import { HubPanel } from '../scholar/HubAccount';
 import { BoardNameSetting } from '../scholar/BoardName';
+import { useKeaModes } from '../../lib/modes';
 
 export function KeaAccountSettings() {
-  const status = useHubStatus();
+  const modes = useKeaModes();
   return (
     <div className="hubc-settings">
+      <HubPanel />
       <div className="sgroup-title sgroup-in">How you use Kea</div>
       <ModeSettings />
-      <div className="sgroup-title sgroup-in">Kea Hub</div>
-      {status?.signedIn && <p className="muted">Signed in as {status.me?.account.email ?? status.cached?.email}.</p>}
-      <HubAddress />
-      <div className="sgroup-title sgroup-in">On class leaderboards</div>
-      <BoardNameSetting />
+      {modes.school && (
+        <>
+          <div className="sgroup-title sgroup-in">On class leaderboards</div>
+          <BoardNameSetting />
+        </>
+      )}
     </div>
   );
 }

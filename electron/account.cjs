@@ -1,46 +1,69 @@
-// The Kea account: the student's email, name and picture, kept on this computer. School mode needs one, with the
-// email verified. Kea has no server of its own, so an email counts as verified when it's the account of something
-// already signed in here that proved it: the Claude account Kea uses, a OneDrive signed in on this computer, or the
-// Google account signed in to Kea. Nothing is sent anywhere.
+// The Kea account as the rest of this computer sees it. There is one account, the Kea account on the Kea Hub: its
+// email, name and "verified" come from there (hub.cjs keeps a copy for when the Hub is offline). Two things stay on
+// this computer, in account.json, because the Hub has no place for them:
+//   - the picture beside the name (and where it sits in its circle), kept for the account it was chosen for;
+//   - for School mode, a second way to count the email as verified: the same email signed in here to the Claude account
+//     Kea uses, a OneDrive or the Google account in Kea (checked when the person asks; nothing is sent anywhere).
+// (Before Kea had the Hub, account.json was a separate local account with its own email and name. Those are no longer
+// read: the Kea account's are used. Its picture is kept and goes with the first Kea account signed in here.)
 const { app, ipcMain, dialog, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-// Kea's creator: shown with their own badge.
-const OWNER = 'kadenw213@gmail.com';
 const file = () => path.join(app.getPath('userData'), 'account.json');
 const norm = (e) => String(e || '').trim().toLowerCase();
 
 function read() {
   try {
-    return JSON.parse(fs.readFileSync(file(), 'utf8'));
+    const a = JSON.parse(fs.readFileSync(file(), 'utf8'));
+    return a && typeof a === 'object' ? a : {};
+  } catch {
+    return {};
+  }
+}
+const write = (a) => fs.writeFileSync(file(), JSON.stringify(a, null, 1));
+
+function hubAccount() {
+  try {
+    return require('./hub.cjs').cached();
   } catch {
     return null;
   }
 }
-const write = (a) => (a ? fs.writeFileSync(file(), JSON.stringify(a, null, 1)) : fs.rmSync(file(), { force: true }));
+
+/** The picture and proof kept here, and whether they belong to this Kea account (an older local one is taken over once). */
+function local(hub) {
+  const a = read();
+  if (!hub?.id) return { a, mine: false };
+  if (!a.accountId && (a.avatar || a.email)) {
+    a.accountId = hub.id;
+    // (The old local account's proof only counts when it was for the same email.)
+    const proof = a.verified?.email && norm(a.verified.email) === norm(hub.email) ? a.verified : null;
+    for (const k of ['email', 'name', 'verified']) delete a[k];
+    if (proof) a.proof = proof;
+    write(a);
+  }
+  return { a, mine: a.accountId === hub.id };
+}
 
 const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+/** { email, name, avatar, crop, verified, verifiedBy, verifiedHere, owner }, or null when signed out of the Kea account. */
 function get() {
-  const a = read();
-  if (!a?.email) return null;
+  const hub = hubAccount();
+  if (!hub?.email) return null;
+  const { a, mine } = local(hub);
   let avatar = null;
-  if (a.avatar) {
+  if (mine && a.avatar) {
     try {
       avatar = `data:${MIME[path.extname(a.avatar).slice(1).toLowerCase()] || 'image/png'};base64,${fs.readFileSync(path.join(app.getPath('userData'), a.avatar)).toString('base64')}`;
     } catch {}
   }
-  // A Kea Hub account with a verified email (Google) counts too, when it's the same email.
-  let hub = null;
-  try {
-    hub = require('./hub.cjs').cached();
-  } catch {}
-  const hubVerified = !!hub?.emailVerified && norm(hub.email) === norm(a.email);
-  const localVerified = !!a.verified && norm(a.verified.email) === norm(a.email);
-  const verified = localVerified || hubVerified;
-  const by = localVerified ? a.verified.by : hubVerified ? `Kea Hub (${hub.verifiedBy || 'verified'})` : null;
-  return { email: a.email, name: a.name || '', avatar, crop: avatar ? a.crop || null : null, verified, verifiedBy: by, owner: verified && norm(a.email) === OWNER };
+  const proof = mine && a.proof?.email && norm(a.proof.email) === norm(hub.email) ? a.proof : null;
+  const verified = !!hub.emailVerified || !!proof;
+  const verifiedBy = hub.emailVerified ? hub.verifiedBy || 'Kea Hub' : proof ? `${proof.by}, on this computer` : null;
+  return { email: hub.email, name: hub.name || '', avatar, crop: avatar ? a.crop || null : null, verified, verifiedBy, verifiedHere: !hub.emailVerified && !!proof, owner: !!hub.owner };
 }
+/** School mode's check: the Kea account's email is verified (on the Hub, or by a sign-in on this computer). */
 const verified = () => !!get()?.verified;
 
 /** Emails proven by sign-ins on this computer: [{ email, by }]. */
@@ -61,42 +84,37 @@ async function provenEmails() {
   return out;
 }
 
-async function verify() {
-  const a = read();
-  if (!a?.email) throw new Error('Add your email first.');
+/** Looks for the Kea account's email among this computer's sign-ins (School mode accepts that as verified). */
+async function verifyHere() {
+  const hub = hubAccount();
+  if (!hub?.id) throw new Error('Sign in to your Kea account first.');
   const all = await provenEmails();
-  const hit = all.find((p) => norm(p.email) === norm(a.email));
+  const hit = all.find((p) => norm(p.email) === norm(hub.email));
   if (!hit) {
     const seen = [...new Set(all.map((p) => p.email))];
     throw new Error(
       seen.length
-        ? `${a.email} isn't signed in on this computer. Signed in here: ${seen.join(', ')}. Use one of those, or sign in to Claude, OneDrive or Google with ${a.email}.`
-        : `Nothing on this computer is signed in with ${a.email} yet. Sign in to Claude (under Add a class → From your school), OneDrive or Google with it, then verify again.`
+        ? `${hub.email} isn’t signed in on this computer. Signed in here: ${seen.join(', ')}.`
+        : `Nothing on this computer is signed in with ${hub.email}. Sign in to Claude, OneDrive or Google with it, then check again.`
     );
   }
-  write({ ...a, verified: { email: a.email, by: hit.by, at: new Date().toISOString() } });
+  const { a, mine } = local(hub);
+  write({ ...(mine ? a : {}), accountId: hub.id, proof: { email: hub.email, by: hit.by, at: new Date().toISOString() } });
   return get();
 }
 
 function register() {
   ipcMain.handle('account:get', () => get());
-  ipcMain.handle('account:suggest', async () => [...new Set((await provenEmails()).map((p) => p.email))]);
-  ipcMain.handle('account:save', async (_e, { email, name }) => {
-    const e = String(email || '').trim();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new Error('That doesn’t look like an email address.');
-    const a = read() || {};
-    write({ ...a, email: e, name: String(name || '').trim().slice(0, 60), ...(norm(a.email) === norm(e) ? {} : { verified: null }) });
-    // A new email is checked against what's signed in here straight away.
-    return verify().catch(() => get());
-  });
-  ipcMain.handle('account:verify', () => verify());
+  ipcMain.handle('account:verifyHere', () => verifyHere());
   ipcMain.handle('account:avatar', async (e, clear) => {
-    const a = read();
-    if (!a) throw new Error('Add your email first.');
-    const drop = () => a.avatar && fs.rmSync(path.join(app.getPath('userData'), a.avatar), { force: true });
+    const hub = hubAccount();
+    if (!hub?.id) throw new Error('Sign in to your Kea account first.');
+    const { a, mine } = local(hub);
+    const dir = app.getPath('userData');
+    const drop = () => mine && a.avatar && fs.rmSync(path.join(dir, a.avatar), { force: true });
     if (clear) {
       drop();
-      write({ ...a, avatar: null, crop: null });
+      write({ ...(mine ? a : {}), accountId: hub.id, avatar: null, crop: null });
       return get();
     }
     const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), { title: 'Choose your picture', properties: ['openFile'], filters: [{ name: 'Images', extensions: Object.keys(MIME) }] });
@@ -104,27 +122,30 @@ function register() {
     if (!src) return get();
     if (fs.statSync(src).size > 8 * 1024 * 1024) throw new Error('That picture is over 8 MB. Pick a smaller one.');
     const name = `account-avatar-${Date.now().toString(36)}${path.extname(src).toLowerCase()}`;
-    fs.copyFileSync(src, path.join(app.getPath('userData'), name));
+    fs.copyFileSync(src, path.join(dir, name));
     // The whole picture is kept, so where it sits in the circle can be changed again later.
     drop();
-    write({ ...a, avatar: name, crop: null });
+    // (A picture another account chose here is replaced: one picture per computer, for whoever is signed in.)
+    write({ ...(mine ? a : {}), accountId: hub.id, avatar: name, crop: null });
     return get();
   });
   // Where the picture sits in the circle: the point at its centre (0–1 across and down), how far it's zoomed in (1 =
   // the short side just fills the circle), and the picture's own size.
   ipcMain.handle('account:crop', (_e, c) => {
-    const a = read();
-    if (!a?.avatar) throw new Error('Choose a picture first.');
+    const { a, mine } = local(hubAccount());
+    if (!mine || !a.avatar) throw new Error('Choose a picture first.');
     const num = (v, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : lo);
     write({ ...a, crop: c ? { x: num(c.x, 0, 1), y: num(c.y, 0, 1), zoom: num(c.zoom, 1, 8), w: num(c.w, 1, 1e5), h: num(c.h, 1, 1e5) } : null });
     return get();
   });
-  ipcMain.handle('account:signOut', () => {
-    const a = read();
-    if (a?.avatar) fs.rmSync(path.join(app.getPath('userData'), a.avatar), { force: true });
-    write(null);
-    return true;
-  });
 }
 
-module.exports = { register, get, verified };
+/** The Kea account was deleted: its picture and proof on this computer go too. */
+function forget(accountId) {
+  const a = read();
+  if (!accountId || a.accountId !== accountId) return;
+  if (a.avatar) fs.rmSync(path.join(app.getPath('userData'), a.avatar), { force: true });
+  fs.rmSync(file(), { force: true });
+}
+
+module.exports = { register, get, verified, forget };

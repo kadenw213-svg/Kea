@@ -27,6 +27,7 @@ import { hubc, useHubClasses, HubClass, HubClassDetail, HubSession, HubSetInfo, 
 import { HubResult, api } from '../../lib/api';
 import { toast, ask } from '../../store';
 import { useScholar } from './scholarStore';
+import { hubSetId } from './studyIds';
 import { useHubStatus, refreshHub, SupporterBadge } from './HubAccount';
 import { openLink } from './kinds';
 import { MathText } from './MathText';
@@ -649,7 +650,7 @@ function SetRow({ s, teacher, offline, reload }: { s: HubSetInfo; teacher: boole
           {!s.leaderboard && ' · practice only'}
         </div>
       </div>
-      <button className="btn sm primary" disabled={offline} onClick={() => useScholar.getState().set({ study: `hub:${s.id}` })} title={offline ? 'Needs the Kea Hub (answers are checked there)' : ''}>
+      <button className="btn sm primary" disabled={offline} onClick={() => useScholar.getState().set({ study: hubSetId(s.id) })} title={offline ? 'Needs the Kea Hub (answers are checked there)' : ''}>
         {s.due ? 'Study' : 'Practice'} <ArrowRight size={13} />
       </button>
       {teacher && (
@@ -1007,7 +1008,8 @@ function Board({ d }: { d: HubClassDetail }) {
         <p className="muted">No points yet{period === 'week' ? ' this week' : ''}. Study a set to get on the board.</p>
       )}
       {b && b.board.some((e, i) => e.rank > i + 1 && (i === 0 || e.rank > b.board[i - 1].rank + 1)) && <p className="muted hubc-small">Some people in this class keep their names hidden, so a few places aren’t shown.</p>}
-      {b?.you && !b.board.some((e) => e.you) && (
+      {/* (Not while you have no points: "No points yet" above already says it, and "#1 with 0 XP" contradicts it.) */}
+      {b?.you && b.you.points > 0 && !b.board.some((e) => e.you) && (
         <p className="muted">
           You: #{b.you.rank} with {b.you.points} XP{d.class.board === 'hidden' ? ' (hidden from others)' : ''}.
         </p>

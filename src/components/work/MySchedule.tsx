@@ -1,10 +1,11 @@
 // My schedule: published shifts and org class sessions by week, swaps (offer mine, take others'), and the whole
-// team's schedule when the org shows it.
+// team's schedule when the org shows it. The shifts come from Kea's calendar copy (api.hubOrg.events), which is there
+// when the Hub can't be reached; the Hub's own list adds swap details and notes when it answers.
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarPlus, GraduationCap, Repeat, Undo2, Users } from 'lucide-react';
+import { CalendarPlus, Clock3, GraduationCap, Repeat, Undo2, Users } from 'lucide-react';
 import { api, WorkEvent } from '../../lib/api';
 import { ask, prompt, toast } from '../../store';
-import { act, clock, fmtDay, todayIso, useHub, useMyId, useWork, addDays } from './workStore';
+import { act, clock, fmtDay, fmtWhen, todayIso, useHub, useMyId, useWork, addDays } from './workStore';
 import { Card, Empty, Loading, Problem, Seg } from './ui';
 import type { Member, Org, Shift, Swap } from './types';
 
@@ -17,19 +18,20 @@ export function MySchedule({ org }: { org: Org }) {
   const shifts = useHub<{ shifts: Shift[] }>(`/v1/orgs/${org.id}/my-shifts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
   const swaps = useHub<{ swaps: Swap[] }>(`/v1/orgs/${org.id}/swaps`);
   const [events, setEvents] = useState<WorkEvent[] | null>(null);
-  const [offline, setOffline] = useState(false);
+  const [offline, setOffline] = useState<{ at: number | null } | null>(null);
   const version = useWork((s) => s.version);
   useEffect(() => {
     api.hubOrg.events(from, to).then((r) => {
       if (r.ok) {
         setEvents(r.value.events.filter((e) => e.orgId === org.id));
-        setOffline(r.value.offline);
-      }
+        setOffline(r.value.offline ? { at: r.value.at ?? null } : null);
+      } else setEvents([]);
     });
   }, [org.id, version]);
   const canTeam = org.role !== 'member' || org.settings?.membersSeeSchedule !== false;
 
-  const mine = shifts.data?.shifts ?? [];
+  // The Hub's list when it answered; otherwise the shifts from the saved copy.
+  const mine: Shift[] = shifts.data?.shifts ?? (events ?? []).filter((e) => e.kind === 'shift').map(fromEvent);
   const classes = (events ?? []).filter((e) => e.kind === 'class');
   const byDate = useMemo(() => {
     const m = new Map<string, { shifts: Shift[]; classes: WorkEvent[] }>();
@@ -40,6 +42,8 @@ export function MySchedule({ org }: { org: Org }) {
   }, [mine, classes]);
 
   const open = (swaps.data?.swaps ?? []).filter((w) => w.status === 'offered' && w.shift && w.from !== me);
+  // Shifts I took that wait for a manager: still the other person's until then.
+  const waiting = (swaps.data?.swaps ?? []).filter((w) => w.status === 'claimed' && w.claimant === me && w.shift);
   const total = mine.filter((s) => s.date >= todayIso() && s.date < addDays(todayIso(), 7)).reduce((t, s) => t + (s.endAt - s.startAt) / 3600_000, 0);
 
   const offer = async (s: Shift) => {
@@ -48,8 +52,12 @@ export function MySchedule({ org }: { org: Org }) {
     act(`/v1/orgs/${org.id}/shifts/${s.id}/swap`, { note: note || null }, 'Offered. It stays yours until someone takes it.');
   };
   const claim = async (w: Swap) => {
+    const s = w.shift!;
+    const what = `${s.positionName ?? 'Shift'}, ${fmtDay(s.date)}, ${clock(s.start, org.tz)}–${clock(s.end, org.tz)}`;
+    const needsOk = org.settings ? org.settings.swapNeedsApproval !== false : true;
+    if ((await ask(`Take ${w.fromName ? `${w.fromName}’s` : 'this'} shift?`, `${what}. ${needsOk ? 'Your manager approves it before it’s yours, and taking it can’t be undone here.' : 'It’s yours right away.'}`, [{ id: 'no', label: 'Cancel' }, { id: 'yes', label: 'Take it', primary: true }])) !== 'yes') return;
     const r = await act<{ swap: Swap }>(`/v1/orgs/${org.id}/swaps/${w.id}/claim`, {});
-    if (r) toast(r.swap.status === 'approved' ? 'The shift is yours.' : 'Taken. Your manager will approve it.');
+    if (r) toast(r.swap.status === 'approved' ? 'The shift is yours.' : 'Taken. It shows under “Waiting for your manager” until it’s approved.');
   };
 
   if (view === 'team') return <TeamSchedule org={org} onBack={() => setView('mine')} />;
@@ -66,7 +74,7 @@ export function MySchedule({ org }: { org: Org }) {
         )}
         <button
           className="btn sm"
-          title="Save as a calendar file for Outlook, Google Calendar or Apple Calendar"
+          title="Save the shifts and classes of all your organizations as a calendar file for Outlook, Google Calendar or Apple Calendar"
           onClick={async () => {
             const r = await api.hubOrg.saveIcs(from, to);
             if (!r.ok) toast(r.error, 'error');
@@ -77,8 +85,30 @@ export function MySchedule({ org }: { org: Org }) {
           <CalendarPlus size={14} /> Add to my calendar app
         </button>
       </div>
-      {offline && <p className="af-info">The Kea Hub can’t be reached, so this is the schedule Kea saved last time.</p>}
-      {open.length > 0 && (
+      {offline && (
+        <p className="af-info">
+          The Kea Hub can’t be reached, so this is the schedule Kea saved{offline.at ? ` ${fmtWhen(offline.at)}` : ' last time'}. Swaps wait until it’s back.
+        </p>
+      )}
+      {waiting.length > 0 && (
+        <Card title="Waiting for your manager">
+          <div className="wk-list">
+            {waiting.map((w) => (
+              <div key={w.id} className="wk-row">
+                <Clock3 size={15} />
+                <span className="wk-row-main">
+                  <span className="wk-row-title">
+                    {w.shift!.positionName} · {fmtDay(w.shift!.date)} · {clock(w.shift!.start, org.tz)}–{clock(w.shift!.end, org.tz)}
+                  </span>
+                  <span className="wk-row-sub">You’re taking it from {w.fromName ?? 'a coworker'}. It’s yours once a manager approves.</span>
+                </span>
+                <span className="wk-pill warn">Waiting</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {open.length > 0 && !offline && (
         <Card title="Shifts up for grabs">
           <div className="wk-list">
             {open.map((w) => (
@@ -101,8 +131,9 @@ export function MySchedule({ org }: { org: Org }) {
           </div>
         </Card>
       )}
-      <Problem error={shifts.error} retry={shifts.reload} />
-      {!shifts.data ? (
+      {/* (Offline, the saved copy above says so; the Hub's own error would only repeat it.) */}
+      {!offline && events !== null && <Problem error={shifts.error} retry={shifts.reload} />}
+      {!shifts.data && (events === null || (!offline && !shifts.error)) ? (
         <Loading />
       ) : !byDate.length ? (
         <Empty title="No shifts yet">Published shifts show here and in your to-do list. Classes you’re assigned show here too.</Empty>
@@ -126,7 +157,7 @@ export function MySchedule({ org }: { org: Org }) {
                       <span className="wk-shift-what">{s.positionName}</span>
                       {s.note && <span className="muted">{s.note}</span>}
                       <span className="wk-spacer" />
-                      {sw ? (
+                      {offline ? null : sw ? (
                         <>
                           <span className="wk-pill warn">{sw.status === 'claimed' ? `${sw.claimantName} is taking it` : 'Offered'}</span>
                           <button className="icon-btn sm" title="Take back" onClick={() => act(`/v1/orgs/${org.id}/swaps/${sw.id}/cancel`, {}, 'It’s yours again.')}>
@@ -165,6 +196,11 @@ export function MySchedule({ org }: { org: Org }) {
       )}
     </div>
   );
+}
+
+/** A shift from the saved calendar copy (what's needed to list it; no swap or note). */
+function fromEvent(e: WorkEvent): Shift {
+  return { id: e.id.replace(/^shift:/, ''), scheduleId: null, accountId: null, name: null, positionId: '', positionName: e.title, departmentId: null, date: e.date, blockId: null, slotKey: null, start: e.start, end: e.end, startAt: Date.parse(e.start), endAt: Date.parse(e.end), status: 'published', source: 'calendar', note: null, forced: false, swap: null };
 }
 
 function TeamSchedule({ org, onBack }: { org: Org; onBack(): void }) {

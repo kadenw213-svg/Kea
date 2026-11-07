@@ -116,14 +116,16 @@ test('what a scan’s own fetch may be redirected to', () => {
   }
 });
 
-test('moving to another Hub’s address ends the sign-in here; only Kea’s own page may do it', async () => {
+test('moving to another Hub’s address: only once a Hub answers there, asked first, and it ends the sign-in here; only Kea’s own page may do it', async () => {
   const handlers = {};
   electron.ipcMain.handle = (name, fn) => (handlers[name] = fn);
-  // (No network and no background work: what register() starts on timers never runs here.)
+  // (No network and no background work: what register() starts on timers never runs here. A Hub "answers" its health
+  // check at one, two and the usual address; nothing answers at dead.example.)
   const asked = [];
   const realFetch = electron.net.fetch;
   electron.net.fetch = async (url, opts) => {
     asked.push({ url: String(url), auth: opts?.headers?.authorization || '' });
+    if (/^(https:\/\/(one|two)\.example|http:\/\/127\.0\.0\.1:4860)\/v1\/health$/.test(String(url))) return { ok: true, status: 200, json: async () => ({ ok: true, service: 'kea-hub' }) };
     throw new Error('offline');
   };
   const timers = { setTimeout: globalThis.setTimeout, setInterval: globalThis.setInterval };
@@ -153,15 +155,31 @@ test('moving to another Hub’s address ends the sign-in here; only Kea’s own 
       assert.throws(() => handlers['hub:setUrl'](e, { url: 'https://evil.example' }), /Not allowed/);
     assert.ok(fs.existsSync(token));
 
-    // A different one: the token and the cached account go before anything can reach it.
-    assert.equal((await handlers['hub:setUrl'](appPage, { url: 'https://two.example' })).ok, true);
+    // Nothing answers there: refused, still on the old Hub and signed in.
+    const dead = await handlers['hub:setUrl'](appPage, { url: 'https://dead.example' });
+    assert.equal(dead.ok, false);
+    assert.equal(dead.data?.notAnswering, true);
+    assert.ok(fs.existsSync(token));
+
+    // A different Hub that answers: first asked (409, nothing changes), then with confirm the token and the cached
+    // account (and the work calendar copy) go before anything can reach it.
+    const work = path.join(dir, 'work-calendar.json');
+    fs.writeFileSync(work, JSON.stringify({ events: [{ id: 'shift:1' }] }));
+    const first = await handlers['hub:setUrl'](appPage, { url: 'https://two.example' });
+    assert.equal(first.ok, false);
+    assert.equal(first.status, 409);
+    assert.equal(first.data?.switchSignsOut, true);
+    assert.ok(fs.existsSync(token));
+    assert.equal((await handlers['hub:setUrl'](appPage, { url: 'https://two.example', confirm: true })).ok, true);
     assert.ok(!fs.existsSync(token));
     assert.ok(!fs.existsSync(cache));
+    assert.ok(!fs.existsSync(work));
     assert.deepEqual(asked.filter((a) => a.url.startsWith('https://two.example') && a.auth), []);
 
     // Back to the address Kea came with counts too.
     signIn();
-    assert.equal((await handlers['hub:setUrl'](appPage, { url: '' })).ok, true);
+    assert.equal((await handlers['hub:setUrl'](appPage, { url: '' })).status, 409);
+    assert.equal((await handlers['hub:setUrl'](appPage, { url: '', confirm: true })).ok, true);
     assert.ok(!fs.existsSync(token));
   } finally {
     realTimers();

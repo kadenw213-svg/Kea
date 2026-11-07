@@ -25,7 +25,7 @@ test('upcoming work and missing work get a guide, even when the class site says 
 
 test('a guide is written again only when the teacher changes the assignment', () => {
   const it = item({ id: 'x' });
-  const have = { x: { hash: guides.hashOf(it), v: 4, at: '2026-11-01T12:00:00Z' } };
+  const have = { x: { hash: guides.hashOf(it), v: 5, at: '2026-11-01T12:00:00Z' } };
   assert.equal(guides.needing([it], have, TODAY).length, 0);
   assert.equal(guides.needing([{ ...it, description: 'Submit the SI PDF, notebook and photos.' }], have, TODAY).length, 1);
   assert.equal(guides.needing([{ ...it, date: '2026-11-08' }], have, TODAY).length, 1);
@@ -84,14 +84,15 @@ test('guides from before v0.66 (topic, goal, notes, lab procedure) are written o
   assert.equal(guides.needing([it], { p: { hash: h, kind: 'paper', v: 2, at } }, TODAY).length, 1);
   assert.equal(guides.needing([it], { p: { hash: h, kind: 'lab', v: 2, at } }, TODAY).length, 1);
   assert.equal(guides.needing([it], { p: { hash: h, kind: 'lab', v: 3, at } }, TODAY).length, 1);
-  assert.equal(guides.needing([it], { p: { hash: h, kind: 'lab', v: 4, at } }, TODAY).length, 0);
+  assert.equal(guides.needing([it], { p: { hash: h, kind: 'lab', v: 4, at } }, TODAY).length, 1);
+  assert.equal(guides.needing([it], { p: { hash: h, kind: 'lab', v: 5, at } }, TODAY).length, 0);
 });
 
 test('a guide written while the work was ahead is written once more when it turns missing', () => {
   const it = item({ id: 'm', date: '2026-10-30', handIn: 'not_submitted' });
   const h = guides.hashOf(it);
-  assert.equal(guides.needing([it], { m: { hash: h, v: 4, at: '2026-10-28T12:00:00Z' } }, TODAY).length, 1);
-  assert.equal(guides.needing([it], { m: { hash: h, v: 4, at: '2026-10-31T12:00:00Z' } }, TODAY).length, 0);
+  assert.equal(guides.needing([it], { m: { hash: h, v: 5, at: '2026-10-28T12:00:00Z' } }, TODAY).length, 1);
+  assert.equal(guides.needing([it], { m: { hash: h, v: 5, at: '2026-10-31T12:00:00Z' } }, TODAY).length, 0);
 });
 
 test('topic, goal, notes, procedure and notebook are kept; the writing focus keeps research and feedback', () => {
@@ -135,4 +136,24 @@ test('work that unlocks the instructions is a step marked unlocks; an older answ
   const old = guides.clean({ steps: [{ title: 'Prepare', text: 'Pages.' }], gate: { what: 'Take the Lab 9 pre-lab quiz', url: 'https://myhol.holscience.com/quiz/9', label: 'Open the pre-lab quiz' } });
   assert.equal(old.steps.length, 2);
   assert.deepEqual(old.steps[0], { title: 'Open the pre-lab quiz', text: 'Take the Lab 9 pre-lab quiz', detail: '', links: [{ label: 'Open the pre-lab quiz', url: 'https://myhol.holscience.com/quiz/9' }], unlocks: true });
+});
+
+test('a step can point at other work in Kea, only an item Kea knows (never a made-up id)', () => {
+  const known = new Set(['lab9']);
+  const g = guides.clean(
+    {
+      steps: [
+        { title: 'Finish Lab report #9 first', text: 'Your post uses its results.', item: { id: 'lab9', label: 'Lab report #9: Using Buffers' } },
+        { title: 'Answer question 1', text: 'From the Exploration.', item: 'lab9' },
+        { title: 'Answer question 2', text: 'x', item: { id: 'made-up', label: 'Something' } }
+      ]
+    },
+    () => true,
+    (id) => known.has(id)
+  );
+  assert.deepEqual(g.steps[0].item, { id: 'lab9', label: 'Lab report #9: Using Buffers' });
+  assert.deepEqual(g.steps[1].item, { id: 'lab9', label: 'Open it in Kea' });
+  assert.equal(g.steps[2].item, undefined);
+  // (Without a list of known items, none is kept.)
+  assert.equal(guides.clean({ steps: [{ title: 'a', text: 'b', item: 'lab9' }] }).steps[0].item, undefined);
 });

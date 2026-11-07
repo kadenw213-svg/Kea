@@ -21,6 +21,9 @@ import { openPalette } from './CommandPalette';
 import { Search } from 'lucide-react';
 import { openHistory } from './settings/VersionHistory';
 import { Settings as SettingsIcon, History, Keyboard, Save, Printer } from 'lucide-react';
+import { AccountButton } from './account/AccountButton';
+import { openAccount } from './account/hubStore';
+import { UserCircle } from 'lucide-react';
 
 export function TitleBar() {
   const { tabs, activeId, setActive, moveTab, split } = useTabs();
@@ -58,6 +61,9 @@ export function TitleBar() {
               </button>
               <button className="menu-item" onClick={() => (openSettings(), close())}>
                 <SettingsIcon size={16} /> Settings <span className="kbd">Ctrl+,</span>
+              </button>
+              <button className="menu-item" onClick={() => (openAccount(), close())}>
+                <UserCircle size={16} /> Your Kea account
               </button>
               <button className="menu-item" onClick={() => (openHistory(), close())}>
                 <History size={16} /> Version history <span className="kbd">Ctrl+Shift+H</span>
@@ -191,6 +197,8 @@ export function TitleBar() {
           )}
         </MenuButton>
       </div>
+      <span className="titlebar-fill" />
+      <AccountButton />
       {tabMenu && (
         <>
           <div ref={setTabMenuAnchor} style={{ position: 'fixed', left: tabMenu.x, top: tabMenu.y, width: 1, height: 1 }} />

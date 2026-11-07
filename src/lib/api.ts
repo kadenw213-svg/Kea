@@ -138,6 +138,12 @@ export interface KeaApi {
     devicesFind(): Promise<{ found: DeviceShare[]; notes: string[]; me: string }>;
     /** Use one of those here (this device follows the primary). */
     devicesJoin(choice: DeviceShare): Promise<{ ok: boolean; primary?: boolean; from?: string; waiting?: string }>;
+    /** Classes withdrawn from (the log), and the ones Kea suspects and asks about. */
+    withdrawn(): Promise<WithdrawnState>;
+    /** The student withdrew from a class (on), or undoes it / says they're still in it (off). */
+    setWithdrawn(courseId: string, on: boolean, code?: string): Promise<WithdrawnState>;
+    /** "No, I'm still in it" for a suspicion. */
+    withdrawDismiss(courseId: string): Promise<WithdrawnState>;
     /** Make a device (by id) the one that scans. */
     makePrimary(id: string): Promise<DevicesStatus>;
     /** Sync through this drive: 'auto', 'onedrive', 'google', another drive's id, 'custom' or 'off'. */
@@ -446,6 +452,14 @@ export interface HubQuestionChapter {
   /** The date of the next test on it, if one is coming. */
   test: string | null;
 }
+/** A device signed in to this account (client: the app and version that signed in). */
+export interface HubSession {
+  id: string;
+  client: string | null;
+  createdAt: number;
+  lastSeen: number;
+  current: boolean;
+}
 export interface HubTermsStatus {
   current: number;
   accepted: number | null;
@@ -467,7 +481,7 @@ export interface HubStatus {
   reachable: boolean;
   me: HubMe | null;
   /** What Kea last saw (shown while the Hub is offline). */
-  cached: { email: string; name: string; emailVerified: boolean; verifiedBy?: string | null; owner?: boolean; canHost?: boolean; leaderboard?: HubAccount['leaderboard'] | null; supporter?: HubAccount['supporter'] | null; progress?: HubMe['progress'] | null; terms: HubTermsStatus | null; at?: number } | null;
+  cached: { id?: string; totpEnabled?: boolean; email: string; name: string; emailVerified: boolean; verifiedBy?: string | null; owner?: boolean; canHost?: boolean; leaderboard?: HubAccount['leaderboard'] | null; supporter?: HubAccount['supporter'] | null; progress?: HubMe['progress'] | null; terms: HubTermsStatus | null; at?: number } | null;
 }
 export interface TermsSection {
   id: string;
@@ -553,6 +567,15 @@ export interface HubApi {
   /** Needs the account's current password (the Hub asks for proof before changing sign-in). */
   totpSetup(a: { password: string }): Promise<HubResult<{ secret: string; uri: string }>>;
   totpEnable(a: { code: string }): Promise<HubResult<HubStatus>>;
+  totpDisable(a: { password: string; code: string }): Promise<HubResult<HubStatus>>;
+  setName(name: string): Promise<HubResult<HubStatus>>;
+  /** Signs out every other device. */
+  changePassword(a: { current: string; next: string }): Promise<HubResult<HubStatus>>;
+  sessions(): Promise<HubResult<{ sessions: HubSession[] }>>;
+  signOutOthers(a: { password: string }): Promise<HubResult<{ signedOut: number }>>;
+  /** Saves everything the Hub keeps about this account as one JSON file; the path, or null when cancelled. */
+  exportData(): Promise<HubResult<string | null>>;
+  deleteAccount(a: { confirm: 'DELETE'; password: string; code?: string }): Promise<HubResult<HubStatus>>;
   logout(): Promise<HubResult<HubStatus>>;
   /** Syncing through the Hub: on, when it last finished, the last error, and what moved. */
   syncStatus(): Promise<HubResult<HubSyncState>>;
@@ -576,7 +599,8 @@ export interface HubApi {
   consentRequest(parentEmail: string): Promise<HubResult<HubConsent>>;
   /** The parent signs in to Google here, as the email given. */
   consentGoogle(): Promise<HubResult<HubStatus>>;
-  setUrl(url: string): Promise<HubResult<HubStatus>>;
+  /** Only once a Hub answers there; moving to another Hub while signed in needs confirm (else 409, switchSignsOut). */
+  setUrl(url: string, confirm?: boolean): Promise<HubResult<HubStatus>>;
   /** This account's notifications (newest first). */
   notifications(): Promise<HubResult<HubNotifications>>;
   /** Marks some (ids) or all read. */
@@ -643,7 +667,10 @@ export interface AiState {
   models: AiModelState[];
 }
 export type AvatarCrop = { x: number; y: number; zoom: number; w: number; h: number };
-/** The Kea account (needed for school mode): verified when the email is signed in on this computer. */
+/**
+ * The Kea account as this computer shows it: email, name and verified from the Kea Hub, the picture kept here. School
+ * mode also counts the email as verified when it's signed in here to Claude, OneDrive or Google (verifiedHere).
+ */
 export interface KeaAccount {
   email: string;
   name: string;
@@ -652,18 +679,17 @@ export interface KeaAccount {
   crop: AvatarCrop | null;
   verified: boolean;
   verifiedBy: string | null;
+  verifiedHere?: boolean;
   /** Kea's creator. */
   owner: boolean;
 }
 export interface AccountApi {
+  /** null when signed out of the Kea account. */
   get(): Promise<KeaAccount | null>;
-  /** Emails signed in on this computer (Claude, OneDrive, Google), to pick from. */
-  suggest(): Promise<string[]>;
-  save(a: { email: string; name: string }): Promise<KeaAccount | null>;
-  verify(): Promise<KeaAccount>;
+  /** Looks for the account's email among this computer's sign-ins (for School mode). */
+  verifyHere(): Promise<KeaAccount | null>;
   avatar(clear?: boolean): Promise<KeaAccount | null>;
   crop(c: AvatarCrop | null): Promise<KeaAccount | null>;
-  signOut(): Promise<boolean>;
 }
 
 export interface AiGenerateRequest {
@@ -739,6 +765,8 @@ export interface DeviceShare {
   mine: boolean;
   /** Its class database has fully arrived on this device. */
   ready: boolean;
+  /** Set only once the student has said yes to using that device's classes here (joining refuses without it). */
+  confirmed?: boolean;
 }
 
 export interface CloudDrive {
@@ -785,13 +813,19 @@ export interface RunProgress {
   step?: string;
 }
 
+export interface WithdrawnState {
+  log: Record<string, { on: boolean; at: string; by: 'student' | 'grade'; code: string }>;
+  ask: { courseId: string; code: string; reason: 'not listed' | 'no access' }[];
+}
 export interface DevicesStatus {
   on: boolean;
   me: { id: string; name: string };
   drive: CloudDrive | null;
   drives: CloudDrive[];
   choice: string;
-  role: 'primary' | 'follower' | 'alone';
+  /** offer: another device shares classes in this profile's folder and this one hasn't joined them (it asks first). */
+  role: 'primary' | 'follower' | 'alone' | 'offer';
+  offer?: DeviceShare;
   folder?: string;
   primary: { id: string; name: string; at: string; online: boolean } | null;
   devices: DeviceInfo[];
@@ -992,7 +1026,8 @@ export interface Guide {
   notebook?: { item: string; detail: string }[];
   rubric?: GuideRubric | null;
   /** `unlocks`: work the platform wants done before it shows the rest; checking it off asks Kea to read the rest. */
-  steps: { title: string; text: string; detail?: string; links?: { label: string; url: string }[]; unlocks?: boolean }[];
+  /** `item`: other work in Kea the step is about (the lab a discussion needs), shown as a button that opens it in Kea. */
+  steps: { title: string; text: string; detail?: string; links?: { label: string; url: string }[]; unlocks?: boolean; item?: { id: string; label: string } }[];
   submit: { what: string; where: string; format: string; due: string; url?: string };
   graded: { criterion: string; points: number | null; how: string }[];
   gaps: string[];
@@ -1134,12 +1169,18 @@ export interface ScholarReading {
   summary?: string | null;
   /** The chapter's study PDF in the class textbook, when one has been made. */
   pdf: { file: string; pages: number | null; title: string } | null;
+  /** Guessed from the week it falls in (the week's reading), not named by the item itself: never offered as its Study. */
+  inferred?: boolean;
+  /** The class has no chapter list (no textbook in Kea yet): a chapter its title names, with nothing to read or study. */
+  unlisted?: boolean;
 }
 export interface ScholarLink {
   label: string;
   url: string;
   kind: string;
   chapter?: string | null;
+  /** Where the panel lists it, when that isn't what its kind says (a hand-in link that isn't the item's own: More). */
+  group?: 'submit' | 'reading' | 'video' | 'slides' | 'practice' | 'study' | 'platform' | 'other';
 }
 export interface ScholarItem {
   id: string;
@@ -1177,7 +1218,10 @@ export interface ScholarItem {
   /** The outside platforms it's done on (Science Interactive, ALEKS…), through the class's own link. */
   platformLinks?: ScholarLink[];
   /** The work it goes with: the lab a discussion is built on, or the other half of a discussion. */
-  related?: { id: string; title: string; type: string; date: string; why: 'lab' | 'post' }[];
+  /** Work it goes with: the other half of a discussion (post), the same lab's parts (lab: its pre-lab, handout, session, report, discussion, in that order), or work on the same topic (topic). */
+  related?: { id: string; title: string; type: string; date: string; why: 'lab' | 'post' | 'topic'; done?: boolean; group?: string }[];
+  /** Past work of a class the student withdrew from: kept as history, never Missing, never studied or guided. */
+  withdrawn?: boolean;
   /** When it opens on the class site, while that's still ahead (its link leads to a locked page until then). */
   opensAt?: string | null;
   readings: ScholarReading[];
@@ -1197,6 +1241,8 @@ export interface ScholarCourse {
   next: { id: string; title: string; type: string; date: string; due: string | null } | null;
   dueThisWeek: number;
   chapters: number;
+  /** The student withdrew from it (for the rest of its term): when, and whether they said so or the class site showed a W. */
+  withdrawn?: { at: string; by: 'student' | 'grade' } | null;
   /** The class's picture from the class site (a small JPEG data address), when it has one. */
   image?: string | null;
 }
@@ -1212,6 +1258,8 @@ export interface ScholarChapter {
   pdf: ScholarReading['pdf'];
 }
 export interface ScholarCourseDetail {
+  /** The student withdrew from it (withdrawn.cjs). */
+  withdrawn?: { at: string; by: 'student' | 'grade' } | null;
   id: string;
   code: string;
   name: string;

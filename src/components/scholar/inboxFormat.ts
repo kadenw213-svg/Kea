@@ -43,22 +43,34 @@ export function inboxParts(i: ScholarInboxItem): { text: string; links: { label:
   const found: { label: string; url: string }[] = [...(i.links || [])];
   const lines: string[] = [];
   for (const line of String(i.body || '').split('\n')) {
-    const bare: string[] = [];
-    let l = line
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label: string, url: string) => {
-        found.push({ label: short(label), url });
-        return label;
-      })
-      .replace(/[(<]?(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])[)>]?/g, (_, url: string) => {
-        bare.push(url);
-        return '';
-      });
+    const bare: { url: string; before: string }[] = [];
+    const md = line.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label: string, url: string) => {
+      found.push({ label: short(label), url });
+      return label;
+    });
+    // (Each address with the words just before it, since the last address on the line.)
+    let from = 0;
+    let l = md.replace(/[(<]?(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])[)>]?/g, (m: string, url: string, at: number) => {
+      bare.push({ url, before: md.slice(from, at) });
+      from = at + m.length;
+      return '';
+    });
     // A line that lost its address: drop what pointed at it ("Submit here:", a trailing dash), or the whole line when
-    // nothing else was on it. The button is named after what the line says (else after the kind of page).
+    // nothing else was on it. Each button is named after the words right before its address, from the last sentence
+    // break or colon ("Bring goggles. Handout: https://…" is "Handout"), else after the kind of page.
     if (bare.length) {
       l = l.replace(/[\s\-–:|]+$/, '').replace(/\s{2,}/g, ' ');
-      const name = l.replace(/^[\s\-–•*]+/, '').replace(/\s*\(\d{4}-\d{2}-\d{2}\)\s*$/, '').trim();
-      for (const url of bare) found.push({ label: bare.length === 1 && /[\p{L}]/u.test(name) && !/^(here|link|submit here)$/i.test(name) ? short(name) : labelFor(url), url });
+      for (const { url, before } of bare) {
+        const name = before
+          .replace(/[\s\-–:|(<]+$/, '')
+          .split(/(?<=[.!?;])\s+|:\s+/)
+          .pop()!
+          .replace(/^[\s\-–•*]+/, '')
+          .replace(/\s*\(\d{4}-\d{2}-\d{2}\)\s*$/, '')
+          .trim();
+        const fits = /[\p{L}]/u.test(name) && name.length <= 40 && !/^(here|link|click here|submit here|see|at|link here)$/i.test(name);
+        found.push({ label: fits ? short(name) : labelFor(url), url });
+      }
       if (!/[\p{L}\p{N}]/u.test(l)) continue;
     }
     lines.push(l.replace(/[ \t]+$/, ''));

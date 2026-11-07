@@ -102,7 +102,7 @@ export const SECTIONS: Section[] = [
     id: 'account',
     label: 'Kea account',
     icon: 'UserCircle',
-    blurb: 'How you use Kea, your Kea Hub, and how you show on class leaderboards. Sign in or out under School → your name → Your account.',
+    blurb: 'Your Kea account: one account for Kea and KeaS. Your picture in the title bar opens this page too.',
     fields: [
       {
         key: 'hub.remindMinutes',
@@ -120,7 +120,7 @@ export const SECTIONS: Section[] = [
         label: 'Show account notifications on this computer',
         type: 'toggle',
         default: true,
-        help: 'For example when your storage changes or an organization approves you. They always stay in the list under Your account. Quiet hours from School’s notifications apply.'
+        help: 'For example when your storage changes or an organization approves you. They always stay in the list on this page. Quiet hours from School’s notifications apply.'
       },
       {
         key: 'hub.notifyEveryMinutes',
@@ -900,7 +900,7 @@ export const SECTIONS: Section[] = [
     id: 'privacy',
     label: 'Privacy & data',
     icon: 'Shield',
-    blurb: 'Kea works offline. It only goes online to check GitHub for updates, to read Wikipedia and Wiktionary when you use the Encyclopedia, to download models you choose, and to set up cloud drives you sign in to.',
+    blurb: 'Kea talks to your Kea Hub (the server your Kea account lives on, shown under Kea account) while you’re signed in: it checks for account notifications every few minutes, syncs Kea Cloud documents about every 15 seconds while you use them, and loads classes, shifts and forms when you open School or Work. Your password goes only to the Hub, once, when you sign in. Otherwise Kea only goes online to check GitHub for updates, to read Wikipedia and Wiktionary when you use the Encyclopedia, to download models you choose, and to set up cloud drives you sign in to.',
     fields: [
       { key: 'privacy.citeLookup', label: 'Allow citation look-ups', type: 'toggle', default: true, help: 'When you click "Look up" in Citations, Kea asks Crossref (DOIs), Open Library (ISBNs) or the web page itself for the details. Nothing is sent otherwise.' },
       { key: 'privacy.log', label: 'Keep a troubleshooting log', type: 'toggle', default: true, advanced: true, help: 'A small local file (kea.log) with errors and file names. Never sent anywhere.' }

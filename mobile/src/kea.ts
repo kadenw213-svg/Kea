@@ -180,6 +180,8 @@ export interface KeaData {
   mail?: PhoneMail[];
   /** The PC's checkmark changes, with their times (for merging with the phone's). */
   doneLog?: Record<string, { on: boolean; at: string }>;
+  /** Classes withdrawn from, as the PC logs them (withdrawn.cjs). */
+  withdrawn?: Record<string, { on: boolean; at: string; by?: string; code?: string }>;
 }
 
 const CACHE = 'kea.data';
@@ -356,7 +358,7 @@ export function syncOut() {
     } catch {}
     const l = getLook();
     // (If the drive can't be written now, it's tried again in a minute: the phone's changes aren't left behind.)
-    const text = JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000), deleted: phoneDeleted().slice(-1000), study, requests: phoneRequests(), look: { theme: l.theme, at: l.themeAt || '' } });
+    const text = JSON.stringify({ at: new Date().toISOString(), done: phoneDone(), read: phoneRead().slice(-1000), deleted: phoneDeleted().slice(-1000), study, requests: phoneRequests(), look: { theme: l.theme, at: l.themeAt || '' }, withdrawn: phoneWithdrawn() });
     (hubOn() ? hubPushPhone(text) : Kea.writeFile({ path: 'phone.json', text })).catch(() => {
       clearTimeout(retry);
       retry = setTimeout(syncOut, 60000);
@@ -376,6 +378,28 @@ export function setPhoneDone(id: string, on: boolean) {
 export function setPhoneRead(ids: string[]) {
   store(READ, [...new Set([...phoneRead(), ...ids])].slice(-2000));
   syncOut();
+}
+
+// ---------- Classes withdrawn from (electron/scholar/withdrawn.cjs on the PC), the same way as checkmarks ----------
+export type WithdrawnLog = Record<string, { on: boolean; at: string; by?: string; code?: string }>;
+const WITHDRAWN = 'kea.withdrawn';
+export const phoneWithdrawn = () => load<WithdrawnLog>(WITHDRAWN, {});
+export function setPhoneWithdrawn(courseId: string, on: boolean, code = '') {
+  const d = phoneWithdrawn();
+  d[courseId] = { on, at: new Date().toISOString(), by: 'student', code };
+  store(WITHDRAWN, d);
+  syncOut();
+}
+/** The classes withdrawn from now (courseId → when), the PC's log and the phone's, the newer change winning. */
+export function withdrawnNow(pcLog: WithdrawnLog | undefined, mine: WithdrawnLog): Map<string, { at: string; by: string }> {
+  const out = new Map<string, { at: string; by: string }>();
+  for (const id of new Set([...Object.keys(pcLog || {}), ...Object.keys(mine)])) {
+    const p = mine[id];
+    const pc = pcLog?.[id];
+    const e = p && (!pc || p.at > pc.at) ? p : pc;
+    if (e?.on) out.set(id, { at: e.at, by: e.by || 'student' });
+  }
+  return out;
 }
 
 /** An item's checkmark: the PC's, unless the phone changed it more recently. */

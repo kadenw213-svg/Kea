@@ -15623,6 +15623,10 @@ punycode.js@2.3.1  (MIT)
 https://mths.be/punycode
 
 ==============================================================================
+qrcode-generator@1.4.4  (MIT)
+https://github.com/kazuhikoarase/qrcode-generator.git
+
+==============================================================================
 queue@6.0.2  (MIT)
 https://github.com/jessetane/queue.git
 

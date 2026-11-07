@@ -47,12 +47,17 @@ function cached() {
     return null;
   }
 }
+// What this computer keeps about the signed-in account's work (shifts and org classes for the calendar): never shown
+// to the next person who signs in here.
+const accountFiles = () => [path.join(app.getPath('userData'), 'work-calendar.json')];
 function saveCache(me) {
-  if (!me) return fs.rmSync(cacheFile(), { force: true });
+  if (!me) {
+    for (const f of [cacheFile(), ...accountFiles()]) fs.rmSync(f, { force: true });
+    return;
+  }
   const a = me.account;
-  // No account on this computer yet: the Hub account becomes it (school mode, the badge, the name Kea shows).
-  const local = path.join(app.getPath('userData'), 'account.json');
-  if (!fs.existsSync(local)) fs.writeFileSync(local, JSON.stringify({ email: a.email, name: a.displayName }, null, 1));
+  const was = cached();
+  if (was?.id && was.id !== a.id) for (const f of accountFiles()) fs.rmSync(f, { force: true });
   fs.writeFileSync(cacheFile(), JSON.stringify({ id: a.id, email: a.email, name: a.displayName, emailVerified: a.emailVerified, verifiedBy: a.verifiedBy, owner: a.owner, canHost: a.canHost, identityVerified: a.identityVerified, totpEnabled: a.totpEnabled, leaderboard: a.leaderboard ?? null, supporter: a.supporter ?? null, progress: me.progress ?? null, terms: me.terms ?? null, at: Date.now() }, null, 1));
 }
 
@@ -64,7 +69,8 @@ class HubError extends Error {
   }
 }
 
-async function req(method, p, body, { auth = true } = {}) {
+/** reauth: the route asks for the password again, so a 401 means a wrong password, not that the sign-in ended. */
+async function req(method, p, body, { auth = true, reauth = false } = {}) {
   const token = auth ? readToken() : null;
   let res;
   try {
@@ -77,7 +83,7 @@ async function req(method, p, body, { auth = true } = {}) {
     throw new HubError("Can't reach the Kea Hub right now. Check your internet, or try again in a bit (it may be updating).", 0);
   }
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && auth && token && !data.totpRequired) {
+  if (res.status === 401 && auth && token && !data.totpRequired && !reauth) {
     // The session ended (signed out elsewhere, password changed, suspended).
     writeToken(null);
     saveCache(null);
@@ -101,6 +107,20 @@ async function refresh() {
   return { ...base(), signedIn: true, reachable: true, me };
 }
 const base = () => ({ url: hubUrl(), defaultUrl: DEFAULT_HUB_URL, cached: cached() });
+/** A Kea Hub answers at this address (its health check, within a few seconds). */
+async function answers(origin) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 6000);
+  try {
+    const r = await net.fetch(`${origin}/v1/health`, { headers: { 'x-kea': '1' }, signal: ctl.signal });
+    const j = await r.json().catch(() => ({}));
+    return r.ok && j.service === 'kea-hub';
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
 async function status() {
   if (!readToken()) {
     let reachable = false;
@@ -118,6 +138,30 @@ async function status() {
     if (e.status === 401) return { ...base(), signedIn: false, reachable: true, me: null };
     throw e;
   }
+}
+
+/**
+ * "Download my data": everything the Hub keeps about this account, and its organizations' records about them
+ * (availability, certs, shifts), as one JSON file saved where the person picks. Returns the path, or null.
+ */
+async function exportData({ save = defaultSave } = {}) {
+  const account = await req('GET', '/v1/me/export');
+  let work = null;
+  try {
+    work = await req('GET', '/v1/orgs-export');
+  } catch (e) {
+    if (!e.status) throw e;
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  return save(`Kea account data ${day}.json`, JSON.stringify({ kea: { exportedAt: new Date().toISOString(), hub: hubUrl() }, account, work }, null, 1));
+}
+async function defaultSave(name, text) {
+  const { dialog, BrowserWindow } = require('electron');
+  const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+  const r = await dialog.showSaveDialog(win, { title: 'Save your Kea account data', defaultPath: path.join(app.getPath('downloads'), name), filters: [{ name: 'JSON', extensions: ['json'] }] });
+  if (r.canceled || !r.filePath) return null;
+  fs.writeFileSync(r.filePath, text);
+  return r.filePath;
 }
 
 // ---------- Verify with Google: a Google ID token from the desktop OAuth flow (openid + email only) ----------
@@ -684,8 +728,25 @@ function register() {
   ipcMain.handle('hub:googleVerify', wrap(async () => (await req('POST', '/v1/me/verify/google', { idToken: await googleIdToken(cached()?.email) }), refresh())));
   ipcMain.handle('hub:googleSignIn', wrap(async (a) => signedIn(await req('POST', '/v1/auth/google', { idToken: await googleIdToken(a.email), code: a.code || undefined }, { auth: false }))));
   ipcMain.handle('hub:googleReset', wrap(async (a) => signedIn(await req('POST', '/v1/auth/reset/google', { idToken: await googleIdToken(a.email), password: a.password, code: a.code || undefined }, { auth: false }))));
-  ipcMain.handle('hub:totpSetup', wrap((a) => req('POST', '/v1/me/totp/setup', { password: a?.password })));
-  ipcMain.handle('hub:totpEnable', wrap(async (a) => (await req('POST', '/v1/me/totp/enable', { code: a.code }), refresh())));
+  // The account page: name, password, two-step sign-in, signed-in devices, the data download, deleting the account.
+  // (Changing how you sign in needs the password again: the Hub checks it.)
+  ipcMain.handle('hub:setName', wrap(async (a) => (await req('POST', '/v1/me', { displayName: String(a.name ?? '').trim() }), refresh())));
+  ipcMain.handle('hub:changePassword', wrap(async (a) => (await req('POST', '/v1/me/password', { current: a.current, next: a.next }, { reauth: true }), refresh())));
+  ipcMain.handle('hub:totpSetup', wrap((a) => req('POST', '/v1/me/totp/setup', { password: a?.password }, { reauth: true })));
+  ipcMain.handle('hub:totpEnable', wrap(async (a) => (await req('POST', '/v1/me/totp/enable', { code: a.code }, { reauth: true }), refresh())));
+  ipcMain.handle('hub:totpDisable', wrap(async (a) => (await req('POST', '/v1/me/totp/disable', { password: a.password, code: a.code }, { reauth: true }), refresh())));
+  ipcMain.handle('hub:sessions', wrap(() => req('GET', '/v1/me/sessions')));
+  ipcMain.handle('hub:signOutOthers', wrap((a) => req('POST', '/v1/me/sessions/sign-out-others', { password: a.password }, { reauth: true })));
+  ipcMain.handle('hub:exportData', wrap(() => exportData()));
+  ipcMain.handle('hub:deleteAccount', wrap(async (a) => {
+    const id = cached()?.id;
+    await req('POST', '/v1/me/delete', { confirm: a.confirm, password: a.password, ...(a.code ? { code: a.code } : {}) }, { reauth: true });
+    writeToken(null);
+    saveCache(null);
+    stopSync();
+    require('./account.cjs').forget(id);
+    return status();
+  }));
   ipcMain.handle('hub:logout', wrap(async () => {
     try {
       await req('POST', '/v1/auth/logout', {});
@@ -705,19 +766,29 @@ function register() {
     saveCache(null);
     stopSync();
   };
-  ipcMain.handle('hub:setUrl', appOnly(wrap(async ({ url }) => {
-    // Empty: back to the address this copy of Kea came with.
-    if (!String(url || '').trim()) return moveHub(null), status();
-    let u;
-    try {
-      u = new URL(/^[a-z]+:\/\//i.test(String(url).trim()) ? String(url).trim() : `https://${String(url).trim()}`);
-    } catch {
-      throw new HubError('That isn’t a web address. It looks like https://name.tailnet.ts.net', 400);
+  // A new address is used only once a Kea Hub answers there. Moving to another Hub while signed in signs out here, so
+  // that's only done once the page has asked (confirm: true); until then it answers 409 { switchSignsOut }.
+  ipcMain.handle('hub:setUrl', appOnly(wrap(async ({ url, confirm }) => {
+    let next = null;
+    if (String(url || '').trim()) {
+      let u;
+      try {
+        u = new URL(/^[a-z]+:\/\//i.test(String(url).trim()) ? String(url).trim() : `https://${String(url).trim()}`);
+      } catch {
+        throw new HubError('That isn’t a web address. It looks like https://name.tailnet.ts.net', 400);
+      }
+      if (!/^https?:$/.test(u.protocol)) throw new HubError('Use an https:// address.', 400);
+      // Plain http only to this computer itself: anywhere else, someone on the network could pose as the Hub.
+      if (u.protocol === 'http:' && !/^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u.hostname)) throw new HubError('Use the Hub’s https:// address (it looks like https://name.tailnet.ts.net). Plain http only works for a Hub on this computer.', 400);
+      next = u.origin;
     }
-    if (!/^https?:$/.test(u.protocol)) throw new HubError('Use an https:// address.', 400);
-    // Plain http only to this computer itself: anywhere else, someone on the network could pose as the Hub.
-    if (u.protocol === 'http:' && !/^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u.hostname)) throw new HubError('Use the Hub’s https:// address (it looks like https://name.tailnet.ts.net). Plain http only works for a Hub on this computer.', 400);
-    moveHub(u.origin);
+    const target = next || String(process.env.KEA_HUB_URL || DEFAULT_HUB_URL).replace(/\/+$/, '');
+    if (!(await answers(target))) throw new HubError(`No Kea Hub answers at ${target}, so Kea kept ${hubUrl()}. Check the address, or try again once that Hub is running.`, 400, { notAnswering: true });
+    if (isSignedIn() && originOf(target) !== originOf(hubUrl()) && confirm !== true) {
+      const who = cached()?.email;
+      throw new HubError(`Switching to ${target} signs you out${who ? ` of ${who}` : ''} here. You then sign in to your account on that Hub.`, 409, { switchSignsOut: true, to: target });
+    }
+    moveHub(next);
     return status();
   })));
   // Hub classes, study sets, leaderboards and class sessions on the calendar.
@@ -726,4 +797,4 @@ function register() {
   require('./hubNotes.cjs').register();
 }
 
-module.exports = { _relay: { relayOp, answerCalls, myJobs, servingNow, RELAY_OPS, endWorkerFolder }, register, cached, req, signedIn: isSignedIn, syncRoot, syncNow, url: hubUrl, refreshStatus: status, DEFAULT_HUB_URL, syncState: () => ({ ...syncState }), startSync };
+module.exports = { _relay: { relayOp, answerCalls, myJobs, servingNow, RELAY_OPS, endWorkerFolder }, _exportData: exportData, register, cached, req, signedIn: isSignedIn, syncRoot, syncNow, url: hubUrl, refreshStatus: status, DEFAULT_HUB_URL, syncState: () => ({ ...syncState }), startSync };

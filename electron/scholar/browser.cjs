@@ -130,6 +130,46 @@ function getWindow() {
   return win;
 }
 
+// ---------- The student's own window ----------
+// Pages the student opens from Kea (a link, a hand-in page, a reply) get their own window on the same signed-in
+// session, so a scan or guide run reading the class site in the hidden window above never navigates away from a page
+// the student has open (with a file attached, or a reply half written). It has Back, Forward, Reload and "Open in your
+// browser", since a student who clicks into a sub-page needs a way back.
+let pageWin = null;
+let pageProfile = '';
+function studentWindow() {
+  if (pageWin && !pageWin.isDestroyed() && pageProfile === profiles.active()) return pageWin;
+  if (pageWin && !pageWin.isDestroyed()) pageWin.destroy();
+  pageProfile = profiles.active();
+  const w = new BrowserWindow({
+    show: false,
+    width: 1100,
+    height: 820,
+    title: 'Kea: class site',
+    webPreferences: { partition: partition(), sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'browser-preload.cjs') }
+  });
+  pageWin = w;
+  prepareSession(session.fromPartition(partition()));
+  guardWindow(w);
+  w.webContents.on('context-menu', (_e, params) => contextMenu(w, params));
+  const { Menu } = require('electron');
+  const nav = w.webContents.navigationHistory;
+  w.setMenu(
+    Menu.buildFromTemplate([
+      { label: '← Back', accelerator: 'Alt+Left', click: () => nav.canGoBack() && nav.goBack() },
+      { label: 'Forward →', accelerator: 'Alt+Right', click: () => nav.canGoForward() && nav.goForward() },
+      { label: 'Reload', accelerator: 'F5', click: () => w.webContents.reload() },
+      { label: 'Open in your browser', click: () => /^https:\/\//i.test(w.webContents.getURL()) && shell.openExternal(w.webContents.getURL()) }
+    ])
+  );
+  w.on('close', (e) => {
+    if (global.keaQuitting) return;
+    e.preventDefault();
+    w.hide();
+  });
+  return w;
+}
+
 // ---------- The class-site browser: a current Chrome, ads blocked, dark mode ----------
 // Sites check the browser by its name: Kea's window is current Chromium, so it says it's Chrome (without "Electron"
 // or "Kea", which school sites read as an old or unsupported browser).
@@ -386,11 +426,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The last address Kea itself sent the window to: a page there may lead to the school's own sign-in.
 let loadedTarget = '';
-/** Load a page and wait for it (and its scripts) to settle. */
-async function load(url) {
+/**
+ * Load a page and wait for it (and its scripts) to settle. In the hidden scan window unless another is given (the
+ * student's own window, for pages they open).
+ */
+async function load(url, w = getWindow()) {
   // https only (the class site, its sign-in and the platforms it links to): never file:, javascript: or another scheme.
   if (!/^https:\/\//i.test(String(url || ''))) throw new Error('Only https pages can be opened in Kea’s class-site window.');
-  const w = getWindow();
   loadedTarget = String(url);
   const done = new Promise((resolve) => {
     const t = setTimeout(resolve, PAGE_TIMEOUT);
@@ -759,7 +801,8 @@ async function show(url) {
   // Only the class site (its host or the school's own domain), over https.
   const home = readSchool().home || '';
   if (!/^https:\/\//i.test(String(url || '')) || !home || !policy.inSchoolDomain(policy.hostOf(url), policy.hostOf(home))) throw new Error('Only the class site’s own https pages open in Kea’s window.');
-  const w = await load(url);
+  // (In the student's own window: a scan never moves it.)
+  const w = await load(url, studentWindow());
   w.setTitle('Kea: class site');
   w.show();
   w.focus();
@@ -1098,12 +1141,12 @@ async function reply(url, ou) {
   if (platformOf(s) === 'canvas') return show(url && onSite(url) ? url : new URL('/conversations', s.home).href).then(() => ({ replied: false }));
   const target = url && onSite(url) ? url : s.home && ou ? new URL(`/d2l/lms/email/frame.d2l?ou=${encodeURIComponent(ou)}`, s.home).href : s.home;
   if (!target) throw new Error('No class site is set up yet.');
-  const w = await load(target);
+  const w = await load(target, studentWindow());
   w.setTitle('Kea: reply to a message');
   w.show();
   w.focus();
   if (!(await ensureSignedIn(w))) return { replied: false };
-  if (!onSite(w.webContents.getURL())) await load(target);
+  if (!onSite(w.webContents.getURL())) await load(target, w);
   if (!url) return { replied: false };
   // The message is drawn inside frames and web components, a moment after loading: look for its Reply a few times.
   const press = `(() => {
@@ -1141,12 +1184,13 @@ async function handIn(ou, folderId, file) {
   const url = canvas
     ? new URL(`/courses/${encodeURIComponent(ou)}/assignments/${encodeURIComponent(folderId)}`, s.home).href
     : new URL(`/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${encodeURIComponent(folderId)}&grpid=0&isprv=0&bp=0&ou=${encodeURIComponent(ou)}`, s.home).href;
-  let w = await load(url);
+  // (In the student's own window: a scan never moves the page with their file on it.)
+  let w = await load(url, studentWindow());
   w.setTitle('Kea: hand in your work');
   w.show();
   w.focus();
   if (!(await ensureSignedIn(w))) return { attached: false };
-  if (!onSite(w.webContents.getURL()) || !(canvas ? /\/assignments\/\d+/ : /folder_submit_files/i).test(w.webContents.getURL())) w = await load(url);
+  if (!onSite(w.webContents.getURL()) || !(canvas ? /\/assignments\/\d+/ : /folder_submit_files/i).test(w.webContents.getURL())) w = await load(url, w);
   const dbg = w.webContents.debugger;
   try {
     if (!dbg.isAttached()) dbg.attach('1.3');
@@ -1324,7 +1368,8 @@ let rememberNext = false;
 let pendingUser = null;
 // Each login is kept under its own host, so a platform's login (ALEKS, Pearson) never replaces the school's. Only the
 // window's own page counts: a frame inside it (an ad, an embedded tool) can't report a login.
-const fromMainFrame = (e) => !!(win && !win.isDestroyed() && e.sender === win.webContents && e.senderFrame && e.senderFrame === win.webContents.mainFrame);
+// (The scan window or the student's own window: the same signed-in session, the same rules for what's remembered.)
+const fromMainFrame = (e) => [win, pageWin].some((x) => !!(x && !x.isDestroyed() && e.sender === x.webContents && e.senderFrame && e.senderFrame === x.webContents.mainFrame));
 // Only the class site's own sign-in page or a known sign-in service may have a login saved (the phone's
 // ClassSite.mayFill rule, with the Public Suffix List): once the school's sign-in host is known, only that one. The page's
 // address is the frame's real one, never what the page says it is.

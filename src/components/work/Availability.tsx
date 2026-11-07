@@ -3,8 +3,8 @@
 // the whole period; All day or Off for a date; prefill from your usual week or last month.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CalendarCheck2, CheckCircle2, Eraser, History, MessageSquare, Send, Sun } from 'lucide-react';
-import { toast } from '../../store';
-import { bump, wantText, addDays, countdown, fmtDay, fmtRange, fmtWhen, parseDate, post, todayIso, useHub, useWork, WD, WEEKDAYS } from './workStore';
+import { ask, toast } from '../../store';
+import { bump, wantText, addDays, countdown, fmtDay, fmtRange, fmtWhen, parseDate, post, setLeaveGuard, todayIso, useHub, useWork, WD, WEEKDAYS } from './workStore';
 import { Card, Empty, Loading, Num, Problem, Check, Field } from './ui';
 import type { Answer, Form, FormView, Org, Slot } from './types';
 
@@ -72,6 +72,11 @@ function Filler({ org, view, onBack }: { org: Org; view: FormView; onBack(): voi
   const [busy, setBusy] = useState(false);
   const readOnly = !state.canEdit && !state.changeRequest;
   const q = form.questions;
+  // What's on screen against what was last loaded or saved: leaving with changes asks first.
+  const now = JSON.stringify({ answers, dateNotes, note, dmin, dmax, daysOff, extra });
+  const [saved, setSaved] = useState(now);
+  const dirty = !readOnly && now !== saved;
+  const canDraft = !state.pastDeadline && !state.changeRequest;
 
   const byDate = useMemo(() => {
     const m = new Map<string, Slot[]>();
@@ -141,7 +146,17 @@ function Filler({ org, view, onBack }: { org: Org; view: FormView; onBack(): voi
   const perWeekI = Math.round((im / 60 / weeks) * 10) / 10;
   const hoursTone = dmin != null && perWeek < dmin ? 'warn' : 'good';
 
-  const send = async (submit: boolean) => {
+  const rangeBad = dmin != null && dmax != null && dmin > dmax;
+  const send = async (submit: boolean): Promise<boolean> => {
+    if (rangeBad) {
+      toast('The hours you want: “From” is more than “To”.', 'error');
+      return false;
+    }
+    // Nothing marked counts as "not available" on every date: say so before sending that.
+    if (submit && am + im === 0 && slots.length > 0) {
+      const yes = (await ask('Send as not available?', 'Nothing is marked, so this tells your manager you can’t work any of these dates.', [{ id: 'no', label: 'Go back' }, { id: 'yes', label: 'Send as not available', primary: true }])) === 'yes';
+      if (!yes) return false;
+    }
     setBusy(true);
     try {
       const res = await post<{ status: string }>(`/v1/orgs/${org.id}/forms/${form.id}/response`, {
@@ -165,13 +180,45 @@ function Filler({ org, view, onBack }: { org: Org; view: FormView; onBack(): voi
               ? 'Sent. It was after the deadline, so your manager will see it marked late.'
               : 'Sent. You can change it until the deadline.'
       );
+      setSaved(now);
+      setLeaveGuard(null);
       bump();
       if (submit) onBack();
+      return true;
     } catch (e: any) {
       toast(e.message, 'error');
+      return false;
     } finally {
       setBusy(false);
     }
+  };
+
+  // Unsent changes: Back, another tab or another organization asks first.
+  const confirmLeave = async () => {
+    const choice = await ask('Keep your changes?', canDraft ? 'You changed this form but haven’t saved or sent it.' : 'You changed this form but haven’t sent it.', [
+      { id: 'stay', label: 'Keep editing' },
+      { id: 'drop', label: 'Discard changes', danger: true },
+      ...(canDraft ? [{ id: 'save', label: 'Save for later', primary: true }] : [])
+    ]);
+    if (choice === 'save') return send(false);
+    return choice === 'drop';
+  };
+  const guard = useRef(confirmLeave);
+  guard.current = confirmLeave;
+  useEffect(() => {
+    if (!dirty) return;
+    setLeaveGuard(() => guard.current());
+    return () => setLeaveGuard(null);
+  }, [dirty]);
+  const back = async () => {
+    if (dirty && !(await confirmLeave())) return;
+    setLeaveGuard(null);
+    onBack();
+  };
+  // Prefills and Clear replace what's marked: asked first when something is.
+  const replaceAll = async (next: Record<string, Answer>, what: string) => {
+    if (Object.keys(answers).length && (await ask(`${what}?`, 'This replaces what you’ve marked on every date.', [{ id: 'no', label: 'Cancel' }, { id: 'yes', label: what, primary: true }])) !== 'yes') return;
+    setAnswers({ ...next });
   };
 
   // The calendar: weeks from the Sunday on or before the start.
@@ -183,7 +230,7 @@ function Filler({ org, view, onBack }: { org: Org; view: FormView; onBack(): voi
   return (
     <div className="af">
       <div className="af-top">
-        <button className="btn link sm" onClick={onBack}>
+        <button className="btn link sm" onClick={back}>
           <ArrowLeft size={15} /> Forms
         </button>
         <h2 className="af-title">{form.title}</h2>
@@ -203,15 +250,17 @@ function Filler({ org, view, onBack }: { org: Org; view: FormView; onBack(): voi
 
       {!readOnly && (
         <div className="af-tools">
-          <button className="btn tonal sm" disabled={!Object.keys(prefill.usual).length} title={Object.keys(prefill.usual).length ? '' : 'Tick “Keep as my usual week” when you send a form to save one'} onClick={() => setAnswers({ ...prefill.usual })}>
-            <Sun size={14} /> My usual week
-          </button>
+          {Object.keys(prefill.usual).length > 0 && (
+            <button className="btn tonal sm" onClick={() => replaceAll(prefill.usual, 'Use my usual week')}>
+              <Sun size={14} /> My usual week
+            </button>
+          )}
           {prefill.last && (
-            <button className="btn tonal sm" onClick={() => setAnswers({ ...prefill.last! })}>
+            <button className="btn tonal sm" onClick={() => replaceAll(prefill.last!, `Same as ${prefill.lastTitle?.replace(/ availability$/i, '') ?? 'last time'}`)}>
               <History size={14} /> Same as {prefill.lastTitle?.replace(/ availability$/i, '') ?? 'last time'}
             </button>
           )}
-          <button className="btn tonal sm" onClick={() => setAnswers({})}>
+          <button className="btn tonal sm" disabled={!Object.keys(answers).length} onClick={() => replaceAll({}, 'Clear everything')}>
             <Eraser size={14} /> Clear
           </button>
         </div>
@@ -324,6 +373,7 @@ function Filler({ org, view, onBack }: { org: Org; view: FormView; onBack(): voi
               <span>to</span>
               <Num value={dmax} onChange={setDmax} placeholder="To" max={168} />
             </div>
+            {rangeBad && <span className="wk-hint bad">“From” is more than “To”.</span>}
           </Field>
         )}
         {q.daysOff.on && (
@@ -375,7 +425,7 @@ function Filler({ org, view, onBack }: { org: Org; view: FormView; onBack(): voi
             <textarea className="input wk-textarea" readOnly={readOnly} value={note} placeholder="For example: prefer opening shifts; subject to change" onChange={(e) => setNote(e.target.value)} />
           </Field>
         )}
-        {!readOnly && <Check label="Keep this as my usual week" hint="(fills in next month’s form)" checked={saveUsual} onChange={setSaveUsual} />}
+        {!readOnly && <Check label="Keep this as my usual week" hint="(next time, “My usual week” fills the form with it)" checked={saveUsual} onChange={setSaveUsual} />}
         {state.changeRequest && (
           <Field label="Why the change">
             <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional" />
@@ -385,6 +435,7 @@ function Filler({ org, view, onBack }: { org: Org; view: FormView; onBack(): voi
 
       {!readOnly && (
         <div className="af-send">
+          {dirty && <span className="muted af-small">Not saved yet</span>}
           {!state.pastDeadline && (
             <button className="btn" disabled={busy} onClick={() => send(false)}>
               Save for later

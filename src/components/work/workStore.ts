@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { api } from '../../lib/api';
 import { toast } from '../../store';
 import type { Org } from './types';
-import { useHubStatus } from '../scholar/HubAccount';
+import { useHubStatus } from '../account/hubStore';
 
 export class WorkError extends Error {
   constructor(message: string, public status: number | null, public data: any) {
@@ -33,7 +33,7 @@ export async function act<T = any>(path: string, body: unknown = {}, done?: stri
 }
 
 // ---------- shared state ----------
-export type Tab = 'today' | 'schedule' | 'availability' | 'certs' | 'org' | 'forms' | 'scheduling' | 'people' | 'training' | 'structure' | 'budgets' | 'settings';
+export type Tab = 'schedule' | 'availability' | 'certs' | 'org' | 'forms' | 'scheduling' | 'people' | 'training' | 'structure' | 'budgets' | 'settings';
 interface WorkState {
   version: number;
   orgs: Org[] | null;
@@ -43,6 +43,14 @@ interface WorkState {
   focus: { formId?: string; scheduleId?: string; swapId?: string; view?: string } | null;
   setOrgs(o: Org[]): void;
   go(orgId: string | null, tab?: Tab, focus?: WorkState['focus']): void;
+}
+/**
+ * Something on screen that would lose unsaved work if Work moved elsewhere (an availability form being filled in):
+ * asked before go() changes the organization, tab or focus. Resolves true to go on.
+ */
+let leaveGuard: (() => Promise<boolean>) | null = null;
+export function setLeaveGuard(g: (() => Promise<boolean>) | null) {
+  leaveGuard = g;
 }
 export const useWork = create<WorkState>((set) => ({
   version: 0,
@@ -54,16 +62,20 @@ export const useWork = create<WorkState>((set) => ({
       return null;
     }
   })(),
-  tab: 'today',
+  tab: 'schedule',
   focus: null,
   setOrgs: (orgs) => set((s) => ({ orgs, orgId: s.orgId && orgs.some((o) => o.id === s.orgId) ? s.orgId : orgs[0]?.id ?? null })),
-  go: (orgId, tab, focus = null) =>
-    set((s) => {
-      try {
-        if (orgId) localStorage.setItem('kea.work.org', orgId);
-      } catch {}
-      return { orgId, tab: tab ?? (orgId === s.orgId ? s.tab : 'today'), focus };
-    })
+  go: (orgId, tab, focus = null) => {
+    const apply = () =>
+      set((s) => {
+        try {
+          if (orgId) localStorage.setItem('kea.work.org', orgId);
+        } catch {}
+        return { orgId, tab: tab ?? (orgId === s.orgId ? s.tab : 'schedule'), focus };
+      });
+    if (!leaveGuard) return apply();
+    leaveGuard().then((ok) => ok && apply());
+  }
 }));
 /** Something changed on the Hub: everything showing org data reloads. */
 export const bump = () => useWork.setState((s) => ({ version: s.version + 1 }));
@@ -127,7 +139,8 @@ export function clock(iso: string | number, tz?: string) {
     .replace(' AM', 'am')
     .replace(' PM', 'pm');
 }
-export const fmtWhen = (ms: number, tz?: string) => new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: tz });
+/** "Nov 12, 6am": the same time style as everywhere else in Work. */
+export const fmtWhen = (ms: number, tz?: string) => `${new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: tz })}, ${clock(ms, tz)}`;
 /** "Due in 2 days", "Due in 5 hours", "2 days late". */
 export function countdown(msLeft: number | null, { due = 'Due', late = 'late' } = {}) {
   if (msLeft == null) return '';
