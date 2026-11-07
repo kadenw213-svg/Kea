@@ -4,8 +4,7 @@ import { useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, CloudOff, FolderOpen, Loader2, LogIn, RefreshCw } from 'lucide-react';
 import { api, KeaCloudStatus } from '../../lib/api';
 import { STATE_LABEL, storageLine, useKeaCloud, watchKeaCloud } from '../../lib/keaCloud';
-import { openScholar } from '../scholar/scholarStore';
-import { useSettings } from '../../lib/settings';
+import { openAccount } from '../account/hubStore';
 import { toast } from '../../store';
 import { timeAgo } from '../../lib/util';
 
@@ -41,10 +40,7 @@ function StorageBar({ s }: { s: KeaCloudStatus }) {
   );
 }
 
-const signIn = () => {
-  useSettings.getState().ui({ open: false });
-  openScholar({ name: 'account' });
-};
+const signIn = () => openAccount();
 
 async function syncNow() {
   const r = await api.keaCloud.syncNow();

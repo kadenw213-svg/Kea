@@ -61,7 +61,8 @@ import { MessagesView } from './Messages';
 import { ChangesBox, ItemHistory } from './History';
 import { openClassStudy, openStudyHub } from './StudyHub';
 import { studyRoute } from './studyIds';
-import { AccountCard, Avatar, VerifiedBadge, useAccount } from './Account';
+import { Avatar, VerifiedBadge, VerifyEmail, useAccount } from './Account';
+import { openAccount } from '../account/hubStore';
 import { HubPanel, SharedClaude } from './HubAccount';
 import { HubNav, HubView, HubPractice, useHubClassList } from './HubClasses';
 import { BoardNameSetting } from './BoardName';
@@ -252,8 +253,6 @@ export function ScholarScreen() {
             <BoardNameSetting />
           </div>
         )}
-        <h3 className="hub-title">On this computer</h3>
-        <AccountCard />
       </div>
     ) : (
       <CalendarView ctx={ctx} />
@@ -282,8 +281,8 @@ export function ScholarScreen() {
                 </button>
               ))}
               <div className="menu-sep" />
-              <button className="menu-item" onClick={() => (close(), go({ name: 'account' }))}>
-                <Avatar account={account} size={16} /> {account ? 'Your account' : 'Set up your account'}
+              <button className="menu-item" onClick={() => (close(), openAccount())}>
+                <Avatar account={account} size={16} /> Your account
               </button>
               <button className="menu-item" onClick={() => (close(), newProfile())}>
                 <Plus size={15} /> New profile…
@@ -331,13 +330,11 @@ export function ScholarScreen() {
         </button>
       </nav>
       <main className="sch-main">
-        {hasData && account !== undefined && !account?.verified && view.name !== 'account' && (
+        {hasData && account && !account.verified && view.name !== 'account' && (
           <div className="acct-banner">
             <ShieldAlert size={16} />
-            <span>School mode now needs a Kea account with a verified email. Class checks are paused until you add one.</span>
-            <button className="btn sm primary" onClick={() => go({ name: 'account' })}>
-              Set up your account
-            </button>
+            <span>Class checks are paused until your email is verified.</span>
+            <VerifyEmail school compact />
           </div>
         )}
         {main}
@@ -1917,9 +1914,9 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
 function AccountStep() {
   return (
     <div className="acct-step">
-      <h3>First, your Kea account</h3>
-      <p className="muted">School mode needs an account with a verified email. Use the email of your Claude account (or a OneDrive or Google account signed in here), and Kea verifies it at once.</p>
-      <AccountCard />
+      <h3>First, verify your email</h3>
+      <p className="muted">School mode needs your Kea account’s email verified: with Google, or by the same email being signed in here to Claude, OneDrive or Google.</p>
+      <VerifyEmail school compact />
     </div>
   );
 }

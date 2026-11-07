@@ -558,7 +558,7 @@ function register() {
   // (Starting a Claude run answers only Kea's own page: ipcGuard.cjs.)
   ipcMain.handle('scholar:run', require('../ipcGuard.cjs').appOnly((_e, task, arg) => {
     // School mode needs a Kea account with a verified email.
-    if (!require('../account.cjs').verified()) throw new Error('Set up your Kea account with a verified email first (Scholar → your name → Your account).');
+    if (!require('../account.cjs').verified()) throw new Error('Verify your Kea account’s email first (Settings → Kea account).');
     if (task !== 'probe' && devices.follower()) return devices.relay({ task, arg: arg || '' });
     runner.run(task, arg || '', 'manual').then(() => task === 'study' && keepBanks());
     return true;

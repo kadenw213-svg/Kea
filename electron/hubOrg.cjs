@@ -25,11 +25,22 @@ const wrap = (fn) => async (_e, arg) => {
 };
 const refuse = () => Object.assign(new Error('Kea can’t send that to the Hub.'), { status: 400 });
 
-// Published shifts and org class sessions, kept on this PC so the calendar has them when the Hub is unreachable.
+// Published shifts and org class sessions, kept on this PC so the calendar has them when the Hub is unreachable. The
+// copy belongs to the account that fetched it: anyone else signed in here never sees it (hub.cjs also deletes it on
+// signing out and when another account signs in).
 const cacheFile = () => path.join(app.getPath('userData'), 'work-calendar.json');
+const accountId = () => {
+  try {
+    return hub.cached?.()?.id ?? null;
+  } catch {
+    return null;
+  }
+};
 function readCache() {
   try {
-    return JSON.parse(fs.readFileSync(cacheFile(), 'utf8'));
+    const c = JSON.parse(fs.readFileSync(cacheFile(), 'utf8'));
+    if (!Array.isArray(c.events) || (c.account ?? null) !== accountId()) throw new Error('not this account’s');
+    return c;
   } catch {
     return { events: [], at: 0 };
   }
@@ -41,7 +52,7 @@ async function events(from, to) {
     const r = await hub.req('GET', `/v1/orgs-calendar${q ? `?${q}` : ''}`);
     // Keep what's known; replace the window just fetched.
     const old = readCache().events.filter((e) => (from && e.end < from) || (to && e.start > to));
-    fs.writeFileSync(cacheFile(), JSON.stringify({ events: [...old, ...r.events].sort((a, b) => (a.start < b.start ? -1 : 1)), at: Date.now() }));
+    fs.writeFileSync(cacheFile(), JSON.stringify({ account: accountId(), events: [...old, ...r.events].sort((a, b) => (a.start < b.start ? -1 : 1)), at: Date.now() }));
     return { events: r.events, offline: false };
   } catch (e) {
     if (e.status !== 0) throw e;
