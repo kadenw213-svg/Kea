@@ -420,7 +420,8 @@ export function HubPanel() {
   const who = me?.account ?? (c ? { displayName: c.name, email: c.email, emailVerified: c.emailVerified, verifiedBy: c.verifiedBy ?? null, owner: !!c.owner } : null);
   const storage = me ? { used: kc?.storage?.used ?? me.storage.used, quota: kc?.storage?.quota ?? me.storage.quota } : null;
   const games = modes.school || modes.personal;
-  const verifiedText = who?.owner ? 'Kea’s creator · Hub owner' : who?.emailVerified ? `Email verified (${who.verifiedBy})` : account?.verifiedHere ? `Email verified for School on this computer (${account.verifiedBy})` : 'Email not verified yet';
+  const how = (by: string | null) => (by === 'google' ? 'with Google' : by === 'owner' ? 'by Kea’s creator' : by ? `(${by})` : '');
+  const verifiedText = who?.owner ? 'Kea’s creator · Hub owner' : who?.emailVerified ? `Email verified ${how(who.verifiedBy)}` : account?.verifiedHere ? `Email verified for School on this computer (${account.verifiedBy})` : 'Email not verified yet';
   return (
     <div className="acct-page">
       <div className="acct-card hub-card">
