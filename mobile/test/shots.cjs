@@ -239,7 +239,7 @@ const scenarios = [
   // an availability form, and the saved copy while nothing answers.
   { name: 'w1-work-shifts', cfg: { welcomed: true, work: true }, steps: [click('Work'), wait(1200)] },
   { name: 'w2-work-time', cfg: { welcomed: true, work: true }, steps: [click('Work'), wait(800), clickExact('Time'), wait(1200)] },
-  { name: 'w3-work-pay', cfg: { welcomed: true, work: true }, steps: [click('Work'), wait(800), clickExact('Pay'), wait(1200)] },
+  { name: 'w3-work-pay', cfg: { welcomed: true, work: true }, steps: [click('Work'), wait(800), clickExact('My pay'), wait(1200)] },
   { name: 'w4-work-todo', cfg: { welcomed: true, work: true }, steps: [click('Work'), wait(800), clickExact('To do'), wait(1200)] },
   { name: 'w5-work-approvals', cfg: { welcomed: true, work: true }, steps: [click('Work'), wait(800), clickExact('Manage'), wait(1500)] },
   { name: 'w6-work-schedule', cfg: { welcomed: true, work: true }, steps: [click('Work'), wait(800), clickExact('Manage'), wait(800), clickExact('Schedule'), wait(1200)] },

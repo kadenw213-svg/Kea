@@ -159,7 +159,7 @@ export function WorkTab({ onAccount }: { onAccount(): void }) {
   const chips: [View, string][] = [
     ['shifts', 'Shifts'],
     ['time', 'Time'],
-    ['pay', 'Pay'],
+    ['pay', 'My pay'],
     ['todo', 'To do']
   ];
   if (manage) chips.push(['manage', 'Manage']);
@@ -199,7 +199,7 @@ export function WorkTab({ onAccount }: { onAccount(): void }) {
       {state && !orgs.length && (
         <div className="empty work-empty">
           <Briefcase size={28} />
-          <p>No organizations yet. Join one with the code or link someone there gave you.</p>
+          <p>No organizations yet. Open the join link your organization gave you, or paste it here.</p>
           <button className="btn primary" onClick={() => setJoining(true)}>
             <Plus size={16} /> Join an organization
           </button>
@@ -278,8 +278,8 @@ function JoinSheet({ initial, online, servers, onClose, onJoined }: { initial: s
       {!online && <p className="note">Joining needs your Kea account online. Sign in online under Settings → Kea account.</p>}
       {!adv ? (
         <label className="field">
-          Join code or link
-          <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="The code or kea://join link you were given" autoCapitalize="characters" autoCorrect="off" />
+          Join link or code
+          <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="kea://join… or ABCD-EFGH-JKMN" autoCapitalize="characters" autoCorrect="off" />
         </label>
       ) : (
         <>
@@ -934,7 +934,7 @@ function PayView({ org, offline }: { org: WorkOrg; offline: boolean }) {
                   {c.color && <i className="work-dot" style={{ background: c.color }} />}
                   {c.name}
                 </b>
-                {c.default && <span className="muted small block">Your usual code</span>}
+                {c.default && <span className="muted small block">Default</span>}
               </span>
               {money(c.rateCents) && <span>{money(c.rateCents)}/h</span>}
             </div>
@@ -945,7 +945,7 @@ function PayView({ org, offline }: { org: WorkOrg; offline: boolean }) {
             <div className="row-main">
               {d.hours.map((h) => (
                 <div key={h.codeId ?? 'none'} className="work-tc-day">
-                  <span>{h.name ?? 'No code'}</span>
+                  <span>{h.name ?? 'No pay code'}</span>
                   <span className="muted small">{h.noLongerGiven ? 'No longer yours' : money(h.rateCents) ? `${money(h.rateCents)}/h` : ''}</span>
                   <b>{hrs(h.minutes)}</b>
                 </div>
@@ -1125,7 +1125,7 @@ function Approvals({ org }: { org: WorkOrg }) {
             </span>
           </span>
           <Decide
-            yes={() => act(org, path(org, `/punch-requests/${r.id}/decide`), { approve: true }, 'Fixed on their timecard.').then(() => (punches.reload(), period.reload()))}
+            yes={() => act(org, path(org, `/punch-requests/${r.id}/decide`), { approve: true }, 'Added to their timecard.').then(() => (punches.reload(), period.reload()))}
             no={() => act(org, path(org, `/punch-requests/${r.id}/decide`), { approve: false }, 'Not approved.').then(punches.reload)}
           />
         </div>
@@ -1216,7 +1216,7 @@ function TeamSchedule({ org }: { org: WorkOrg }) {
           );
         })}
       {sched.data && !sched.data.shifts.length && <p className="empty">No published shifts this week.</p>}
-      <p className="muted small">Building schedules and changing structure are in Kea on the computer.</p>
+      <p className="muted small">Schedules and people are edited in Kea on the computer; the rest is in the KeaS app.</p>
       {edit && <ShiftSheet org={org} shift={edit} onClose={() => setEdit(null)} onDone={() => (setEdit(null), sched.reload())} />}
     </>
   );
