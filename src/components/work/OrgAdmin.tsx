@@ -319,6 +319,9 @@ function Approvals({ org }: { org: Org }) {
   );
 }
 
+/** The join link for a code on a KeaS server (kea://join?s=<server address>&c=<code>, as electron/serversCore.cjs reads it). */
+export const joinLinkFor = (url: string, code: string) => `kea://join?s=${encodeURIComponent(url)}&c=${encodeURIComponent(code)}`;
+
 function Codes({ org }: { org: Org }) {
   const { data, error } = useHub<{ codes: JoinCode[] }>(`/v1/orgs/${org.id}/codes`);
   const st = useHub<Structure>(`/v1/orgs/${org.id}/structure`);
@@ -418,6 +421,18 @@ function Codes({ org }: { org: Org }) {
               >
                 <ClipboardCopy size={14} />
               </button>
+              {org.server?.url && (
+                <button
+                  className="btn sm"
+                  title="The code with this server’s address: opening it in Kea joins here."
+                  onClick={() => {
+                    navigator.clipboard.writeText(joinLinkFor(org.server!.url!, c.code));
+                    toast('Join link copied.');
+                  }}
+                >
+                  Copy join link
+                </button>
+              )}
               <button className="btn sm" onClick={() => act(`/v1/orgs/${org.id}/codes/${c.code}/revoke`, {}, 'Revoked. It no longer works.')}>
                 Revoke
               </button>
