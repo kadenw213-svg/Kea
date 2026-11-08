@@ -34,6 +34,8 @@ test('roles and the time clock, through Work’s bridge', { skip: !ROOT && 'No K
   const base = `http://127.0.0.1:${p.port}`;
   const owner = (pth, body) => ofetch(`http://127.0.0.1:${p.ownerPort}${pth}`, { method: 'POST', headers: { 'x-kea-owner-key': hub.ownerKey, 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const terms = (await (await fetch(`${base}/v1/terms`)).json()).terms;
+  // (A KeaS checkout part way through its rebuild has no Hub accounts to sign in with.)
+  if (!terms) return t.skip('The KeaS checkout has no Hub accounts right now (sign-in is moving to Kea accounts).');
   const reg = async (email) => {
     const r = await (await registerAndSignIn(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'lantern velvet orbit', displayName: email.split('@')[0], age13: true, termsVersion: terms.version, termsSections: terms.sections.map((s) => s.id) }) })).json();
     await owner(`/owner/accounts/${email}`, { emailVerified: true });

@@ -163,8 +163,9 @@ export const hubc = {
   deleteSet: (id: string) => call<{ ok: true }>('deleteSet', { id }),
   answer: (setId: string, questionId: string, choice: number) => call<HubAnswer>('answer', { setId, questionId, choice }),
   leaderboard: (id: string, period: 'week' | 'all') => call<HubBoard>('leaderboard', { id, period }),
-  hosting: () => call<{ status: 'none' | 'pending' | 'approved' | 'rejected'; note?: string | null; appliedAt?: number }>('hosting'),
-  applyHosting: (reason: string) => call<{ status: string }>('applyHosting', { reason }),
+  /** My application to teach (a creator, for the public class list). older: an account server that takes only a note. */
+  hosting: () => call<{ status: 'none' | 'pending' | 'approved' | 'rejected'; note?: string | null; appliedAt?: number; older?: boolean }>('hosting'),
+  applyHosting: (note: string, organization = '') => call<{ status: string; note?: string | null }>('applyHosting', { note, organization }),
   setBoard: (show: BoardShow, nickname: string | null, everyClass = true) => call<HubStatus>('setBoard', { show, nickname, everyClass }),
   importable: () => call<ImportableSet[]>('importable'),
   importSet: (id: string) => call<{ title: string; questions: NewQuestion[]; skipped: number }>('importSet', { id }),

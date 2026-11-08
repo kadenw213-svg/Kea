@@ -9,6 +9,8 @@ import { act, clock, fmtDay, fmtWhen, todayIso, useHub, useMyId, useWork, addDay
 import { Card, Empty, Loading, Problem, Seg } from './ui';
 import type { Member, Org, Shift, Swap } from './types';
 import { can } from './types';
+import { MyShiftCode } from './PayCodes';
+import type { MyPay } from './payRules';
 
 export function MySchedule({ org }: { org: Org }) {
   const [view, setView] = useState<'mine' | 'team'>('mine');
@@ -18,6 +20,8 @@ export function MySchedule({ org }: { org: Org }) {
   const to = new Date(Date.now() + 70 * 86400_000).toISOString();
   const shifts = useHub<{ shifts: Shift[] }>(`/v1/orgs/${org.id}/my-shifts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
   const swaps = useHub<{ swaps: Swap[] }>(`/v1/orgs/${org.id}/swaps`);
+  // My own pay codes, for the code on each shift (only codes I was given; none on a server without pay codes).
+  const pay = useHub<MyPay>(`/v1/orgs/${org.id}/me/pay`);
   const [events, setEvents] = useState<WorkEvent[] | null>(null);
   const [offline, setOffline] = useState<{ at: number | null } | null>(null);
   const version = useWork((s) => s.version);
@@ -158,6 +162,7 @@ export function MySchedule({ org }: { org: Org }) {
                       <span className="wk-shift-what">{s.positionName}</span>
                       {s.note && <span className="muted">{s.note}</span>}
                       <span className="wk-spacer" />
+                      {!offline && !sw && <MyShiftCode org={org} shift={s} my={pay.data} />}
                       {offline ? null : sw ? (
                         <>
                           <span className="wk-pill warn">{sw.status === 'claimed' ? `${sw.claimantName} is taking it` : 'Offered'}</span>

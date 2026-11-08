@@ -1101,7 +1101,7 @@ function register() {
       }
       if (!/^https?:$/.test(u.protocol)) throw new HubError('Use an https:// address.', 400);
       // Plain http only to this computer itself: anywhere else, someone on the network could pose as the Hub.
-      if (u.protocol === 'http:' && !/^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u.hostname)) throw new HubError('Use the Hub’s https:// address (it looks like https://name.tailnet.ts.net). Plain http only works for a Hub on this computer.', 400);
+      if (u.protocol === 'http:' && !/^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u.hostname)) throw new HubError('Use the Kea account server’s https:// address (it looks like https://name.tailnet.ts.net). Plain http only works for one on this computer.', 400);
       next = u.origin;
     }
     const target = next || String(process.env.KEA_HUB_URL || DEFAULT_HUB_URL).replace(/\/+$/, '');

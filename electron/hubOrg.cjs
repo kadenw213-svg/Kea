@@ -1,8 +1,11 @@
-// Work mode: organizations (join codes, availability, schedules, certs, roles, the time clock, the to-do box), on the
-// Kea account server (Hub 0.5, signed in with the same session as the rest of Kea: hub.cjs) and on any KeaS servers
-// this account joined (servers.cjs, signed in with a server pass). The page calls org routes as if there were one
-// server; each call goes to the server that holds that organization, and the lists (organizations, to-dos, the
-// calendar) are put together from all of them. Only org routes pass; payroll never goes through here.
+// Work mode: organizations (join codes, availability, schedules, certs, roles, the time clock, pay codes, the to-do
+// box), on the Kea account server and on any KeaS servers this account joined (servers.cjs, signed in with a server
+// pass). The Kea account server is an org server like any other whose session is the account session itself (hub.cjs),
+// with no pass (protocol section 5, "Hosted organizations"); one that lists 'hostedOrgs' in /v1/health hosts orgs only
+// from an approved application (POST /v1/apply), and an older one (Hub 0.5) makes them with POST /v1/orgs. The page
+// calls org routes as if there were one server; each call goes to the server that holds that organization, and the
+// lists (organizations, to-dos, the calendar) are put together from all of them. Only org routes and applications
+// pass; payroll (the pay feed, SSNs, pay runs) never goes through here.
 const { app, ipcMain, dialog, BrowserWindow, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -33,6 +36,27 @@ const serverList = () => {
     return [];
   }
 };
+/**
+ * What the Kea account server says it can do (GET /v1/health features), kept for 10 minutes. Offline: what it said
+ * last (or nothing yet). An older server without the list answers [].
+ */
+let feats = { at: 0, list: null };
+async function accountFeatures() {
+  if (feats.list && Date.now() - feats.at < 10 * 60_000) return feats.list;
+  try {
+    const r = await hub.req('GET', '/v1/health', undefined, { auth: false });
+    feats = { at: Date.now(), list: Array.isArray(r?.features) ? r.features.map(String) : [] };
+  } catch (e) {
+    if (e.status === 0) return feats.list ?? [];
+    feats = { at: Date.now(), list: [] };
+  }
+  return feats.list;
+}
+/** What Work needs to know about the Kea account server: does it host orgs (made by application), take applications. */
+async function accountInfo() {
+  const f = await accountFeatures();
+  return { hostedOrgs: f.includes('hostedOrgs'), applications: f.includes('applications') || f.includes('hostedOrgs') };
+}
 const send = (src, method, p, body) => (src === HUB ? hub.req(method, p, body) : servers().req(src, method, p, body));
 /** Every source at once: [{ src, ok, value | error }]. */
 const all = (method, p, body) => Promise.all(sources().map((src) => send(src, method, p, body).then((value) => ({ src, ok: true, value }), (error) => ({ src, ok: false, error }))));
@@ -46,13 +70,14 @@ const sortTodo = (items) =>
 
 /** My organizations on every server, each with the server it's on (null: the Kea account server). */
 async function listOrgs() {
-  const res = await all('GET', '/v1/orgs');
+  const [res, account] = await Promise.all([all('GET', '/v1/orgs'), hub.signedIn() ? accountInfo().catch(() => null) : null]);
   const orgs = [];
   for (const r of res) {
     if (!r.ok) continue;
     for (const o of r.value.orgs || []) {
       orgSource.set(o.id, r.src);
-      orgs.push({ ...o, server: r.src === HUB ? null : sourceInfo.get(r.src) ?? { id: r.src } });
+      // (hosted: on the Kea account server, signed in with the account itself.)
+      orgs.push({ ...o, server: r.src === HUB ? null : sourceInfo.get(r.src) ?? { id: r.src }, ...(r.src === HUB && account?.hostedOrgs ? { hosted: true } : {}) });
     }
   }
   // (A Kea account server without organizations answers 404: that's simply none.)
@@ -61,6 +86,7 @@ async function listOrgs() {
   const by = new Map(serverList().map((s) => [s.serverId, s]));
   return {
     orgs,
+    account,
     servers: [...by.values()].map((s) => {
       const r = res.find((x) => x.src === s.serverId);
       return { ...s, offline: !!r && !r.ok && r.error.status === 0, signedOut: s.signedOut || (!!r && !r.ok && !!r.error.data?.signedOut), error: r && !r.ok && r.error.status !== 0 ? r.error.message : null };
@@ -91,8 +117,8 @@ async function route(m, p, body) {
   if (m === 'GET' && /^\/v1\/orgs(\?|$)/.test(p)) return listOrgs();
   if (m === 'GET' && /^\/v1\/todo(\?|$)/.test(p)) return todo();
   if (m === 'POST' && p === '/v1/todo/snooze') return send(todoSource.get(body?.key) ?? HUB, m, p, body);
-  // Joining with a plain code, and making an organization: on the Kea account server (a join link goes through
-  // servers:join instead).
+  // Joining with a plain code, making an organization (an older account server) and applications (to host an
+  // organization or list classes): on the Kea account server. A join link goes through servers:join instead.
   if (orgId && !['join'].includes(orgId)) return send(await sourceOf(decodeURIComponent(orgId)), m, p, body);
   return send(HUB, m, p, body);
 }
@@ -104,8 +130,11 @@ const ALLOWED = [
   /^\/v1\/orgs-export$/,
   /^\/v1\/todo(\/snooze)?(\?|$)/,
   /^\/v1\/calendar(\?|$)/,
+  /^\/v1\/apply$/,
 ];
-const ok = (p) => typeof p === 'string' && p.length < 2000 && !p.includes('..') && ALLOWED.some((re) => re.test(p));
+// (The pay feed is for the payroll vault, never for Kea.)
+const PAYROLL = /^\/v1\/orgs\/[^/?]+\/pay-feed(\?|$)/;
+const ok = (p) => typeof p === 'string' && p.length < 2000 && !p.includes('..') && ALLOWED.some((re) => re.test(p)) && !PAYROLL.test(p);
 
 const wrap = (fn) => async (_e, arg) => {
   try {
@@ -114,7 +143,7 @@ const wrap = (fn) => async (_e, arg) => {
     return { ok: false, error: String(e.message || e), status: e.status ?? null, data: e.data ?? null };
   }
 };
-const refuse = () => Object.assign(new Error('Kea can’t send that to the Hub.'), { status: 400 });
+const refuse = () => Object.assign(new Error('Kea can’t send that to an organization’s server.'), { status: 400 });
 
 // Published shifts and org class sessions, kept on this PC so the calendar has them when the Hub is unreachable. The
 // copy belongs to the account that fetched it: anyone else signed in here never sees it (hub.cjs also deletes it on
@@ -290,4 +319,4 @@ function calendarItems({ from, to } = {}) {
     .filter((i) => i.date <= (to || '9999-99-99') && (i.dateEnd || i.date) >= (from || '0000-00-00'));
 }
 
-module.exports = { register, events, toIcs, calendarItems, route, listOrgs };
+module.exports = { register, events, toIcs, calendarItems, route, listOrgs, accountInfo, _resetFeatures: () => (feats = { at: 0, list: null }) };

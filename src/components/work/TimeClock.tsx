@@ -1,4 +1,5 @@
-// Work → Time: clocking in and out, today's status, my timecard, missed-punch requests and time off; and for those
+// Work → Time: clocking in and out (at one of my pay codes), today's status, my timecard, My pay (PayCodes.tsx),
+// missed-punch requests and time off; and for those
 // whose roles allow it, everyone's timecards to approve, missed punches and time off to decide, and who's in today.
 // Everything goes to the organization's own routes (org/clock.mjs in KeaS); the server checks each ability again.
 import { useEffect, useMemo, useState } from 'react';
@@ -9,15 +10,19 @@ import { act, addDays, bump, clock, fmtDay, post, todayIso, useHub, useMyId } fr
 import { Advanced, Card, Empty, Field, Loading, Problem, Seg } from './ui';
 import { can, canAny } from './types';
 import type { Org, Shift } from './types';
+import { CodePicker, MyPayCard } from './PayCodes';
+import { clockInCode, hasChoice, pickable, pickedCode } from './payRules';
+import type { MyPay } from './payRules';
 
 export interface ClockStatus {
   clockedIn: boolean;
-  punch: { id: string; type: 'in' | 'out'; at: string; shiftId: string | null } | null;
+  punch: { id: string; type: 'in' | 'out'; at: string; shiftId: string | null; payCodeId?: string | null } | null;
   canClock: boolean;
   period: { start: string; end: string };
 }
 interface TodayShift {
   shiftId: string;
+  payCodeId?: string | null;
   accountId: string;
   name: string | null;
   positionName: string | null;
@@ -78,9 +83,9 @@ const STATE: Record<TodayShift['state'], string> = { upcoming: 'Coming up', late
 const noClock = (e: { status: number | null; message: string }) => e.status === 404 && e.message === 'Not found.';
 
 /** Clock in or out (the server finds the shift, and says so when there's none and the organization needs one). */
-export async function punch(org: Pick<Org, 'id' | 'name'>, type: 'in' | 'out') {
+export async function punch(org: Pick<Org, 'id' | 'name'>, type: 'in' | 'out', payCodeId?: string | null) {
   try {
-    const r = await post<{ minutesLate: number; late: boolean; shift: unknown }>(`/v1/orgs/${org.id}/clock`, { type, source: 'app' });
+    const r = await post<{ minutesLate: number; late: boolean; shift: unknown }>(`/v1/orgs/${org.id}/clock`, { type, source: 'app', ...(type === 'in' && payCodeId ? { payCodeId } : {}) });
     toast(type === 'out' ? 'Clocked out.' : r.late ? `Clocked in, ${r.minutesLate} min late.` : 'Clocked in.');
     bump();
     return true;
@@ -94,18 +99,36 @@ export async function punch(org: Pick<Org, 'id' | 'name'>, type: 'in' | 'out') {
 export function ClockCard({ org, compact = false }: { org: Org; compact?: boolean }) {
   const st = useHub<ClockStatus>(`/v1/orgs/${org.id}/clock`);
   const today = useHub<{ date: string; shifts: TodayShift[] }>(`/v1/orgs/${org.id}/clock/today`);
+  // My own codes (a server without pay codes: none, and no picker).
+  const pay = useHub<MyPay>(`/v1/orgs/${org.id}/me/pay`);
   const me = useMyId();
   const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState<string | null>(null);
+  // (Today's list has no pay codes: the shift's own code comes from my shifts, only when there's a choice to show.)
+  const dayFrom = useMemo(() => new Date(Date.now() - 12 * 3600e3).toISOString(), []);
+  const dayTo = useMemo(() => new Date(Date.now() + 24 * 3600e3).toISOString(), []);
+  const dayShifts = useHub<{ shifts: Shift[] }>(hasChoice(pickable(pay.data)) && !compact ? `/v1/orgs/${org.id}/my-shifts?from=${encodeURIComponent(dayFrom)}&to=${encodeURIComponent(dayTo)}` : null);
   if (st.error) return compact ? null : <Problem error={st.error} retry={st.reload} />;
   if (!st.data) return compact ? null : <Loading />;
   if (!st.data.canClock) return null;
   const mine = (today.data?.shifts ?? []).filter((s) => s.accountId === me);
   const next = mine.find((s) => s.state === 'upcoming' || s.state === 'late') ?? mine[0] ?? null;
   const since = st.data.clockedIn && st.data.punch ? clock(st.data.punch.at, org.tz) : null;
+  const codes = pickable(pay.data);
+  const choice = hasChoice(codes);
+  const nextCode = next?.payCodeId ?? dayShifts.data?.shifts.find((x) => x.id === next?.shiftId)?.payCodeId ?? null;
+  // Not clocked in: the code to clock in with (the shift's when it's mine, else my default). Clocked in: the code of
+  // this stretch, which I can switch.
+  const shown = st.data.clockedIn ? pickedCode(codes, st.data.punch?.payCodeId) : pickedCode(codes, code ?? nextCode, pay.data?.defaultCodeId);
   const go = async () => {
     setBusy(true);
-    await punch(org, st.data!.clockedIn ? 'out' : 'in');
+    await punch(org, st.data!.clockedIn ? 'out' : 'in', clockInCode(codes, code, nextCode));
+    setCode(null);
     setBusy(false);
+  };
+  const switchTo = async (id: string) => {
+    if (!st.data?.clockedIn || !st.data.punch) return setCode(id);
+    if (id !== shown && (await act(`/v1/orgs/${org.id}/punches/${st.data.punch.id}/pay-code`, { payCodeId: id }, 'Pay code changed.'))) st.reload();
   };
   return (
     <div className="wk-clock">
@@ -115,8 +138,10 @@ export function ClockCard({ org, compact = false }: { org: Org; compact?: boolea
         <span className="muted af-small">
           {compact ? `${org.name} · ` : ''}
           {next ? `${next.positionName ?? 'Shift'} ${clock(next.start, org.tz)}–${clock(next.end, org.tz)}${next.state === 'late' && !since ? ` · ${next.minutesLate} min past start` : ''}` : 'No shift today'}
+          {!choice && codes.length === 1 ? ` · ${codes[0].name}` : ''}
         </span>
       </span>
+      {choice && <CodePicker codes={codes} value={shown} onChange={switchTo} disabled={busy} title={st.data.clockedIn ? 'The pay code you’re clocked in at' : 'The pay code to clock in at'} />}
       <button className={`btn ${st.data.clockedIn ? '' : 'primary'} wk-clock-btn`} disabled={busy} onClick={go}>
         {st.data.clockedIn ? <LogOut size={15} /> : <LogIn size={15} />} {st.data.clockedIn ? 'Clock out' : 'Clock in'}
       </button>
@@ -149,6 +174,7 @@ export function TimeTab({ org }: { org: Org }) {
             </Card>
           )}
           <MyTimecard org={org} />
+          <MyPayCard org={org} />
           {can(org, 'clock.self') && <MissedPunch org={org} />}
           <MyTimeOff org={org} />
         </>

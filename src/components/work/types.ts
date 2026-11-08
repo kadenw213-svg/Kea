@@ -94,6 +94,10 @@ export interface Org {
   roles?: RoleGrant[];
   /** The KeaS server it's on (null: the Kea account server). */
   server?: { id: string; name: string | null; url?: string } | null;
+  /** Hosted on the Kea account server (signed in with the Kea account itself). */
+  hosted?: boolean;
+  /** The server answered that it no longer has this organization. */
+  removed?: boolean;
 }
 export interface Member {
   id: string;
@@ -339,6 +343,8 @@ export interface Shift {
   note: string | null;
   forced: boolean;
   swap?: { id: string; status: string } | null;
+  /** The pay code it's paid at (a server with pay codes). */
+  payCodeId?: string | null;
 }
 export interface Schedule {
   id: string;

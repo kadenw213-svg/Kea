@@ -179,7 +179,7 @@ async function moreQuestions(info) {
   const db = require('./db.cjs');
   const { matchCourse } = require('./sharedMaterial.cjs');
   const course = matchCourse((await db.courses(P.db, P.textbooks, {})).map((c) => ({ id: c.id, code: c.code })), code);
-  if (!course) throw new Error(`Their Kea folder has no class ${code} yet. Their Kea has to have the class set up and synced to the Kea Hub first.`);
+  if (!course) throw new Error(`Their Kea folder has no class ${code} yet. Their Kea has to have the class set up and synced to Kea Cloud first.`);
 
   // The section's shared pool for this chapter: questions classmates already got aren't written again.
   const pool = [];

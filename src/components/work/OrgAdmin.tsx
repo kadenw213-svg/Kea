@@ -8,6 +8,8 @@ import { formatPhone, telHref } from '../../lib/phone';
 import { Advanced, Card, Check, Empty, Field, Loading, Num, Problem, Seg } from './ui';
 import { can, canAny, hasRoles, mayChange } from './types';
 import { RolesTab } from './Roles';
+import { MemberCodes, PayCodesAdmin, PersonCodes } from './PayCodes';
+import { orgGone, seesCodeList } from './payRules';
 import type { BudgetPlan, BudgetRow, Department, JoinCode, Member, Org, OrgRole, OrgSettings, Policy, Role, Structure, Swap } from './types';
 import { SupporterBadge } from '../scholar/HubAccount';
 import type { JoinedServer } from '../../lib/api';
@@ -27,14 +29,14 @@ function VerifyEmailButton({ org, m }: { org: Org; m: Member }) {
       className="btn sm"
       title="Only if you know this email address is theirs"
       onClick={async () => {
-        if ((await ask(`Verify ${m.email ?? m.name}?`, 'Only if you know this email address really is theirs. It counts everywhere on the Kea Hub, payroll too.', [{ id: 'no', label: 'Cancel' }, { id: 'yes', label: 'Verify', primary: true }])) !== 'yes') return;
+        if ((await ask(`Verify ${m.email ?? m.name}?`, 'Only if you know this email address really is theirs. It counts everywhere in this organization, payroll too.', [{ id: 'no', label: 'Cancel' }, { id: 'yes', label: 'Verify', primary: true }])) !== 'yes') return;
         try {
           await post(`/v1/orgs/${org.id}/members/${m.id}/verify-email`);
           toast(`${m.name}’s email is verified.`);
           bump();
         } catch (e: any) {
           // (A Kea Hub from before this answers a route it doesn't have with a bare "Not found.")
-          toast((e.status === 404 || e.status === 405) && e.message === 'Not found.' ? 'This Kea Hub can’t verify emails yet. It needs an update.' : e.message, 'error');
+          toast((e.status === 404 || e.status === 405) && e.message === 'Not found.' ? 'This server can’t verify emails yet. It needs an update.' : e.message, 'error');
         }
       }}
     >
@@ -43,7 +45,7 @@ function VerifyEmailButton({ org, m }: { org: Org; m: Member }) {
   );
 }
 
-type PeopleView = 'people' | 'approvals' | 'codes' | 'roles';
+type PeopleView = 'people' | 'approvals' | 'codes' | 'roles' | 'paycodes';
 export function PeopleTab({ org }: { org: Org }) {
   const focus = useWork((s) => s.focus);
   // Each part only for those whose roles allow it (the Roles editor too, on a server with custom roles).
@@ -53,18 +55,19 @@ export function PeopleTab({ org }: { org: Org }) {
       ['approvals', 'Approvals', canAny(org, ['people.approve', 'swaps.decide', 'forms.manage'])],
       ['codes', 'Join codes', can(org, 'codes.make')],
       ['roles', 'Roles', hasRoles(org) && canAny(org, ['roles.manage', 'roles.assign'])],
+      ['paycodes', 'Pay codes', can(org, 'paycodes.manage', null)],
     ] as [PeopleView, string, boolean][]
   ).filter((v) => v[2]);
   const [tab, setTab] = useState<PeopleView>(focus?.view === 'approvals' ? 'approvals' : 'people');
   useEffect(() => {
-    if (focus?.view === 'approvals' || focus?.view === 'roles') setTab(focus.view);
+    if (focus?.view === 'approvals' || focus?.view === 'roles' || focus?.view === 'paycodes') setTab(focus.view);
   }, [focus?.view]);
   const cur = views.some((v) => v[0] === tab) ? tab : 'people';
   return (
     <div>
       {views.length > 1 && <Seg value={cur} onChange={setTab} options={views.map(([id, label]) => [id, label] as [PeopleView, string])} />}
       <div className="wk-gap" />
-      {cur === 'people' ? <People org={org} onRoles={() => setTab('roles')} /> : cur === 'approvals' ? <Approvals org={org} /> : cur === 'codes' ? <Codes org={org} /> : <RolesTab org={org} />}
+      {cur === 'people' ? <People org={org} onRoles={() => setTab('roles')} /> : cur === 'approvals' ? <Approvals org={org} /> : cur === 'codes' ? <Codes org={org} /> : cur === 'paycodes' ? <PayCodesAdmin org={org} /> : <RolesTab org={org} />}
     </div>
   );
 }
@@ -76,6 +79,10 @@ function People({ org, onRoles }: { org: Org; onRoles(): void }) {
   if (error) return <Problem error={error} retry={reload} />;
   if (!data) return <Loading />;
   const s = st.data;
+  // (A pay codes column for those who may see people's codes (giving them, rates, scheduling, timecards): names, and
+  // rates only with rates.view.)
+  const codesCol = seesCodeList(org);
+  const cols = codesCol ? 7 : 6;
   return (
     <table className="wk-table">
       <thead>
@@ -85,13 +92,14 @@ function People({ org, onRoles }: { org: Org; onRoles(): void }) {
           <th>Department</th>
           <th>Positions</th>
           <th>Hours wanted</th>
+          {codesCol && <th>Pay codes</th>}
           <th />
         </tr>
       </thead>
       <tbody>
         {data.members.map((m) =>
           edit === m.id ? (
-            <EditMember key={m.id} org={org} m={m} s={s} done={() => setEdit(null)} onRoles={onRoles} />
+            <EditMember key={m.id} org={org} m={m} s={s} cols={cols} done={() => setEdit(null)} onRoles={onRoles} />
           ) : (
             <tr key={m.id}>
               <td>
@@ -113,9 +121,14 @@ function People({ org, onRoles }: { org: Org; onRoles(): void }) {
               <td>{s?.departments.find((d) => d.id === m.departmentId)?.name ?? '—'}</td>
               <td>{m.positionIds.map((p) => s?.positions.find((x) => x.id === p)?.name).filter(Boolean).join(', ') || '—'}</td>
               <td>{wantText(m.desiredMin, m.desiredMax) ?? '—'}</td>
+              {codesCol && (
+                <td>
+                  <PersonCodes org={org} m={m} />
+                </td>
+              )}
               <td className="wk-nowrap">
                 <VerifyEmailButton org={org} m={m} />
-                {(mayChange(org, m) || mayChange(org, m, 'people.birthdate') || mayChange(org, m, 'rates.assign')) && (
+                {(mayChange(org, m) || mayChange(org, m, 'people.birthdate') || mayChange(org, m, 'rates.assign') || (can(org, 'paycodes.assign', m.departmentId) && (!m.you || org.role === 'owner'))) && (
                   <button className="btn sm" onClick={() => setEdit(m.id)}>
                     Edit
                   </button>
@@ -142,7 +155,7 @@ function People({ org, onRoles }: { org: Org; onRoles(): void }) {
   );
 }
 
-function EditMember({ org, m, s, done, onRoles }: { org: Org; m: Member; s: Structure | null; done(): void; onRoles(): void }) {
+function EditMember({ org, m, s, cols, done, onRoles }: { org: Org; m: Member; s: Structure | null; cols: number; done(): void; onRoles(): void }) {
   const [role, setRole] = useState(m.role);
   const [dept, setDept] = useState(m.departmentId ?? '');
   const [pos, setPos] = useState<string[]>(m.positionIds);
@@ -157,7 +170,7 @@ function EditMember({ org, m, s, done, onRoles }: { org: Org; m: Member; s: Stru
   const roles: Role[] = org.role === 'owner' ? ['owner', 'admin', 'manager', 'member'] : ['manager', 'member'];
   return (
     <tr className="wk-editing">
-      <td colSpan={6}>
+      <td colSpan={cols}>
         <div className="wk-form-grid">
           {hasRoles(org) ? (
             <Field label="Roles">
@@ -200,7 +213,7 @@ function EditMember({ org, m, s, done, onRoles }: { org: Org; m: Member; s: Stru
             </Field>
           )}
           {rateOk && (
-            <Field label="Cost per hour" hint="For budgets. Pay itself stays in payroll, never on the Hub.">
+            <Field label="Cost per hour" hint="For budgets only. Pay comes from pay codes and payroll.">
               <Num value={rate} onChange={setRate} step={0.25} />
             </Field>
           )}
@@ -214,6 +227,7 @@ function EditMember({ org, m, s, done, onRoles }: { org: Org; m: Member; s: Stru
             ))}
           </div>
         </Field>
+        <MemberCodes org={org} m={m} />
         <div className="wk-actions">
           <button className="btn sm" onClick={done}>
             Cancel
@@ -940,15 +954,18 @@ function PolicyRow({ org, p }: { org: Org; p: Policy }) {
  */
 export async function refreshOrgs() {
   try {
-    const r = await get<{ orgs: Org[]; servers?: JoinedServer[] }>('/v1/orgs');
+    const r = await get<{ orgs: Org[]; servers?: JoinedServer[]; account?: { hostedOrgs: boolean; applications: boolean } | null }>('/v1/orgs');
+    useWork.setState({ account: r.account ?? null });
     const orgs = await Promise.all(
       r.orgs.map(async (o) => {
         if (o.memberStatus !== 'active') return o;
         try {
           const d = await get<{ org: Org; me?: { abilities?: string[]; scopes?: Org['scopes']; roles?: Org['roles'] } }>(`/v1/orgs/${o.id}`);
-          return { ...o, ...d.org, server: o.server ?? null, ...(Array.isArray(d.me?.abilities) ? { abilities: d.me!.abilities, scopes: d.me!.scopes ?? {}, roles: d.me!.roles ?? [] } : {}) };
-        } catch {
-          return o;
+          return { ...o, ...d.org, server: o.server ?? null, hosted: o.hosted, ...(Array.isArray(d.me?.abilities) ? { abilities: d.me!.abilities, scopes: d.me!.scopes ?? {}, roles: d.me!.roles ?? [] } : {}) };
+        } catch (e: any) {
+          // A suspended organization answers 403 (calmly shown as suspended); one the server no longer has, 404.
+          const gone = orgGone(e);
+          return gone === 'suspended' ? { ...o, status: 'suspended' as const } : gone === 'removed' ? { ...o, removed: true } : o;
         }
       })
     );

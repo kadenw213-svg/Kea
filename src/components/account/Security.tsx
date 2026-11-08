@@ -445,7 +445,7 @@ export function YourData({ status }: { status: HubStatus }) {
         <div className="acct-row-block">
           <div className="acct-row">
             <Trash2 size={16} />
-            <span className="acct-row-main">Delete your Kea account and everything the Hub keeps for it.</span>
+            <span className="acct-row-main">Delete your Kea account and everything Kea keeps online for it.</span>
             {!deleting && (
               <button className="btn sm danger" onClick={() => setDeleting(true)}>
                 Delete my account
@@ -465,7 +465,7 @@ export function YourData({ status }: { status: HubStatus }) {
               }}
             >
               <p className="acct-note">
-                <b>This can’t be undone.</b> Your classes, study progress, organization memberships, availability, Kea Cloud files and notifications are deleted from the Hub. If you’re the only owner of an organization or class that still has members, the Hub says so and nothing is deleted: make someone else an owner first. Download your data first if you want a copy.
+                <b>This can’t be undone.</b> Your classes, study progress, organization memberships, availability, Kea Cloud files and notifications are deleted online. If you’re the only owner of an organization or class that still has members, Kea says so and nothing is deleted: make someone else an owner first. Download your data first if you want a copy.
               </p>
               <label>
                 <span>Your password</span>

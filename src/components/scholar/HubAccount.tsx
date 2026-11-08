@@ -1475,7 +1475,7 @@ function MoreQuestions({ jobs, onAsked }: { jobs: HubScanJob[]; onAsked(): void 
             title="For classmates: with it they get into this course section without waiting for you to let them in"
             onClick={async () => {
               const r = await api.hub.sectionCode({ courseId: chosen.courseId });
-              if (!r.ok) return toast(r.status === 404 ? 'You’re not in this course section on the Kea Hub yet. Ask for questions first.' : r.error, 'error');
+              if (!r.ok) return toast(r.status === 404 ? 'You’re not in this course section on Kea yet. Ask for questions first.' : r.error, 'error');
               await navigator.clipboard.writeText(r.value.code).catch(() => {});
               toast(`Section code ${r.value.code} copied. Share it only with classmates.`, 'success');
             }}

@@ -39,12 +39,14 @@ interface WorkState {
   orgs: Org[] | null;
   /** KeaS servers this account joined (offline, or signed out: shown above the organizations). */
   servers: JoinedServer[];
+  /** What the Kea account server does: hosts organizations (made by application), takes applications. */
+  account: { hostedOrgs: boolean; applications: boolean } | null;
   /** A join link opened from outside Kea, waiting for the Join box. */
   joinLink: string | null;
   orgId: string | null;
   tab: Tab;
   /** What to open inside a tab (a form, a schedule, a swap...). */
-  focus: { formId?: string; scheduleId?: string; swapId?: string; view?: string } | null;
+  focus: { formId?: string; scheduleId?: string; swapId?: string; view?: string; shiftId?: string } | null;
   setOrgs(o: Org[], servers?: JoinedServer[]): void;
   go(orgId: string | null, tab?: Tab, focus?: WorkState['focus']): void;
 }
@@ -60,6 +62,7 @@ export const useWork = create<WorkState>((set) => ({
   version: 0,
   orgs: null,
   servers: [],
+  account: null,
   joinLink: null,
   orgId: (() => {
     try {

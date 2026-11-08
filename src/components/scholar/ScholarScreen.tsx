@@ -1935,7 +1935,7 @@ function AddClass({ first }: { first: boolean }) {
           <button className="add-card" onClick={() => useScholar.getState().set({ view: { name: 'hub' } })}>
             <Users size={26} />
             <div className="add-name">With a class code</div>
-            <div className="add-desc">Your instructor gave you a code or an invite link for a Kea Hub class. Its sessions, study sets and leaderboard come with it.</div>
+            <div className="add-desc">Your instructor gave you a code or an invite link for a class on Kea. Its sessions, study sets and leaderboard come with it.</div>
           </button>
         )}
         <button className="add-card" onClick={() => setGate(true)}>

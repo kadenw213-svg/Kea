@@ -48,11 +48,13 @@ test('only org routes go to the Hub', async () => {
     const r = await call(p.includes('join') || p.includes('snooze') ? 'POST' : 'GET', p, {});
     assert.equal(r.ok, true, p);
   }
-  for (const [m, p] of [['GET', '/v1/me'], ['GET', '/v1/files/kea/x'], ['POST', '/v1/auth/logout'], ['GET', '/v1/orgs/../me'], ['DELETE', '/v1/orgs'], ['GET', '/v1/orgsX'], ['GET', 'http://evil/v1/orgs']]) {
+  for (const [m, p] of [['GET', '/v1/me'], ['GET', '/v1/files/kea/x'], ['POST', '/v1/auth/logout'], ['GET', '/v1/orgs/../me'], ['DELETE', '/v1/orgs'], ['GET', '/v1/orgsX'], ['GET', 'http://evil/v1/orgs'], ['GET', '/v1/orgs/abc/pay-feed?from=2026-11-01&to=2026-11-14'], ['GET', '/v1/applyX']]) {
     const r = await call(m, p);
     assert.equal(r.ok, false, `${m} ${p}`);
   }
-  assert.ok(sent.every((s) => s.p.startsWith('/v1/orgs') || s.p.startsWith('/v1/todo') || s.p.startsWith('/v1/calendar')));
+  // (/v1/health: what the account server can do, asked once with the list of organizations.)
+  assert.ok(sent.every((s) => s.p.startsWith('/v1/orgs') || s.p.startsWith('/v1/todo') || s.p.startsWith('/v1/calendar') || s.p === '/v1/apply' || s.p === '/v1/health'));
+  assert.ok(!sent.some((s) => s.p.includes('pay-feed')));
 });
 
 test('calendar file: one event per shift, times in UTC, text escaped', () => {

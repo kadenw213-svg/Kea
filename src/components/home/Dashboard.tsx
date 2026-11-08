@@ -199,7 +199,7 @@ function Classes({ courses, hubList: shownHub }: { courses: ScholarCourse[]; hub
               <span className="dmain">
                 <span className="dtitle">{c.title}</span>
                 <span className="dsub">
-                  Kea Hub · {c.role === 'instructor' ? 'You teach' : c.role === 'ta' ? 'Assistant' : `${c.members} member${c.members === 1 ? '' : 's'}`}
+                  Kea · {c.role === 'instructor' ? 'You teach' : c.role === 'ta' ? 'Assistant' : `${c.members} member${c.members === 1 ? '' : 's'}`}
                 </span>
               </span>
             </button>
