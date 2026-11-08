@@ -514,7 +514,9 @@ function SignInOnline() {
     >
       <h3 className="hub-title">Sign in online</h3>
       <p className="muted acct-note">
-        {status.onlineNote === 'password'
+        {status.moved?.kind === 'moved' && status.moved.to === status.url
+          ? 'Your Kea account moved to a new address. Sign in once to continue.'
+          : status.onlineNote === 'password'
           ? 'Your password was changed online. Sign in with the new one to use Kea Cloud, classes and work again.'
           : status.onlineNote === 'code'
             ? 'Your online account asks for a two-step code. Sign in once more to use Kea Cloud, classes and work.'
@@ -1159,6 +1161,64 @@ export function TermsGate() {
             }}
           >
             Agree to the updated terms
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Shown once when the Kea account server moved to a new address (the owner's Hub to KeaC). Checked: Kea uses the new
+ * address and the person signs in online once there (the account on this computer, and its offline password, stay).
+ * Not checked: Kea kept the old address, and Advanced says where the old one said it went.
+ */
+export function MovedNotice() {
+  const status = useHubStatus();
+  const m = status?.moved;
+  if (!m || m.seen) return null;
+  const close = async () => {
+    const r = await api.hub.movedSeen();
+    if (r.ok) setHubStatus(r.value);
+  };
+  return (
+    <div className="scrim">
+      <div className="dialog">
+        {m.kind === 'moved' ? (
+          <>
+            <h2>Your Kea account moved</h2>
+            <p>Your Kea account moved to a new address. Sign in once to continue.</p>
+            <p className="muted">Everything on this computer stays, and your password still signs in here without a connection.</p>
+          </>
+        ) : (
+          <>
+            <h2>Your Kea account server moved</h2>
+            <p>Your Kea account server moved, but the new address couldn’t be checked. Kea kept using {m.from} and tries again later.</p>
+          </>
+        )}
+        <details className="gate-advanced">
+          <summary>Advanced</summary>
+          <p className="muted acct-note">
+            Old address: {m.from}
+            <br />
+            New address: {m.to || 'not given'}
+            {m.reason && (
+              <>
+                <br />
+                {m.reason}
+              </>
+            )}
+          </p>
+          {m.kind === 'unchecked' && <HubAddress />}
+        </details>
+        <div className="dialog-actions">
+          {m.kind === 'moved' && status?.account && !status.signedIn && (
+            <button className="btn" onClick={() => (close(), openAccount())}>
+              <LogIn size={14} /> Sign in
+            </button>
+          )}
+          <button className="btn primary" onClick={close}>
+            OK
           </button>
         </div>
       </div>

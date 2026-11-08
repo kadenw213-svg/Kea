@@ -12,7 +12,7 @@ import { can, canAny } from './types';
 import type { Org, Shift } from './types';
 import { CodePicker, MyPayCard } from './PayCodes';
 import { clockInCode, hasChoice, pickable, pickedCode } from './payRules';
-import type { MyPay } from './payRules';
+import type { MyPay, PersonCode } from './payRules';
 
 export interface ClockStatus {
   clockedIn: boolean;
@@ -580,49 +580,80 @@ function TeamTime({ org }: { org: Org }) {
  * today's status. Organizations on a server without the time clock are left out.
  */
 export function HomeClock() {
-  const [list, setList] = useState<{ org: Pick<Org, 'id' | 'name' | 'tz'>; st: ClockStatus }[] | null>(null);
+  const [list, setList] = useState<{ org: Pick<Org, 'id' | 'name' | 'tz'>; st: ClockStatus; codes: PersonCode[]; defaultCodeId: string | null; shiftCode: string | null }[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // The pay code picked to clock in at, per organization (only shown when there's a choice, as on the Time tab).
+  const [picked, setPicked] = useState<Record<string, string>>({});
   const [n, setN] = useState(0);
+  const me = useMyId();
   useEffect(() => {
     (async () => {
       const r = await api.hubOrg.call<{ orgs: Org[] }>('GET', '/v1/orgs');
       if (!r.ok) return setList([]);
-      const out: { org: Org; st: ClockStatus }[] = [];
+      const out: NonNullable<typeof list> = [];
       await Promise.all(
         r.value.orgs
           .filter((o) => o.memberStatus === 'active' && o.status === 'active')
           .map(async (o) => {
             const c = await api.hubOrg.call<ClockStatus>('GET', `/v1/orgs/${o.id}/clock`);
-            if (c.ok && c.value.canClock) out.push({ org: o, st: c.value });
+            if (!c.ok || !c.value.canClock) return;
+            // My own codes (a server without pay codes: none, and no picker).
+            const pay = await api.hubOrg.call<MyPay>('GET', `/v1/orgs/${o.id}/me/pay`);
+            const codes = pickable(pay.ok ? pay.value : null);
+            // With a choice: today's shift of mine says which code it's at.
+            let shiftCode: string | null = null;
+            if (hasChoice(codes) && !c.value.clockedIn) {
+              const t = await api.hubOrg.call<{ shifts: TodayShift[] }>('GET', `/v1/orgs/${o.id}/clock/today`);
+              const mine = t.ok ? t.value.shifts.filter((s) => s.accountId === me) : [];
+              shiftCode = (mine.find((s) => s.state === 'upcoming' || s.state === 'late') ?? mine[0])?.payCodeId ?? null;
+            }
+            out.push({ org: o, st: c.value, codes, defaultCodeId: pay.ok ? pay.value.defaultCodeId : null, shiftCode });
           })
       );
       setList(out.sort((a, b) => a.org.name.localeCompare(b.org.name)));
     })();
-  }, [n]);
+  }, [n, me]);
   if (!list?.length) return null;
   return (
     <div className="dclock">
-      {list.map(({ org, st }) => (
-        <div key={org.id} className="wk-clock">
-          <Clock3 size={15} />
-          <span className="wk-clock-state">
-            <span className="dtitle">{st.clockedIn && st.punch ? `Clocked in since ${clock(st.punch.at, org.tz)}` : 'Not clocked in'}</span>
-            <span className="dsub">{org.name}</span>
-          </span>
-          <button
-            className={`btn sm ${st.clockedIn ? '' : 'primary'}`}
-            disabled={busy === org.id}
-            onClick={async () => {
-              setBusy(org.id);
-              await punch(org as Org, st.clockedIn ? 'out' : 'in');
-              setBusy(null);
-              setN((x) => x + 1);
-            }}
-          >
-            {st.clockedIn ? 'Clock out' : 'Clock in'}
-          </button>
-        </div>
-      ))}
+      {list.map(({ org, st, codes, defaultCodeId, shiftCode }) => {
+        const choice = hasChoice(codes);
+        const shown = st.clockedIn ? pickedCode(codes, st.punch?.payCodeId) : pickedCode(codes, picked[org.id] ?? shiftCode, defaultCodeId);
+        const switchTo = async (id: string) => {
+          if (!st.clockedIn || !st.punch) return setPicked((p) => ({ ...p, [org.id]: id }));
+          if (id !== shown && (await act(`/v1/orgs/${org.id}/punches/${st.punch.id}/pay-code`, { payCodeId: id }, 'Pay code changed.'))) setN((x) => x + 1);
+        };
+        return (
+          <div key={org.id} className="wk-clock">
+            <Clock3 size={15} />
+            <span className="wk-clock-state">
+              <span className="dtitle">{st.clockedIn && st.punch ? `Clocked in since ${clock(st.punch.at, org.tz)}` : 'Not clocked in'}</span>
+              <span className="dsub">
+                {org.name}
+                {!choice && codes.length === 1 ? ` · ${codes[0].name}` : ''}
+              </span>
+            </span>
+            {choice && <CodePicker codes={codes} value={shown} onChange={switchTo} disabled={busy === org.id} title={st.clockedIn ? 'The pay code you’re clocked in at' : 'The pay code to clock in at'} />}
+            <button
+              className={`btn sm ${st.clockedIn ? '' : 'primary'}`}
+              disabled={busy === org.id}
+              onClick={async () => {
+                setBusy(org.id);
+                await punch(org as Org, st.clockedIn ? 'out' : 'in', st.clockedIn ? null : clockInCode(codes, picked[org.id], shiftCode));
+                setPicked((p) => {
+                  const rest = { ...p };
+                  delete rest[org.id];
+                  return rest;
+                });
+                setBusy(null);
+                setN((x) => x + 1);
+              }}
+            >
+              {st.clockedIn ? 'Clock out' : 'Clock in'}
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

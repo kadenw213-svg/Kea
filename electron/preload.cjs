@@ -92,6 +92,7 @@ contextBridge.exposeInMainWorld('api', {
     consentGoogle: () => ipcRenderer.invoke('hub:consentGoogle'),
     scanJobs: () => ipcRenderer.invoke('hub:scanJobs'),
     setUrl: (url, confirm) => ipcRenderer.invoke('hub:setUrl', { url, confirm: confirm === true }),
+    movedSeen: () => ipcRenderer.invoke('hub:movedSeen'),
     notifications: () => ipcRenderer.invoke('hub:notifications'),
     notificationsRead: (a) => ipcRenderer.invoke('hub:notificationsRead', a),
     notificationsDelete: (a) => ipcRenderer.invoke('hub:notificationsDelete', a),

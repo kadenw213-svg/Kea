@@ -508,6 +508,12 @@ export interface HubStatus {
   signedIn: boolean;
   reachable: boolean;
   me: HubMe | null;
+  /**
+   * The Kea account server moved to a new address. moved: Kea checked it (same signing key) and uses it now, the
+   * person signs in online once there; unchecked: Kea couldn't check it and kept the old address (to: where it said it
+   * went, reason: why). seen: the notice was shown.
+   */
+  moved?: { kind: 'moved' | 'unchecked'; from: string; to: string | null; reason: string | null; at: number; seen: boolean } | null;
   /** What Kea last saw (shown while the Hub is offline). */
   cached: { id?: string; totpEnabled?: boolean; email: string; name: string; emailVerified: boolean; verifiedBy?: string | null; owner?: boolean; canHost?: boolean; leaderboard?: HubAccount['leaderboard'] | null; supporter?: HubAccount['supporter'] | null; progress?: HubMe['progress'] | null; terms: HubTermsStatus | null; at?: number } | null;
 }
@@ -640,6 +646,8 @@ export interface HubApi {
   consentGoogle(): Promise<HubResult<HubStatus>>;
   /** Only once a Hub answers there; moving to another Hub while signed in needs confirm (else 409, switchSignsOut). */
   setUrl(url: string, confirm?: boolean): Promise<HubResult<HubStatus>>;
+  /** The notice that the Kea account server moved was seen (it isn't shown again). */
+  movedSeen(): Promise<HubResult<HubStatus>>;
   /** This account's notifications (newest first). */
   notifications(): Promise<HubResult<HubNotifications>>;
   /** Marks some (ids) or all read. */

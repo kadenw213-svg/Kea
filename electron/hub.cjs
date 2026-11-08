@@ -85,7 +85,7 @@ let fetchFn = (...a) => net.fetch(...a);
  * Not reaching it is status 0, a normal answer: callers show "offline", never an error screen.
  * reauth: the route asks for the password again, so a 401 means a wrong password, not that the sign-in ended.
  */
-async function req(method, p, body, { auth = true, reauth = false, timeout } = {}) {
+async function req(method, p, body, { auth = true, reauth = false, timeout, afterMove = false } = {}) {
   const token = auth ? readToken() : null;
   let res;
   try {
@@ -112,8 +112,136 @@ async function req(method, p, body, { auth = true, reauth = false, timeout } = {
     lastMe = null;
     changed();
   }
+  if (res.status === 410 && 'movedTo' in data && !afterMove) {
+    // The account server moved (the owner's Hub to KeaC). A checked new address is used from now on; a request made
+    // without the online sign-in (signing in, the terms) goes there at once. The online session stays behind: sessions
+    // don't move, so the person signs in once on the new server.
+    if (await followMove(data)) {
+      if (!token) return req(method, p, body, { auth, reauth, timeout, afterMove: true });
+      throw new HubError(MOVED_MSG, 401, { moved: true, to: hubUrl() });
+    }
+    throw new HubError(UNCHECKED_MSG, 410, { unchecked: true, movedTo: typeof data.movedTo === 'string' ? data.movedTo : null });
+  }
   if (!res.ok) throw new HubError(data.error || `Your Kea account server said ${res.status}.`, res.status, data);
   return data;
+}
+
+// ---------- The Kea account server moved to a new address ----------
+// After the move, the old server answers its health check with { ok, movedTo, keacKeyKid } and every other account
+// route with 410 { error, movedTo }. Kea follows only to an address that is https (plain http only to this computer
+// itself) and has the old server's signing key (the key id in its /v1/keys): anyone could claim an account moved, only
+// the real new server has that key. Following it is the same as changing the address under Advanced: the online
+// sign-in ends here, the account on this computer and its offline password stay.
+const MOVED_MSG = 'Your Kea account moved to a new address. Sign in once to continue.';
+const UNCHECKED_MSG = 'Your Kea account server moved, but the new address couldn’t be checked.';
+const isLoopback = (host) => /^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(host);
+/** A server address as Kea keeps it (its origin), or a HubError saying what's wrong with it. */
+function serverOrigin(raw) {
+  const t = String(raw || '').trim();
+  let u;
+  try {
+    u = new URL(/^[a-z]+:\/\//i.test(t) ? t : `https://${t}`);
+  } catch {
+    throw new HubError('That isn’t a web address. It looks like https://name.tailnet.ts.net', 400);
+  }
+  if (!/^https?:$/.test(u.protocol)) throw new HubError('Use an https:// address.', 400);
+  // Plain http only to this computer itself: anywhere else, someone on the network could pose as the server.
+  if (u.protocol === 'http:' && !isLoopback(u.hostname)) throw new HubError('Use the Kea account server’s https:// address (it looks like https://name.tailnet.ts.net). Plain http only works for one on this computer.', 400);
+  return u.origin;
+}
+/** An online sign-in belongs to the server it was made on: moving to another address ends it here. */
+function moveHub(next) {
+  const from = hubUrl();
+  settings.set({ 'hub.url': next });
+  if (originOf(hubUrl()) === originOf(from)) return;
+  dropSession();
+  lastMe = null;
+  Object.assign(reach, { reachable: false, at: 0 });
+}
+/** A server's signing keys ([{ kid, status }]), or null when it doesn't answer with them. */
+async function keysAt(origin) {
+  try {
+    const r = await core.timedFetch(fetchFn, `${origin}/v1/keys`, { headers: { 'x-kea': '1' }, redirect: 'error' }, LIMITS.status);
+    const j = r.ok ? r.json() : null;
+    return Array.isArray(j?.keys) ? j.keys.filter((k) => k && typeof k.kid === 'string' && k.kid) : null;
+  } catch {
+    return null;
+  }
+}
+/** Whether the moved-to address is the real new server: { ok, to, reason }. */
+async function checkMove(from, { movedTo, keacKeyKid }) {
+  if (!movedTo || typeof movedTo !== 'string') return { ok: false, to: null, reason: 'The old address didn’t say where the account server went.' };
+  let to;
+  try {
+    to = serverOrigin(movedTo);
+  } catch (e) {
+    return { ok: false, to: String(movedTo), reason: e.message };
+  }
+  if (originOf(to) === originOf(from)) return { ok: false, to, reason: 'The old address pointed back to itself.' };
+  let kid = typeof keacKeyKid === 'string' && keacKeyKid ? keacKeyKid : null;
+  if (!kid) {
+    // (A 410 says only where: the key id is in the old server's health check, when it names the same address.)
+    try {
+      const h = (await core.timedFetch(fetchFn, `${from}/v1/health`, { headers: { 'x-kea': '1' } }, LIMITS.status)).json();
+      if (typeof h?.keacKeyKid === 'string' && h.keacKeyKid && typeof h.movedTo === 'string' && originOf(h.movedTo) === originOf(to)) kid = h.keacKeyKid;
+    } catch {}
+  }
+  if (!kid) {
+    // (An old server that doesn't say the key id in its health check: its own key list, if it still answers it.)
+    const old = await keysAt(from);
+    kid = old?.find((k) => k.status === 'current')?.kid || (old?.length === 1 ? old[0].kid : null);
+  }
+  if (!kid) return { ok: false, to, reason: 'The old address didn’t say which signing key the new one has.' };
+  const keys = await keysAt(to);
+  if (!keys) return { ok: false, to, reason: 'The new address didn’t answer with its signing keys.' };
+  if (!keys.some((k) => k.kid === kid && (k.status === undefined || k.status === 'current'))) return { ok: false, to, reason: 'The new address signs with a different key than your Kea account server.' };
+  return { ok: true, to };
+}
+// The notice about it (userData/hub-moved.json: { kind: 'moved' | 'unchecked', from, to, reason, at, seen }), shown once.
+const movedFile = () => path.join(app.getPath('userData'), 'hub-moved.json');
+function movedNote() {
+  try {
+    const j = JSON.parse(fs.readFileSync(movedFile(), 'utf8'));
+    return j && typeof j === 'object' && (j.kind === 'moved' || j.kind === 'unchecked') ? j : null;
+  } catch {
+    return null;
+  }
+}
+function noteMove(n) {
+  const was = movedNote();
+  // (The same unchecked move found again: not shown again once it was seen.)
+  const same = was && was.kind === n.kind && was.from === n.from && was.to === n.to;
+  fs.writeFileSync(movedFile(), JSON.stringify({ ...n, at: Date.now(), seen: same ? !!was.seen : false }, null, 1));
+}
+function movedSeen() {
+  const n = movedNote();
+  if (n && !n.seen) fs.writeFileSync(movedFile(), JSON.stringify({ ...n, seen: true }, null, 1));
+  return local();
+}
+let moving = null;
+// (A move that couldn't be checked is tried again after a while, not at every request.)
+const moveTried = new Map();
+const MOVE_RETRY_MS = 10 * 60e3;
+/** Follows the server's move when the new address checks out. True: Kea now uses the new address. */
+function followMove(info) {
+  if (moving) return moving;
+  const from = hubUrl();
+  const key = `${from} ${info?.movedTo}`;
+  if (Date.now() - (moveTried.get(key) || 0) < MOVE_RETRY_MS) return Promise.resolve(false);
+  moving = (async () => {
+    const r = await checkMove(from, info || {});
+    if (r.ok) {
+      moveHub(r.to);
+      noteMove({ kind: 'moved', from, to: r.to, reason: null });
+      onlineNote = null;
+    } else {
+      moveTried.set(key, Date.now());
+      noteMove({ kind: 'unchecked', from, to: r.to, reason: r.reason });
+    }
+    changed();
+    return r.ok;
+  })().finally(() => (moving = null));
+  return moving;
 }
 
 // ---------- Who's signed in on this computer (never waits on the network) ----------
@@ -174,6 +302,7 @@ function local() {
     reachable: reach.reachable,
     checked: reach.at > 0,
     me: token && reach.reachable ? lastMe : null,
+    moved: movedNote(),
   };
 }
 
@@ -190,6 +319,8 @@ async function signedIn(r, { password = null, provider = null } = {}) {
   if (was && acc && core.norm(was.email) !== core.norm(acc.email)) dropSession();
   writeToken(r.token);
   onlineNote = null;
+  // (Signed in at the address the server moved to: its notice has done its job.)
+  if (movedNote()?.kind === 'moved' && movedNote().to === hubUrl()) fs.rmSync(movedFile(), { force: true });
   if (acc) await accounts().rememberOnline({ email: acc.email, name: acc.displayName, hubId: acc.id, url: hubUrl(), provider, password });
   if (background) setTimeout(startSync, 1000);
   try {
@@ -227,18 +358,23 @@ async function answers(origin) {
   }
 }
 /** What local() says, after checking the server in the background (4 s at most). */
-async function status() {
+async function status({ again = true } = {}) {
   if (!readToken()) {
+    let h = null;
     try {
-      await req('GET', '/v1/health', undefined, { auth: false, timeout: LIMITS.status });
+      h = await req('GET', '/v1/health', undefined, { auth: false, timeout: LIMITS.status });
     } catch {}
+    // The server moved: checked, followed, and the new address asked in turn.
+    if (h && 'movedTo' in h && (await followMove(h)) && again) return status({ again: false });
     return local();
   }
   try {
     return await refresh({ timeout: LIMITS.status });
   } catch (e) {
-    // Offline, or the session ended: still signed in here, working from what Kea last knew.
-    if (e.status === 0 || e.status === 401) return local();
+    if (e.data?.moved && again) return status({ again: false });
+    // Offline, the session ended, or the server moved somewhere Kea couldn't check: still signed in here, working from
+    // what Kea last knew.
+    if (e.status === 0 || e.status === 401 || e.status === 410) return local();
     throw e;
   }
 }
@@ -1079,31 +1215,15 @@ function register() {
     onlineNote = null;
     return local();
   }));
+  // The notice that the server moved was seen.
+  handleApp(ipcMain, 'hub:movedSeen', wrap(() => movedSeen()));
   // (Only Kea's own page may move Kea to another server: ipcGuard.cjs.) An online sign-in belongs to the server it was
-  // made on, so it never goes to a different address: moving there ends the online session here. The account on this
-  // computer stays signed in.
-  const moveHub = (next) => {
-    const from = hubUrl();
-    settings.set({ 'hub.url': next });
-    if (originOf(hubUrl()) === originOf(from)) return;
-    dropSession();
-  };
+  // made on, so it never goes to a different address: moving there ends the online session here (moveHub). The account
+  // on this computer stays signed in.
   // A new address is used only once a Kea Hub answers there. Moving to another Hub while signed in signs out here, so
   // that's only done once the page has asked (confirm: true); until then it answers 409 { switchSignsOut }.
   ipcMain.handle('hub:setUrl', appOnly(wrap(async ({ url, confirm }) => {
-    let next = null;
-    if (String(url || '').trim()) {
-      let u;
-      try {
-        u = new URL(/^[a-z]+:\/\//i.test(String(url).trim()) ? String(url).trim() : `https://${String(url).trim()}`);
-      } catch {
-        throw new HubError('That isn’t a web address. It looks like https://name.tailnet.ts.net', 400);
-      }
-      if (!/^https?:$/.test(u.protocol)) throw new HubError('Use an https:// address.', 400);
-      // Plain http only to this computer itself: anywhere else, someone on the network could pose as the Hub.
-      if (u.protocol === 'http:' && !/^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i.test(u.hostname)) throw new HubError('Use the Kea account server’s https:// address (it looks like https://name.tailnet.ts.net). Plain http only works for one on this computer.', 400);
-      next = u.origin;
-    }
+    const next = String(url || '').trim() ? serverOrigin(url) : null;
     const target = next || String(process.env.KEA_HUB_URL || DEFAULT_HUB_URL).replace(/\/+$/, '');
     if (!(await answers(target))) throw new HubError(`No Kea account server answers at ${target}, so Kea kept ${hubUrl()}. Check the address, or try again once it’s running.`, 400, { notAnswering: true });
     if (isSignedIn() && originOf(target) !== originOf(hubUrl()) && confirm !== true) {
@@ -1124,10 +1244,10 @@ module.exports = {
   _exportData: exportData,
   // (For the tests: the account flows without IPC, and stand-ins for fetch and the browser sign-in.)
   _account: {
-    local, status, login, create, link, oauthSignIn, logout: () => (dropSession(), accounts().signOut(), local()),
+    local, status, login, create, link, oauthSignIn, movedSeen, logout: () => (dropSession(), accounts().signOut(), local()),
     setFetch: (f) => (fetchFn = f),
     setIdTokens: (f) => (idTokenFn = f),
-    reset: () => ((store = null), (lastMe = null), (onlineNote = null), clearTimeout(bgLogin), Object.assign(reach, { reachable: false, at: 0 })),
+    reset: () => ((store = null), (lastMe = null), (onlineNote = null), clearTimeout(bgLogin), moveTried.clear(), Object.assign(reach, { reachable: false, at: 0 })),
     setLimits: (l) => Object.assign(LIMITS, l),
     setBackground: (on) => (background = on),
   },
