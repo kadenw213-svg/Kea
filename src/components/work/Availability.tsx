@@ -409,7 +409,7 @@ function Filler({ org, view, onBack }: { org: Org; view: FormView; onBack(): voi
                     const cur: string[] = Array.isArray(extra[c.id]) ? extra[c.id] : [];
                     const on = cur.includes(o);
                     return (
-                      <button key={o} className={`wk-chip ${on ? 'on' : ''}`} disabled={readOnly} onClick={() => setExtra({ ...extra, [c.id]: on ? cur.filter((x) => x !== o) : [...cur, o] })}>
+                      <button key={o} className={`wk-pick ${on ? 'on' : ''}`} disabled={readOnly} onClick={() => setExtra({ ...extra, [c.id]: on ? cur.filter((x) => x !== o) : [...cur, o] })}>
                         {o}
                       </button>
                     );

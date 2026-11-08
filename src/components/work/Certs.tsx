@@ -230,7 +230,7 @@ function Types({ org }: { org: Org }) {
           <Field label="Required for">
             <div className="wk-tags">
               {positions.map((p) => (
-                <button key={p.id} className={`wk-chip ${pos.includes(p.id) ? 'on' : ''}`} onClick={() => setPos(pos.includes(p.id) ? pos.filter((x) => x !== p.id) : [...pos, p.id])}>
+                <button key={p.id} className={`wk-pick ${pos.includes(p.id) ? 'on' : ''}`} onClick={() => setPos(pos.includes(p.id) ? pos.filter((x) => x !== p.id) : [...pos, p.id])}>
                   {p.name}
                 </button>
               ))}
@@ -397,7 +397,7 @@ function ClassCard({ org, c, open, toggle, members, types, structure }: { org: O
           <Field label="Assign">
             <div className="wk-tags">
               {members.map((m) => (
-                <button key={m.id} className={`wk-chip ${pick.includes(m.id) ? 'on' : ''}`} onClick={() => setPick(pick.includes(m.id) ? pick.filter((x) => x !== m.id) : [...pick, m.id])}>
+                <button key={m.id} className={`wk-pick ${pick.includes(m.id) ? 'on' : ''}`} onClick={() => setPick(pick.includes(m.id) ? pick.filter((x) => x !== m.id) : [...pick, m.id])}>
                   {m.name}
                 </button>
               ))}

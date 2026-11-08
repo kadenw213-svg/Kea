@@ -95,7 +95,7 @@ export function WorkScreen() {
           <h1 className="work-title">Work</h1>
           <div className="work-orgs">
             {(orgs ?? []).map((o) => (
-              <button key={o.id} className={`wk-chip ${o.id === orgId ? 'on' : ''}`} title={o.server ? `On ${o.server.name || o.server.url}` : undefined} onClick={() => go(o.id)}>
+              <button key={o.id} className={`wk-pick ${o.id === orgId ? 'on' : ''}`} title={o.server ? `On ${o.server.name || o.server.url}` : undefined} onClick={() => go(o.id)}>
                 {o.name}
                 {several && o.server && o.server.name !== o.name && <span className="wk-chip-server">{o.server.name}</span>}
                 {o.memberStatus === 'pending' || o.status !== 'active' ? <Clock3 size={12} /> : null}

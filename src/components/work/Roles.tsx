@@ -192,7 +192,7 @@ function GiveRole({ org, role, members, s }: { org: Org; role: OrgRole; members:
       {where === 'depts' && !owner && (
         <div className="wk-tags">
           {s?.departments.map((d) => (
-            <button key={d.id} className={`wk-chip ${depts.includes(d.id) ? 'on' : ''}`} onClick={() => setDepts(depts.includes(d.id) ? depts.filter((x) => x !== d.id) : [...depts, d.id])}>
+            <button key={d.id} className={`wk-pick ${depts.includes(d.id) ? 'on' : ''}`} onClick={() => setDepts(depts.includes(d.id) ? depts.filter((x) => x !== d.id) : [...depts, d.id])}>
               {d.name}
             </button>
           ))}
