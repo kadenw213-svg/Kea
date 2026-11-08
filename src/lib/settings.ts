@@ -106,14 +106,14 @@ export const SECTIONS: Section[] = [
     fields: [
       {
         key: 'hub.remindMinutes',
-        group: 'Kea Hub classes',
+        group: 'Kea classes',
         label: 'Remind me before a class session',
         type: 'select',
         default: 15,
         options: [0, 5, 10, 15, 30, 60, 120].map((m) => ({ value: m, label: m === 0 ? 'Don’t remind me' : m < 60 ? `${m} minutes before` : `${m / 60} hour${m > 60 ? 's' : ''} before` })),
         help: 'A notification on this computer, with the meeting link one click away. Quiet hours from School’s notifications apply.'
       },
-      { key: 'hub.onCalendar', label: 'Show Kea Hub class sessions on my calendar', type: 'toggle', default: true, advanced: true, help: 'They stay on each class’s page either way.' },
+      { key: 'hub.onCalendar', label: 'Show Kea class sessions on my calendar', type: 'toggle', default: true, advanced: true, help: 'They stay on each class’s page either way.' },
       {
         key: 'hub.notifyDesktop',
         group: 'Kea account notifications',
@@ -136,9 +136,9 @@ export const SECTIONS: Section[] = [
     id: 'keacloud',
     label: 'Kea Cloud',
     icon: 'Cloud',
-    blurb: 'Documents you save to Kea Cloud live in your Kea storage, so they’re on your other computers and your phone too.',
+    blurb: 'Where your classes, documents and phone files sync, and Kea Cloud’s documents. They’re on your other computers and your phone too.',
     fields: [
-      { key: 'keaCloud.enabled', label: 'Use Kea Cloud for documents', type: 'toggle', default: true, help: 'Shows Kea Cloud on Home and keeps its documents in sync while you’re signed in to your Kea account.' },
+      { key: 'keaCloud.enabled', label: 'Use Kea Cloud for documents', type: 'toggle', default: true, help: 'Shows Kea Cloud on Home and keeps its documents in sync wherever your things sync.' },
       {
         key: 'keaCloud.saveTo',
         label: 'Saving a new file',
@@ -264,7 +264,7 @@ export const SECTIONS: Section[] = [
       { key: 'areas.auto', label: 'Turn areas on by themselves when I start using them', type: 'toggle', default: true, advanced: true, help: 'Joining a class turns on School.' },
       { key: 'areas.setupDone', label: 'First-run setup finished', type: 'toggle', default: false, advanced: true, help: 'Turn off to see the "What will you use Kea for?" screen again.' },
       { key: 'home.greeting', group: 'Today', label: 'Show greeting and date', type: 'toggle', default: true },
-      { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from School and your Kea Hub classes.' },
+      { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from School and your Kea classes.' },
       { key: 'home.showClasses', label: 'Show my classes', type: 'toggle', default: true },
       { key: 'home.showWork', label: 'Show Work (to-do and next shift)', type: 'toggle', default: true, when: (v) => v['modes.work'] === true },
       {
@@ -277,7 +277,7 @@ export const SECTIONS: Section[] = [
         help: 'How far ahead “Coming up” on Home lists things.'
       },
       { key: 'home.todayMax', label: 'Items listed under Coming up', type: 'number', default: 6, min: 2, max: 20, advanced: true },
-      { key: 'home.showHubClasses', label: 'Include Kea Hub classes', type: 'toggle', default: true, advanced: true, help: 'Never shown in a Personal profile.' },
+      { key: 'home.showHubClasses', label: 'Include Kea classes', type: 'toggle', default: true, advanced: true, help: 'Never shown in a Personal profile.' },
       { key: 'home.showStart', group: 'Create', label: 'Show Create (new document, spreadsheet, presentation…)', type: 'toggle', default: true },
       { key: 'home.showTools', label: 'Include PDF tools and Open a file', type: 'toggle', default: true },
       { key: 'home.previews', group: 'Files', label: 'Show previews of files', type: 'toggle', default: true },
@@ -642,8 +642,8 @@ export const SECTIONS: Section[] = [
       { key: 'scholar.parallelRuns', group: 'Practice questions', label: 'Question sets written at once', type: 'number', default: 3, min: 1, max: 20, step: 1, help: 'When you write questions for several chapters, this many are written at the same time (each chapter is its own Claude run). More is faster and uses your Claude plan’s limit sooner; the same total either way. Class checks and textbooks still run one at a time.' },
       { key: 'scholar.maxTurns', label: 'Most steps in one Claude run', type: 'number', default: 400, min: 10, max: 2000, step: 10, unit: 'steps', advanced: true, help: 'A run that takes more steps than this stops (each page read, file saved or command is a step), so a run that goes in circles can’t use up your Claude plan. A big class’s first scan takes a few hundred.' },
       { key: 'hub.relayMinutes', group: 'Kea’s shared Claude', label: 'Let a shared-Claude scan read my class site for at most', type: 'number', default: 60, min: 10, max: 480, step: 5, unit: 'minutes', advanced: true, help: 'While a scan you asked for runs on Kea’s shared Claude, it reads your class site through this Kea (read-only), and Kea shows a notification. After this long, Kea stops answering it, and the scan ends.' },
-      { key: 'hub.workerMinutes', label: 'Hub owner: longest a shared-Claude job may take', type: 'number', default: 45, min: 10, max: 240, step: 5, unit: 'minutes', advanced: true, help: 'Only on the Kea Hub owner’s computer. A job still running then is stopped, with Claude and everything it started, and reported as over time.' },
-      { key: 'hub.workerMaxTurns', label: 'Hub owner: most steps in one shared-Claude job', type: 'number', default: 200, min: 10, max: 2000, step: 10, unit: 'steps', advanced: true, help: 'Only on the Kea Hub owner’s computer. Each Claude run in a shared job stops after this many steps.' },
+      { key: 'hub.workerMinutes', label: 'Kea owner: longest a shared-Claude job may take', type: 'number', default: 45, min: 10, max: 240, step: 5, unit: 'minutes', advanced: true, help: 'Only on the Kea owner’s computer. A job still running then is stopped, with Claude and everything it started, and reported as over time.' },
+      { key: 'hub.workerMaxTurns', label: 'Kea owner: most steps in one shared-Claude job', type: 'number', default: 200, min: 10, max: 2000, step: 10, unit: 'steps', advanced: true, help: 'Only on the Kea owner’s computer. Each Claude run in a shared job stops after this many steps.' },
       { key: 'study.mix.mc', group: 'Mix of question kinds', label: 'Multiple choice', type: 'range', default: 5, min: 0, max: 10, advanced: true, help: 'How often each kind of question comes up in a practice exam, compared with the others (0 leaves it out). Kea uses what each chapter has: when there aren’t enough of one kind, the others fill in.' },
       { key: 'study.mix.blank', label: 'Fill in the blank', type: 'range', default: 3, min: 0, max: 10, advanced: true },
       { key: 'study.mix.match', label: 'Matching', type: 'range', default: 2, min: 0, max: 10, advanced: true },
@@ -672,23 +672,8 @@ export const SECTIONS: Section[] = [
       { key: 'scholar.mailSignature', group: 'Messages', label: 'Message signature', type: 'text', default: '', help: 'Added under every new message you write in Messages (edit it there, under Signature).', advanced: true },
       { key: 'scholar.mailSignatureReplies', label: 'Add the signature to replies too', type: 'toggle', default: true, advanced: true },
       {
-        key: 'scholar.cloud',
-        group: 'Your devices',
-        label: 'Sync your phone and other devices through',
-        type: 'select',
-        default: 'auto',
-        options: [
-          { value: 'auto', label: 'Automatic (OneDrive if it’s here, otherwise Google Drive)' },
-          { value: 'onedrive', label: 'OneDrive' },
-          { value: 'google', label: 'Google Drive' },
-          { value: 'custom', label: 'Another folder (below)' },
-          { value: 'off', label: 'Don’t sync' }
-        ],
-        help: 'Everything goes in one “Kea” folder in that drive. Every device must use the same drive and account. Scans → Devices shows each device and which one scans.'
-      },
-      { key: 'scholar.cloudPath', label: 'Other folder to sync through', type: 'text', default: '', advanced: true },
-      {
         key: 'scholar.pcSync',
+        group: 'Your devices',
         label: 'Keep your other computers in step',
         type: 'toggle',
         default: true,
@@ -900,7 +885,7 @@ export const SECTIONS: Section[] = [
     id: 'privacy',
     label: 'Privacy & data',
     icon: 'Shield',
-    blurb: 'Kea talks to your Kea Hub (the server your Kea account lives on, shown under Kea account) while you’re signed in: it checks for account notifications every few minutes, syncs Kea Cloud documents about every 15 seconds while you use them, and loads classes, shifts and forms when you open School or Work. Your password goes only to the Hub, once, when you sign in. Otherwise Kea only goes online to check GitHub for updates, to read Wikipedia and Wiktionary when you use the Encyclopedia, to download models you choose, and to set up cloud drives you sign in to.',
+    blurb: 'Kea talks to your Kea account online (its address is under Kea account → Advanced) while you’re signed in: it checks for account notifications every few minutes, syncs Kea Cloud documents about every 15 seconds while you use them, and loads classes, shifts and forms when you open School or Work. Your password goes only to your Kea account, once, when you sign in. Otherwise Kea only goes online to check GitHub for updates, to read Wikipedia and Wiktionary when you use the Encyclopedia, to download models you choose, and to set up cloud drives you sign in to.',
     fields: [
       { key: 'privacy.citeLookup', label: 'Allow citation look-ups', type: 'toggle', default: true, help: 'When you click "Look up" in Citations, Kea asks Crossref (DOIs), Open Library (ISBNs) or the web page itself for the details. Nothing is sent otherwise.' },
       { key: 'privacy.log', label: 'Keep a troubleshooting log', type: 'toggle', default: true, advanced: true, help: 'A small local file (kea.log) with errors and file names. Never sent anywhere.' }

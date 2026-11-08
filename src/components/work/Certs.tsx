@@ -6,11 +6,12 @@ import { ask, toast } from '../../store';
 import { act, clock, fmtDay, todayIso, useHub } from './workStore';
 import { Advanced, Card, Empty, Field, Loading, Num, Problem, StageBadge, Seg } from './ui';
 import type { Cert, CertType, Member, Org, OrgClass, Structure } from './types';
+import { can } from './types';
 
 type CertList = { certs: Cert[]; missing: { accountId: string; typeId: string; typeName: string; positionIds: string[] }[] };
 
 export function MyCerts({ org, me }: { org: Org; me: string | null }) {
-  const certs = useHub<CertList>(`/v1/orgs/${org.id}/certs${org.role === 'member' ? '' : `?accountId=${me ?? ''}`}`);
+  const certs = useHub<CertList>(`/v1/orgs/${org.id}/certs${!can(org, 'certs.manage') ? '' : `?accountId=${me ?? ''}`}`);
   const classes = useHub<{ classes: OrgClass[] }>(`/v1/orgs/${org.id}/classes`);
   if (certs.error) return <Problem error={certs.error} retry={certs.reload} />;
   if (!certs.data) return <Loading />;
@@ -209,7 +210,7 @@ function Records({ org }: { org: Org }) {
 
 function Types({ org }: { org: Org }) {
   const { types, structure } = useBasics(org);
-  const admin = org.role === 'admin' || org.role === 'owner';
+  const admin = can(org, 'certs.types', null);
   const [name, setName] = useState('');
   const [months, setMonths] = useState<number | null>(24);
   const [pos, setPos] = useState<string[]>([]);

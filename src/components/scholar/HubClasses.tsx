@@ -1,4 +1,4 @@
-// Kea Hub classes inside School: join with a code or link, My classes, a class's page (sessions with meeting links,
+// Kea classes inside School: join with a code or link, My classes, a class's page (sessions with meeting links,
 // study sets, leaderboards, people), and the instructor's tools (invites, sessions, sets, hosting).
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -27,6 +27,7 @@ import { hubc, useHubClasses, HubClass, HubClassDetail, HubSession, HubSetInfo, 
 import { HubResult, api } from '../../lib/api';
 import { toast, ask } from '../../store';
 import { useScholar } from './scholarStore';
+import { NeedsOnline } from '../account/NeedsOnline';
 import { hubSetId } from './studyIds';
 import { useHubStatus, refreshHub, SupporterBadge } from './HubAccount';
 import { openLink } from './kinds';
@@ -65,7 +66,7 @@ export function HubNav({ classId, on }: { classId?: string; on: boolean }) {
   const { list } = useHubClassList();
   return (
     <>
-      <div className="sch-head">Kea Hub classes</div>
+      <div className="sch-head">Kea classes</div>
       {list.map((c) => (
         <button key={c.id} className={`sch-link sch-course ${on && classId === c.id ? 'on' : ''}`} onClick={() => go({ name: 'hub', classId: c.id })} title={c.title}>
           <span className="sch-dot hubc-dot" />
@@ -92,16 +93,9 @@ export function HubView({ classId }: { classId?: string }) {
   if (!status.signedIn)
     return (
       <div className="sch-page">
-        <h1 className="sch-title">Kea Hub classes</h1>
-        <p className="sch-sub">Classes on the Kea Hub: join with a code from your instructor, study the class’s sets and see the leaderboard.</p>
-        <div className="acct-card">
-          <p className="muted acct-note">Sign in to your Kea account first.</p>
-          <div className="acct-actions">
-            <button className="btn primary" onClick={() => useScholar.getState().set({ view: { name: 'account' } })}>
-              Sign in or create an account
-            </button>
-          </div>
-        </div>
+        <h1 className="sch-title">Kea classes</h1>
+        <p className="sch-sub">Classes on Kea: join with a code from your instructor, study the class’s sets and see the leaderboard.</p>
+        <NeedsOnline what="Joining hosted classes" onOpen={() => useScholar.getState().set({ view: { name: 'account' } })} />
       </div>
     );
   return classId ? <ClassPage key={classId} id={classId} /> : <HubHome />;
@@ -110,7 +104,7 @@ export function HubView({ classId }: { classId?: string }) {
 function OfflineNote({ when: at }: { when?: number }) {
   return (
     <p className="hub-warn hubc-offline">
-      <CloudOff size={14} /> The Kea Hub is offline, so this is what Kea last saw{at ? ` (${new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })})` : ''}. Changes can be made when it’s back.
+      <CloudOff size={14} /> Your Kea account is offline right now, so this is what Kea last saw{at ? ` (${new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })})` : ''}. Changes can be made when it’s back.
     </p>
   );
 }
@@ -121,7 +115,7 @@ function HubHome() {
   const progress = status?.me?.progress ?? status?.cached?.progress ?? null;
   return (
     <div className="sch-page">
-      <h1 className="sch-title">Kea Hub classes</h1>
+      <h1 className="sch-title">Kea classes</h1>
       <p className="sch-sub">Join a class with a code from your instructor, or teach your own.</p>
       {(offline || (status && !status.reachable)) && <OfflineNote />}
       {progress && <ProgressStrip p={progress} />}
@@ -244,12 +238,16 @@ export function JoinBox() {
   );
 }
 
-/** Teaching on the Kea Hub: make a class once approved, or apply for hosting. */
+/**
+ * Teaching: make a class once approved as a creator (classes in Kea's public list come only from approved creators), or
+ * apply: a short note and the organization, and then the application's status.
+ */
 function TeachBox() {
   const status = useHubStatus();
   const canHost = !!(status?.me?.account.canHost ?? status?.cached?.canHost);
-  const [hosting, setHosting] = useState<{ status: string; note?: string | null } | null>(null);
+  const [hosting, setHosting] = useState<{ status: string; note?: string | null; older?: boolean } | null>(null);
   const [reason, setReason] = useState('');
+  const [organization, setOrganization] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [open, setOpen] = useState(false);
@@ -257,11 +255,14 @@ function TeachBox() {
   useEffect(() => {
     if (!canHost) hubc.hosting().then((r) => r.ok && setHosting(r.value));
   }, [canHost]);
+  // (An older account server takes only the note.)
+  const needOrg = !hosting?.older;
+  const ready = reason.trim().length >= 20 && (!needOrg || organization.trim().length > 0);
   return (
     <>
       <h2 className="sch-h2">Teach a class</h2>
       <div className="acct-card">
-        {canHost ? (
+        {canHost || hosting?.status === 'approved' ? (
           !open ? (
             <div className="hubc-row">
               <span className="muted grow">Make a class, invite people with a code, put sessions on their calendars and give them study sets.</span>
@@ -302,28 +303,34 @@ function TeachBox() {
             </form>
           )
         ) : hosting?.status === 'pending' ? (
-          <p className="muted acct-note">Your application to teach on the Kea Hub is waiting for review. You’ll be able to make classes here once it’s approved.</p>
+          <p className="muted acct-note">Your application to teach is waiting for review. You’ll be able to make classes here once it’s approved.</p>
         ) : (
           <form
             className="acct-form"
             onSubmit={async (e) => {
               e.preventDefault();
               setBusy(true);
-              const r = await run(hubc.applyHosting(reason));
+              const r = await run(hubc.applyHosting(reason, organization));
               setBusy(false);
-              if (r) (setHosting(r), toast('Application sent.', 'success'));
+              if (r) (setHosting({ ...r, older: hosting?.older }), toast(r.status === 'approved' ? 'You can make classes now.' : 'Application sent.', 'success'));
             }}
           >
             <p className="muted acct-note">
-              Teaching on the Kea Hub needs approval from the person who runs it.
+              Teaching a class on Kea, and having it in Kea’s public class list, needs an approved application.
               {hosting?.status === 'rejected' ? ` Your last application wasn’t approved${hosting.note ? `: ${hosting.note}` : '.'} You can apply again.` : ''}
             </p>
             <label>
               <span>What will you teach, and who is it for?</span>
-              <textarea className="input hubc-text" value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={2000} placeholder="For example: a weekly study group for my BIOL 1010 section at PPSC, about 15 people." />
+              <textarea className="input hubc-text" value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={2000} placeholder="For example: a weekly study group for my BIOL 1010 section, about 15 people." />
             </label>
+            {needOrg && (
+              <label>
+                <span>Your school or organization</span>
+                <input value={organization} onChange={(e) => setOrganization(e.target.value)} maxLength={120} placeholder="For example: Pikes Peak State College" />
+              </label>
+            )}
             <div className="acct-actions">
-              <button className="btn primary" type="submit" disabled={busy || reason.trim().length < 20}>
+              <button className="btn primary" type="submit" disabled={busy || !ready}>
                 Apply to teach
               </button>
               {reason.trim().length > 0 && reason.trim().length < 20 && <span className="muted">A sentence or two, please (20 characters or more).</span>}
@@ -358,7 +365,7 @@ function ClassPage({ id }: { id: string }) {
         <h1 className="sch-title">Class not found</h1>
         <p className="sch-sub">{error || 'You may have left it, or it was removed.'}</p>
         <button className="btn" onClick={() => go({ name: 'hub' })}>
-          Back to Kea Hub classes
+          Back to Kea classes
         </button>
       </div>
     );
@@ -650,7 +657,7 @@ function SetRow({ s, teacher, offline, reload }: { s: HubSetInfo; teacher: boole
           {!s.leaderboard && ' · practice only'}
         </div>
       </div>
-      <button className="btn sm primary" disabled={offline} onClick={() => useScholar.getState().set({ study: hubSetId(s.id) })} title={offline ? 'Needs the Kea Hub (answers are checked there)' : ''}>
+      <button className="btn sm primary" disabled={offline} onClick={() => useScholar.getState().set({ study: hubSetId(s.id) })} title={offline ? 'Needs your Kea account online (answers are checked there)' : ''}>
         {s.due ? 'Study' : 'Practice'} <ArrowRight size={13} />
       </button>
       {teacher && (

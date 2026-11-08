@@ -22,6 +22,7 @@ import { FeedbackPanel } from './FeedbackPanel';
 import { ControlPanel } from '../control/ControlPanel';
 import { AiModelsPanel } from './AiModelsPanel';
 import { KeaAccountSettings } from './KeaAccountSettings';
+import { SyncLine } from './SyncPicker';
 import { KeaCloudPanel } from '../home/KeaCloud';
 
 function FieldControl({ f, value, onChange }: { f: Field; value: any; onChange: (v: any) => void }) {
@@ -528,6 +529,11 @@ function SectionBody({ cur, showAdvanced }: { cur: Section; showAdvanced: boolea
       {cur.id === 'voice' && <VoiceSettingsExtras />}
       {cur.id === 'privacy' && <PrivacyExtras />}
       {cur.id === 'lookup' && <ModelSettings />}
+      {cur.id === 'scholar' && (
+        <div className="sextras">
+          <SyncLine onChange={() => useSettings.getState().ui({ section: 'keacloud' })} />
+        </div>
+      )}
     </>
   );
 }

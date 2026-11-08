@@ -8,6 +8,9 @@ import { ask, prompt, toast } from '../../store';
 import { act, clock, fmtDay, fmtWhen, todayIso, useHub, useMyId, useWork, addDays } from './workStore';
 import { Card, Empty, Loading, Problem, Seg } from './ui';
 import type { Member, Org, Shift, Swap } from './types';
+import { can } from './types';
+import { MyShiftCode } from './PayCodes';
+import type { MyPay } from './payRules';
 
 export function MySchedule({ org }: { org: Org }) {
   const [view, setView] = useState<'mine' | 'team'>('mine');
@@ -17,6 +20,8 @@ export function MySchedule({ org }: { org: Org }) {
   const to = new Date(Date.now() + 70 * 86400_000).toISOString();
   const shifts = useHub<{ shifts: Shift[] }>(`/v1/orgs/${org.id}/my-shifts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
   const swaps = useHub<{ swaps: Swap[] }>(`/v1/orgs/${org.id}/swaps`);
+  // My own pay codes, for the code on each shift (only codes I was given; none on a server without pay codes).
+  const pay = useHub<MyPay>(`/v1/orgs/${org.id}/me/pay`);
   const [events, setEvents] = useState<WorkEvent[] | null>(null);
   const [offline, setOffline] = useState<{ at: number | null } | null>(null);
   const version = useWork((s) => s.version);
@@ -28,7 +33,7 @@ export function MySchedule({ org }: { org: Org }) {
       } else setEvents([]);
     });
   }, [org.id, version]);
-  const canTeam = org.role !== 'member' || org.settings?.membersSeeSchedule !== false;
+  const canTeam = can(org, 'schedule.view') || org.settings?.membersSeeSchedule !== false;
 
   // The Hub's list when it answered; otherwise the shifts from the saved copy.
   const mine: Shift[] = shifts.data?.shifts ?? (events ?? []).filter((e) => e.kind === 'shift').map(fromEvent);
@@ -87,7 +92,7 @@ export function MySchedule({ org }: { org: Org }) {
       </div>
       {offline && (
         <p className="af-info">
-          The Kea Hub can’t be reached, so this is the schedule Kea saved{offline.at ? ` ${fmtWhen(offline.at)}` : ' last time'}. Swaps wait until it’s back.
+          Your Kea account can’t be reached online, so this is the schedule Kea saved{offline.at ? ` ${fmtWhen(offline.at)}` : ' last time'}. Swaps wait until it’s back.
         </p>
       )}
       {waiting.length > 0 && (
@@ -157,6 +162,7 @@ export function MySchedule({ org }: { org: Org }) {
                       <span className="wk-shift-what">{s.positionName}</span>
                       {s.note && <span className="muted">{s.note}</span>}
                       <span className="wk-spacer" />
+                      {!offline && !sw && <MyShiftCode org={org} shift={s} my={pay.data} />}
                       {offline ? null : sw ? (
                         <>
                           <span className="wk-pill warn">{sw.status === 'claimed' ? `${sw.claimantName} is taking it` : 'Offered'}</span>

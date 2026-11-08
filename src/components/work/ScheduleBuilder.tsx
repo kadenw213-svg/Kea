@@ -1,12 +1,16 @@
 // Managers: build a schedule from an availability form. Drag people (or tap an available name) onto a block; cert,
 // minor, overlap and overtime rules are checked live. Auto-fill fills open places from availability. Drafts from
-// other tools wait for review here. Nothing reaches people until Publish.
+// other tools wait for review here. Nothing reaches people until Publish. A click on a placed shift sets its pay code
+// (only one of that person's own codes).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CalendarRange, Check as CheckIcon, Eraser, Plus, Send, Sparkles, TriangleAlert, Wand2, X } from 'lucide-react';
 import { ask, toast } from '../../store';
 import { act, addDays, clock, wantText, fmtDay, fmtRange, hrs, money, post, useHub, useWork, WorkError } from './workStore';
 import { Advanced, Card, Check, Empty, Loading, Problem } from './ui';
 import type { Draft, Form, Org, Problem as Prob, Schedule, SchedPerson, SchedSlot, SchedView, Shift, Structure, Verdict } from './types';
+import { can } from './types';
+import { ShiftCodeBar } from './PayCodes';
+import type { PayCodeList } from './payRules';
 
 export function SchedulingTab({ org }: { org: Org }) {
   const focus = useWork((s) => s.focus);
@@ -21,7 +25,7 @@ export function SchedulingTab({ org }: { org: Org }) {
   const usable = (forms.data?.forms ?? []).filter((f) => f.status !== 'draft');
   return (
     <div className="wk-stack">
-      <Card title="New schedule">
+      {can(org, 'schedule.edit') && <Card title="New schedule">
         <div className="wk-form-row">
           <select className="input sm" value={formId} onChange={(e) => setFormId(e.target.value)}>
             <option value="">From availability form…</option>
@@ -43,7 +47,7 @@ export function SchedulingTab({ org }: { org: Org }) {
           </button>
         </div>
         {!usable.length && <p className="muted af-small">Send an availability form first; the schedule is built from its blocks and answers.</p>}
-      </Card>
+      </Card>}
       {list.data.schedules.length === 0 ? (
         <Empty title="No schedules yet" />
       ) : (
@@ -79,6 +83,9 @@ function Builder({ org, id, onBack }: { org: Org; id: string; onBack(): void }) 
   const [opts, setOpts] = useState<{ useIfNeeded: boolean; hardMaxHours: boolean; allowOvertime: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const checks = useRef(new Map<string, Verdict>());
+  // A shift whose pay code is being set (a click on it), and the codes' names for the shifts' tooltips.
+  const [codeShift, setCodeShift] = useState<string | null>(null);
+  const codeList = useHub<PayCodeList>(can(org, 'schedule.edit') ? `/v1/orgs/${org.id}/pay-codes` : null);
   useEffect(() => {
     if (data && !week) setWeek(data.weeks.find((w) => addDays(w, 6) >= isoToday()) ?? data.weeks[0] ?? null);
     if (data && !opts) setOpts(data.autofillDefaults);
@@ -92,6 +99,7 @@ function Builder({ org, id, onBack }: { org: Org; id: string; onBack(): void }) 
   const days = Array.from({ length: 7 }, (_, i) => addDays(week, i)).filter((d) => d >= data.schedule.periodStart && d <= data.schedule.periodEnd);
   const weekHours = (p: SchedPerson) => p.hoursByWeek[week] ?? 0;
   const drafts = data.shifts.filter((s) => s.status === 'draft' && s.accountId).length;
+  const codeNames = new Map((codeList.data?.codes ?? []).map((c) => [c.id, c.name]));
 
   /** Which of the block's needed positions a person would fill. */
   const positionFor = (slot: SchedSlot, p: SchedPerson) => {
@@ -168,6 +176,8 @@ function Builder({ org, id, onBack }: { org: Org; id: string; onBack(): void }) 
   };
 
   const overBudget = data.budget.filter((b) => b.current && b.warn);
+  // (Building needs schedule.edit; someone who may only publish sees the schedule and the Publish button.)
+  const editable = can(org, 'schedule.edit');
   const reason: Record<string, string> = {
     cert_missing: 'no cert',
     cert_expired: 'cert expired',
@@ -188,15 +198,15 @@ function Builder({ org, id, onBack }: { org: Org; id: string; onBack(): void }) 
         </button>
         <h2 className="wk-h2">{data.schedule.title}</h2>
         <span className="wk-spacer" />
-        <button className="btn sm" disabled={busy} onClick={autofill} title="Fill open places from availability. Rules are never broken; Available comes before If needed.">
+        {editable && <button className="btn sm" disabled={busy} onClick={autofill} title="Fill open places from availability. Rules are never broken; Available comes before If needed.">
           <Wand2 size={14} /> Auto-fill
-        </button>
-        <button className="btn sm" onClick={async () => (await ask('Clear auto-filled shifts?', 'Shifts you placed yourself stay.', [{ id: 'no', label: 'Cancel' }, { id: 'yes', label: 'Clear', primary: true }])) === 'yes' && act(`/v1/orgs/${org.id}/schedules/${id}/clear`, { source: 'autofill' }, 'Cleared.')}>
+        </button>}
+        {editable && <button className="btn sm" onClick={async () => (await ask('Clear auto-filled shifts?', 'Shifts you placed yourself stay.', [{ id: 'no', label: 'Cancel' }, { id: 'yes', label: 'Clear', primary: true }])) === 'yes' && act(`/v1/orgs/${org.id}/schedules/${id}/clear`, { source: 'autofill' }, 'Cleared.')}>
           <Eraser size={14} /> Clear auto-fill
-        </button>
-        <button className="btn sm primary" disabled={!drafts} onClick={() => publish()}>
+        </button>}
+        {can(org, 'schedule.publish') && <button className="btn sm primary" disabled={!drafts} onClick={() => publish()}>
           <Send size={14} /> Publish{drafts ? ` ${drafts}` : ''}
-        </button>
+        </button>}
       </div>
       <Advanced label="Auto-fill options">
         {opts && (
@@ -244,6 +254,7 @@ function Builder({ org, id, onBack }: { org: Org; id: string; onBack(): void }) 
           </div>
         </Card>
       )}
+      {codeShift && shiftById.get(codeShift) && <ShiftCodeBar org={org} shift={shiftById.get(codeShift)!} onDone={() => (setCodeShift(null), reload())} />}
       <div className="sb-weeks">
         {data.weeks.map((w) => (
           <button key={w} className={`wk-chip ${w === week ? 'on' : ''}`} onClick={() => setWeek(w)}>
@@ -326,7 +337,16 @@ function Builder({ org, id, onBack }: { org: Org; id: string; onBack(): void }) 
                         </span>
                       </div>
                       {assigned.map((a) => (
-                        <span key={a.id} className={`sb-shift ${a.status} ${a.forced ? 'forced' : ''}`} title={`${a.positionName}${a.status === 'draft' ? ' · not published' : ''}${a.source === 'autofill' ? ' · auto-filled' : ''}${a.forced ? ' · assigned past a warning' : ''}`}>
+                        <span
+                          key={a.id}
+                          className={`sb-shift ${a.status} ${a.forced ? 'forced' : ''} ${codeShift === a.id ? 'picked' : ''}`}
+                          title={`${a.positionName}${a.payCodeId && codeNames.get(a.payCodeId) ? ` · ${codeNames.get(a.payCodeId)}` : ''}${a.status === 'draft' ? ' · not published' : ''}${a.source === 'autofill' ? ' · auto-filled' : ''}${a.forced ? ' · assigned past a warning' : ''}${editable && a.accountId && codeList.data?.codes.length ? ' · click for its pay code' : ''}`}
+                          onClick={(e) => {
+                            if (!editable || !a.accountId || !codeList.data?.codes.length || pick) return;
+                            e.stopPropagation();
+                            setCodeShift(codeShift === a.id ? null : a.id);
+                          }}
+                        >
                           {a.source === 'autofill' && <Sparkles size={11} />}
                           {a.forced && <TriangleAlert size={11} />}
                           {a.name ?? 'Open'}

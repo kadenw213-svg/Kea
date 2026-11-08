@@ -57,7 +57,7 @@ export function ModePickerGate() {
   const [busy, setBusy] = useState(false);
   // (On a new computer the first-run screen asks the same question: never both at once.)
   const setupDone = useSetupDone();
-  const show = setupDone && !!status?.signedIn && !!status.me && !status.me.terms.needsAgreement && !modes.asked;
+  const show = setupDone && !!status && status.state !== 'none' && (status.state !== 'online' || !!status.me) && !status.me?.terms.needsAgreement && !modes.asked;
   useEffect(() => {
     if (show && !pick) {
       const m = keaModes();

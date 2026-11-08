@@ -19,7 +19,7 @@ const ownerReplyMac = (key, nonce, challenge, status, method, path, body) => hma
 
 class OwnerReplyError extends Error {
   constructor() {
-    super('The answer on the owner console’s port didn’t come from your Kea Hub (it couldn’t prove it holds the owner key). Another program may be on that port. Nothing was accepted from it.');
+    super('The answer on the owner console’s port didn’t come from your Kea account server (it couldn’t prove it holds the owner key). Another program may be on that port. Nothing was accepted from it.');
     this.name = 'OwnerReplyError';
   }
 }

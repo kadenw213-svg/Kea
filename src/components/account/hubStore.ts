@@ -9,11 +9,30 @@ const useHub = create<{ status: HubStatus | null; set(s: HubStatus | null): void
 export const useHubStatus = () => useHub((s) => s.status);
 export const setHubStatus = (s: HubStatus) => useHub.getState().set(s);
 export const hubStatusNow = () => useHub.getState().status;
+/**
+ * Who's signed in: first from this computer alone (at once, so nothing waits on the network), then after a background
+ * check of the Kea account server (a few seconds at most). Not reaching the server is a normal answer.
+ */
 export function refreshHub() {
+  if (!useHub.getState().status) loadLocal();
   return api.hub.status().then((r) => {
     if (r.ok) useHub.getState().set(r.value);
     return r;
   });
+}
+/** Only what this computer knows (instant). */
+export function loadLocal() {
+  return api.hub.local().then((r) => {
+    // (A full status that arrived first is newer: kept.)
+    if (r.ok && !useHub.getState().status) useHub.getState().set(r.value);
+    return r;
+  });
+}
+/** The account page's lock for cloud features: what's missing, in words. */
+export function onlineNeed(s: HubStatus | null): 'none' | 'offline' | 'linked' | 'unreachable' | null {
+  if (!s) return null;
+  if (s.state === 'none' || s.state === 'offline' || s.state === 'linked') return s.state;
+  return s.reachable || !s.checked ? null : 'unreachable';
 }
 
 // Notifications for this account: kept here so the account page and the global listener agree.
@@ -38,9 +57,10 @@ export async function run<T>(p: Promise<HubResult<T>>): Promise<T | null> {
   return null;
 }
 
-/** The account's id, email and name, also while the Hub is offline (what Kea last saw). */
+/** The account's id, email and name, also while the server is offline (what Kea last saw), or made on this computer. */
 export function accountOf(s: HubStatus | null) {
-  if (!s?.signedIn) return null;
+  if (!s) return null;
+  if (!s.signedIn) return s.account ? { id: s.account.id, email: s.account.email, name: s.account.name, emailVerified: false, verifiedBy: null, owner: false, totpEnabled: false } : null;
   const a = s.me?.account;
   const c = s.cached;
   if (a) return { id: a.id, email: a.email, name: a.displayName, emailVerified: a.emailVerified, verifiedBy: a.verifiedBy, owner: a.owner, totpEnabled: a.totpEnabled };

@@ -51,13 +51,13 @@ function drives() {
   try {
     hubIn = require('../hub.cjs').signedIn();
   } catch {}
-  if (Date.now() - found.at < 60000 && found.hubIn === hubIn) return found.list;
+  if (Date.now() - found.at < 60000 && found.hubIn === hubIn) return [...found.list, ...keasDrives()];
   const out = [];
   // Worker mode: the only drive is the student's Kea folder on the Hub (mirrored by worker.cjs).
   const remote = require('./remote.cjs');
   if (remote.active()) {
     fs.mkdirSync(remote.syncRoot(), { recursive: true });
-    return (found = { at: Date.now(), list: [{ id: 'kea-hub', label: 'Kea Hub', path: remote.syncRoot(), account: 'worker' }], hubIn }).list;
+    return (found = { at: Date.now(), list: [{ id: 'kea-hub', label: 'Kea account', path: remote.syncRoot(), account: 'worker' }], hubIn }).list;
   }
   // The Kea Hub: signed in to a Kea account, Kea syncs through its own server (hubsync.cjs mirrors this folder).
   try {
@@ -65,7 +65,7 @@ function drives() {
     if (hub.signedIn()) {
       const root = hub.syncRoot();
       fs.mkdirSync(root, { recursive: true });
-      out.push({ id: 'kea-hub', label: 'Kea Hub', path: root, account: hub.cached()?.email || '' });
+      out.push({ id: 'kea-hub', label: 'Kea account', path: root, account: hub.cached()?.email || '' });
     }
   } catch {}
   out.push(...oneDrives());
@@ -85,22 +85,44 @@ function drives() {
   const db = path.join(os.homedir(), 'Dropbox');
   if (fs.existsSync(db)) out.push({ id: 'dropbox', label: 'Dropbox', path: db, account: '' });
   found = { at: Date.now(), list: out, hubIn };
-  return out;
+  return [...out, ...keasDrives()];
+}
+/** KeaS servers this account joined (servers.cjs): each syncs through its own folder here, like the Kea Hub's. */
+function keasDrives() {
+  try {
+    const choice = require('../syncChoice.cjs');
+    return require('../servers.cjs')
+      .list()
+      .filter((s) => !s.signedOut)
+      .map((s) => {
+        const root = choice.keasRoot(s.serverId);
+        fs.mkdirSync(root, { recursive: true });
+        return { id: `keas:${s.serverId}`, label: s.name || 'Your organization’s server', path: root, account: s.url };
+      });
+  } catch {
+    return [];
+  }
 }
 
 /** The drive Kea syncs through ({ id, label, path, account }), or null when syncing is off or that drive isn't here. */
 function drive() {
-  const choice = settings.get('scholar.cloud', 'auto');
+  // (Picked in Settings → Where your things sync: syncChoice.cjs. Kea cloud unless picked otherwise.)
+  const choice = settings.get('scholar.cloud', 'kea-hub');
   if (choice === 'off') return null;
   if (choice === 'custom') {
     const p = settings.get('scholar.cloudPath', '');
     return p && fs.existsSync(p) ? { id: 'custom', label: 'Your folder', path: p, account: '' } : null;
   }
-  const list = drives();
-  // Automatic: the Kea Hub when signed in to a Kea account, otherwise OneDrive, otherwise Google Drive.
-  if (choice === 'auto') return list.find((d) => d.id === 'kea-hub') || list.find((d) => d.id === 'onedrive') || list.find((d) => d.id === 'google') || list[0] || null;
-  return list.find((d) => d.id === choice) || null;
+  if (choice === 'auto') return autoDrive();
+  return drives().find((d) => d.id === choice) || null;
 }
+/** Kea before the sync chooser ("Automatic"): the Kea Hub when signed in, otherwise OneDrive, otherwise Google Drive. */
+function autoDrive() {
+  const list = drives().filter((d) => !d.id.startsWith('keas:'));
+  return list.find((d) => d.id === 'kea-hub') || list.find((d) => d.id === 'onedrive') || list.find((d) => d.id === 'google') || list[0] || null;
+}
+/** A drive Kea syncs through its own server (the Kea account's storage, or a KeaS server's), not a folder app. */
+const serverDrive = (id) => id === 'kea-hub' || String(id || '').startsWith('keas:');
 
 /** The folder Kea syncs into for the active profile, or null when syncing is off or the drive isn't there. */
 function target() {
@@ -365,7 +387,7 @@ async function sync(build) {
   try {
     fs.mkdirSync(dir, { recursive: true });
     const snap = await build();
-    if (drive()?.id === 'kea-hub') return syncHub(dir, snap);
+    if (serverDrive(drive()?.id)) return syncHub(dir, snap);
     // The library first, only when a textbook or picture changed (its list of names, sizes and times), so the data
     // file can name the zip it goes with: { size, sha256 }, checked by the phone and other computers before unpacking.
     const lib = libraryFiles();
@@ -431,4 +453,4 @@ function syncHub(dir, snap) {
   return { dir, hash: sha(body) };
 }
 
-module.exports = { drives, drive, target, sync, schedule, mirror, libraryFiles, writeZip, readLibrary, verified, _test: { writeInPlace, withIntegrity } };
+module.exports = { drives, drive, autoDrive, serverDrive, target, sync, schedule, mirror, libraryFiles, writeZip, readLibrary, verified, _test: { writeInPlace, withIntegrity } };

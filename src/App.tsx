@@ -5,7 +5,7 @@ import { HomeScreen } from './components/Home';
 import { Welcome } from './components/Welcome';
 import { useSetupDone, watchSchool } from './lib/areas';
 import { Overlays } from './components/Overlays';
-import { AccountGate, TermsGate } from './components/scholar/HubAccount';
+import { AccountGate, MovedNotice, TermsGate } from './components/scholar/HubAccount';
 import { ModePickerGate } from './components/ModePicker';
 import { loadWorkScreen } from './lib/modes';
 import { openScholar } from './components/scholar/scholarStore';
@@ -25,6 +25,8 @@ import { CommandPalette, openPalette } from './components/CommandPalette';
 import { toggleLookup } from './components/lookup/lookupStore';
 import { useTabs, editorRegistry, Tab } from './store';
 import { api } from './lib/api';
+// (Work's store listens for kea://join links opened from outside Kea.)
+import './components/work/workStore';
 import { openEntry, openPaths, openWithDialog, newFile } from './lib/open';
 import { requestCloseTab, requestQuit } from './lib/closing';
 import { modKey } from './lib/util';
@@ -316,6 +318,7 @@ export function App() {
       <VersionHistoryDialog />
       <ControlChip />
       <TermsGate />
+      <MovedNotice />
       <ModePickerGate />
       <AccountGate />
       <Overlays />

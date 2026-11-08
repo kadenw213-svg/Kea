@@ -1,7 +1,7 @@
 // Work mode: talking to the Hub's org routes, where the screen is, and small date helpers.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { api } from '../../lib/api';
+import { api, JoinedServer } from '../../lib/api';
 import { toast } from '../../store';
 import type { Org } from './types';
 import { useHubStatus } from '../account/hubStore';
@@ -33,15 +33,21 @@ export async function act<T = any>(path: string, body: unknown = {}, done?: stri
 }
 
 // ---------- shared state ----------
-export type Tab = 'schedule' | 'availability' | 'certs' | 'org' | 'forms' | 'scheduling' | 'people' | 'training' | 'structure' | 'budgets' | 'settings';
+export type Tab = 'schedule' | 'time' | 'availability' | 'certs' | 'org' | 'forms' | 'scheduling' | 'people' | 'training' | 'structure' | 'budgets' | 'settings';
 interface WorkState {
   version: number;
   orgs: Org[] | null;
+  /** KeaS servers this account joined (offline, or signed out: shown above the organizations). */
+  servers: JoinedServer[];
+  /** What the Kea account server does: hosts organizations (made by application), takes applications. */
+  account: { hostedOrgs: boolean; applications: boolean } | null;
+  /** A join link opened from outside Kea, waiting for the Join box. */
+  joinLink: string | null;
   orgId: string | null;
   tab: Tab;
   /** What to open inside a tab (a form, a schedule, a swap...). */
-  focus: { formId?: string; scheduleId?: string; swapId?: string; view?: string } | null;
-  setOrgs(o: Org[]): void;
+  focus: { formId?: string; scheduleId?: string; swapId?: string; view?: string; shiftId?: string } | null;
+  setOrgs(o: Org[], servers?: JoinedServer[]): void;
   go(orgId: string | null, tab?: Tab, focus?: WorkState['focus']): void;
 }
 /**
@@ -55,6 +61,9 @@ export function setLeaveGuard(g: (() => Promise<boolean>) | null) {
 export const useWork = create<WorkState>((set) => ({
   version: 0,
   orgs: null,
+  servers: [],
+  account: null,
+  joinLink: null,
   orgId: (() => {
     try {
       return localStorage.getItem('kea.work.org');
@@ -64,7 +73,7 @@ export const useWork = create<WorkState>((set) => ({
   })(),
   tab: 'schedule',
   focus: null,
-  setOrgs: (orgs) => set((s) => ({ orgs, orgId: s.orgId && orgs.some((o) => o.id === s.orgId) ? s.orgId : orgs[0]?.id ?? null })),
+  setOrgs: (orgs, servers) => set((s) => ({ orgs, ...(servers ? { servers } : {}), orgId: s.orgId && orgs.some((o) => o.id === s.orgId) ? s.orgId : orgs[0]?.id ?? null })),
   go: (orgId, tab, focus = null) => {
     const apply = () =>
       set((s) => {
@@ -179,3 +188,14 @@ export function wantText(min: number | null | undefined, max: number | null | un
   if (max == null) return `at least ${min} h`;
   return min === max ? `${min} h` : `${min}–${max} h`;
 }
+
+// A kea://join link opened from outside Kea (a browser, an email): Work opens with the Join box filled in.
+function takeJoinLink(link: string | null) {
+  if (!link) return;
+  useWork.setState({ joinLink: link });
+  import('../../lib/modes').then((m) => m.openWork());
+}
+try {
+  api.work?.pendingJoin().then(takeJoinLink, () => {});
+  api.work?.onJoinLink(takeJoinLink);
+} catch {}

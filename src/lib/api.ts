@@ -482,13 +482,38 @@ export interface HubMe {
   storage: { used: number; quota: number; over?: boolean; custom?: boolean; supporter?: boolean; standard?: number; supporterQuota?: number };
   notifications?: { unread: number; latest: number };
 }
+/**
+ * The account on this computer, from its files alone (never the network):
+ *   none: nobody signed in (the start screen shows); offline: made on this computer, not online yet;
+ *   linked: linked to an online Kea account, signed in here without an online session; online: signed in online.
+ */
+export type KeaAccountState = 'none' | 'offline' | 'linked' | 'online';
+export type KeaSignInProvider = 'google' | 'microsoft';
 export interface HubStatus {
   url: string;
+  state: KeaAccountState;
+  /** The account signed in on this computer (null: nobody). */
+  account: { id: string; email: string; name: string; linked: boolean; canSignInOffline: boolean; provider: string | null } | null;
+  /** Accounts used on this computer before (to sign in again with one tap). */
+  known: { email: string; name: string }[];
+  /** Which of Continue with Google / Microsoft this copy of Kea is set up for. */
+  providers: { google: boolean; microsoft: boolean };
+  /** linked: the background online sign-in needs a two-step code, or the password changed online. */
+  onlineNote: 'code' | 'password' | null;
+  /** Whether the server has been checked yet since Kea started. */
+  checked?: boolean;
   /** The address this copy of Kea came with. */
   defaultUrl?: string;
+  /** An online session is kept here (online, even while the server can't be reached). */
   signedIn: boolean;
   reachable: boolean;
   me: HubMe | null;
+  /**
+   * The Kea account server moved to a new address. moved: Kea checked it (same signing key) and uses it now, the
+   * person signs in online once there; unchecked: Kea couldn't check it and kept the old address (to: where it said it
+   * went, reason: why). seen: the notice was shown.
+   */
+  moved?: { kind: 'moved' | 'unchecked'; from: string; to: string | null; reason: string | null; at: number; seen: boolean } | null;
   /** What Kea last saw (shown while the Hub is offline). */
   cached: { id?: string; totpEnabled?: boolean; email: string; name: string; emailVerified: boolean; verifiedBy?: string | null; owner?: boolean; canHost?: boolean; leaderboard?: HubAccount['leaderboard'] | null; supporter?: HubAccount['supporter'] | null; progress?: HubMe['progress'] | null; terms: HubTermsStatus | null; at?: number } | null;
 }
@@ -560,6 +585,9 @@ export interface HubSyncState {
   counts: { up: number; down: number; deleted: number; bytesUp: number; bytesDown: number } | null;
 }
 export interface HubApi {
+  /** From this computer alone, at once. */
+  local(): Promise<HubResult<HubStatus>>;
+  /** After checking the server (a few seconds at most). */
   status(): Promise<HubResult<HubStatus>>;
   terms(): Promise<HubResult<HubTerms>>;
   /** The Hub's donation link, if its owner set one. */
@@ -567,8 +595,13 @@ export interface HubApi {
   openSupport(): Promise<HubResult<boolean>>;
   changes(): Promise<HubResult<HubTermsChanges>>;
   openTerms(since?: number): Promise<HubResult<void>>;
-  register(a: { email: string; password: string; name: string; age13: boolean; birthYear?: number } & Agreement): Promise<HubResult<HubStatus>>;
-  login(a: { email: string; password: string; code?: string }): Promise<HubResult<HubStatus>>;
+  /** A new account on this computer, at once, with no connection needed. */
+  create(a: { email: string; password: string; name?: string }): Promise<HubResult<HubStatus>>;
+  /** Continue with Google or Microsoft from the start screen. */
+  oauthSignIn(a: { provider: KeaSignInProvider; email?: string; code?: string }): Promise<HubResult<HubStatus>>;
+  /** Takes the account on this computer online (same email only); with password + terms it makes the online account. */
+  link(a: { provider: KeaSignInProvider; password?: string; code?: string; age13?: boolean } & Partial<Agreement>): Promise<HubResult<HubStatus>>;
+  login(a: { email: string; password: string; code?: string; online?: boolean }): Promise<HubResult<HubStatus>>;
   accept(a: Agreement): Promise<HubResult<HubStatus>>;
   googleVerify(): Promise<HubResult<HubStatus>>;
   googleSignIn(a: { email?: string; code?: string }): Promise<HubResult<HubStatus>>;
@@ -613,6 +646,8 @@ export interface HubApi {
   consentGoogle(): Promise<HubResult<HubStatus>>;
   /** Only once a Hub answers there; moving to another Hub while signed in needs confirm (else 409, switchSignsOut). */
   setUrl(url: string, confirm?: boolean): Promise<HubResult<HubStatus>>;
+  /** The notice that the Kea account server moved was seen (it isn't shown again). */
+  movedSeen(): Promise<HubResult<HubStatus>>;
   /** This account's notifications (newest first). */
   notifications(): Promise<HubResult<HubNotifications>>;
   /** Marks some (ids) or all read. */
@@ -623,6 +658,8 @@ export interface HubApi {
   onNotifications(cb: (n: HubNotifications) => void): () => void;
   /** A Windows notification from the Hub was clicked: show the account page. */
   onOpenAccount(cb: () => void): () => void;
+  /** The account changed by itself (a background online sign-in, the session ended, the server came back). */
+  onChanged(cb: () => void): () => void;
   /** The optional phone number (null clears it) and who sees it. */
   setPhone(a: { phone?: string | null; visibility?: HubPhoneVisibility }): Promise<HubResult<HubStatus>>;
 }
@@ -680,8 +717,8 @@ export interface AiState {
 }
 export type AvatarCrop = { x: number; y: number; zoom: number; w: number; h: number };
 /**
- * The Kea account as this computer shows it: email, name and verified from the Kea Hub, the picture kept here. School
- * mode also counts the email as verified when it's signed in here to Claude, OneDrive or Google (verifiedHere).
+ * The Kea account signed in on this computer: its email and name, verified (the online account's email), and the
+ * picture kept here.
  */
 export interface KeaAccount {
   email: string;
@@ -691,15 +728,12 @@ export interface KeaAccount {
   crop: AvatarCrop | null;
   verified: boolean;
   verifiedBy: string | null;
-  verifiedHere?: boolean;
   /** Kea's creator. */
   owner: boolean;
 }
 export interface AccountApi {
   /** null when signed out of the Kea account. */
   get(): Promise<KeaAccount | null>;
-  /** Looks for the account's email among this computer's sign-ins (for School mode). */
-  verifyHere(): Promise<KeaAccount | null>;
   avatar(clear?: boolean): Promise<KeaAccount | null>;
   crop(c: AvatarCrop | null): Promise<KeaAccount | null>;
 }
@@ -1396,13 +1430,79 @@ export interface HubOrgApi {
 }
 export interface KeaApi {
   hubOrg: HubOrgApi;
+  servers: ServersApi;
+  sync: SyncApi;
+  /** kea://join links opened from outside Kea (the installed Kea registers kea://). */
+  work: { pendingJoin(): Promise<string | null>; onJoinLink(cb: (link: string) => void): () => void };
+}
+
+// ---------- KeaS servers joined with a server pass (electron/servers.cjs) ----------
+export interface JoinedServer {
+  serverId: string;
+  url: string;
+  name: string | null;
+  joinedAt: number;
+  /** The server stopped taking this account's pass ("This organization signed you out"). */
+  signedOut: boolean;
+  message: string | null;
+  passUntil: number | null;
+  /** From Work's list of organizations: the server didn't answer just now. */
+  offline?: boolean;
+  error?: string | null;
+}
+export interface ServersApi {
+  list(): Promise<HubResult<JoinedServer[]>>;
+  /** A join link (kea://join?s=...&c=...), or the address and code from Advanced. */
+  join(a: { link?: string; address?: string; code?: string }): Promise<HubResult<{ org: any; alreadyMember?: boolean; pending?: boolean; server: JoinedServer }>>;
+  again(serverId: string): Promise<HubResult<JoinedServer>>;
+  remove(serverId: string): Promise<HubResult<JoinedServer[]>>;
+  parse(text: string): Promise<HubResult<{ url: string | null; code: string }>>;
+  onChanged(cb: () => void): () => void;
+}
+
+// ---------- Where your things sync (electron/syncChoice.cjs) ----------
+export type SyncKind = 'kea' | 'drive' | 'folder' | 'keas' | 'off';
+export interface SyncPlace {
+  id: string;
+  kind: SyncKind;
+  /** For a drive: google, onedrive or dropbox (its logo). */
+  brand?: string;
+  label: string;
+  detail: string;
+  root: string | null;
+  available: boolean;
+  locked: boolean;
+  why?: 'needsOnline' | 'notJoined' | 'signedOut' | 'noFolder' | 'notHere' | null;
+}
+export interface SyncStatus {
+  choice: string;
+  place: SyncPlace;
+  options: SyncPlace[];
+  docsRoot: string | null;
+}
+export interface SyncPreview {
+  from: SyncPlace;
+  to: SyncPlace;
+  documents: number;
+  classes: boolean;
+  phone: boolean;
+  text: string;
+}
+export interface SyncApi {
+  status(): Promise<HubResult<SyncStatus>>;
+  preview(choice: string): Promise<HubResult<SyncPreview>>;
+  choose(choice: string, folder?: string): Promise<HubResult<SyncStatus & { copied: { documents: { copied: number; same: number; kept: number } | null; phone: boolean } }>>;
+  pickFolder(): Promise<HubResult<string | null>>;
 }
 
 // ---------- Kea Cloud: documents in the person's Kea storage (electron/keaCloud.cjs) ----------
-export type KeaCloudState = 'signedOut' | 'off' | 'offline' | 'full' | 'error' | 'syncing' | 'synced';
+export type KeaCloudState = 'signedOut' | 'off' | 'offline' | 'full' | 'error' | 'syncing' | 'synced' | 'drive' | 'local';
 export type KeaCloudFileState = 'synced' | 'pending' | 'full' | 'local';
 export interface KeaCloudStatus {
+  /** Documents can be used now (Kea cloud: signed in online; a drive: it's on this computer). */
   signedIn: boolean;
+  /** Where they sync (Settings → Where your things sync). */
+  place?: { id: string; kind: SyncKind; label: string; brand: string | null; why: SyncPlace['why'] };
   enabled: boolean;
   email: string | null;
   /** The folder on this PC that mirrors the person's Kea storage. */

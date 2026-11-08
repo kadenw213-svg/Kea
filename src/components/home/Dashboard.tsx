@@ -10,6 +10,9 @@ import { isDone, isMissing, useColors, TODO } from '../scholar/kinds';
 import { HubClass, useHubClasses } from '../../lib/hubClasses';
 import { isPersonalProfile, openWork, useKeaModes, workAvailable } from '../../lib/modes';
 import { useSetting } from '../../lib/settings';
+import { useHubStatus } from '../account/hubStore';
+import { NeedsOnline } from '../account/NeedsOnline';
+import { HomeClock } from '../work/TimeClock';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -196,7 +199,7 @@ function Classes({ courses, hubList: shownHub }: { courses: ScholarCourse[]; hub
               <span className="dmain">
                 <span className="dtitle">{c.title}</span>
                 <span className="dsub">
-                  Kea Hub · {c.role === 'instructor' ? 'You teach' : c.role === 'ta' ? 'Assistant' : `${c.members} member${c.members === 1 ? '' : 's'}`}
+                  Kea · {c.role === 'instructor' ? 'You teach' : c.role === 'ta' ? 'Assistant' : `${c.members} member${c.members === 1 ? '' : 's'}`}
                 </span>
               </span>
             </button>
@@ -222,15 +225,24 @@ function left(ms: number | null, overdue: boolean) {
 
 function Work() {
   const data = useWorkData(true);
+  const status = useHubStatus();
+  // (Without an online session there are no organizations to show: the card says what's needed, calmly.)
+  if (status && !status.signedIn)
+    return (
+      <Card icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
+        <NeedsOnline compact />
+      </Card>
+    );
   if (!data) return null;
   if (data.offline && !data.next && !data.todo.length)
     return (
       <Card icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
-        <div className="dempty">Can’t reach the Kea Hub right now. Your shifts show here when it’s back.</div>
+        <div className="dempty">Can’t reach your Kea account online right now. Your shifts show here when it’s back.</div>
       </Card>
     );
   return (
     <Card icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
+      <HomeClock />
       {data.next ? (
         <button className="dshift" onClick={openWork}>
           <Clock size={15} />
@@ -261,7 +273,7 @@ function Work() {
           ))}
         </ul>
       ) : (
-        <div className="dempty">{data.offline ? 'Can’t reach the Kea Hub right now.' : 'Nothing waiting on you.'}</div>
+        <div className="dempty">{data.offline ? 'Can’t reach your Kea account online right now.' : 'Nothing waiting on you.'}</div>
       )}
     </Card>
   );

@@ -118,7 +118,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now, s
       if (!f.path.startsWith('kea/')) continue;
       const rel = safeLocal(f.path);
       if (!rel || !inside(root, rel)) {
-        log(`Kea Hub sync: skipped a file with a name that isn't allowed here (${String(f.path).slice(0, 120)}).`);
+        log(`Kea Cloud sync: skipped a file with a name that isn't allowed here (${String(f.path).slice(0, 120)}).`);
         continue;
       }
       if (!inScope(rel)) continue;
@@ -145,7 +145,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now, s
       const tracked = Object.keys(st.files).filter((rel) => inScope(rel));
       const gone = tracked.filter((rel) => !seen.has(rel));
       if (gone.length > 20 && gone.length > tracked.length / 2) {
-        log(`Kea Hub sync: ${gone.length} of ${tracked.length} files are missing from the Hub at once, so none were deleted here.`);
+        log(`Kea Cloud sync: ${gone.length} of ${tracked.length} files are missing from Kea Cloud at once, so none were deleted here.`);
         st.fullAt = now();
         st.since = Math.max(0, (list.now ?? now()) - 5000);
         return;
@@ -178,7 +178,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now, s
       const s = statOf(rel);
       if (!s || same(s, st.files[rel]) || t - s.mtimeMs < SETTLE) continue;
       if (s.size > MAX) {
-        if (st.skip[rel] !== s.size) log(`Kea Hub sync: ${rel} is over 64 MB, so it stays on this computer.`);
+        if (st.skip[rel] !== s.size) log(`Kea Cloud sync: ${rel} is over 64 MB, so it stays on this computer.`);
         st.skip[rel] = s.size;
         continue;
       }
@@ -205,7 +205,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now, s
           full = noteFull(rel, e);
           continue;
         } else if (e.status === 400) {
-          if (st.skip[rel] !== 'name') log(`Kea Hub sync: ${rel} has a name the Hub can't store, so it stays on this computer.`);
+          if (st.skip[rel] !== 'name') log(`Kea Cloud sync: ${rel} has a name Kea Cloud can't store, so it stays on this computer.`);
           st.skip[rel] = 'name';
           continue;
         } else throw e;
@@ -224,7 +224,7 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now, s
     const tracked = Object.keys(st.files).filter((rel) => inScope(rel));
     const missing = tracked.filter((rel) => !here.has(rel));
     if (missing.length > 20 && missing.length > tracked.length / 2) {
-      log(`Kea Hub sync: ${missing.length} of ${tracked.length} files are missing here at once, so none were deleted on the Hub.`);
+      log(`Kea Cloud sync: ${missing.length} of ${tracked.length} files are missing here at once, so none were deleted in Kea Cloud.`);
       return;
     }
     for (const rel of missing) {
@@ -256,10 +256,10 @@ function createSync({ root, stateFile, client, log = () => {}, now = Date.now, s
     fs.writeFileSync(`${file}.part`, data);
     fs.renameSync(`${file}.part`, file);
     st.conflicts = [...(st.conflicts || []), { rel, copy: to, at: now() }].slice(-20);
-    log(`Kea Hub sync: ${rel} changed on another device too; that version is kept as ${to}.`);
+    log(`Kea Cloud sync: ${rel} changed on another device too; that version is kept as ${to}.`);
   }
   function noteFull(rel, e) {
-    if (st.skip[rel] !== 'full') log(`Kea Hub sync: Kea storage is full, so ${rel} stays on this computer for now.`);
+    if (st.skip[rel] !== 'full') log(`Kea Cloud sync: Kea storage is full, so ${rel} stays on this computer for now.`);
     st.skip[rel] = 'full';
     if (e.data?.quota != null) st.storage = { used: e.data.used, quota: e.data.quota };
     return { at: now(), message: e.message || 'Your Kea storage is full.' };
@@ -292,7 +292,7 @@ function httpClient({ base, token, fetchFn, client = 'Kea' }) {
   const enc = (p) => p.split('/').map(encodeURIComponent).join('/');
   const fail = async (r) => {
     const data = await r.json().catch(() => ({}));
-    throw Object.assign(new Error(data.error || `Kea Hub said ${r.status}`), { status: r.status, data });
+    throw Object.assign(new Error(data.error || `Kea Cloud said ${r.status}`), { status: r.status, data });
   };
   return {
     async list(since) {

@@ -1,25 +1,22 @@
 // Kea Cloud's status: the sync state, the storage used, and what to do when it's full or signed out. Shown on Home
 // (above Kea Cloud's files) and in Settings → Accounts & cloud → Kea Cloud.
 import { useEffect } from 'react';
-import { AlertTriangle, CheckCircle2, CloudOff, FolderOpen, Loader2, LogIn, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CloudOff, FolderOpen, Loader2, RefreshCw } from 'lucide-react';
 import { api, KeaCloudStatus } from '../../lib/api';
 import { STATE_LABEL, storageLine, useKeaCloud, watchKeaCloud } from '../../lib/keaCloud';
-import { openAccount } from '../account/hubStore';
+import { NeedsOnline } from '../account/NeedsOnline';
+import { Logo } from '../Logo';
+import { PlaceIcon, SyncPicker } from '../settings/SyncPicker';
 import { toast } from '../../store';
 import { timeAgo } from '../../lib/util';
 
 export function KeaCloudMark({ size = 17 }: { size?: number }) {
-  // A plain cloud in Kea's accent: Kea's own storage, set apart from OneDrive and Google Drive. (No tick: whether it's
-  // up to date is shown beside the files, and a tick on a signed-out cloud read as "synced".)
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="kc-mark">
-      <path d="M7 18.5h10.2a4.3 4.3 0 0 0 .6-8.56A6 6 0 0 0 6.2 9.3 4.6 4.6 0 0 0 7 18.5Z" fill="var(--accent)" opacity="0.22" stroke="var(--accent)" strokeWidth="1.7" strokeLinejoin="round" />
-    </svg>
-  );
+  // Kea's own logo, the same mark Kea cloud has in Settings → Where your things sync (each drive shows its own logo).
+  return <Logo size={size} className="kc-mark" />;
 }
 
 export function StateIcon({ s, size = 14 }: { s: KeaCloudStatus['state']; size?: number }) {
-  if (s === 'synced') return <CheckCircle2 size={size} className="kc-ok" />;
+  if (s === 'synced' || s === 'drive') return <CheckCircle2 size={size} className="kc-ok" />;
   if (s === 'syncing') return <Loader2 size={size} className="spin kc-busy" />;
   if (s === 'offline') return <CloudOff size={size} className="kc-off" />;
   if (s === 'full' || s === 'error') return <AlertTriangle size={size} className="kc-bad" />;
@@ -40,8 +37,6 @@ function StorageBar({ s }: { s: KeaCloudStatus }) {
   );
 }
 
-const signIn = () => openAccount();
-
 async function syncNow() {
   const r = await api.keaCloud.syncNow();
   if (r.ok) useKeaCloud.setState({ status: r.value });
@@ -56,10 +51,7 @@ export function KeaCloudHeader() {
   if (!s.signedIn)
     return (
       <div className="kc-head">
-        <span className="muted">Sign in to your Kea account to keep documents in Kea Cloud, on all your devices.</span>
-        <button className="btn sm primary" onClick={signIn}>
-          <LogIn size={14} /> Sign in
-        </button>
+        {!s.place || s.place.kind === 'kea' ? <NeedsOnline compact what="Kea Cloud keeps your documents on all your devices" /> : <span className="muted">{notHere(s)}</span>}
       </div>
     );
   return (
@@ -70,9 +62,11 @@ export function KeaCloudHeader() {
           {STATE_LABEL[s.state]}
         </span>
         <StorageBar s={s} />
-        <button className="icon-btn sm" title="Sync now" onClick={syncNow}>
-          <RefreshCw size={15} />
-        </button>
+        {(!s.place || s.place.kind === 'kea' || s.place.kind === 'keas') && (
+          <button className="icon-btn sm" title="Sync now" onClick={syncNow}>
+            <RefreshCw size={15} />
+          </button>
+        )}
       </div>
       {s.state === 'full' && <div className="kc-alert">{s.message || 'Your Kea storage is full. Delete documents you don’t need, or ask for more space.'} Until there’s room, new changes stay on this PC.</div>}
       {s.state === 'error' && s.message && <div className="kc-alert">{s.message}</div>}
@@ -85,27 +79,28 @@ export function KeaCloudHeader() {
   );
 }
 
-/** Settings → Kea Cloud: the same status, with the folder and sync controls. */
+/** Why documents can't be used now, for a place other than Kea cloud. */
+const notHere = (s: KeaCloudStatus) =>
+  s.place?.why === 'signedOut' ? `${s.place.label} signed you out. Pick another place in Settings → Kea Cloud.` : `${s.place?.label ?? 'That place'} isn’t on this computer. Pick another place in Settings → Kea Cloud.`;
+
+/** Settings → Kea Cloud: where things sync, then the same status, with the folder and sync controls. */
 export function KeaCloudPanel() {
+  return (
+    <>
+      <SyncPicker />
+      <KeaCloudStatusPanel />
+    </>
+  );
+}
+function KeaCloudStatusPanel() {
   const s = useKeaCloud((x) => x.status);
   useEffect(() => watchKeaCloud(true), []);
   if (!s) return <div className="muted">Loading…</div>;
-  if (!s.signedIn)
-    return (
-      <div className="kc-panel">
-        <KeaCloudMark size={28} />
-        <div className="kc-panel-main">
-          <b>Not signed in</b>
-          <span className="muted">Kea Cloud uses the storage that comes with your Kea account.</span>
-        </div>
-        <button className="btn sm primary" onClick={signIn}>
-          <LogIn size={14} /> Sign in
-        </button>
-      </div>
-    );
+  if (!s.signedIn) return s.place && s.place.kind !== 'kea' ? <p className="warn-line">{notHere(s)}</p> : null;
+  const server = !s.place || s.place.kind === 'kea' || s.place.kind === 'keas';
   return (
     <div className="kc-panel">
-      <KeaCloudMark size={28} />
+      <PlaceIcon place={s.place ?? { kind: 'kea' }} size={26} />
       <div className="kc-panel-main">
         <b>
           <span className={`kc-state st-${s.state}`}>
@@ -113,15 +108,17 @@ export function KeaCloudPanel() {
           </span>
         </b>
         <span className="muted">
-          {s.email}
+          {s.place && s.place.kind !== 'kea' ? s.place.label : s.email}
           {s.files ? ` · ${s.files} document${s.files === 1 ? '' : 's'}` : ''}
           {s.last ? ` · checked ${timeAgo(s.last)}` : ''}
         </span>
         <StorageBar s={s} />
       </div>
-      <button className="btn sm" onClick={syncNow}>
-        <RefreshCw size={14} /> Sync now
-      </button>
+      {server && (
+        <button className="btn sm" onClick={syncNow}>
+          <RefreshCw size={14} /> Sync now
+        </button>
+      )}
       <button className="btn sm" onClick={() => api.keaCloud.open()}>
         <FolderOpen size={14} /> Open folder
       </button>

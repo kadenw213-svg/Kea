@@ -1,13 +1,14 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Camera, Check, Laptop, Move, ShieldCheck, Trash2 } from 'lucide-react';
+import { BadgeCheck, Camera, Check, Move, ShieldCheck, Trash2 } from 'lucide-react';
 import { create } from 'zustand';
 import { api, AvatarCrop, KeaAccount } from '../../lib/api';
 import { toast } from '../../store';
 import { accountOf, run, setHubStatus, useHubStatus } from '../account/hubStore';
 
-// The Kea account as Kea shows it (name, picture, verified): one account, the Kea account. Its email, name and
-// verified come from the Kea Hub; the picture is kept on this computer (electron/account.cjs). Reloaded whenever the
-// Hub status says something about the account changed, so every view agrees right after signing in or out.
+// The Kea account as Kea shows it (name, picture, verified): the account signed in on this computer. Its email and
+// name are kept here, verified comes from the online account; the picture is kept on this computer
+// (electron/account.cjs). Reloaded whenever the status says something about the account changed, so every view agrees
+// right after signing in or out.
 const useAccountStore = create<{ account: KeaAccount | null | undefined; set(a: KeaAccount | null): void }>((set) => ({ account: undefined, set: (account) => set({ account }) }));
 let loadedFor = '';
 function load(key: string, force = false) {
@@ -174,16 +175,12 @@ export function ProfileHead({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Verifying the Kea account's email: with Google (on the Kea Hub, for everything), or, for School mode only, by the
- * same email being signed in here to Claude, OneDrive or Google. `school`: offer the second way too.
- */
-export function VerifyEmail({ school = false, compact = false }: { school?: boolean; compact?: boolean }) {
-  const [account, setAccount] = useAccount();
+/** Verifying the online Kea account's email with Google (joining an organization and Kea's shared Claude need it). */
+export function VerifyEmail({ compact = false }: { compact?: boolean }) {
+  const status = useHubStatus();
+  const [account] = useAccount();
   const [busy, setBusy] = useState(false);
-  if (!account) return null;
-  const hubVerified = account.verified && !account.verifiedHere;
-  if (hubVerified || (account.verified && school)) return null;
+  if (!account || account.verified || !status?.signedIn) return null;
   return (
     <div className={`acct-verify ${compact ? 'compact' : ''}`}>
       {!compact && <p className="muted acct-note">Verify {account.email} by signing in to Google with it. Joining an organization and Kea’s shared Claude need this.</p>}
@@ -200,27 +197,6 @@ export function VerifyEmail({ school = false, compact = false }: { school?: bool
         >
           <ShieldCheck size={14} /> Verify with Google
         </button>
-        {school && !account.verified && (
-          <button
-            className="btn sm"
-            disabled={busy}
-            title="School mode also accepts your email when it’s signed in here to Claude, OneDrive or Google"
-            onClick={async () => {
-              setBusy(true);
-              try {
-                const a = await api.account.verifyHere();
-                if (a) setAccount(a);
-                toast('Verified for School on this computer.', 'success');
-              } catch (err: any) {
-                toast(String(err?.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), 'error');
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            <Laptop size={14} /> Use this computer’s sign-ins
-          </button>
-        )}
       </div>
     </div>
   );

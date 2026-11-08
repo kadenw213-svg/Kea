@@ -51,6 +51,8 @@ export const STATE_LABEL: Record<KeaCloudStatus['state'], string> = {
   error: 'Couldn’t sync',
   syncing: 'Syncing…',
   synced: 'Up to date',
+  drive: 'Synced by the drive’s own app',
+  local: 'On this computer only',
 };
 
 export function storageLine(s: KeaCloudStatus) {

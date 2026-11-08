@@ -5,6 +5,7 @@ import { useSettings } from '../lib/settings';
 import { KeaMode, setModes } from '../lib/modes';
 import { ModeChoices } from './ModePicker';
 import { toast } from '../store';
+import { SyncPicker } from './settings/SyncPicker';
 
 /**
  * First run: "How do you use Kea?", the same choices as after signing in to a Kea account (Personal, School, Work), so
@@ -46,6 +47,11 @@ export function Welcome() {
         <h1>How do you use Kea?</h1>
         <p className="welcome-sub">Documents, spreadsheets, slides and PDFs are always here. Add any of these, or none. You can change it later in Settings.</p>
         <ModeChoices value={picked} onChange={setPicked} />
+        <div className="welcome-sync">
+          <h2>Where your things sync</h2>
+          <p className="welcome-sub">Your classes, Kea Cloud documents and your phone’s files go here. Kea cloud needs your Kea account online; you can change this any time.</p>
+          <SyncPicker compact />
+        </div>
         <button className="btn primary welcome-go" disabled={busy} onClick={start}>
           {any ? 'Start using Kea' : 'Just documents'}
         </button>

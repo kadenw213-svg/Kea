@@ -192,7 +192,7 @@ async function live(key, fn, put) {
     if (e.status !== 0) throw e;
     const was = typeof key === 'function' ? key(s) : s[key];
     if (was) return { ...was, offline: true };
-    throw new OfflineError("The Kea Hub is offline right now (its computer may be asleep or updating). Try again in a bit.");
+    throw new OfflineError("Can’t reach your Kea account online right now. Try again in a bit.");
   }
 }
 
@@ -355,7 +355,7 @@ function register() {
     try {
       return await hub.req('POST', `/v1/sets/${enc(setId)}/answer`, { questionId, choice });
     } catch (e) {
-      if (e.status === 0) throw new OfflineError('The Kea Hub is offline, so answers can’t be checked right now. Your progress is safe; try again when it’s back.');
+      if (e.status === 0) throw new OfflineError('Your Kea account is offline right now, so answers can’t be checked. Your progress is safe; try again when it’s back.');
       throw e;
     }
   });
@@ -366,8 +366,26 @@ function register() {
       (s, v) => (s.boards[`${id}:${period}`] = v)
     )
   );
-  R('hosting', () => hub.req('GET', '/v1/hosting'));
-  R('applyHosting', ({ reason }) => hub.req('POST', '/v1/hosting/apply', { reason }));
+  // Applying to have classes in the public list (a creator application, protocol section 5): POST /v1/apply on a
+  // newer account server, /v1/hosting on an older one (Hub 0.5). Both answer the same shape here.
+  R('hosting', async () => {
+    try {
+      return creatorStatus(await hub.req('GET', '/v1/apply'));
+    } catch (e) {
+      if (e.status !== 404 && e.status !== 405) throw e;
+      return { ...(await hub.req('GET', '/v1/hosting')), older: true };
+    }
+  });
+  R('applyHosting', async ({ reason, note, organization }) => {
+    const text = String(note ?? reason ?? '').trim();
+    try {
+      const r = await hub.req('POST', '/v1/apply', { kind: 'creator', note: text, organization: String(organization ?? '').trim() });
+      return r.status === 'approved' ? { status: 'approved' } : creatorStatus({ applications: [r.application].filter(Boolean) });
+    } catch (e) {
+      if (e.status !== 404 && e.status !== 405) throw e;
+      return hub.req('POST', '/v1/hosting/apply', { reason: text });
+    }
+  });
   R('setBoard', async ({ show, nickname, everyClass }) => {
     await hub.req('POST', '/v1/me/leaderboard', { show, nickname: nickname || null, everyClass: everyClass !== false });
     return hub.refreshStatus();
@@ -381,4 +399,15 @@ function register() {
   setInterval(remindTick, 60_000);
 }
 
-module.exports = { register, calendarItems, syncCalendar, _test: { parseInvite, inviteLink, jitsiLink, sessionItem, itemsBetween, dueReminders, toHubQuestions } };
+/**
+ * A creator application's state from GET /v1/apply ({ creator, applications }): approved, pending, rejected (with the
+ * owner's note) or none, in the shape the older /v1/hosting answered.
+ */
+function creatorStatus(r) {
+  if (r?.creator) return { status: 'approved' };
+  const a = (Array.isArray(r?.applications) ? r.applications : []).filter((x) => x && x.kind === 'creator').sort((x, y) => (y.createdAt ?? 0) - (x.createdAt ?? 0))[0];
+  if (!a) return { status: 'none' };
+  return { status: a.status === 'declined' || a.status === 'denied' ? 'rejected' : a.status, note: a.decisionNote ?? null, appliedAt: a.createdAt ?? null, organization: a.organization ?? null };
+}
+
+module.exports = { register, calendarItems, syncCalendar, _test: { creatorStatus, parseInvite, inviteLink, jitsiLink, sessionItem, itemsBetween, dueReminders, toHubQuestions } };

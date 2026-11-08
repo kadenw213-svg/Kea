@@ -48,18 +48,20 @@ contextBridge.exposeInMainWorld('api', {
   },
   account: {
     get: () => ipcRenderer.invoke('account:get'),
-    verifyHere: () => ipcRenderer.invoke('account:verifyHere'),
     avatar: (clear) => ipcRenderer.invoke('account:avatar', !!clear),
     crop: (c) => ipcRenderer.invoke('account:crop', c)
   },
   hub: {
+    local: () => ipcRenderer.invoke('hub:local'),
     status: () => ipcRenderer.invoke('hub:status'),
     terms: () => ipcRenderer.invoke('hub:terms'),
     support: () => ipcRenderer.invoke('hub:support'),
     openSupport: () => ipcRenderer.invoke('hub:openSupport'),
     changes: () => ipcRenderer.invoke('hub:changes'),
     openTerms: (since) => ipcRenderer.invoke('hub:openTerms', { since }),
-    register: (a) => ipcRenderer.invoke('hub:register', a),
+    create: (a) => ipcRenderer.invoke('hub:create', a),
+    oauthSignIn: (a) => ipcRenderer.invoke('hub:oauthSignIn', a),
+    link: (a) => ipcRenderer.invoke('hub:link', a),
     login: (a) => ipcRenderer.invoke('hub:login', a),
     accept: (a) => ipcRenderer.invoke('hub:accept', a),
     googleVerify: () => ipcRenderer.invoke('hub:googleVerify'),
@@ -90,6 +92,7 @@ contextBridge.exposeInMainWorld('api', {
     consentGoogle: () => ipcRenderer.invoke('hub:consentGoogle'),
     scanJobs: () => ipcRenderer.invoke('hub:scanJobs'),
     setUrl: (url, confirm) => ipcRenderer.invoke('hub:setUrl', { url, confirm: confirm === true }),
+    movedSeen: () => ipcRenderer.invoke('hub:movedSeen'),
     notifications: () => ipcRenderer.invoke('hub:notifications'),
     notificationsRead: (a) => ipcRenderer.invoke('hub:notificationsRead', a),
     notificationsDelete: (a) => ipcRenderer.invoke('hub:notificationsDelete', a),
@@ -97,6 +100,11 @@ contextBridge.exposeInMainWorld('api', {
       const h = (_e, n) => cb(n);
       ipcRenderer.on('hub:notifications', h);
       return () => ipcRenderer.removeListener('hub:notifications', h);
+    },
+    onChanged: (cb) => {
+      const h = () => cb();
+      ipcRenderer.on('hub:changed', h);
+      return () => ipcRenderer.removeListener('hub:changed', h);
     },
     onOpenAccount: (cb) => {
       const h = () => cb();
@@ -459,5 +467,32 @@ contextBridge.exposeInMainWorld('api', {
     events: (from, to) => ipcRenderer.invoke('hubOrg:events', { from, to }),
     saveIcs: (from, to) => ipcRenderer.invoke('hubOrg:saveIcs', { from, to }),
     showFile: (file) => ipcRenderer.invoke('hubOrg:showFile', { file })
+  },
+  // KeaS servers joined with a server pass (electron/servers.cjs), and where things sync (electron/syncChoice.cjs).
+  servers: {
+    list: () => ipcRenderer.invoke('servers:list'),
+    join: (a) => ipcRenderer.invoke('servers:join', a),
+    again: (serverId) => ipcRenderer.invoke('servers:again', { serverId }),
+    remove: (serverId) => ipcRenderer.invoke('servers:remove', { serverId }),
+    parse: (text) => ipcRenderer.invoke('servers:parse', { text }),
+    onChanged: (cb) => {
+      const h = () => cb();
+      ipcRenderer.on('servers:changed', h);
+      return () => ipcRenderer.removeListener('servers:changed', h);
+    }
+  },
+  work: {
+    pendingJoin: () => ipcRenderer.invoke('work:pendingJoin'),
+    onJoinLink: (cb) => {
+      const h = (_e, link) => cb(link);
+      ipcRenderer.on('work:joinLink', h);
+      return () => ipcRenderer.removeListener('work:joinLink', h);
+    }
+  },
+  sync: {
+    status: () => ipcRenderer.invoke('sync:status'),
+    preview: (choice) => ipcRenderer.invoke('sync:preview', { choice }),
+    choose: (choice, folder) => ipcRenderer.invoke('sync:choose', { choice, folder }),
+    pickFolder: () => ipcRenderer.invoke('sync:pickFolder')
   }
 });
