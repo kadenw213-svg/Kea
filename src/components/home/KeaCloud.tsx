@@ -5,18 +5,14 @@ import { AlertTriangle, CheckCircle2, CloudOff, FolderOpen, Loader2, RefreshCw }
 import { api, KeaCloudStatus } from '../../lib/api';
 import { STATE_LABEL, storageLine, useKeaCloud, watchKeaCloud } from '../../lib/keaCloud';
 import { NeedsOnline } from '../account/NeedsOnline';
+import { Logo } from '../Logo';
 import { PlaceIcon, SyncPicker } from '../settings/SyncPicker';
 import { toast } from '../../store';
 import { timeAgo } from '../../lib/util';
 
 export function KeaCloudMark({ size = 17 }: { size?: number }) {
-  // A plain cloud in Kea's accent: Kea's own storage, set apart from OneDrive and Google Drive. (No tick: whether it's
-  // up to date is shown beside the files, and a tick on a signed-out cloud read as "synced".)
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="kc-mark">
-      <path d="M7 18.5h10.2a4.3 4.3 0 0 0 .6-8.56A6 6 0 0 0 6.2 9.3 4.6 4.6 0 0 0 7 18.5Z" fill="var(--accent)" opacity="0.22" stroke="var(--accent)" strokeWidth="1.7" strokeLinejoin="round" />
-    </svg>
-  );
+  // Kea's own logo, the same mark Kea cloud has in Settings → Where your things sync (each drive shows its own logo).
+  return <Logo size={size} className="kc-mark" />;
 }
 
 export function StateIcon({ s, size = 14 }: { s: KeaCloudStatus['state']; size?: number }) {
@@ -104,7 +100,7 @@ function KeaCloudStatusPanel() {
   const server = !s.place || s.place.kind === 'kea' || s.place.kind === 'keas';
   return (
     <div className="kc-panel">
-      {s.place && s.place.kind !== 'kea' ? <PlaceIcon place={s.place} size={26} /> : <KeaCloudMark size={28} />}
+      <PlaceIcon place={s.place ?? { kind: 'kea' }} size={26} />
       <div className="kc-panel-main">
         <b>
           <span className={`kc-state st-${s.state}`}>

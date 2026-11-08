@@ -84,7 +84,8 @@ function docsRootFor(place, userData) {
 function previewText({ from, to, documents, classes, phone }) {
   if (to.kind === 'off') return `Nothing new leaves this computer from now on. ${from.kind === 'off' ? '' : `The copy in ${from.label} stays as it is.`}`.trim();
   const what = [classes && 'your classes', documents > 0 && `${documents} document${documents === 1 ? '' : 's'}`].filter(Boolean);
-  const head = what.length ? `${what.join(' and ').replace(/^./, (c) => c.toUpperCase())} get a copy in ${to.label}.` : `Your things sync through ${to.label} from now on.`;
+  const one = !classes && documents === 1;
+  const head = what.length ? `${what.join(' and ').replace(/^./, (c) => c.toUpperCase())} ${one ? 'gets' : 'get'} a copy in ${to.label}.` : `Your things sync through ${to.label} from now on.`;
   const keep = from.kind === 'off' || from.id === to.id ? '' : ` Nothing is deleted: the copy in ${from.label} stays as it is.`;
   const ph = phone ? ` On your phone, choose ${to.label} in Kea’s settings too.` : '';
   return `${head}${keep}${ph}`;

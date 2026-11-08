@@ -64,7 +64,7 @@ function verifyJwt(token, keys) {
  * The Kea account server: one account signed in with session `session`, /v1/health with features, /v1/pass, /v1/keys,
  * /v1/revoked. `features` without 'pass' acts like Hub 0.5 (no /v1/pass).
  */
-export async function fakeKeaC({ account = { id: 'acct-ana', email: 'ana@example.com', name: 'Ana' }, session = 'keac-session', features = ['pass'], passDays = 7 } = {}) {
+export async function fakeKeaC({ account = { id: 'acct-ana', email: 'ana@example.com', name: 'Ana' }, session = 'keac-session', features = ['pass'], passDays = 7, extra = null } = {}) {
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
   const kid = 'k1';
   const jwk = { ...publicKey.export({ format: 'jwk' }), kid, alg: 'EdDSA', use: 'sig', status: 'current' };
@@ -84,6 +84,8 @@ export async function fakeKeaC({ account = { id: 'acct-ana', email: 'ana@example
       state.passes.push({ serverId, at: state.now() });
       return json(res, 200, { pass, exp });
     }
+    // (More routes for trying Kea against it by hand: sign-in and /v1/me.)
+    if (extra && (await extra(req, res, u, { json, readBody, bearer }))) return;
     return json(res, 404, { error: 'Not found.' });
   });
   return { ...srv, jwk, state, account, session, kid, privateKey, signJwt: (p) => signJwt(p, privateKey, kid) };

@@ -24,8 +24,9 @@ const GROUPS: [string, string][] = [
   ['certs.', 'Training'],
   ['classes.', 'Training'],
   ['policies.', 'Training'],
-  ['budgets.', 'Budgets and rates'],
-  ['rates.', 'Budgets and rates'],
+  ['budgets.', 'Pay, rates and budgets'],
+  ['rates.', 'Pay, rates and budgets'],
+  ['paycodes.', 'Pay, rates and budgets'],
   ['structure.', 'Organization'],
   ['settings.', 'Organization'],
 ];

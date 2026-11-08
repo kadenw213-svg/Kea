@@ -268,7 +268,7 @@ function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
         </div>
       )}
       <Field label="Join code or link" hint={link ? 'A link from your organization: Kea checks its server before signing you in.' : verified || needVerify ? 'From your manager. Dashes and spaces don’t matter.' : 'From your manager. Your email isn’t verified, so your manager approves your request first.'}>
-        <input className="input wk-codein" autoFocus value={code} placeholder="ABCD-EFGH-JKMN" onChange={(e) => setCode(isLink(e.target.value) ? e.target.value : e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && ready && !busy && join()} />
+        <input className={`input ${link ? '' : 'wk-codein'}`} autoFocus value={code} placeholder="ABCD-EFGH-JKMN" onChange={(e) => setCode(isLink(e.target.value) ? e.target.value : e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && ready && !busy && join()} />
       </Field>
       {!link && (
         <Advanced>

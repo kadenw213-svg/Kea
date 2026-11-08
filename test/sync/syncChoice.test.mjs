@@ -85,6 +85,15 @@ test('copying into the new place: what’s missing is copied, nothing is replace
   assert.deepEqual(sc._pure.copyInto(a, b, 'Kea cloud'), { copied: 0, same: 2, kept: 1 });
 });
 
+test('the confirmation says what gets a copy where', () => {
+  const kea = { id: 'kea-hub', kind: 'kea', label: 'Kea cloud' };
+  const off = { id: 'off', kind: 'off', label: 'Off' };
+  const gd = { id: 'google', kind: 'drive', label: 'Google Drive' };
+  assert.equal(sc._pure.previewText({ from: off, to: kea, documents: 1, classes: false, phone: false }), '1 document gets a copy in Kea cloud.');
+  assert.equal(sc._pure.previewText({ from: kea, to: gd, documents: 3, classes: true, phone: false }), 'Your classes and 3 documents get a copy in Google Drive. Nothing is deleted: the copy in Kea cloud stays as it is.');
+  assert.equal(sc._pure.previewText({ from: gd, to: kea, documents: 0, classes: false, phone: false }), 'Your things sync through Kea cloud from now on. Nothing is deleted: the copy in Google Drive stays as it is.');
+});
+
 test('the choices: Kea cloud first, the drives (also ones not here), a folder, joined servers, off', () => {
   state.servers = [{ serverId: 'S1aaaaaaaaaaaaaaaaaaaa', name: 'Westside Pool', url: 'https://pool.example.org', signedOut: false }];
   state.drives = state.drives.filter((d) => d.id !== 'google');
