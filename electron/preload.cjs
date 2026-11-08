@@ -417,6 +417,7 @@ contextBridge.exposeInMainWorld('api', {
   confirmClose: () => ipcRenderer.send('app:confirm-close'),
   getVersion: () => ipcRenderer.invoke('app:version'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  updateStatus: () => ipcRenderer.invoke('update:status'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.send('update:install'),
   ai: {

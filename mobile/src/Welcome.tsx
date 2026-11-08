@@ -520,7 +520,7 @@ export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onC
                     : u.status === 'ready'
                       ? `Kea ${u.next} is ready to install`
                       : u.status === 'current'
-                        ? `Up to date: ${u.version} is the newest release${u.checked ? ` (checked ${new Date(u.checked).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})` : ''}`
+                        ? `Kea is up to date${u.checked ? ` · checked ${new Date(u.checked).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}`
                         : u.error
                           ? `Couldn’t check: ${u.error}`
                           : ''}

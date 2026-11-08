@@ -1037,3 +1037,19 @@ button.srow-where:hover {
   align-items: center;
   gap: 7px;
 }
+
+/* A page's groups fold (several groups: the first open, the rest closed until opened). */
+.sgroup-fold {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.sgroup-fold:first-of-type {
+  border-top: none;
+  margin-top: 2px;
+}
+.sgroup-fold > .fold-head .sgroup-title {
+  margin: 0;
+}
+.sgroup-fold > .fold-head .fold-toggle {
+  padding: 10px 0 6px;
+}

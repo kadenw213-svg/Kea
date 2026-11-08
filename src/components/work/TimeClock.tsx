@@ -211,7 +211,7 @@ function MyTimecard({ org }: { org: Org }) {
   const tc = useHub<Timecard>(p.start ? `/v1/orgs/${org.id}/timecards?periodStart=${p.start}` : null);
   if (st.error) return <Problem error={st.error === 'Not found.' ? `${org.name}’s server doesn’t have the time clock yet.` : st.error} />;
   return (
-    <Card title="My timecard" actions={<PeriodNav p={p} />}>
+    <Card title="My timecard" alert={!!tc.error} actions={<PeriodNav p={p} />}>
       {tc.error && <Problem error={tc.error} retry={tc.reload} />}
       {!tc.data ? (
         !tc.error && <Loading />
@@ -447,6 +447,7 @@ function TeamTime({ org }: { org: Org }) {
       {view && (
         <Card
           title="Timecards"
+          alert={period.error || shown.error ? true : approve ? waiting.length : 0}
           actions={
             <>
               <PeriodNav p={p} label={data ? `${fmtDay(data.period.start, { month: 'short', day: 'numeric' })} – ${fmtDay(data.period.end, { month: 'short', day: 'numeric' })}` : undefined} />

@@ -24,6 +24,8 @@ import { AiModelsPanel } from './AiModelsPanel';
 import { KeaAccountSettings } from './KeaAccountSettings';
 import { SyncLine } from './SyncPicker';
 import { KeaCloudPanel } from '../home/KeaCloud';
+import { Fold, FoldGroup } from '../Fold';
+import { setFold } from '../../lib/folds';
 
 function FieldControl({ f, value, onChange }: { f: Field; value: any; onChange: (v: any) => void }) {
   switch (f.type) {
@@ -322,7 +324,7 @@ function HitRows({ hits, q, go, strong = 0 }: { hits: Hit[]; q: string; go: (id:
     <>
       {hits.map((h) =>
         h.kind === 'field' ? (
-          <Row key={h.key} f={h.field} q={h.score >= strong ? q : undefined} where={where(h.section)} onWhere={() => go(h.section.id)} />
+          <Row key={h.key} f={h.field} q={h.score >= strong ? q : undefined} where={where(h.section)} onWhere={() => (openGroupOf(h.section, h.field.key), go(h.section.id))} />
         ) : (
           <PanelRow key={h.key} hit={h} go={go} />
         )
@@ -488,7 +490,23 @@ function SettingsStart({ q, setQ, go }: { q: string; setQ: (q: string) => void; 
   );
 }
 
-/** One page of settings (a section), with its extra panels. */
+/** The heading each field of a page sits under ('' before the first one). */
+function groupsOf(cur: Section) {
+  const groupOf = new Map<string, string>();
+  let g = '';
+  for (const f of cur.fields) groupOf.set(f.key, (g = f.group || g));
+  return groupOf;
+}
+/** Going to a setting from a search result opens the group it's in. */
+function openGroupOf(cur: Section, key: string) {
+  const g = groupsOf(cur).get(key);
+  if (g) setFold(`settings:${cur.id}`, g, true);
+}
+
+/**
+ * One page of settings (a section), with its extra panels. A page with several groups folds them like every screen in
+ * Kea: the first open, the rest closed until opened, each remembered.
+ */
 function SectionBody({ cur, showAdvanced }: { cur: Section; showAdvanced: boolean }) {
   const values = useSettings((s) => s.values);
   if (cur.id === 'shortcuts') return <ShortcutsPanel q="" />;
@@ -497,10 +515,14 @@ function SectionBody({ cur, showAdvanced }: { cur: Section; showAdvanced: boolea
   const visible = cur.fields.filter((f) => (showAdvanced || !f.advanced) && (!f.when || f.when(values)));
   const advCount = cur.fields.filter((f) => f.advanced && (!f.when || f.when(values))).length;
   // Each field belongs to the group heading above it; a heading shows above the first visible field of its group.
-  const groupOf = new Map<string, string>();
-  let g = '';
-  for (const f of cur.fields) groupOf.set(f.key, (g = f.group || g));
-  let last = '';
+  const groupOf = groupsOf(cur);
+  const parts: { head: string; fields: Field[] }[] = [];
+  for (const f of visible) {
+    const head = groupOf.get(f.key) || '';
+    if (parts.length && parts[parts.length - 1].head === head) parts[parts.length - 1].fields.push(f);
+    else parts.push({ head, fields: [f] });
+  }
+  const folding = parts.filter((p) => p.head).length > 1;
   return (
     <>
       {cur.blurb && <p className="sblurb">{cur.blurb}</p>}
@@ -509,17 +531,24 @@ function SectionBody({ cur, showAdvanced }: { cur: Section; showAdvanced: boolea
       {cur.id === 'aimodels' && <AiModelsPanel />}
       {cur.id === 'account' && <KeaAccountSettings />}
       {cur.id === 'keacloud' && <KeaCloudPanel />}
-      {visible.map((f) => {
-        const head = groupOf.get(f.key) || '';
-        const show = head && head !== last;
-        last = head;
-        return (
-          <Fragment key={f.key}>
-            {show && <div className="sgroup-title sgroup-in">{head}</div>}
-            <Row f={f} />
-          </Fragment>
-        );
-      })}
+      <FoldGroup screen={`settings:${cur.id}`}>
+        {parts.map((p, i) =>
+          p.head && folding ? (
+            <Fold key={`${p.head}:${i}`} id={p.head} className="sgroup-fold" title={<span className="sgroup-title">{p.head}</span>}>
+              {p.fields.map((f) => (
+                <Row key={f.key} f={f} />
+              ))}
+            </Fold>
+          ) : (
+            <Fragment key={`${p.head}:${i}`}>
+              {p.head && <div className="sgroup-title sgroup-in">{p.head}</div>}
+              {p.fields.map((f) => (
+                <Row key={f.key} f={f} />
+              ))}
+            </Fragment>
+          )
+        )}
+      </FoldGroup>
       {!showAdvanced && advCount > 0 && (
         <button className="link-btn more-adv" onClick={() => useSettings.getState().set({ 'ui.showAdvanced': true })}>
           Show {advCount} advanced setting{advCount === 1 ? '' : 's'}

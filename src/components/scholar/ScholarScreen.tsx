@@ -58,6 +58,7 @@ import { StudyPlayer } from './Study';
 import { ResourcesView } from './Resources';
 import { MessagesView } from './Messages';
 import { ChangesBox, ItemHistory } from './History';
+import { Fold, FoldGroup, useFold, useFoldPlace } from '../Fold';
 import { openClassStudy, openStudyHub } from './StudyHub';
 import { studyRoute } from './studyIds';
 import { Avatar, VerifiedBadge, useAccount } from './Account';
@@ -566,13 +567,29 @@ function WithdrawQuestion({ q }: { q: WithdrawnState['ask'][number] }) {
 }
 
 // ---------- What needs you (above the calendar) ----------
-/** Missing work across every class, past items to check off, and this week's calendar changes. Each folds to one line. */
+/**
+ * Missing work across every class, past items to check off, and this week's calendar changes. Each folds to one line
+ * (its count stays on it); the first one showing starts open, and each remembers being opened or closed.
+ */
 function AttentionBar({ ctx }: { ctx: Ctx }) {
+  return (
+    <FoldGroup screen="attention">
+      <AttentionBoxes ctx={ctx} />
+    </FoldGroup>
+  );
+}
+/** One of the boxes above the calendar: its place among them, and whether it's open. */
+function useAttentionFold(id: string) {
+  const place = useFoldPlace(id);
+  const [open, setOpen] = useFold('attention', id, place.first ?? true);
+  return { ref: place.ref, open, toggle: () => setOpen(!open) };
+}
+function AttentionBoxes({ ctx }: { ctx: Ctx }) {
   const day = useToday();
   const past = useItems(missingSince(ctx.courses, day), day);
   const askWithdraw = useWithdrawAsk();
-  const [missOpen, setMissOpen] = useState(false);
-  const [uncOpen, setUncOpen] = useState(false);
+  const miss = useAttentionFold('missing');
+  const unc = useAttentionFold('unconfirmed');
   if (!past) return null;
   const missing = past.filter((i) => isMissing(i));
   // (Work is checked off only by the student, one item at a time with its own checkbox: there's no "check all off",
@@ -585,14 +602,14 @@ function AttentionBar({ ctx }: { ctx: Ctx }) {
         <WithdrawQuestion key={q.courseId} q={q} />
       ))}
       {missing.length > 0 && (
-        <section className="miss-box">
-          <button className="miss-head" onClick={() => setMissOpen(!missOpen)}>
+        <section className="miss-box" ref={miss.ref}>
+          <button className="miss-head" aria-expanded={miss.open} onClick={miss.toggle}>
             <AlertTriangle size={16} />
             <b>{missing.length} missing</b>
             <span className="muted">Past due, and your class site shows nothing handed in. Hand them in if you still can.</span>
-            <ChevronDown size={15} className={missOpen ? 'flip' : ''} />
+            <ChevronDown size={15} className={miss.open ? 'flip' : ''} />
           </button>
-          {missOpen && (
+          {miss.open && (
             <div className="sch-list">
               {missing.map((i) => (
                 <ItemRow key={i.id} ctx={ctx} it={i} showDate />
@@ -602,14 +619,14 @@ function AttentionBar({ ctx }: { ctx: Ctx }) {
         </section>
       )}
       {unconfirmed.length > 0 && (
-        <section className="unc-box">
-          <button className="miss-head unc" onClick={() => setUncOpen(!uncOpen)}>
+        <section className="unc-box" ref={unc.ref}>
+          <button className="miss-head unc" aria-expanded={unc.open} onClick={unc.toggle}>
             <Circle size={15} />
             <b>{unconfirmed.length} done? Check {unconfirmed.length === 1 ? 'it' : 'them'} off</b>
             <span className="muted">Past items Kea couldn’t match on your class site. Check off each one you did.</span>
-            <ChevronDown size={15} className={uncOpen ? 'flip' : ''} />
+            <ChevronDown size={15} className={unc.open ? 'flip' : ''} />
           </button>
-          {uncOpen && (
+          {unc.open && (
             <div className="sch-list">
               {unconfirmed.map((i) => (
                 <ItemRow key={i.id} ctx={ctx} it={i} showDate />
@@ -1122,6 +1139,7 @@ function MonthGrid({ ctx, items, start, month, showCourse }: { ctx: Ctx; items: 
 /**
  * Every week of the class: what it covers (each chapter's topics, with the textbook and Study), its tests by name, and
  * how much else is due (each item is on the calendar). This week open; the weeks ahead folded; earlier weeks in one fold.
+ * Each remembers being opened or closed, and a closed week with missing work still shows how many on its line.
  */
 function WeeksView({ ctx, c }: { ctx: Ctx; c: ScholarCourseDetail }) {
   const items = useItems(iso(addDays(new Date(), -150)), iso(addDays(new Date(), 200)), c.id);
@@ -1134,21 +1152,30 @@ function WeeksView({ ctx, c }: { ctx: Ctx; c: ScholarCourseDetail }) {
   const due = (w: ScholarItem) => items.filter((i) => TODO.has(i.type) && i.date >= w.date && i.date <= end(w));
   const current = weeks.filter((w) => end(w) >= now);
   const past = weeks.filter((w) => end(w) < now).reverse();
-  const week = (w: ScholarItem, open: boolean) => {
+  const week = (w: ScholarItem) => {
     const list = due(w);
     const tests = list.filter((i) => TEST.has(i.type));
     const work = list.filter((i) => !TEST.has(i.type));
     const isNow = w.date <= now && end(w) >= now;
+    const late = list.filter((i) => isMissing(i)).length;
     return (
-      <details key={w.id} className={`wbw-week ${isNow ? 'now' : ''}`} open={open}>
-        <summary>
-          <b>
-            {shortDate(w.date)} – {shortDate(end(w))}
-          </b>
-          {isNow && <span className="wbw-now">This week</span>}
-          <span className="muted">{w.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ') || w.title}</span>
-          {tests.length > 0 && <span className="wbw-test">{tests.length === 1 ? typeLabel(tests[0]) : `${tests.length} tests`}</span>}
-        </summary>
+      <Fold
+        key={w.id}
+        as="details"
+        id={w.id}
+        className={`wbw-week ${isNow ? 'now' : ''}`}
+        alert={late}
+        title={
+          <>
+            <b>
+              {shortDate(w.date)} – {shortDate(end(w))}
+            </b>
+            {isNow && <span className="wbw-now">This week</span>}
+            <span className="muted">{w.readings.map((r) => r.chapter.replace(/^Chapter /, 'Ch ')).join(', ') || w.title}</span>
+            {tests.length > 0 && <span className="wbw-test">{tests.length === 1 ? typeLabel(tests[0]) : `${tests.length} tests`}</span>}
+          </>
+        }
+      >
         {w.readings.map((r) => {
           const ch = chapter.get(r.chapter);
           return (
@@ -1206,19 +1233,21 @@ function WeeksView({ ctx, c }: { ctx: Ctx; c: ScholarCourseDetail }) {
             ))}
           </div>
         )}
-      </details>
+      </Fold>
     );
   };
+  const pastLate = past.reduce((n, w) => n + due(w).filter((i) => isMissing(i)).length, 0);
   return (
-    <div className="wbw-weeks">
-      {current.map((w, k) => week(w, k === 0))}
-      {past.length > 0 && (
-        <details className="wbw-earlier">
-          <summary className="muted">Earlier weeks ({past.length})</summary>
-          {past.map((w) => week(w, false))}
-        </details>
-      )}
-    </div>
+    <FoldGroup screen={`class:${c.id}`}>
+      <div className="wbw-weeks">
+        {current.map((w) => week(w))}
+        {past.length > 0 && (
+          <Fold as="details" id="earlier" className="wbw-earlier" alert={pastLate} title={<span className="muted">Earlier weeks ({past.length})</span>}>
+            {past.map((w) => week(w))}
+          </Fold>
+        )}
+      </div>
+    </FoldGroup>
   );
 }
 
@@ -1503,13 +1532,21 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
 
 /** The class's textbook: one study chapter per chapter of the class, in order. */
 function Textbook({ c }: { c: ScholarCourseDetail }) {
-  const [open, setOpen] = useState<string | null>(null);
   if (!c.chapters.length) return <div className="sch-empty">No chapters yet. They appear after the class is scanned.</div>;
   return (
     <div className="tb-list">
-      {c.chapters.map((ch) => (
-        <div key={ch.label} className={`tb-ch ${open === ch.label ? 'open' : ''}`}>
-          <div className="tb-row" onClick={() => setOpen(open === ch.label ? null : ch.label)}>
+      {c.chapters.map((ch, i) => (
+        <TextbookChapter key={ch.label} c={c} ch={ch} first={i === 0} />
+      ))}
+    </div>
+  );
+}
+/** One chapter of the textbook: the first one open, the rest folded until opened (each remembered). */
+function TextbookChapter({ c, ch, first }: { c: ScholarCourseDetail; ch: ScholarCourseDetail['chapters'][number]; first: boolean }) {
+  const [isOpen, setOpen] = useFold(`textbook:${c.id}`, ch.label, first);
+  return (
+        <div className={`tb-ch ${isOpen ? 'open' : ''}`}>
+          <div className="tb-row" onClick={() => setOpen(!isOpen)} aria-expanded={isOpen}>
             <FileText size={17} className={ch.pdf ? 'tb-has' : 'tb-none'} />
             <div className="tb-text">
               <div className="tb-title">
@@ -1543,7 +1580,7 @@ function Textbook({ c }: { c: ScholarCourseDetail }) {
               </button>
             )}
           </div>
-          {open === ch.label && (
+          {isOpen && (
             <div className="tb-detail">
               {ch.readingUrl && (
                 <button className="btn sm" onClick={() => openLink(ch.readingUrl!)}>
@@ -1554,8 +1591,6 @@ function Textbook({ c }: { c: ScholarCourseDetail }) {
             </div>
           )}
         </div>
-      ))}
-    </div>
   );
 }
 
@@ -1675,6 +1710,8 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
   };
   return (
     <aside className="sch-panel" style={{ ['--kc' as any]: ctx.colors.item(it) }}>
+      {/* (Its folding sections: the guide's steps first and open, the rest closed until opened.) */}
+      <FoldGroup screen="item">
       <div className="sch-panel-head">
         <span className="sch-chip" style={{ borderColor: ctx.colors.course(it.courseId), color: ctx.colors.course(it.courseId) }}>
           {it.courseCode}
@@ -1801,12 +1838,17 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
       {/* How to do it, step by step (Claude's guide, written ahead of time). */}
       <AssignmentGuide it={it} raw={instructions} onOpen={openLink} onItem={openItem} />
       {it.readings.length > 0 && (
-        <details className="pn-readings" open={it.type === 'reading'}>
-          <summary>
+        <Fold
+          as="details"
+          id="readings"
+          className="pn-readings"
+          defaultOpen={it.type === 'reading' ? true : undefined}
+          title={
             <span className="tb-h">
               {TEST.has(it.type) ? 'Covers' : it.readings.every((r) => r.inferred) ? 'This week’s reading' : 'Readings'} ({it.readings.length})
             </span>
-          </summary>
+          }
+        >
           {it.readings.map((r) => (
             <div key={r.chapter} className="sch-reading">
               <div className="sch-chapter">
@@ -1825,7 +1867,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
               {r.summary && <div className="rd-summary">{r.summary}</div>}
             </div>
           ))}
-        </details>
+        </Fold>
       )}
       {!guide && toKnow.length > 0 && (
         <section>
@@ -1866,6 +1908,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           </div>
         </section>
       )}
+      </FoldGroup>
     </aside>
   );
 }

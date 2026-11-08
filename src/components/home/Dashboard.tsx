@@ -2,7 +2,8 @@
 // sessions from Scholar), "Classes" (Scholar's classes and Kea Hub classes) and, with Work mode on, "Work" (the to-do
 // box's most urgent items and the next shift). Each card only appears when its part of Kea is on.
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BriefcaseBusiness, CalendarClock, CalendarDays, ChevronRight, Clock, GraduationCap, Plus, Users } from 'lucide-react';
+import { AlertTriangle, BriefcaseBusiness, CalendarClock, CalendarDays, ChevronDown, ChevronRight, Clock, GraduationCap, Plus, Users } from 'lucide-react';
+import { FoldAlert, FoldGroup, useFold, useFoldPlace } from '../Fold';
 import { api, ScholarCourse, ScholarItem, WorkEvent } from '../../lib/api';
 import { openScholar, useScholar } from '../scholar/scholarStore';
 import { isDone, isMissing, useColors, TODO } from '../scholar/kinds';
@@ -99,19 +100,29 @@ function useWorkData(on: boolean) {
 }
 
 // ---------- Cards ----------
-function Card({ icon, title, action, onAction, children, className = '' }: { icon: JSX.Element; title: string; action?: string; onAction?: () => void; children: React.ReactNode; className?: string }) {
+/**
+ * One card. The cards fold like every section in Kea: the first one showing starts open, the rest closed, and each
+ * remembers being opened or closed. `alert`: what's overdue in it, kept on its header while it's closed.
+ */
+function Card({ id, icon, title, action, onAction, children, className = '', alert }: { id: string; icon: JSX.Element; title: string; action?: string; onAction?: () => void; children: React.ReactNode; className?: string; alert?: number }) {
+  const place = useFoldPlace(id);
+  const [open, setOpen] = useFold('home', id, place.first ?? true);
   return (
-    <section className={`dcard ${className}`}>
+    <section ref={place.ref} className={`dcard ${open ? '' : 'folded'} ${className}`}>
       <header className="dcard-head">
-        <span className="dcard-icon">{icon}</span>
-        <h3>{title}</h3>
+        <button className="dcard-toggle" aria-expanded={open} onClick={() => setOpen(!open)} title={open ? 'Fold' : 'Open'}>
+          <span className="dcard-icon">{icon}</span>
+          <h3>{title}</h3>
+          <FoldAlert open={open} alert={alert} />
+          <ChevronDown size={15} className={`dcard-chev ${open ? 'flip' : ''}`} />
+        </button>
         {action && (
           <button className="dcard-link" onClick={onAction}>
             {action} <ChevronRight size={14} />
           </button>
         )}
       </header>
-      {children}
+      {open && children}
     </section>
   );
 }
@@ -121,7 +132,7 @@ function ComingUp({ data, max }: { data: SchoolData; max: number }) {
   const list = data.upcoming.slice(0, max);
   const code = (id: string) => data.courses.find((c) => c.id === id)?.code || '';
   return (
-    <Card icon={<CalendarClock size={16} />} title="Coming up" action="Calendar" onAction={() => openScholar({ name: 'calendar' })} className="dcard-wide">
+    <Card id="coming-up" alert={data.missing} icon={<CalendarClock size={16} />} title="Coming up" action="Calendar" onAction={() => openScholar({ name: 'calendar' })} className="dcard-wide">
       {data.missing > 0 && (
         <button className="dmissing" onClick={() => openScholar({ name: 'calendar' })}>
           <AlertTriangle size={14} /> {data.missing} missing assignment{data.missing === 1 ? '' : 's'}
@@ -161,7 +172,7 @@ function ComingUp({ data, max }: { data: SchoolData; max: number }) {
 function Classes({ courses, hubList: shownHub }: { courses: ScholarCourse[]; hubList: HubClass[] }) {
   const colors = useColors(courses.map((c) => c.id));
   return (
-    <Card icon={<GraduationCap size={16} />} title="Classes" action="All classes" onAction={() => openScholar({ name: 'calendar' })}>
+    <Card id="classes" icon={<GraduationCap size={16} />} title="Classes" action="All classes" onAction={() => openScholar({ name: 'calendar' })}>
       <ul className="dlist">
         {courses.slice(0, 6).map((c) => (
           <li key={c.id}>
@@ -213,22 +224,23 @@ function left(ms: number | null, overdue: boolean) {
 function Work() {
   const data = useWorkData(true);
   const status = useHubStatus();
+  const alert = data ? data.todo.filter((t) => t.overdue || (t.msLeft != null && t.msLeft < 0)).length : 0;
   // (Without an online session there are no organizations to show: the card says what's needed, calmly.)
   if (status && !status.signedIn)
     return (
-      <Card icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
+      <Card id="work" alert={alert} icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
         <NeedsOnline compact />
       </Card>
     );
   if (!data) return null;
   if (data.offline && !data.next && !data.todo.length)
     return (
-      <Card icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
+      <Card id="work" alert={alert} icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
         <div className="dempty">Can’t reach your Kea account online right now. Your shifts show here when it’s back.</div>
       </Card>
     );
   return (
-    <Card icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
+    <Card id="work" alert={alert} icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
       <HomeClock />
       {data.next ? (
         <button className="dshift" onClick={openWork}>
@@ -289,7 +301,7 @@ export function Dashboard({ showSchool }: { showSchool: boolean }) {
     const out: JSX.Element[] = [];
     if (showSchool && school && !school.courses.length && showToday)
       out.push(
-        <Card key="setup" icon={<CalendarDays size={16} />} title="Your classes" className="dcard-wide">
+        <Card key="setup" id="setup" icon={<CalendarDays size={16} />} title="Your classes" className="dcard-wide">
           <button className="dsetup" onClick={() => openScholar({ name: 'add' })}>
             <Plus size={16} />
             <span className="dmain">
@@ -309,9 +321,11 @@ export function Dashboard({ showSchool }: { showSchool: boolean }) {
   if (showWork) side.push(<Work key="work" />);
   if (!cards.length && !side.length) return null;
   return (
-    <div className={`dash ${cards.length && side.length ? 'two' : ''}`}>
-      {cards.length > 0 && <div className="dash-main">{cards}</div>}
-      {side.length > 0 && <div className="dash-side">{side}</div>}
-    </div>
+    <FoldGroup screen="home">
+      <div className={`dash ${cards.length && side.length ? 'two' : ''}`}>
+        {cards.length > 0 && <div className="dash-main">{cards}</div>}
+        {side.length > 0 && <div className="dash-side">{side}</div>}
+      </div>
+    </FoldGroup>
   );
 }

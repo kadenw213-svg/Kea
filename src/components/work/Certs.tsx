@@ -24,7 +24,7 @@ export function MyCerts({ org, me }: { org: Org; me: string | null }) {
   const mine = (classes.data?.classes ?? []).filter((c) => c.mine);
   return (
     <div className="wk-grid2">
-      <Card title="My certifications">
+      <Card title="My certifications" alert={certs.data.missing.length + [...latest.values()].filter((c) => c.stage === 'expired').length}>
         {latest.size === 0 && certs.data.missing.length === 0 && <p className="muted">None on record yet.</p>}
         <div className="wk-certs">
           {certs.data.missing.map((m) => (
@@ -152,7 +152,7 @@ function Records({ org }: { org: Org }) {
         </div>
       </Card>
       {data.missing.length > 0 && (
-        <Card title="Missing for their position">
+        <Card title="Missing for their position" alert={data.missing.length}>
           <div className="wk-tags">
             {data.missing.map((m) => (
               <span key={m.accountId + m.typeId} className="wk-pill bad">

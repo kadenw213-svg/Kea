@@ -8,6 +8,8 @@ import MarkdownIt from 'markdown-it';
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FlaskConical, Link2, Lock, Monitor, NotebookPen, RefreshCw, Search, Target, Upload } from 'lucide-react';
 import { api, Guide, ScholarItem } from '../../lib/api';
 import { TESTS, willGuide } from './itemRules';
+import { Fold, useFoldPlace } from '../Fold';
+import { useFolds } from '../../lib/folds';
 
 // Writing work: what the student is writing about leads the guide.
 const FOCUS = new Set(['paper', 'discussion', 'project', 'presentation']);
@@ -129,34 +131,16 @@ function useStepChecks(itemId: string) {
   };
 }
 
-// Steps the student opened or folded themselves, by item and step title, on this device. A step they never touched
-// follows the default (open until checked off). Nothing else changes them: a background refresh of the guides, a
-// sync or a checkmark elsewhere never reopens a step that was folded.
-const FOLD_KEY = 'kea.guideFolds';
-function readFolds(): Record<string, boolean> {
-  try {
-    return JSON.parse(localStorage.getItem(FOLD_KEY) || '{}') || {};
-  } catch {
-    return {};
-  }
-}
+// Steps the student opened or folded themselves, by item and step title, on this device (kept with every other screen's
+// folds, src/lib/folds.ts, under "guide:<item>"). A step they never touched follows the default. Nothing else changes
+// them: a background refresh of the guides, a sync or a checkmark elsewhere never reopens a step that was folded.
 function useStepFolds(itemId: string) {
-  const [all, setAll] = useState(readFolds);
-  const key = (title: string) => `${itemId}|${title}`;
+  const screen = `guide:${itemId}`;
+  const all = useFolds((s) => s.choices);
   return {
     /** true: opened, false: folded, undefined: never touched. */
-    choice: (title: string): boolean | undefined => all[key(title)],
-    set(changes: [string, boolean][]) {
-      const next = { ...readFolds() };
-      for (const [title, open] of changes) next[key(title)] = open;
-      // (Kept small: the oldest choices go first once there are many.)
-      const keys = Object.keys(next);
-      for (const k of keys.slice(0, Math.max(0, keys.length - 3000))) delete next[k];
-      try {
-        localStorage.setItem(FOLD_KEY, JSON.stringify(next));
-      } catch {}
-      setAll(next);
-    }
+    choice: (title: string): boolean | undefined => all[`${screen}|${title}`],
+    set: (changes: [string, boolean][]) => useFolds.getState().set(screen, changes)
   };
 }
 
@@ -235,9 +219,12 @@ export function GuideView({ it, g, onOpen, onItem, compact = false }: { it: Scho
   const folds = useStepFolds(it.id);
   const [, bump] = useState(0);
   const expandable = steps.map((s, i) => (s.detail || s.links?.length || (s.item && onItem) ? i : -1)).filter((i) => i >= 0);
-  // A step the student never opened or folded is open until it's checked off: the questions to answer and the links
-  // are the instructions, not extras behind a click. Their own choice always wins.
-  const isOpen = (i: number) => folds.choice(steps[i].title) ?? (!compact && !checks.done(steps[i].title));
+  // Like every folding section in Kea, only the first starts open: here the first step still to do (its questions and
+  // links are the instructions), the rest folded until opened. Their own choice always wins.
+  const firstToDo = expandable.find((i) => !checks.done(steps[i].title));
+  const isOpen = (i: number) => folds.choice(steps[i].title) ?? (!compact && i === firstToDo);
+  // (The steps are the item panel's first section: the panel's other folds start closed.)
+  const stepsPlace = useFoldPlace('steps');
   // Checking a step off folds it and opens the next step still to do (only then, never by itself); the last step that
   // unlocks the instructions also asks Kea to read them now.
   const check = (s: GuideStep, on: boolean) => {
@@ -316,7 +303,7 @@ export function GuideView({ it, g, onOpen, onItem, compact = false }: { it: Scho
               </button>
             )}
           </div>
-          <ol className="gd-steps">
+          <ol className="gd-steps" ref={stepsPlace.ref}>
             {steps.map((s, i) => (
               <Step
                 key={i}
@@ -352,18 +339,32 @@ export function GuideView({ it, g, onOpen, onItem, compact = false }: { it: Scho
             </div>
           )}
           {g.procedure && (
-            <details className="gd-fold gd-procedure" open>
-              <summary>
-                <FlaskConical size={13} /> The lab procedure
-              </summary>
+            <Fold
+              as="details"
+              id="procedure"
+              className="gd-fold gd-procedure"
+              defaultOpen={false}
+              title={
+                <>
+                  <FlaskConical size={13} /> The lab procedure
+                </>
+              }
+            >
               <Md text={g.procedure} onOpen={onOpen} />
-            </details>
+            </Fold>
           )}
           {!!g.focus?.research.length && (
-            <details className="gd-fold gd-research">
-              <summary>
-                <Search size={13} /> What to research ({g.focus.research.length})
-              </summary>
+            <Fold
+              as="details"
+              id="research"
+              className="gd-fold gd-research"
+              defaultOpen={false}
+              title={
+                <>
+                  <Search size={13} /> What to research ({g.focus.research.length})
+                </>
+              }
+            >
               <ul>
                 {g.focus.research.map((r, i) => (
                   <li key={i}>
@@ -377,7 +378,7 @@ export function GuideView({ it, g, onOpen, onItem, compact = false }: { it: Scho
                   </li>
                 ))}
               </ul>
-            </details>
+            </Fold>
           )}
         </>
       )}
@@ -409,10 +410,17 @@ export function GuideView({ it, g, onOpen, onItem, compact = false }: { it: Scho
         </div>
       )}
       {!compact && g.rubric ? (
-        <details className="gd-fold gd-rubric">
-          <summary>
-            See the rubric<span className="muted"> · {g.rubric.name}{g.rubric.total ? `, ${g.rubric.total} points` : ''}</span>
-          </summary>
+        <Fold
+          as="details"
+          id="rubric"
+          className="gd-fold gd-rubric"
+          defaultOpen={false}
+          title={
+            <>
+              See the rubric<span className="muted"> · {g.rubric.name}{g.rubric.total ? `, ${g.rubric.total} points` : ''}</span>
+            </>
+          }
+        >
           {/* Each criterion: what earns full marks, and the lower levels folded under it. */}
           <ul className="gd-rubric-list">
             {g.rubric.criteria.map((c, i) => {
@@ -450,14 +458,21 @@ export function GuideView({ it, g, onOpen, onItem, compact = false }: { it: Scho
               );
             })}
           </ul>
-        </details>
+        </Fold>
       ) : (
         !compact &&
         g.graded.length > 0 && (
-          <details className="gd-fold">
-            <summary>
-              How it’s graded{total ? <span className="muted"> · {total} points</span> : null}
-            </summary>
+          <Fold
+            as="details"
+            id="graded"
+            className="gd-fold"
+            defaultOpen={false}
+            title={
+              <>
+                How it’s graded{total ? <span className="muted"> · {total} points</span> : null}
+              </>
+            }
+          >
             <ul className="gd-graded">
               {g.graded.map((c, i) => (
                 <li key={i}>
@@ -469,7 +484,7 @@ export function GuideView({ it, g, onOpen, onItem, compact = false }: { it: Scho
                 </li>
               ))}
             </ul>
-          </details>
+          </Fold>
         )
       )}
       {compact ? (
@@ -491,7 +506,7 @@ function lead(t: string) {
   return m ? m[0] : t;
 }
 
-/** The special notes: open on the PC; on the phone, folded under their count. */
+/** The special notes: open on the PC (not a fold: they're what not to miss); on the phone, folded under their count. */
 function Notes({ compact, count, children }: { compact: boolean; count: number; children: ReactNode }) {
   const head = (
     <>
@@ -499,10 +514,9 @@ function Notes({ compact, count, children }: { compact: boolean; count: number; 
     </>
   );
   return compact ? (
-    <details className="gd-notes">
-      <summary className="gd-label">{head}</summary>
+    <Fold as="details" id="notes" screen="guide-phone" className="gd-notes" defaultOpen={false} title={<span className="gd-label">{head}</span>}>
       {children}
-    </details>
+    </Fold>
   ) : (
     <div className="gd-notes">
       <div className="gd-label">{head}</div>
@@ -511,14 +525,16 @@ function Notes({ compact, count, children }: { compact: boolean; count: number; 
   );
 }
 
-/** The class site's own wording, folded (at the bottom, under the guide; or alone until the guide is written). */
-export function OriginalWording({ text, open: startOpen = false }: { text: string; open?: boolean }) {
+/**
+ * The class site's own wording (at the bottom, under the guide; or alone until the guide is written): folded, unless
+ * it's the first section showing. `open`: how it starts when it isn't among a screen's other sections.
+ */
+export function OriginalWording({ text, open: startOpen }: { text: string; open?: boolean }) {
   if (!text) return null;
   return (
-    <details className="gd-fold gd-original" open={startOpen}>
-      <summary>From the class site</summary>
+    <Fold as="details" id="wording" className="gd-fold gd-original" defaultOpen={startOpen} title="From the class site">
       <p className="sch-desc">{text}</p>
-    </details>
+    </Fold>
   );
 }
 

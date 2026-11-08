@@ -13,7 +13,7 @@ import { newFile, openWithDialog } from '../lib/open';
 import { FileText, Sheet, FileCode2, FolderOpen, Presentation } from 'lucide-react';
 import { requestCloseTab } from '../lib/closing';
 import { isMac } from '../lib/util';
-import { useUpdates, openUpdates } from './Updates';
+import { useUpdates, openUpdates, installNow, UpdatePill } from './Updates';
 import { RefreshCw, Info, Github } from 'lucide-react';
 import { openSettings } from '../lib/settings';
 import { friendlyPath } from '../lib/keaCloud';
@@ -52,8 +52,8 @@ export function TitleBar() {
           {(close) => (
             <>
               <div className="menu-title">Kea {upd.version}</div>
-              <button className="menu-item" onClick={() => (openUpdates(), close())}>
-                <RefreshCw size={16} /> {hasUpdate ? 'Update available' : 'Check for updates'}
+              <button className="menu-item" onClick={() => (upd.state.status === 'ready' ? installNow() : openUpdates(), close())}>
+                <RefreshCw size={16} /> {upd.state.status === 'ready' ? 'Restart to update' : hasUpdate ? 'Update available' : 'Check for updates'}
                 {hasUpdate && <span className="kbd" style={{ color: 'var(--accent)' }}>●</span>}
               </button>
               <button className="menu-item" onClick={() => (openPalette(), close())}>
@@ -198,6 +198,7 @@ export function TitleBar() {
         </MenuButton>
       </div>
       <span className="titlebar-fill" />
+      <UpdatePill />
       <AccountButton />
       {tabMenu && (
         <>

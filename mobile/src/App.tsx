@@ -200,7 +200,9 @@ export function App() {
       checkForUpdate().catch(() => {});
     };
     document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
+    // (And every six hours while it stays open.)
+    const every = setInterval(() => checkForUpdate().catch(() => {}), 6 * 3600e3);
+    return () => (document.removeEventListener('visibilitychange', onVisible), clearInterval(every));
   }, []);
 
   // Each item's checkmark: the PC's, unless the phone changed it more recently.
@@ -1196,7 +1198,7 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
         )}
         {studyable && !TEST.has(it.type) && study}
         <LinkGroups links={rest} onOpen={(url) => Kea.open({ url })} />
-        {!guide && <OriginalWording text={instructions} />}
+        {!guide && <OriginalWording text={instructions} open={false} />}
         {(it.instructor || it.contact) && <p className="muted small">{[it.instructor, it.contact].filter(Boolean).join(' · ')}</p>}
       </div>
     </div>

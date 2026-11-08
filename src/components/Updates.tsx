@@ -4,7 +4,7 @@ import { Download, RefreshCw, CheckCircle2, AlertCircle, Sparkles, X } from 'luc
 import { api, UpdateState } from '../lib/api';
 import { useTabs } from '../store';
 import { requestCloseTab } from '../lib/closing';
-import { setting } from '../lib/settings';
+import { nextUpdateState, updateHeadline, updateIndicator } from '../lib/updateState';
 
 interface UpdateStore {
   state: UpdateState;
@@ -20,44 +20,62 @@ export const useUpdates = create<UpdateStore>((set) => ({
   set: (s) => set(s)
 }));
 
-let silent = false;
+// The person pressed Check for updates and is waiting for the answer (a check Kea runs by itself stays quiet).
+let asked = false;
 const RELEASES = 'https://github.com/kadenw213-svg/kea/releases';
 
-/** Wire updater events once, and quietly check a few seconds after launch. */
+const apply = (incoming: UpdateState) => {
+  const s = useUpdates.getState();
+  const r = nextUpdateState(s.state, incoming, asked);
+  asked = r.asked;
+  if (r.state !== s.state) s.set({ state: r.state });
+};
+
+/**
+ * Wire updater events once. Kea itself checks soon after it starts and every few hours, in every mode
+ * (electron/main.cjs); this window picks up where the updater is, so a download finished before it opened still says
+ * "Restart to update".
+ */
 export function initUpdates() {
   api.getVersion().then((version) => useUpdates.getState().set({ version }));
-  api.onUpdateState((state) => {
-    // A background check only surfaces when there is something to install.
-    if (silent && (state.status === 'latest' || state.status === 'error' || state.status === 'checking')) {
-      if (state.status !== 'checking') silent = false;
-      return;
-    }
-    silent = false;
-    useUpdates.getState().set({ state });
-  });
-  setTimeout(() => {
-    if (!setting('updates.autoCheck')) return;
-    silent = true;
-    api.checkForUpdates().then((r) => {
-      if (r.status === 'dev' || r.status === 'error' || r.status === 'manual') silent = false;
-    });
-  }, 6000);
+  api.onUpdateState(apply);
+  api.updateStatus?.().then(apply, () => {});
 }
 
 export function openUpdates(check = true) {
   const s = useUpdates.getState();
   s.set({ open: true });
   if (check && !['downloading', 'ready', 'available'].includes(s.state.status)) {
-    silent = false;
+    asked = true;
     s.set({ state: { status: 'checking' } });
     api.checkForUpdates().then((r) => {
-      if (r.status === 'dev' || r.status === 'manual') s.set({ state: { status: r.status } });
-      else if (r.status === 'error') s.set({ state: { status: 'error', message: r.message } });
+      if (r.status === 'dev' || r.status === 'manual') apply({ status: r.status });
+      else if (r.status === 'error') apply({ status: 'error', message: r.message });
     });
   }
 }
 
-async function installNow() {
+/** Download the update that was found (when updates don't download by themselves). */
+function download() {
+  const s = useUpdates.getState();
+  s.set({ state: { ...s.state, status: 'downloading', percent: 0 } });
+  api.downloadUpdate();
+}
+
+/** In the title bar, on every screen: an update downloaded and waiting ("Restart to update"), on its way, or found. */
+export function UpdatePill() {
+  const state = useUpdates((s) => s.state);
+  const ind = updateIndicator(state);
+  if (!ind) return null;
+  return (
+    <button className={`update-pill ${ind.kind}`} title={ind.title} onClick={() => (ind.kind === 'ready' ? installNow() : openUpdates(false))}>
+      {ind.kind === 'ready' ? <RefreshCw size={14} /> : <Download size={14} />}
+      {ind.label}
+    </button>
+  );
+}
+
+export async function installNow() {
   // Offer to save unsaved work before the app restarts.
   for (const t of useTabs.getState().tabs.filter((x) => x.dirty)) {
     if (!(await requestCloseTab(t.id))) return;
@@ -85,8 +103,8 @@ export function UpdateDialog() {
   switch (state.status) {
     case 'latest':
       icon = <CheckCircle2 size={28} color="var(--success)" />;
-      title = "You're up to date";
-      body = `Kea ${version} is the newest version.`;
+      title = updateHeadline(state);
+      body = `You have the newest version, ${version}.`;
       break;
     case 'available':
       icon = <Sparkles size={28} color="var(--accent)" />;
@@ -109,10 +127,7 @@ export function UpdateDialog() {
           </button>
           <button
             className="btn primary"
-            onClick={() => {
-              set({ state: { ...state, status: 'downloading', percent: 0 } });
-              api.downloadUpdate();
-            }}
+            onClick={download}
           >
             <Download size={16} /> Download update
           </button>
@@ -138,15 +153,15 @@ export function UpdateDialog() {
       break;
     case 'ready':
       icon = <CheckCircle2 size={28} color="var(--success)" />;
-      title = 'Update ready to install';
-      body = `Kea will restart into version ${state.version || ''}. You'll be asked to save any unsaved work first.`;
+      title = 'Update ready';
+      body = `Kea restarts into version ${state.version || ''}. You can save any unsaved work first. Or it installs by itself the next time you close Kea.`;
       actions = (
         <>
           <button className="btn" onClick={close}>
-            On next launch
+            Later
           </button>
           <button className="btn primary" onClick={installNow}>
-            <RefreshCw size={16} /> Restart and update
+            <RefreshCw size={16} /> Restart to update
           </button>
         </>
       );
