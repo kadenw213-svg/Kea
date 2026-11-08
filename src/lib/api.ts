@@ -1512,7 +1512,7 @@ export interface SyncApi {
   pickFolder(): Promise<HubResult<string | null>>;
 }
 
-// ---------- Kea Cloud: documents in the person's Kea storage (electron/keaCloud.cjs) ----------
+// ---------- Kea cloud: documents in the person's Kea storage (electron/keaCloud.cjs) ----------
 export type KeaCloudState = 'signedOut' | 'off' | 'offline' | 'full' | 'error' | 'syncing' | 'synced' | 'drive' | 'local';
 export type KeaCloudFileState = 'synced' | 'pending' | 'full' | 'local';
 export interface KeaCloudStatus {
@@ -1536,7 +1536,7 @@ export interface KeaCloudStatus {
 export interface KeaCloudApi {
   status(): Promise<HubResult<KeaCloudStatus>>;
   states(paths: string[]): Promise<HubResult<Record<string, KeaCloudFileState>>>;
-  /** Where a new document called `name` goes (a free name in Kea Cloud's folder). */
+  /** Where a new document called `name` goes (a free name in Kea cloud's folder). */
   newPath(name: string): Promise<HubResult<string>>;
   rename(path: string, name: string): Promise<HubResult<string>>;
   remove(path: string): Promise<HubResult<boolean>>;

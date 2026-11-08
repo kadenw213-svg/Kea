@@ -447,7 +447,7 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('update:state', fn);
     return () => ipcRenderer.removeListener('update:state', fn);
   },
-  // Kea Cloud: documents in the person's Kea storage (electron/keaCloud.cjs).
+  // Kea cloud: documents in the person's Kea storage (electron/keaCloud.cjs).
   keaCloud: {
     status: () => ipcRenderer.invoke('keaCloud:status'),
     states: (paths) => ipcRenderer.invoke('keaCloud:states', { paths }),

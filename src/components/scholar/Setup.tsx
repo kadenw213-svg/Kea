@@ -82,7 +82,7 @@ export function SetupWizard({ onDone, target }: { onDone?(): void; target?: stri
           background with Kea's own instructions. It can read only Kea's class folder, your class site and the school platforms your classes link to, and it saves only into Kea.
         </p>
         <p className="muted">
-          What it reads from your classes (announcements, assignments, grades, files, messages and discussion posts, including classmates' posts and names) is sent to Anthropic to be processed under your Claude account's terms. Your classes are stored on this computer, and a copy goes to the drive chosen under Scans → Devices (your Kea account’s own folder in Kea Cloud when you’re signed in, otherwise your OneDrive or Google Drive) so your phone and your other computers can use them. Choose “Don’t sync” there to keep them only on this computer. Kea never brings in another computer’s classes unless you say so.
+          What it reads from your classes (announcements, assignments, grades, files, messages and discussion posts, including classmates' posts and names) is sent to Anthropic to be processed under your Claude account's terms. Your classes are stored on this computer, and a copy goes to the drive chosen under Scans → Devices (your Kea account’s own folder in Kea cloud when you’re signed in, otherwise your OneDrive or Google Drive) so your phone and your other computers can use them. Choose “Don’t sync” there to keep them only on this computer. Kea never brings in another computer’s classes unless you say so.
         </p>
         {!c.claude ? (
           <button className="btn tonal sm" disabled={!!busy} onClick={() => act('claude', () => api.scholar.installClaude(), 'Claude Code is installed.')}>

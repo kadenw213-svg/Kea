@@ -250,7 +250,7 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
       <div className="drive-row">
         <SyncLine onChange={() => openSettings('keacloud')} />
       </div>
-      {!dev.drive && dev.choice !== 'off' && <p className="warn-line">That place isn’t ready on this computer. Change it in Settings → Kea Cloud.</p>}
+      {!dev.drive && dev.choice !== 'off' && <p className="warn-line">That place isn’t ready on this computer. Change it in Settings → Kea cloud.</p>}
       {dev.drive && <p className="hint-line">Every device must use this same drive and account to see each other.</p>}
 
       {dev.waiting && (

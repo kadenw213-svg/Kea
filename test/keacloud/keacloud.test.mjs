@@ -1,4 +1,4 @@
-// Kea Cloud (electron/keaCloud.cjs) and the parts of hubsync.cjs it relies on: the pure rules, then two devices
+// Kea cloud (electron/keaCloud.cjs) and the parts of hubsync.cjs it relies on: the pure rules, then two devices
 // syncing documents through a real Kea Hub (from the KeaS repo next to this one, or KEAS_DIR).
 //   node --test test/keacloud/
 import { test, before, after } from 'node:test';
@@ -19,7 +19,7 @@ const HUB = [process.env.KEAS_DIR && path.join(process.env.KEAS_DIR, 'hub/index.
 const haveHub = !!HUB;
 
 // ---------- Pure rules ----------
-test('paths: only inside the Kea Cloud folder', () => {
+test('paths: only inside the Kea cloud folder', () => {
   const root = path.join(os.tmpdir(), 'hub-sync', 'Documents');
   assert.equal(kc.isInside(root, path.join(root, 'Essay.docx')), true);
   assert.equal(kc.isInside(root, path.join(root, 'Class', 'Notes.docx')), true);
@@ -108,7 +108,7 @@ after(async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// A device: its own folder and state, syncing with Kea Cloud's options. ("now" runs ahead so new files count as settled.)
+// A device: its own folder and state, syncing with Kea cloud's options. ("now" runs ahead so new files count as settled.)
 function device(name, scholarOnHub = () => false) {
   const root = path.join(dir, name, 'hub-sync');
   const s = createSync({ root, stateFile: path.join(dir, name, 'state.json'), client: httpClient({ base: () => base, token: () => token, fetchFn: fetch }), now: () => Date.now() + 10_000, ...kc.syncOptions(scholarOnHub) });
@@ -175,7 +175,7 @@ test('narrowing the scope never deletes the files left out', { skip: !haveHub &&
   C.w('Documents/Plan.docx', 'plan');
   await C.s.cycle();
   assert.ok((await hubFiles()).includes('kea/Kea/School/kea-data.json'));
-  onHub = false; // Scholar moved to OneDrive: Kea Cloud keeps only documents in step
+  onHub = false; // Scholar moved to OneDrive: Kea cloud keeps only documents in step
   fs.rmSync(path.join(C.root, 'Kea'), { recursive: true });
   C.full();
   await C.s.cycle();

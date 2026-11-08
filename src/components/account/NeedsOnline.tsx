@@ -1,4 +1,4 @@
-// Cloud features (Kea Cloud, hosted classes and organizations, Kea's shared Claude, Work) while the account isn't
+// Cloud features (Kea cloud, hosted classes and organizations, Kea's shared Claude, Work) while the account isn't
 // online: a calm "Needs your Kea account online" in their place, with the one thing to do about it. Never an error.
 import { CloudOff } from 'lucide-react';
 import { onlineNeed, openAccount, useHubStatus } from './hubStore';

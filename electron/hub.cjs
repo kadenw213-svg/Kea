@@ -1,5 +1,5 @@
 // The Kea account. It lives on this computer first (accountCore.cjs: opened offline with just its email, no password),
-// and online on the Kea account server, which adds Kea Cloud, hosted classes and organizations, shared Claude and Work.
+// and online on the Kea account server, which adds Kea cloud, hosted classes and organizations, shared Claude and Work.
 // Online, a Kea account signs in with Google or Microsoft only (the system browser, loopback + PKCE); there are no Kea
 // passwords or two-step codes (only the owner's account still has a two-step code). Kea talks to the server here, in
 // the main process. The online sign-in (a session token) is encrypted with the OS keychain and never shown to the page.
@@ -978,7 +978,7 @@ function syncNow() {
     })
     .catch((e) => {
       syncState.error = e.message;
-      syncState.offline = !e.status; // (Kea Cloud shows "offline" rather than an error)
+      syncState.offline = !e.status; // (Kea cloud shows "offline" rather than an error)
       // Signed out elsewhere, or new terms to agree to: stop until that's sorted (status() and the terms gate show it).
       // (A KeaS session that ended is made again from the pass at the next start: servers.cjs.)
       if (e.status === 401 || e.status === 428) stopSync();
@@ -992,7 +992,7 @@ async function startSync() {
   } catch {
     return;
   }
-  // Classes and Kea Cloud documents both follow the one choice: nothing to mirror unless it's a server.
+  // Classes and Kea cloud documents both follow the one choice: nothing to mirror unless it's a server.
   if (!place) return stopSync();
   if (syncer && syncKey === place.key) return;
   if (syncer) stopSync();

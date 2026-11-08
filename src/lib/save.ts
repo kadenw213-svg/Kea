@@ -68,9 +68,9 @@ export async function saveTabFile(tabId: string, formats: SaveFormat[], saveAs: 
   if (saveAs || !target || !format) {
     if (isSilentSave()) return false;
     const suggested = `${safeFileName(opts.suggestedName || '') || baseName(tab.name)}.${(format || formats[0]).ext}`;
-    // Kea Cloud's folder is hidden inside Kea's profile: Save as from there starts in the usual save folder instead.
+    // Kea cloud's folder is hidden inside Kea's profile: Save as from there starts in the usual save folder instead.
     const dir = tab.path && !inKeaCloud(tab.path) ? tab.path.replace(/[\\/][^\\/]*$/, '') : '';
-    // A file with no place yet: Kea Cloud or this PC (asked only when signed in to a Kea account).
+    // A file with no place yet: Kea cloud or this PC (asked only when signed in to a Kea account).
     const where = !tab.path ? await chooseSaveTarget(suggested) : 'pc';
     if (where === null) return false;
     const chosen = where !== 'pc' ? where : await api.saveDialog({

@@ -1,4 +1,4 @@
-// Kea Cloud: documents in the person's Kea storage on the Kea Hub.
+// Kea cloud: documents in the person's Kea storage on the Kea Hub.
 //
 // They're ordinary files in "Documents/" inside the Hub sync folder (hub.cjs syncRoot), so every editor opens and
 // saves them like files on this PC, and hubsync.cjs mirrors them to "kea/Documents/" on the Hub, where the person's
@@ -49,7 +49,7 @@ function fileState(stat, rec, skip) {
 }
 
 /**
- * The one-word state for the Kea Cloud header: 'signedOut' | 'off' | 'offline' | 'full' | 'error' | 'syncing' | 'synced'.
+ * The one-word state for the Kea cloud header: 'signedOut' | 'off' | 'offline' | 'full' | 'error' | 'syncing' | 'synced'.
  * `sync` is hub.cjs's syncState, `st` hubsync's saved state, `pending` the number of documents waiting to go up.
  */
 function summarize({ signedIn, enabled, sync, st, pending }) {
@@ -135,7 +135,7 @@ function status() {
   const server = place.kind === 'kea' || place.kind === 'keas';
   if (ok && enabled()) fs.mkdirSync(root(), { recursive: true });
   const st = readSyncState();
-  // A server place with Kea Cloud on but the sync isn't running yet (just signed in, or terms just agreed to): start it.
+  // A server place with Kea cloud on but the sync isn't running yet (just signed in, or terms just agreed to): start it.
   const s0 = h.syncState();
   if (server && ok && enabled() && !s0.on && (!s0.error || s0.offline)) h.startSync();
   const sync = h.syncState();
@@ -158,10 +158,10 @@ function status() {
   };
 }
 
-const notReady = () => (placeNow().kind === 'kea' ? 'Sign in to your Kea account to use Kea Cloud.' : `${placeNow().label} isn’t on this computer right now.`);
+const notReady = () => (placeNow().kind === 'kea' ? 'Sign in to your Kea account to use Kea cloud.' : `${placeNow().label} isn’t on this computer right now.`);
 function guard(p) {
   if (!ready()) throw new Error(notReady());
-  if (!isInside(root(), p) || path.resolve(p) === path.resolve(root())) throw new Error('That isn’t in Kea Cloud.');
+  if (!isInside(root(), p) || path.resolve(p) === path.resolve(root())) throw new Error('That isn’t in Kea cloud.');
 }
 
 function register() {
@@ -180,7 +180,7 @@ function register() {
     for (const p of Array.isArray(paths) ? paths.slice(0, 2000) : []) if (typeof p === 'string' && isInside(root(), p)) out[p] = stateOf(p, st);
     return out;
   }));
-  // Where a new document goes: Kea Cloud's folder (made if needed), with a name not already taken.
+  // Where a new document goes: Kea cloud's folder (made if needed), with a name not already taken.
   handleApp(ipcMain, 'keaCloud:newPath', wrap(({ name }) => {
     if (!ready()) throw new Error(notReady());
     if (!validName(name)) throw new Error('That name can’t be used for a file.');

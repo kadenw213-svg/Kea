@@ -307,7 +307,7 @@ function SignInStart({ onDone }: { onDone(): void }) {
             Use offline
           </button>
         </div>
-        <p className="muted acct-note">No connection needed. Your things stay on this computer; continue with Google or Microsoft later for Kea Cloud, classes and work.</p>
+        <p className="muted acct-note">No connection needed. Your things stay on this computer; continue with Google or Microsoft later for Kea cloud, classes and work.</p>
       </form>
     </div>
   );
@@ -356,8 +356,8 @@ function GoOnline() {
         {status.moved?.kind === 'moved' && status.moved.to === status.url
           ? 'Your Kea account moved to a new address. Sign in once to continue.'
           : again
-            ? 'You’re signed in on this computer. Continue with Google or Microsoft to use Kea Cloud, classes and work; everything else already works.'
-            : `Online, your account gets Kea Cloud, classes and organizations, Kea’s shared Claude and Work. Continue as ${status.account.email}: the same email links, and everything on this computer stays.`}
+            ? 'You’re signed in on this computer. Continue with Google or Microsoft to use Kea cloud, classes and work; everything else already works.'
+            : `Online, your account gets Kea cloud, classes and organizations, Kea’s shared Claude and Work. Continue as ${status.account.email}: the same email links, and everything on this computer stays.`}
       </p>
       {!reachable && status.checked && <p className="hub-warn">Kea can’t reach your Kea account online right now. Try again once you’re online.</p>}
       {s.note && <p className="hub-warn">{s.note}</p>}
@@ -408,7 +408,7 @@ export async function signOutAsked() {
   const who = s?.account?.email ?? s?.me?.account.email ?? s?.cached?.email;
   const online = !!s?.signedIn;
   const body = online
-    ? 'Kea goes back to its start screen. Your account stays on this computer, so you can sign in again, also offline. Kea Cloud, classes and your organizations stop syncing here, and the copy of your shifts on this computer is removed. Documents saved on this computer stay.'
+    ? 'Kea goes back to its start screen. Your account stays on this computer, so you can sign in again, also offline. Kea cloud, classes and your organizations stop syncing here, and the copy of your shifts on this computer is removed. Documents saved on this computer stay.'
     : 'Kea goes back to its start screen. Your account and everything on this computer stay, so you can sign in again any time.';
   if ((await ask(`Sign out${who ? ` of ${who}` : ''}?`, body, [{ id: 'cancel', label: 'Cancel' }, { id: 'out', label: 'Sign out', primary: true }])) !== 'out') return;
   const r = await run(api.hub.logout());
@@ -429,7 +429,7 @@ export function HubPanel() {
     refreshHub();
     return watchKeaCloud();
   }, []);
-  // (Kea Cloud's figure is the newer one: when it moves, the account's is fetched again so both say the same.)
+  // (Kea cloud's figure is the newer one: when it moves, the account's is fetched again so both say the same.)
   const kcUsed = kc?.storage?.used;
   useEffect(() => {
     if (kcUsed != null && status?.me && kcUsed !== status.me.storage.used) refreshHub();

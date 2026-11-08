@@ -1,5 +1,5 @@
-// Kea Cloud's status: the sync state, the storage used, and what to do when it's full or signed out. Shown on Home
-// (above Kea Cloud's files) and in Settings → Accounts & cloud → Kea Cloud.
+// Kea cloud's status: the sync state, the storage used, and what to do when it's full or signed out. Shown on Home
+// (above Kea cloud's files) and in Settings → Accounts & cloud → Kea cloud.
 import { useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, CloudOff, FolderOpen, Loader2, RefreshCw } from 'lucide-react';
 import { api, KeaCloudStatus } from '../../lib/api';
@@ -43,7 +43,7 @@ async function syncNow() {
   else toast(r.error, 'error');
 }
 
-/** The strip above Kea Cloud's files on Home. */
+/** The strip above Kea cloud's files on Home. */
 export function KeaCloudHeader() {
   const s = useKeaCloud((x) => x.status);
   useEffect(() => watchKeaCloud(true), []);
@@ -51,7 +51,7 @@ export function KeaCloudHeader() {
   if (!s.signedIn)
     return (
       <div className="kc-head">
-        {!s.place || s.place.kind === 'kea' ? <NeedsOnline compact what="Kea Cloud keeps your documents on all your devices" /> : <span className="muted">{notHere(s)}</span>}
+        {!s.place || s.place.kind === 'kea' ? <NeedsOnline compact what="Kea cloud keeps your documents on all your devices" /> : <span className="muted">{notHere(s)}</span>}
       </div>
     );
   return (
@@ -81,9 +81,9 @@ export function KeaCloudHeader() {
 
 /** Why documents can't be used now, for a place other than Kea cloud. */
 const notHere = (s: KeaCloudStatus) =>
-  s.place?.why === 'signedOut' ? `${s.place.label} signed you out. Pick another place in Settings → Kea Cloud.` : `${s.place?.label ?? 'That place'} isn’t on this computer. Pick another place in Settings → Kea Cloud.`;
+  s.place?.why === 'signedOut' ? `${s.place.label} signed you out. Pick another place in Settings → Kea cloud.` : `${s.place?.label ?? 'That place'} isn’t on this computer. Pick another place in Settings → Kea cloud.`;
 
-/** Settings → Kea Cloud: where things sync, then the same status, with the folder and sync controls. */
+/** Settings → Kea cloud: where things sync, then the same status, with the folder and sync controls. */
 export function KeaCloudPanel() {
   return (
     <>

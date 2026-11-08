@@ -23,7 +23,7 @@ export const CATEGORIES: Category[] = [
   { id: 'general', label: 'General', icon: 'Settings', blurb: 'Starting up, Home, saving and updates', sections: ['general', 'home', 'files', 'updates'] },
   { id: 'editors', label: 'Documents & editors', icon: 'FileText', blurb: 'Docs, spelling, sheets, slides, PDFs, voice', sections: ['docs', 'writing', 'sheets', 'slides', 'pdf', 'code', 'video', 'voice'] },
   { id: 'school', label: 'School', icon: 'GraduationCap', blurb: 'Class checks, notifications, studying, class sites', sections: ['scholar', 'sites'] },
-  { id: 'accounts', label: 'Accounts & cloud', icon: 'UserCircle', blurb: 'Kea account, Kea Cloud, Google, privacy', sections: ['account', 'keacloud', 'google', 'privacy'] },
+  { id: 'accounts', label: 'Accounts & cloud', icon: 'UserCircle', blurb: 'Kea account, Kea cloud, Google, privacy', sections: ['account', 'keacloud', 'google', 'privacy'] },
   { id: 'tools', label: 'AI & tools', icon: 'Sparkles', blurb: 'Claude, Encyclopedia, image tools, other apps', sections: ['assistant', 'lookup', 'aimodels', 'control'] },
   { id: 'help', label: 'Help & about', icon: 'Info', blurb: 'Shortcuts, feedback, licenses', sections: ['shortcuts', 'feedback', 'about'] },
 ];
@@ -50,7 +50,7 @@ export const PANELS: Panel[] = [
   { id: 'p-aimodels', label: 'AI image tools: models', section: 'aimodels', words: 'background removal upscale download models gpu image ai' },
   { id: 'p-lookup-model', label: 'Local model for the Encyclopedia', section: 'lookup', words: 'llama qwen ai model download offline local gpu' },
   { id: 'p-account', label: 'How you use Kea, and your Kea account', section: 'account', words: 'sign in sign out log in log out profile modes personal school work hub email password leaderboard' },
-  { id: 'p-cloud', label: 'Kea Cloud storage', section: 'keacloud', words: 'storage space quota cloud sync documents full used free room' },
+  { id: 'p-cloud', label: 'Kea cloud storage', section: 'keacloud', words: 'storage space quota cloud sync documents full used free room' },
   { id: 'p-sync', label: 'Where your things sync', section: 'keacloud', words: 'sync syncing onedrive google drive dropbox folder phone devices other computers kea cloud server keas organization off where' },
   { id: 'p-history', label: 'Version history on this PC', section: 'files', words: 'version history space disk storage delete versions' },
   { id: 'p-privacy', label: 'Clear recent files, previews and descriptions', section: 'privacy', words: 'clear recent previews history data folder delete forget' },

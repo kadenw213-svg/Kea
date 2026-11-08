@@ -1,4 +1,4 @@
-// Where your things sync: one choice for classes (Scholar), Kea Cloud documents and the phone's files.
+// Where your things sync: one choice for classes (Scholar), Kea cloud documents and the phone's files.
 //
 //   kea-hub          Kea cloud: the storage that comes with an online Kea account (hub.cjs + scholar/hubsync.cjs)
 //   google, onedrive, onedrive-<key>, dropbox   a cloud drive's folder on this computer (its own app syncs it)
@@ -73,7 +73,7 @@ function copyInto(src, dst, label) {
   }
   return r;
 }
-/** Where Kea Cloud documents are kept for a place: { kind, root } -> folder (null: that place isn't here). */
+/** Where Kea cloud documents are kept for a place: { kind, root } -> folder (null: that place isn't here). */
 function docsRootFor(place, userData) {
   if (!place) return null;
   if (place.kind === 'kea' || place.kind === 'keas') return place.root ? path.join(place.root, 'Documents') : null;
@@ -158,7 +158,7 @@ function serverPlace() {
   return null;
 }
 
-/** Where Kea Cloud documents are now (null: that place isn't on this computer). */
+/** Where Kea cloud documents are now (null: that place isn't on this computer). */
 const docsRoot = (id = current()) => docsRootFor(placeOf(id), userData());
 
 function status() {

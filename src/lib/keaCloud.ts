@@ -1,4 +1,4 @@
-// Kea Cloud from the page's side: the sync state for Home's sidebar and header, and "Save to Kea Cloud" for the save
+// Kea cloud from the page's side: the sync state for Home's sidebar and header, and "Save to Kea cloud" for the save
 // flow. The files themselves are ordinary files in a folder on this PC (electron/keaCloud.cjs), so editors open and
 // save them like any other.
 import { create } from 'zustand';
@@ -22,10 +22,10 @@ export const useKeaCloud = create<KeaCloudStore>((set) => ({
   },
 }));
 
-/** Kea Cloud can be used: signed in to a Kea account, and not turned off in Settings. */
+/** Kea cloud can be used: signed in to a Kea account, and not turned off in Settings. */
 export const cloudUsable = (s: KeaCloudStatus | null | undefined): s is KeaCloudStatus => !!s && s.signedIn && s.enabled;
 
-/** Keep the status current while something shows it (Home's Kea Cloud view polls faster). */
+/** Keep the status current while something shows it (Home's Kea cloud view polls faster). */
 let watchers = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 export function watchKeaCloud(fast = false) {
@@ -61,7 +61,7 @@ export function storageLine(s: KeaCloudStatus) {
   return quota < 0 ? `${formatBytes(used)} used` : `${formatBytes(used)} of ${formatBytes(quota)} used`;
 }
 
-/** Is this path one of Kea Cloud's documents? */
+/** Is this path one of Kea cloud's documents? */
 export function inKeaCloud(p: string | null | undefined, s = useKeaCloud.getState().status) {
   if (!p || !s?.root) return false;
   const a = p.toLowerCase().replace(/\//g, '\\');
@@ -70,23 +70,23 @@ export function inKeaCloud(p: string | null | undefined, s = useKeaCloud.getStat
 }
 
 /**
- * How a path is shown to people: a Kea Cloud file as "Kea Cloud › Folder › name" (its real folder is hidden inside
+ * How a path is shown to people: a Kea cloud file as "Kea cloud › Folder › name" (its real folder is hidden inside
  * Kea's profile), anything else as it is.
  */
 export function friendlyPath(p: string, s = useKeaCloud.getState().status) {
   if (!inKeaCloud(p, s) || !s?.root) return p;
   const rest = p.slice(s.root.replace(/[\\/]+$/, '').length).split(/[\\/]/).filter(Boolean);
-  return ['Kea Cloud', ...rest].join(' › ');
+  return ['Kea cloud', ...rest].join(' › ');
 }
-/** The folder a file is in, for "Opened just now · Documents": Kea Cloud files say Kea Cloud (and their sub-folder). */
+/** The folder a file is in, for "Opened just now · Documents": Kea cloud files say Kea cloud (and their sub-folder). */
 export function folderLabel(p: string, s = useKeaCloud.getState().status) {
-  if (inKeaCloud(p, s)) return friendlyPath(p, s).split(' › ').slice(0, -1).join(' › ') || 'Kea Cloud';
+  if (inKeaCloud(p, s)) return friendlyPath(p, s).split(' › ').slice(0, -1).join(' › ') || 'Kea cloud';
   return p.split(/[\\/]/).slice(-2, -1)[0] || p;
 }
 
 /**
- * Asked before the Save dialog for a file that has no place yet: Kea Cloud or this PC (Settings → Kea Cloud →
- * "New files save to"). Returns the Kea Cloud path chosen, 'pc' for the usual dialog, or null when cancelled.
+ * Asked before the Save dialog for a file that has no place yet: Kea cloud or this PC (Settings → Kea cloud →
+ * "New files save to"). Returns the Kea cloud path chosen, 'pc' for the usual dialog, or null when cancelled.
  */
 export async function chooseSaveTarget(suggested: string): Promise<string | 'pc' | null> {
   const pref = setting<string>('keaCloud.saveTo');
@@ -95,10 +95,10 @@ export async function chooseSaveTarget(suggested: string): Promise<string | 'pc'
   if (!cloudUsable(s)) return 'pc';
   let where = pref === 'cloud' ? 'cloud' : '';
   if (!where) {
-    where = await ask('Where do you want to save it?', `Kea Cloud keeps it in your Kea storage${s.email ? ` (${s.email})` : ''}, on your other computers and your phone too.`, [
+    where = await ask('Where do you want to save it?', `Kea cloud keeps it in your Kea storage${s.email ? ` (${s.email})` : ''}, on your other computers and your phone too.`, [
       { id: 'cancel', label: 'Cancel' },
       { id: 'pc', label: 'This PC…' },
-      { id: 'cloud', label: 'Kea Cloud', primary: true },
+      { id: 'cloud', label: 'Kea cloud', primary: true },
     ]);
   }
   if (where === 'pc') return 'pc';
@@ -106,7 +106,7 @@ export async function chooseSaveTarget(suggested: string): Promise<string | 'pc'
   if (s.state === 'full') toast('Your Kea storage is full. It’s saved on this PC and goes up when there’s room.', 'error');
   const dot = suggested.lastIndexOf('.');
   const ext = dot > 0 ? suggested.slice(dot) : '';
-  const name = await prompt('Save to Kea Cloud', 'File name', dot > 0 ? suggested.slice(0, dot) : suggested);
+  const name = await prompt('Save to Kea cloud', 'File name', dot > 0 ? suggested.slice(0, dot) : suggested);
   if (name === null || !name.trim()) return null;
   const r = await api.keaCloud.newPath(name.trim().toLowerCase().endsWith(ext.toLowerCase()) ? name.trim() : name.trim() + ext);
   if (!r.ok) {

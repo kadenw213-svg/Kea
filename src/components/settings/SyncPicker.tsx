@@ -1,5 +1,5 @@
-// "Where your things sync": one choice for classes, Kea Cloud documents and the phone's files (electron/syncChoice.cjs).
-// Shown in Settings → Kea Cloud, on the first-run screen, and in the Kea Cloud panel. Switching is one click and a
+// "Where your things sync": one choice for classes, Kea cloud documents and the phone's files (electron/syncChoice.cjs).
+// Shown in Settings → Kea cloud, on the first-run screen, and in the Kea cloud panel. Switching is one click and a
 // short confirmation of what gets a copy where; nothing is deleted, and the old place keeps its copy.
 import { useEffect, useState } from 'react';
 import { Building2, Check, CloudOff, FolderOpen, Loader2 } from 'lucide-react';
@@ -74,7 +74,7 @@ export function SyncPicker({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`sync-pick ${compact ? 'compact' : ''}`}>
       {!compact && <div className="sync-pick-head">Where your things sync</div>}
-      {!compact && <p className="muted sync-pick-sub">Your classes, Kea Cloud documents and your phone’s files go to the same place.</p>}
+      {!compact && <p className="muted sync-pick-sub">Your classes, Kea cloud documents and your phone’s files go to the same place.</p>}
       <div className="sync-opts" role="radiogroup" aria-label="Where your things sync">
         {st.options
           .filter((o) => !compact || o.available || o.id === 'kea-hub' || o.id === 'custom')

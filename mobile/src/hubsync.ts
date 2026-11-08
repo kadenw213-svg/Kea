@@ -168,7 +168,7 @@ export function createPhoneSync({
       const missing = tracked.filter((rel) => !seen.has(rel));
       for (const rel of Object.keys(st.todo)) if (!seen.has(rel)) delete st.todo[rel];
       if (missing.length > 20 && missing.length > tracked.length / 2) {
-        log(`Kea Cloud sync: ${missing.length} of ${tracked.length} textbook files are missing from Kea Cloud at once, so none were removed from this phone.`);
+        log(`Kea cloud sync: ${missing.length} of ${tracked.length} textbook files are missing from Kea cloud at once, so none were removed from this phone.`);
       } else st.gone = [...new Set([...st.gone, ...missing])];
       st.fullAt = now();
     }

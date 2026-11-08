@@ -52,7 +52,7 @@ function greeting() {
   return 'Good evening';
 }
 
-/** A file's Kea Cloud state, when it isn't simply up to date. */
+/** A file's Kea cloud state, when it isn't simply up to date. */
 function SyncMark({ state }: { state?: KeaCloudFileState }) {
   if (!state || state === 'synced') return null;
   if (state === 'pending')
@@ -172,8 +172,8 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     const list: Source[] = [{ id: 'recent', label: 'Recent', icon: <Clock size={17} /> }];
     for (const k of known) list.push({ id: k.id, label: k.label, path: k.path, icon: icon(k.id) });
     for (const f of settings.folders || []) list.push({ id: 'folder:' + f, label: f.split(/[\\/]/).filter(Boolean).pop() || f, path: f, icon: <Folder size={17} />, removable: true });
-    // Kea Cloud: the person's Kea storage, first among the cloud drives.
-    if (cloudOn && cloud) list.push({ id: 'keacloud', label: cloud.signedIn ? 'Kea Cloud' : !cloud.place || cloud.place.kind === 'kea' ? 'Kea Cloud · Not online' : 'Kea Cloud · Not here', path: cloud.root, icon: <KeaCloudMark />, cloud: 'kea' });
+    // Kea cloud: the person's Kea storage, first among the cloud drives.
+    if (cloudOn && cloud) list.push({ id: 'keacloud', label: cloud.signedIn ? 'Kea cloud' : !cloud.place || cloud.place.kind === 'kea' ? 'Kea cloud · Not online' : 'Kea cloud · Not here', path: cloud.root, icon: <KeaCloudMark />, cloud: 'kea' });
     for (const d of drives)
       for (const a of d.accounts)
         list.push({ id: `${d.id}:${a.path}`, label: d.accounts.length > 1 || a.label !== d.label ? `${d.label === a.label ? '' : d.label + ' · '}${a.label}` : d.label, path: a.path, icon: <DriveLogo id={d.id} size={17} />, cloud: d.id });
@@ -220,7 +220,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     if (visible) load();
   }, [visible, load]);
 
-  // Kea Cloud: reload when a sync brings changes, and keep each file's sync state current.
+  // Kea cloud: reload when a sync brings changes, and keep each file's sync state current.
   const cloudTick = `${cloud?.last}:${cloud?.pending}:${cloud?.files}`;
   useEffect(() => {
     if (visible && isCloud && !cloudLocked) load();
@@ -238,7 +238,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     load();
   };
   const deleteCloud = async (it: Item) => {
-    const ok = await ask(`Delete ${it.name}?`, 'It’s removed from Kea Cloud on all your devices. This PC keeps a copy in the Recycle Bin.', [
+    const ok = await ask(`Delete ${it.name}?`, 'It’s removed from Kea cloud on all your devices. This PC keeps a copy in the Recycle Bin.', [
       { id: 'cancel', label: 'Cancel' },
       { id: 'del', label: 'Delete', danger: true, primary: true },
     ]);
@@ -248,7 +248,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     setItems((l) => l.filter((x) => x.path !== it.path));
   };
   const addToCloud = async () => {
-    const picked = await api.openDialog({ title: 'Add files to Kea Cloud', multi: true });
+    const picked = await api.openDialog({ title: 'Add files to Kea cloud', multi: true });
     if (!picked.length) return;
     let n = 0;
     for (const f of picked) {
@@ -262,7 +262,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
       await api.writeFile(target.value, data);
       n++;
     }
-    if (n) toast(`Added ${n} file${n === 1 ? '' : 's'} to Kea Cloud`, 'success');
+    if (n) toast(`Added ${n} file${n === 1 ? '' : 's'} to Kea cloud`, 'success');
     load();
   };
 
@@ -554,7 +554,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                 )}
               </MenuButton>
               {isCloud && (
-                <button className="icon-btn" title="Add files to Kea Cloud" onClick={addToCloud}>
+                <button className="icon-btn" title="Add files to Kea cloud" onClick={addToCloud}>
                   <Upload size={17} />
                 </button>
               )}
@@ -595,10 +595,10 @@ export function HomeScreen({ visible }: { visible: boolean }) {
                   {emptyText ?? (
                     <>
                       <FolderOpen size={40} strokeWidth={1.4} />
-                      <div>{isCloud ? 'Nothing in Kea Cloud yet' : 'No recent files yet'}</div>
+                      <div>{isCloud ? 'Nothing in Kea cloud yet' : 'No recent files yet'}</div>
                       <div className="muted">
                         {isCloud ? (
-                          <>Save a document and choose Kea Cloud, or add files with the upload button above.</>
+                          <>Save a document and choose Kea cloud, or add files with the upload button above.</>
                         ) : (
                           <>
                             Press <span className="kbd-chip">Ctrl</span> + <span className="kbd-chip">O</span>, drop files on this window, or pick a folder on the left

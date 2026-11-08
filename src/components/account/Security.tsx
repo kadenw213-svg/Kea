@@ -142,7 +142,7 @@ export function YourData({ status }: { status: HubStatus }) {
               className="acct-form acct-sub acct-danger"
               onSubmit={async (e) => {
                 e.preventDefault();
-                if ((await ask(`Delete ${a.email}?`, 'This can’t be undone. You leave every class and organization, and your Kea Cloud files are deleted. Documents saved on this computer stay.', [{ id: 'no', label: 'Keep my account' }, { id: 'yes', label: 'Delete it', danger: true, primary: true }])) !== 'yes') return;
+                if ((await ask(`Delete ${a.email}?`, 'This can’t be undone. You leave every class and organization, and your Kea cloud files are deleted. Documents saved on this computer stay.', [{ id: 'no', label: 'Keep my account' }, { id: 'yes', label: 'Delete it', danger: true, primary: true }])) !== 'yes') return;
                 setBusy(true);
                 const s = await run(api.hub.deleteAccount({ confirm: 'DELETE', provider: p }));
                 setBusy(false);
@@ -150,7 +150,7 @@ export function YourData({ status }: { status: HubStatus }) {
               }}
             >
               <p className="acct-note">
-                <b>This can’t be undone.</b> Your classes, study progress, organization memberships, availability, Kea Cloud files and notifications are deleted online. If you’re the only owner of an organization or class that still has members, Kea says so and nothing is deleted: make someone else an owner first. Download your data first if you want a copy.
+                <b>This can’t be undone.</b> Your classes, study progress, organization memberships, availability, Kea cloud files and notifications are deleted online. If you’re the only owner of an organization or class that still has members, Kea says so and nothing is deleted: make someone else an owner first. Download your data first if you want a copy.
               </p>
               <label>
                 <span>Type DELETE to confirm</span>

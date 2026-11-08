@@ -885,7 +885,7 @@ button.srow-where:hover {
   text-overflow: ellipsis;
 }
 
-/* ---------- Kea Cloud status (Settings and Home) ---------- */
+/* ---------- Kea cloud status (Settings and Home) ---------- */
 .kc-panel {
   display: flex;
   align-items: center;
