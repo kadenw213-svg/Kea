@@ -14,7 +14,7 @@ import { SyncLine } from '../settings/SyncPicker';
 async function joinAfterAsking(s: DeviceShare) {
   const yes = await ask(
     `Use ${s.primary}’s classes on this computer?`,
-    `Kea on ${s.primary} shares classes as “${s.profile}” in ${s.account ? `${s.label} (${s.account})` : s.label}. If you use them here, they replace this computer’s classes (Kea keeps a copy of this computer’s own), and from then on ${s.primary} does the class checks while this computer keeps in step with it. Only do this if ${s.primary} is your own device.`,
+    `Kea on ${s.primary} shares its classes in ${s.account ? `${s.label} (${s.account})` : s.label}. If you use them here, they replace this computer’s classes (Kea keeps a copy of this computer’s own), and from then on ${s.primary} does the class checks while this computer keeps in step with it. Only do this if ${s.primary} is your own device.`,
     [
       { id: 'no', label: 'Not now' },
       { id: 'yes', label: `Use ${s.primary}’s classes`, primary: true }
@@ -251,7 +251,7 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
         <SyncLine onChange={() => openSettings('keacloud')} />
       </div>
       {!dev.drive && dev.choice !== 'off' && <p className="warn-line">That place isn’t ready on this computer. Change it in Settings → Kea cloud.</p>}
-      {dev.drive && <p className="hint-line">Every device must use this same drive and account to see each other.</p>}
+      {dev.drive && <p className="hint-line">Every device must sync to this same place, with the same account, to see each other.</p>}
 
       {dev.waiting && (
         <div className="wait-box">
@@ -265,7 +265,7 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
       {dev.role === 'offer' && dev.offer && (
         <div className="alert-row">
           <div>
-            <b>{dev.offer.primary}</b> already shares classes as “{dev.offer.profile}” in {dev.offer.label}. This computer keeps its own classes and doesn’t sync until you choose. Use {dev.offer.primary}’s classes here, or pick “Don’t sync” above to keep this computer separate.
+            <b>{dev.offer.primary}</b> already shares its classes in {dev.offer.label}. This computer keeps its own classes and doesn’t sync until you choose. Use {dev.offer.primary}’s classes here, or turn syncing off in Settings → Kea cloud to keep this computer separate.
           </div>
           <button className="btn sm primary" disabled={!!busy} onClick={() => act('join', async () => (await joinAfterAsking(dev.offer!)) && toast(`Using ${dev.offer!.primary}’s classes here.`, 'success'))}>
             Use {dev.offer.primary}’s classes…
@@ -276,7 +276,7 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
       {dev.elsewhere.map((s) => (
         <div key={s.root + s.profile} className="alert-row">
           <div>
-            <b>{s.primary}</b> shares classes as “{s.profile}” in {s.label}, separately from this device.
+            <b>{s.primary}</b> shares other classes in {s.label}, separately from this device.
           </div>
           <button className="btn sm primary" disabled={!!busy} onClick={() => act('join', async () => (await joinAfterAsking(s)) && toast(`Using ${s.primary}’s classes here.`, 'success'))}>
             Use those…
@@ -326,7 +326,7 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
                   `Last synced ${ago(dev.phone.at)}`
                 ) : (
                   <>
-                    Not set up. Open the download link on your phone and install it, then choose Kea's files in its setup.{' '}
+                    Not set up. Open the download link on your phone, install Kea and sign in to the same Kea account (or, if you sync through a drive, choose Kea’s files from it).{' '}
                     <button className="link-btn" onClick={() => navigator.clipboard.writeText(APK).then(() => toast('Download link copied: send it to your phone.', 'success'))}>
                       Copy the download link
                     </button>
@@ -335,7 +335,7 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
               </div>
             </div>
           </div>
-          {!others.length && <p className="hint-line">Open Kea on another computer with the same drive and it shows up here within a minute. Only the primary scans; the others just keep in step.</p>}
+          {!others.length && <p className="hint-line">Open Kea on another computer that syncs to the same place and it shows up here within a minute. Only the primary scans; the others just keep in step.</p>}
         </div>
       )}
 
@@ -348,7 +348,7 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
 }
 
 /**
- * Bring in the classes another device shares: looks in every drive on this computer, lists what it finds (or says
+ * Bring in the classes another device shares: looks in Kea cloud and every drive on this computer, lists what it finds (or says
  * what's missing), and makes this device follow that one's primary.
  */
 export function FromAnotherDevice({ onDone }: { onDone?: () => void }) {
@@ -385,7 +385,7 @@ export function FromAnotherDevice({ onDone }: { onDone?: () => void }) {
     <div className="find-box">
       {!res ? (
         <div className="muted">
-          <Loader2 size={14} className="spin" /> Looking in your drives…
+          <Loader2 size={14} className="spin" /> Looking where your things sync…
         </div>
       ) : (
         <>
@@ -393,7 +393,7 @@ export function FromAnotherDevice({ onDone }: { onDone?: () => void }) {
             <div key={s.root + s.profile} className="dev-row">
               <Cloud size={18} />
               <div className="dev-main">
-                <div className="dev-name">{s.profile}</div>
+                <div className="dev-name">{s.mine ? 'This device’s classes' : `${s.primary}’s classes`}</div>
                 <div className="dev-sub">
                   {s.mine ? 'This device is its primary' : `Scanned by ${s.primary}, last on ${ago(s.at)}`} · {s.account ? `${s.label} · ${s.account}` : s.label}
                   {!s.ready && !s.mine ? ' · still downloading' : ''}
@@ -437,6 +437,11 @@ function ClassSites() {
       .run('daily', '', x.id)
       .then(() => toast(`Checking ${x.label}.`, 'success'))
       .catch((err) => toast(String(err?.message || err), 'error'));
+  const signIn = (x: ScholarSite) =>
+    api.scholar
+      .signIn(true, x.id)
+      .then((r) => toast(r.signedIn ? `Signed in to ${x.label}.` : 'Not signed in yet. Try again when you’re ready.', r.signedIn ? 'success' : 'info'))
+      .catch((err) => toast(String(err?.message || err), 'error'));
   return (
     <details className="kcard gate-adv">
       <summary>Class sites ({shown.length})</summary>
@@ -450,6 +455,11 @@ function ClassSites() {
                 {!x.home ? 'Not connected' : x.lastCheck ? `Last check ${ago(x.lastCheck.at)}` : 'Not checked yet'}
                 {x.home ? ` · ${x.platform === 'canvas' ? 'Canvas' : 'D2L Brightspace'}` : ''}
               </span>
+              {x.home && (
+                <button className="btn sm ghost" onClick={() => signIn(x)} title="Sign in to this class site again">
+                  Sign in
+                </button>
+              )}
               {x.home && (
                 <button className="btn sm" onClick={() => check(x)}>
                   <Play size={13} /> Check now

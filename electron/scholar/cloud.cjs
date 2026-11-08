@@ -57,7 +57,7 @@ function drives() {
   const remote = require('./remote.cjs');
   if (remote.active()) {
     fs.mkdirSync(remote.syncRoot(), { recursive: true });
-    return (found = { at: Date.now(), list: [{ id: 'kea-hub', label: 'Kea account', path: remote.syncRoot(), account: 'worker' }], hubIn }).list;
+    return (found = { at: Date.now(), list: [{ id: 'kea-hub', label: 'Kea cloud', path: remote.syncRoot(), account: 'worker' }], hubIn }).list;
   }
   // The Kea Hub: signed in to a Kea account, Kea syncs through its own server (hubsync.cjs mirrors this folder).
   try {
@@ -65,7 +65,7 @@ function drives() {
     if (hub.signedIn()) {
       const root = hub.syncRoot();
       fs.mkdirSync(root, { recursive: true });
-      out.push({ id: 'kea-hub', label: 'Kea account', path: root, account: hub.cached()?.email || '' });
+      out.push({ id: 'kea-hub', label: 'Kea cloud', path: root, account: hub.cached()?.email || '' });
     }
   } catch {}
   out.push(...oneDrives());

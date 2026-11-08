@@ -702,7 +702,7 @@ function InboxView({ ctx }: { ctx: Ctx }) {
     setChecking(true);
     const ok = await api.scholar.checkInbox().catch(() => false);
     setChecking(false);
-    if (!ok) toast('Kea isn’t signed in to your class site right now. Sign in under Add a class → From your school.', 'error');
+    if (!ok) toast('Kea isn’t signed in to your class site right now. Sign in under Scans → Class sites.', 'error');
     load();
   };
   return (
@@ -1979,13 +1979,13 @@ function AddClass({ first }: { first: boolean }) {
         <button className="add-card" onClick={() => setOther(true)}>
           <Monitor size={26} />
           <div className="add-name">From another device</div>
-          <div className="add-desc">Already use Kea on another computer? Bring its classes here through your OneDrive or Google Drive. Only one device scans, so nothing uses your Claude plan twice.</div>
+          <div className="add-desc">Already use Kea on another computer? Bring its classes here from where it syncs (Kea cloud, a drive or a folder). Only one device scans, so nothing uses your Claude plan twice.</div>
         </button>
       </div>
       {other && (
         <div className="gate">
           <h2>Bring in classes from another device</h2>
-          <p>Kea looks in OneDrive and Google Drive on this computer for the classes your other device shares. Both need the same drive account, and Kea open on the other one.</p>
+          <p>Kea looks in Kea cloud and the drives on this computer for the classes your other device shares. Use the same Kea account (or drive account) on both, with Kea open on the other one.</p>
           <FromAnotherDevice onDone={() => useScholar.getState().set({ view: { name: 'calendar' } })} />
         </div>
       )}
@@ -1994,7 +1994,7 @@ function AddClass({ first }: { first: boolean }) {
           <h2>Connect your Claude account to scan your classes</h2>
           <p>
             A class's first scan reads its syllabus, modules, assignments and tests once. Kea uses <b>Claude</b> for that, through your own Claude account, because it needs judgment
-            to find everything and get dates exactly right. It also writes each week's textbook chapter from what your class covers.
+            to find everything and get dates exactly right. It also writes each week's textbook chapter from what your class covers. Your own Claude needs no online Kea account.
           </p>
           <ul>
             <li>After the first scan, Kea checks your classes itself every morning and only asks Claude about classes where something changed.</li>

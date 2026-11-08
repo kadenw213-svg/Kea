@@ -255,7 +255,7 @@ async function decide(dir) {
 /** Make a device the primary (this one, or another listed in the folder). That device starts scanning; this one follows. */
 function makePrimary(id) {
   const dir = folder();
-  if (!dir) throw new Error('Choose a drive to sync through first.');
+  if (!dir) throw new Error('Choose where your things sync first (Settings → Kea cloud).');
   const card = readJson(path.join(dir, 'devices', `${id}.json`), null);
   if (id !== me() && !card) throw new Error('That device isn’t in the folder any more.');
   // (A device that hasn't joined these classes can't take them over either.)
@@ -635,7 +635,7 @@ function find() {
   const found = [];
   const notes = [];
   const drives = places();
-  if (!drives.length) notes.push('No OneDrive or Google Drive was found on this computer. Install one, sign in with the same account as your other device and let it finish syncing.');
+  if (!drives.length) notes.push('Nothing to look in yet. Sign in to the same Kea account as your other device (Kea cloud), or install the drive it syncs through and let it finish syncing.');
   for (const d of drives) {
     const kea = path.join(d.root, 'Kea');
     const who = d.account ? `${d.label} (${d.account})` : d.label;
@@ -687,14 +687,14 @@ async function join({ drive, root, profile, confirmed }) {
   // The drive folder is named after the profile, so this profile takes that name.
   if (profiles.all().list.find((x) => x.id === profiles.active())?.name !== profile) profiles.rename(profiles.active(), profile);
   const dir = folder();
-  if (!dir || !fs.existsSync(path.join(dir, 'primary.json'))) throw new Error('That folder isn’t there any more. Check the drive is still syncing, then try again.');
+  if (!dir || !fs.existsSync(path.join(dir, 'primary.json'))) throw new Error('That folder isn’t there any more. Check that it’s still syncing, then try again.');
   const p = primaryInfo(dir);
   remember(p.id);
   if (p.id === me()) return { ok: true, primary: true };
   while (busy) await new Promise((r) => setTimeout(r, 200));
   await step();
   const got = readJson(stateFile(), {}).pulledSha === p.db?.sha && fs.existsSync(profiles.paths().db);
-  return got ? { ok: true, from: p.name } : { ok: false, from: p.name, waiting: `Your classes from ${p.name} are still downloading from the drive. Leave Kea open; they appear by themselves.` };
+  return got ? { ok: true, from: p.name } : { ok: false, from: p.name, waiting: `Your classes from ${p.name} are still arriving. Leave Kea open; they appear by themselves.` };
 }
 
 // ---------- Running it ----------
