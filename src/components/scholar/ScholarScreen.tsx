@@ -40,7 +40,7 @@ import {
   Users
 } from 'lucide-react';
 import { inboxParts, kindOf } from './inboxFormat';
-import { api, WithdrawnState, ProfileList, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
+import { api, WithdrawnState, ScholarSite, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
 import { openPaths } from '../../lib/open';
 import { setPdfTarget } from '../../lib/pdfTarget';
 import { useSetting, useSettings, useThemeDark } from '../../lib/settings';
@@ -65,7 +65,7 @@ import { openAccount } from '../account/hubStore';
 import { HubPanel, SharedClaude } from './HubAccount';
 import { HubNav, HubView, HubPractice, useHubClassList } from './HubClasses';
 import { BoardNameSetting } from './BoardName';
-import { isPersonalProfile, useKeaModes } from '../../lib/modes';
+import { useKeaModes } from '../../lib/modes';
 import '../../styles/scholar.css';
 
 // ---------- Dates ----------
@@ -128,7 +128,6 @@ async function openReading(r: ScholarReading) {
 // ---------- The screen ----------
 export function ScholarScreen() {
   const { view, version, inboxTick, set, study } = useScholar();
-  const [profiles, setProfiles] = useState<ProfileList | null>(null);
   const [hasData, setHasData] = useState<boolean | null>(null);
   const [courses, setCourses] = useState<ScholarCourse[]>([]);
   const [item, setItem] = useState<ScholarItem | null>(null);
@@ -178,9 +177,8 @@ export function ScholarScreen() {
   useEffect(() => {
     let live = true;
     (async () => {
-      const [p, st, cs] = await Promise.all([api.scholar.profiles(), api.scholar.status(), api.scholar.courses()]);
+      const [st, cs] = await Promise.all([api.scholar.status(), api.scholar.courses()]);
       if (!live) return;
-      setProfiles(p);
       setHasData(st.hasData);
       setCourses(cs);
       const past = await api.scholar.items({ from: missingSince(cs), to: today() });
@@ -193,10 +191,12 @@ export function ScholarScreen() {
     };
   }, [version]);
 
-  // Kea Hub classes: in School mode, not in a Personal profile.
+  // Kea Hub classes: with School on.
   const hubList = useHubClassList().list;
   const modes = useKeaModes();
-  const showHub = modes.school && !isPersonalProfile(profiles?.list.find((p) => p.id === profiles.active));
+  const showHub = modes.school;
+  // (With classes from more than one class site, each class says which one.)
+  const severalSites = new Set(courses.map((c) => c.site || '')).size > 1;
   const hubClasses = showHub ? hubList : [];
   const colors = useColors([...courses.map((c) => c.id), ...hubClasses.map((c) => `hub:${c.id}`)]);
   const go = (v: ScholarView) => (set({ view: v }), setItem(null));
@@ -208,19 +208,6 @@ export function ScholarScreen() {
   // (A Kea Hub class session opens its class's page, with the meeting link.)
   const ctx: Ctx = { colors, open: (it) => (it.hub ? go({ name: 'hub', classId: it.hub.classId }) : setItem(it)), toggleDone, courses, go };
 
-  const switchProfile = async (id: string) => {
-    await api.scholar.selectProfile(id);
-    go({ name: 'calendar' });
-    reloadScholar();
-  };
-  const newProfile = async () => {
-    const name = await prompt('New profile', 'A separate set of classes, for example "Personal" or a second school.', '', 'Name');
-    if (!name?.trim()) return;
-    await api.scholar.createProfile(name.trim());
-    go({ name: 'add' });
-    reloadScholar();
-  };
-  const activeProfile = profiles?.list.find((p) => p.id === profiles.active);
   const [account] = useAccount();
   const main =
     hasData === null ? (
@@ -260,35 +247,13 @@ export function ScholarScreen() {
   return (
     <div className="scholar">
       <nav className="sch-nav">
-        <MenuButton
-          button={() => (
-            <button className="sch-profile" title="Your account and profiles">
-              {account ? <Avatar account={account} size={26} /> : <span className="sch-avatar">{(activeProfile?.name || 'S')[0]}</span>}
-              <span className="sch-profile-name">
-                {account?.name || activeProfile?.name || 'School'}
-                <VerifiedBadge account={account} size={13} />
-              </span>
-              <ChevronDown size={14} />
-            </button>
-          )}
-        >
-          {(close: () => void) => (
-            <>
-              {profiles?.list.map((p) => (
-                <button key={p.id} className="menu-item" onClick={() => (close(), switchProfile(p.id))}>
-                  {p.id === profiles.active ? <CheckCircle2 size={15} /> : <Circle size={15} />} {p.name}
-                </button>
-              ))}
-              <div className="menu-sep" />
-              <button className="menu-item" onClick={() => (close(), openAccount())}>
-                <Avatar account={account} size={16} /> Your account
-              </button>
-              <button className="menu-item" onClick={() => (close(), newProfile())}>
-                <Plus size={15} /> New profile…
-              </button>
-            </>
-          )}
-        </MenuButton>
+        <button className="sch-profile" title="Your account" onClick={() => openAccount()}>
+          {account ? <Avatar account={account} size={26} /> : <span className="sch-avatar">K</span>}
+          <span className="sch-profile-name">
+            {account?.name || 'Your account'}
+            <VerifiedBadge account={account} size={13} />
+          </span>
+        </button>
 
         <button className={`sch-link ${view.name === 'calendar' ? 'on' : ''}`} onClick={() => go({ name: 'calendar' })} disabled={!hasData && !hubClasses.length}>
           <CalendarDays size={17} /> Calendar
@@ -315,6 +280,7 @@ export function ScholarScreen() {
                 {grades[c.id] != null && <GradeText className="sch-grade" percent={grades[c.id]!} />}
               </span>
               <span className="sch-cname">{c.name}</span>
+              {severalSites && c.siteName && <span className="sch-site">{c.siteName}</span>}
             </span>
             {c.withdrawn ? <span className="sch-badge withdrew" title="You withdrew from this class">Withdrew</span> : c.dueThisWeek > 0 && <span className="sch-badge" title={`${c.dueThisWeek} due this week`}>{c.dueThisWeek}</span>}
           </button>
@@ -1339,7 +1305,7 @@ function ClassNews({ code }: { code: string }) {
 
 function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; startTab?: 'weeks' | 'textbook' }) {
   const version = useScholar((s) => s.version);
-  // undefined while loading; null when there's no such class (removed, or another profile's).
+  // undefined while loading; null when there's no such class (removed).
   const [c, setC] = useState<ScholarCourseDetail | null | undefined>(undefined);
   const [loadError, setLoadError] = useState('');
   // The class page is its weeks; the grade opens in their place. (Readings, like Study, open in their own area.)
@@ -1381,7 +1347,7 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
       <div className="sch-page">
         <div className="sch-empty">
           <AlertTriangle size={26} />
-          <div>{loadError ? `Kea couldn’t open this class: ${loadError}` : 'Class not found. It may have been removed, or it belongs to another profile.'}</div>
+          <div>{loadError ? `Kea couldn’t open this class: ${loadError}` : 'Class not found. It may have been removed.'}</div>
           <button className="btn sm" onClick={() => ctx.go({ name: 'calendar' })}>
             Back to the calendar
           </button>
@@ -1907,18 +1873,34 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
 // ---------- Adding a class ----------
 function AddClass({ first }: { first: boolean }) {
   const modes = useKeaModes();
-  const [profiles, setProfiles] = useState<ProfileList | null>(null);
+  const showHub = modes.school;
+  // Every class site goes on the same calendar: a school's that's already connected is added beside it.
+  const [sites, setSites] = useState<ScholarSite[] | null>(null);
   useEffect(() => {
-    api.scholar.profiles().then(setProfiles).catch(() => {});
+    api.scholar.sites().then(setSites).catch(() => setSites([]));
   }, []);
-  const showHub = modes.school && !isPersonalProfile(profiles?.list.find((p) => p.id === profiles.active));
+  const connected = (sites || []).filter((x) => x.home);
+  // Setting up: the first site with no class site yet (the first site, before any), or a new one.
+  const [target, setTarget] = useState<string | undefined>(undefined);
+  const fromSchool = async (another: boolean) => {
+    if (another) {
+      try {
+        const r = await api.scholar.addSite();
+        setSites(r.sites);
+        setTarget(r.id);
+      } catch (err: any) {
+        return toast(err.message, 'error');
+      }
+    } else setTarget((sites || []).find((x) => !x.home && x.first)?.id);
+    setGate(true);
+  };
   const [gate, setGate] = useState(false);
   const [other, setOther] = useState(false);
   const bringIn = async () => {
     const folder = await api.openFolderDialog();
     if (!folder) return;
     try {
-      const r = await api.scholar.importExisting(folder);
+      const r = await api.scholar.importExisting(folder, target);
       toast(`Classes brought in${r.pdfs ? `, with ${r.pdfs} textbook chapter file${r.pdfs === 1 ? '' : 's'}` : ''}.`, 'success');
       useScholar.getState().set({ view: { name: 'calendar' } });
       reloadScholar();
@@ -1938,11 +1920,19 @@ function AddClass({ first }: { first: boolean }) {
             <div className="add-desc">Your instructor gave you a code or an invite link for a class on Kea. Its sessions, study sets and leaderboard come with it.</div>
           </button>
         )}
-        <button className="add-card" onClick={() => setGate(true)}>
-          <GraduationCap size={26} />
-          <div className="add-name">From your school</div>
-          <div className="add-desc">Kea keeps your assignments, tests, readings, announcements and a weekly textbook up to date from your class site.</div>
-        </button>
+        {connected.length ? (
+          <button className="add-card" onClick={() => fromSchool(true)} disabled={gate}>
+            <GraduationCap size={26} />
+            <div className="add-name">Add another class site</div>
+            <div className="add-desc">Another school or class site. Its classes go on the same calendar and class list, each marked with where it's from.</div>
+          </button>
+        ) : (
+          <button className="add-card" onClick={() => fromSchool(false)}>
+            <GraduationCap size={26} />
+            <div className="add-name">From your school</div>
+            <div className="add-desc">Kea keeps your assignments, tests, readings, announcements and a weekly textbook up to date from your class site.</div>
+          </button>
+        )}
         <button className="add-card" onClick={() => setOther(true)}>
           <Monitor size={26} />
           <div className="add-name">From another device</div>
@@ -1972,7 +1962,7 @@ function AddClass({ first }: { first: boolean }) {
             </li>
             <li>Without Claude, this stays off rather than guessing. Classes you join with a code work without it.</li>
           </ul>
-          <SetupWizard onDone={() => useScholar.getState().set({ view: { name: 'scans' } })} />
+          <SetupWizard target={target} onDone={() => useScholar.getState().set({ view: { name: 'scans' } })} />
           <SharedClaude />
           <details className="gate-adv">
             <summary>Already use the Class Calendar Import skills?</summary>

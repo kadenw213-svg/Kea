@@ -14,16 +14,24 @@ async function engine() {
   return SQL;
 }
 
-// The open database, re-read when the file changes (after a scan).
-let cache = { file: '', mtime: 0, db: null };
+// The open databases (one per class site), each re-read when its file changes (after a scan).
+const cache = new Map();
 async function open(file) {
   if (!fs.existsSync(file)) return null;
   const mtime = fs.statSync(file).mtimeMs;
-  if (cache.db && cache.file === file && cache.mtime === mtime) return cache.db;
+  const hit = cache.get(file);
+  if (hit && hit.mtime === mtime) return hit.db;
   const S = await engine();
-  cache.db?.close();
-  cache = { file, mtime, db: guardCodes(new S.Database(fs.readFileSync(file))) };
-  return cache.db;
+  const db = guardCodes(new S.Database(fs.readFileSync(file)));
+  // (A newer read may have finished first: keep the newest, and close only what nothing holds any more.)
+  const now = cache.get(file);
+  if (now && now.mtime > mtime) {
+    db.close();
+    return now.db;
+  }
+  cache.set(file, { mtime, db });
+  if (now) setTimeout(() => now.db.close(), 30000);
+  return db;
 }
 
 /**

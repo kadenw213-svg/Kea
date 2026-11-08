@@ -258,7 +258,7 @@ select.input {
   font-size: 20px;
   font-weight: 600;
 }
-.wk-chip {
+.wk-pick {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -271,10 +271,10 @@ select.input {
   cursor: pointer;
   font-size: 13px;
 }
-.wk-chip:hover {
+.wk-pick:hover {
   background: var(--hover);
 }
-.wk-chip.on {
+.wk-pick.on {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);

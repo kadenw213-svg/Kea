@@ -257,7 +257,7 @@ function Builder({ org, id, onBack }: { org: Org; id: string; onBack(): void }) 
       {codeShift && shiftById.get(codeShift) && <ShiftCodeBar org={org} shift={shiftById.get(codeShift)!} onDone={() => (setCodeShift(null), reload())} />}
       <div className="sb-weeks">
         {data.weeks.map((w) => (
-          <button key={w} className={`wk-chip ${w === week ? 'on' : ''}`} onClick={() => setWeek(w)}>
+          <button key={w} className={`wk-pick ${w === week ? 'on' : ''}`} onClick={() => setWeek(w)}>
             {fmtDay(w < data.schedule.periodStart ? data.schedule.periodStart : w, { month: 'short', day: 'numeric' })}
           </button>
         ))}

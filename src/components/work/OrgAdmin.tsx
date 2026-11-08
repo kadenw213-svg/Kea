@@ -221,7 +221,7 @@ function EditMember({ org, m, s, cols, done, onRoles }: { org: Org; m: Member; s
         <Field label="Positions">
           <div className="wk-tags">
             {s?.positions.map((p) => (
-              <button key={p.id} className={`wk-chip ${pos.includes(p.id) ? 'on' : ''}`} disabled={!edit} onClick={() => setPos(pos.includes(p.id) ? pos.filter((x) => x !== p.id) : [...pos, p.id])}>
+              <button key={p.id} className={`wk-pick ${pos.includes(p.id) ? 'on' : ''}`} disabled={!edit} onClick={() => setPos(pos.includes(p.id) ? pos.filter((x) => x !== p.id) : [...pos, p.id])}>
                 {p.name}
               </button>
             ))}
@@ -309,7 +309,7 @@ function Approvals({ org }: { org: Org }) {
           {(forms.data?.forms ?? [])
             .filter((f) => f.status !== 'draft')
             .map((f) => (
-              <button key={f.id} className="wk-chip" onClick={() => go(org.id, 'forms', { formId: f.id, view: 'changes' })}>
+              <button key={f.id} className="wk-pick" onClick={() => go(org.id, 'forms', { formId: f.id, view: 'changes' })}>
                 {f.title}
               </button>
             ))}

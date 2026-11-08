@@ -19,9 +19,10 @@ function Step({ done, busy, icon, title, children }: { done: boolean; busy?: boo
 
 /**
  * Connecting a school: Claude Code (the user's own Claude account), the scan engine (Python, through uv), the class
- * site with Kea's sign-in, then a test and the first scan. Each piece says what it is and why it's needed.
+ * site with Kea's sign-in, then a test and the first scan. Each piece says what it is and why it's needed. `target`:
+ * which class site this sets up (another school's, from Add a class); the first one when left out.
  */
-export function SetupWizard({ onDone }: { onDone?(): void }) {
+export function SetupWizard({ onDone, target }: { onDone?(): void; target?: string }) {
   const [c, setC] = useState<ScholarSetup | null>(null);
   const [school, setSchool] = useState<SchoolInfo | null>(null);
   const [signedIn, setSignedIn] = useState(false);
@@ -34,7 +35,7 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
   const logRef = useRef<HTMLPreElement>(null);
 
   const refresh = async () => {
-    const [cc, s, st] = await Promise.all([api.scholar.check(), api.scholar.school(), api.scholar.siteStatus()]);
+    const [cc, s, st] = await Promise.all([api.scholar.check(target), api.scholar.school(target), api.scholar.siteStatus(target)]);
     setC(cc);
     setSchool(s);
     setSignedIn(st.signedIn);
@@ -110,7 +111,7 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
             Install uv
           </button>
         ) : !c.engineReady ? (
-          <button className="btn tonal sm" disabled={!!busy} onClick={() => act('engine', () => api.scholar.setupEngine(), 'The scan engine is ready.')}>
+          <button className="btn tonal sm" disabled={!!busy} onClick={() => act('engine', () => api.scholar.setupEngine(target), 'The scan engine is ready.')}>
             Set up the scan engine (about a minute)
           </button>
         ) : (
@@ -139,8 +140,8 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
             disabled={!!busy || !/^https:\/\/\S+$/.test(home.trim())}
             onClick={() =>
               act('site', async () => {
-                await api.scholar.setSchoolHome(home.trim(), site);
-                const r = await api.scholar.signIn(remember);
+                await api.scholar.setSchoolHome(home.trim(), site, target);
+                const r = await api.scholar.signIn(remember, target);
                 if (!r.signedIn) throw new Error('Not signed in yet. Try again when you are ready.');
               }, 'Signed in to your class site.')
             }
@@ -158,7 +159,7 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
         {school.remembers && (
           <div className="setup-ok">
             <KeyRound size={13} /> Kea remembers your login for {school.loginHost}.{' '}
-            <button className="link-btn" onClick={() => act('site', () => api.scholar.forgetLogin(), 'Kea forgot your saved login.')}>
+            <button className="link-btn" onClick={() => act('site', () => api.scholar.forgetLogin(target), 'Kea forgot your saved login.')}>
               Forget it
             </button>
           </div>
@@ -183,7 +184,7 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
                 // (The run doesn't come back with its id, so this test's run is the probe that started after the click
                 // and has finished, not whatever ran last.)
                 const since = Date.now() - 1000;
-                await api.scholar.run('probe');
+                await api.scholar.run('probe', '', target);
                 const mine = (a: { task: string; start: string; end: string | null }) => a.task === 'probe' && new Date(a.start).getTime() >= since && !!a.end;
                 let a = null as Awaited<ReturnType<typeof api.scholar.activity>>[number] | null;
                 for (let i = 0; i < 90 && !a; i++) {
@@ -201,7 +202,7 @@ export function SetupWizard({ onDone }: { onDone?(): void }) {
             disabled={!!busy || !all}
             onClick={async () => {
               try {
-                const r = await api.scholar.run('import');
+                const r = await api.scholar.run('import', '', target);
                 toast(
                   typeof r === 'object' && r.relayed
                     ? `Asked ${r.relayed} to scan your classes${r.online ? '' : ' (it starts when that device is next on)'}. Progress shows under Scans.`

@@ -110,7 +110,7 @@ function NewForm({ org, forms, onDone }: { org: Org; forms: Form[]; onDone(id: s
             {from === 'templates' && (
               <div className="wk-tags wk-indent">
                 {(sets.data?.blockSets ?? []).map((s) => (
-                  <button key={s.id} className={`wk-chip ${picked.includes(s.id) ? 'on' : ''}`} onClick={() => setPicked(picked.includes(s.id) ? picked.filter((x) => x !== s.id) : [...picked, s.id])}>
+                  <button key={s.id} className={`wk-pick ${picked.includes(s.id) ? 'on' : ''}`} onClick={() => setPicked(picked.includes(s.id) ? picked.filter((x) => x !== s.id) : [...picked, s.id])}>
                     {s.name} ({s.blocks.length})
                   </button>
                 ))}
@@ -592,12 +592,12 @@ function FormEditor({ org, form, onDeleted }: { org: Org; form: Form; onDeleted(
         <p className="muted af-small">{aud.departments.length || aud.positions.length ? 'Only the departments and positions picked.' : 'Everyone in the organization.'}</p>
         <div className="wk-tags">
           {depts.map((d) => (
-            <button key={d.id} className={`wk-chip ${aud.departments.includes(d.id) ? 'on' : ''}`} onClick={() => touch(setAud)({ ...aud, departments: aud.departments.includes(d.id) ? aud.departments.filter((x) => x !== d.id) : [...aud.departments, d.id] })}>
+            <button key={d.id} className={`wk-pick ${aud.departments.includes(d.id) ? 'on' : ''}`} onClick={() => touch(setAud)({ ...aud, departments: aud.departments.includes(d.id) ? aud.departments.filter((x) => x !== d.id) : [...aud.departments, d.id] })}>
               {d.name}
             </button>
           ))}
           {positions.map((p) => (
-            <button key={p.id} className={`wk-chip ${aud.positions.includes(p.id) ? 'on' : ''}`} onClick={() => touch(setAud)({ ...aud, positions: aud.positions.includes(p.id) ? aud.positions.filter((x) => x !== p.id) : [...aud.positions, p.id] })}>
+            <button key={p.id} className={`wk-pick ${aud.positions.includes(p.id) ? 'on' : ''}`} onClick={() => touch(setAud)({ ...aud, positions: aud.positions.includes(p.id) ? aud.positions.filter((x) => x !== p.id) : [...aud.positions, p.id] })}>
               {p.name}
             </button>
           ))}

@@ -855,10 +855,17 @@ function pause(until, reason, stopped) {
     if (j.batch) batches.delete(j.batch);
     j.resolve({ paused: until.toISOString(), task: j.task, arg: j.arg });
   }
-  const runs = [...(stopped ? [stopped] : []), ...(old?.runs || []), ...waiting.filter((j) => j.profile === profiles.active()).map(runOf)];
+  const here = profiles.active();
+  const runs = [...(stopped ? [stopped] : []), ...(old?.runs || []), ...waiting.filter((j) => j.profile === here).map(runOf)];
   // (The earliest of the two times when runs were already waiting for a later one.)
   const at = old && new Date(old.until) < until && old.reason === reason ? new Date(old.until) : until;
   setPending({ until: at.toISOString(), reason, runs: eachOnce(runs) });
+  // Another class site's runs queued behind it wait with that site's own runs, for the same time.
+  for (const site of new Set(waiting.map((j) => j.profile).filter((p) => p !== here && profiles.exists(p))))
+    profiles.within(site, () => {
+      const o = pending();
+      setPending({ until: o && new Date(o.until) < at ? o.until : at.toISOString(), reason: o ? o.reason : reason, runs: eachOnce([...(o?.runs || []), ...waiting.filter((j) => j.profile === site).map(runOf)]) });
+    });
 }
 
 /** A queued run as it's kept with the runs waiting to continue. */
@@ -937,18 +944,20 @@ function adoptStopped() {
 function shutdown() {
   if (quitting) return;
   quitting = true;
-  const waiting = queue.splice(0).filter((j) => j.profile === profiles.active());
+  const waiting = queue.splice(0);
   // (A run still in Kea's own pre-check has no inflight.json yet: it waits with the others, first.)
-  for (const x of slots().reverse()) if (!x.entry.claude && x.job.profile === profiles.active()) waiting.unshift(x.job);
-  if (waiting.length) {
-    try {
-      // Runs already waiting keep their time and reason (a usage limit still holds); else they go at the next start.
-      const old = pending();
-      setPending({ until: old ? old.until : new Date().toISOString(), reason: old ? old.reason : 'closed', runs: eachOnce([...(old?.runs || []), ...waiting.map(runOf)]) });
-    } catch (err) {
-      console.error('Saving the waiting runs', err);
-    }
-  }
+  for (const x of slots().reverse()) if (!x.entry.claude) waiting.unshift(x.job);
+  // Each class site's waiting runs are kept in that site's own folder.
+  for (const site of new Set(waiting.map((j) => j.profile).filter((p) => profiles.exists(p))))
+    profiles.within(site, () => {
+      try {
+        // Runs already waiting keep their time and reason (a usage limit still holds); else they go at the next start.
+        const old = pending();
+        setPending({ until: old ? old.until : new Date().toISOString(), reason: old ? old.reason : 'closed', runs: eachOnce([...(old?.runs || []), ...waiting.filter((j) => j.profile === site).map(runOf)]) });
+      } catch (err) {
+        console.error('Saving the waiting runs', err);
+      }
+    });
   for (const x of slots())
     if (x.child) killTree(x.child.pid).then((ok) => ok || x.child.kill()).catch(() => {});
 }
@@ -1034,11 +1043,16 @@ async function next() {
   }
   stayAwake(true);
   const [job] = queue.splice(at, 1);
-  // A run belongs to the profile it was queued for (profiles can't be switched while one runs).
-  if (job.profile !== profiles.active()) {
+  // A run belongs to the class site it was queued for, and works on that site's folder from start to end, whichever
+  // site anything else is busy with. (A site that's gone: nothing to run.)
+  if (!profiles.exists(job.profile)) {
     job.resolve(null);
     return next();
   }
+  return profiles.within(job.profile, () => begin(job));
+}
+
+async function begin(job) {
   // While paused for a usage limit, scheduled runs wait (they'd only hit the same limit): each joins the runs set aside,
   // so it starts with them instead of being dropped. Runs the student starts still go.
   const p = pending();
@@ -1050,7 +1064,7 @@ async function next() {
   const est = estimate(job.task, job.arg);
   const b = job.batch && batches.get(job.batch);
   // phase: 'check' while Kea looks by itself, 'claude' once Claude is reading. turns: Claude's steps so far.
-  const entry = { id: `${Date.now()}`, task: job.task, label: t.label, arg: job.arg, why: job.why, start: new Date().toISOString(), end: null, ok: null, summary: '', steps: [], phase: 'check', claudeStart: null, expectedMs: est.ms, expectedTurns: est.turns, turns: 0, percent: null, claude: false, batch: b ? { id: job.batch, done: b.done, total: b.total } : null };
+  const entry = { id: `${Date.now()}`, task: job.task, label: t.label, arg: job.arg, why: job.why, start: new Date().toISOString(), end: null, ok: null, summary: '', steps: [], phase: 'check', claudeStart: null, expectedMs: est.ms, expectedTurns: est.turns, turns: 0, percent: null, claude: false, site: job.profile, batch: b ? { id: job.batch, done: b.done, total: b.total } : null };
   const slot = { entry, child: null, server: null, job };
   if (PARALLEL.has(job.task)) side.add(slot);
   else current = slot;
@@ -1316,7 +1330,7 @@ function stop() {
 }
 
 // Waiting runs carry their own estimate, so the time left covers the whole queue.
-const status = () => ({ running: slots().length ? { ...slots()[0].entry, running: true, others: slots().length - 1 } : null, parallel: [...side].map((x) => ({ ...x.entry, running: true })), queued: queue.map((j) => ({ task: j.task, arg: j.arg, label: TASKS[j.task].label, expectedMs: estimate(j.task, j.arg).ms })) });
+const status = () => ({ running: slots().length ? { ...slots()[0].entry, running: true, others: slots().length - 1 } : null, parallel: [...side].map((x) => ({ ...x.entry, running: true })), queued: queue.map((j) => ({ task: j.task, arg: j.arg, label: TASKS[j.task].label, site: j.profile, expectedMs: profiles.within(j.profile, () => estimate(j.task, j.arg)).ms })) });
 const activity = () => readJson(activityFile(), []);
 const news = () => readJson(newsFile(), []);
 function markNewsRead(ids) {

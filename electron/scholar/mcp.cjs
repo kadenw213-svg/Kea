@@ -252,7 +252,9 @@ function start(hooks) {
     }
   };
 
-  const server = http.createServer((req, res) => {
+  // (Claude's calls work on the class site of the run that started this connection.)
+  const site = profiles.active();
+  const server = http.createServer((req, res) => profiles.within(site, () => {
     if (req.headers.authorization !== `Bearer ${token}`) return res.writeHead(401).end();
     if (req.method !== 'POST') return res.writeHead(405, { Allow: 'POST' }).end();
     let body = '';
@@ -273,7 +275,7 @@ function start(hooks) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(batch ? answers : answers[0]));
     });
-  });
+  }));
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);

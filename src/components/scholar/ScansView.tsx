@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, XCircle, Loader2, Play, Square, RefreshCw, BookOpen, Bell, Activity, Clock, Smartphone, Monitor, Search, Download, Crown, Cloud, ChevronDown, ChevronRight, Settings2 } from 'lucide-react';
-import { api, DeviceShare, DevicesStatus, QueuedRun, RunProgress, ScholarNews, ScholarPending, ScholarRun } from '../../lib/api';
+import { api, DeviceShare, DevicesStatus, QueuedRun, RunProgress, ScholarNews, ScholarPending, ScholarRun, ScholarSite } from '../../lib/api';
 import { useSetting, openSettings } from '../../lib/settings';
 import { ask, toast } from '../../store';
 import { reloadScholar } from './scholarStore';
@@ -420,6 +420,50 @@ export function FromAnotherDevice({ onDone }: { onDone?: () => void }) {
 }
 
 // ---------- History ----------
+/**
+ * The connected class sites (one per school), each with its own status, under Advanced. Their classes all show on the
+ * one calendar; this is only where each site's own check stands.
+ */
+function ClassSites() {
+  const [sites, setSites] = useState<ScholarSite[]>([]);
+  useEffect(() => {
+    api.scholar.sites().then(setSites).catch(() => {});
+    return api.scholar.onChanged(() => api.scholar.sites().then(setSites).catch(() => {}));
+  }, []);
+  const shown = sites.filter((x) => x.home || x.hasData);
+  if (!shown.length) return null;
+  const check = (x: ScholarSite) =>
+    api.scholar
+      .run('daily', '', x.id)
+      .then(() => toast(`Checking ${x.label}.`, 'success'))
+      .catch((err) => toast(String(err?.message || err), 'error'));
+  return (
+    <details className="kcard gate-adv">
+      <summary>Class sites ({shown.length})</summary>
+      <div className="hist">
+        {shown.map((x) => (
+          <div key={x.id} className="hist-row">
+            <div className="hist-head">
+              {!x.home ? <Clock size={15} className="amber" /> : x.lastCheck && !x.lastCheck.ok ? <XCircle size={15} className="bad" /> : <CheckCircle2 size={15} className="good" />}
+              <span className="hist-label">{x.label}</span>
+              <span className="hist-meta">
+                {!x.home ? 'Not connected' : x.lastCheck ? `Last check ${ago(x.lastCheck.at)}` : 'Not checked yet'}
+                {x.home ? ` · ${x.platform === 'canvas' ? 'Canvas' : 'D2L Brightspace'}` : ''}
+              </span>
+              {x.home && (
+                <button className="btn sm" onClick={() => check(x)}>
+                  <Play size={13} /> Check now
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="muted">To add another, go to Add a class.</p>
+    </details>
+  );
+}
+
 function History({ activity }: { activity: ScholarRun[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const [all, setAll] = useState(false);
@@ -571,6 +615,7 @@ export function ScansView() {
         </p>
       )}
       <DevicesCard dev={dev} reload={loadDevices} />
+      <ClassSites />
       <History activity={activity} />
     </div>
   );

@@ -1184,7 +1184,7 @@ function reviewableAll() {
         return '-';
       }
     })
-    .join('|');
+    .join('|') + `|${dir()}`;
   if (reviewCache.sig === sig && reviewCache.items) return reviewCache.items;
   const out = new Map();
   for (const e of index()) {

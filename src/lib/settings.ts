@@ -277,7 +277,7 @@ export const SECTIONS: Section[] = [
         help: 'How far ahead “Coming up” on Home lists things.'
       },
       { key: 'home.todayMax', label: 'Items listed under Coming up', type: 'number', default: 6, min: 2, max: 20, advanced: true },
-      { key: 'home.showHubClasses', label: 'Include Kea classes', type: 'toggle', default: true, advanced: true, help: 'Never shown in a Personal profile.' },
+      { key: 'home.showHubClasses', label: 'Include Kea classes', type: 'toggle', default: true, advanced: true, help: 'Kea classes, when School is on.' },
       { key: 'home.showStart', group: 'Create', label: 'Show Create (new document, spreadsheet, presentation…)', type: 'toggle', default: true },
       { key: 'home.showTools', label: 'Include PDF tools and Open a file', type: 'toggle', default: true },
       { key: 'home.previews', group: 'Files', label: 'Show previews of files', type: 'toggle', default: true },

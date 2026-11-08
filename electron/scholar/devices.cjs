@@ -71,9 +71,14 @@ function me() {
 }
 const myName = () => settings.get('scholar.deviceName', '') || os.hostname();
 
-/** The Devices folder for the active profile, or null when syncing between devices is off or there's no drive. */
+/**
+ * The Devices folder, or null when syncing between devices is off or there's no drive. Computers keep the first class
+ * site in step; another class site is scanned on the computer it was connected on (its classes still reach the phone
+ * with the rest), so for it there's no folder and this computer is its own primary.
+ */
+const firstSite = () => profiles.active() === profiles.home();
 function folder() {
-  if (settings.get('scholar.pcSync', true) === false) return null;
+  if (settings.get('scholar.pcSync', true) === false || !firstSite()) return null;
   const t = cloud.target();
   return t ? path.join(t, 'Devices') : null;
 }
@@ -95,6 +100,7 @@ const remember = (id) => settings.get('scholar.lastPrimary', '') !== id && setti
 
 /** True when another device is the primary, so this one mustn't scan, poll the class site or write the phone copy. */
 function follower() {
+  if (!firstSite()) return false;
   const p = primaryInfo();
   if (p && p.id) {
     if (p.id !== me() && !joined(p)) return false;
@@ -431,12 +437,16 @@ async function serveRequest(r) {
     }
     else if (r.task === 'banks') hooks.banks?.();
     // (Teach isn't taken from other devices any more: a lesson runs on the device's own Claude, and the phone has none.)
-    else if (r.task === 'inbox') precheck.pollAnnouncements().then((ok) => ok && hooks.syncSoon(5000)).catch(() => {});
+    else if (r.task === 'inbox') (hooks.pollAll || precheck.pollAnnouncements)().then((ok) => ok && hooks.syncSoon(5000)).catch(() => {});
     else if (r.task === 'practice') {
-      const { id, ready } = await require('./study.cjs').request(r.req || {});
-      if (ready) soon(1000);
-      else runner.run('practice', id, 'manual').then(() => (soon(3000), hooks.syncSoon(3000)));
-    } else if (runner.TASKS[r.task] && r.task !== 'probe') runner.run(r.task, r.arg || '', 'manual').then(() => soon(3000));
+      // (A set for a class on another class site is made in that site's folder: the class's id says which.)
+      const { ws, id: courseId } = profiles.split(r.req?.courseId || '');
+      await profiles.within(ws, async () => {
+        const { id, ready } = await require('./study.cjs').request({ ...(r.req || {}), ...(r.req?.courseId ? { courseId } : {}) });
+        if (ready) soon(1000);
+        else runner.run('practice', id, 'manual').then(() => (soon(3000), hooks.syncSoon(3000)));
+      });
+    } else if (runner.TASKS[r.task] && r.task !== 'probe') (hooks.run || runner.run)(r.task, r.arg || '', 'manual').then(() => soon(3000));
     return true;
   } catch (err) {
     console.error('Devices request', err);

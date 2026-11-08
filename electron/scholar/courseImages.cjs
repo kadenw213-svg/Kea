@@ -25,11 +25,13 @@ async function sourceOf(ou, lp) {
   return `/d2l/api/lp/${lp}/courses/${ou}/image?width=800&height=450`;
 }
 
-let running = null;
+// (One read at a time per class site.)
+const running = new Map();
 /** Reads the pictures that are missing or old (all of them with `force`). Returns how many changed. */
 function refresh({ force = false } = {}) {
-  if (running) return running;
-  running = (async () => {
+  const site = profiles.active();
+  if (running.has(site)) return running.get(site);
+  const job = (async () => {
     const P = profiles.paths();
     const list = (await db.watchList(P.db)).filter((c) => force || !(fresh(fileOf(c.code)) || fresh(noneOf(c.code))));
     if (!list.length) return 0;
@@ -66,8 +68,9 @@ function refresh({ force = false } = {}) {
       }
     }
     return changed;
-  })().finally(() => (running = null));
-  return running;
+  })().finally(() => running.delete(site));
+  running.set(site, job);
+  return job;
 }
 
 const cache = new Map();

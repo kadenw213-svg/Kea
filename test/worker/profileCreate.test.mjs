@@ -1,5 +1,6 @@
-// Making a profile while a class scan runs: it's added, but the open profile stays, so the classes never look gone.
-// Run: node --test test/worker/
+// Adding a class site (an old "profile") never switches anything: every site is read together, and what Kea works on
+// outside a site's own run is always the first site (electron/scholar/profiles.cjs).
+// Run: node --test test/worker/profileCreate.test.mjs
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,17 +15,29 @@ electron._paths.userData = dir;
 electron._paths.appData = dir;
 after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-test('create switches to the new profile by default, and not with select: false', () => {
+test('making a site adds it after the others and changes what Kea works on nowhere', () => {
   const profiles = require('../../electron/scholar/profiles.cjs');
-  const start = profiles.all().active;
-  const kept = profiles.create('Personal', { select: false });
-  assert.equal(kept.active, start);
-  assert.ok(kept.list.some((p) => p.name === 'Personal'));
-  const moved = profiles.create('Another');
-  assert.equal(moved.active, moved.list.find((p) => p.name === 'Another').id);
+  assert.equal(profiles.active(), 'school');
+  profiles.create('Personal');
+  profiles.create('Another', { select: true });
+  assert.deepEqual(profiles.ids(), ['school', 'personal', 'another']);
+  assert.equal(profiles.home(), 'school');
+  assert.equal(profiles.active(), 'school');
 });
 
-test('the create handler keeps the open profile while a scan runs', () => {
+test('inside a site’s own work, paths are that site’s, through everything it awaits', async () => {
+  const profiles = require('../../electron/scholar/profiles.cjs');
+  const seen = await profiles.within('another', async () => {
+    await new Promise((r) => setTimeout(r, 5));
+    return profiles.paths().dir;
+  });
+  assert.equal(path.basename(seen), 'another');
+  assert.equal(path.basename(profiles.paths().dir), 'school');
+  // (A site that isn't there: the first one.)
+  assert.equal(profiles.within('nope', () => profiles.active()), 'school');
+});
+
+test('the window has no profile to switch to', () => {
   const src = fs.readFileSync(new URL('../../electron/scholar/index.cjs', import.meta.url), 'utf8');
-  assert.match(src, /'scholar:createProfile'[^\n]*select: !runner\.status\(\)\.running/);
+  assert.doesNotMatch(src, /profiles\.select\(/);
 });
