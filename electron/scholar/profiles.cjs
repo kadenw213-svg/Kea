@@ -1,8 +1,18 @@
-// Kea Scholar profiles ("School", "Personal"): each keeps its own classes, textbooks, scan engine and settings,
-// in userData/profiles/<id>/. Profiles are local for now; a Kea server may sync them later.
+// Kea Scholar's class-site workspaces. Each connected class site keeps its own scan engine, database
+// (scholar/data/academic_sync.db), textbooks and state in userData/profiles/<id>/, as the old "School" and "Personal"
+// profiles did; those folders are kept exactly where they are. The person never picks one: Kea reads every workspace
+// together (one calendar, one class list), and each write or scan goes to the workspace its class or item is from.
+//
+// `active()` is the workspace the current code works on: inside `within(id, fn)` that workspace, else the first one
+// (home()). The old saved `active` choice no longer matters.
+//
+// Ids from the first workspace stay as they are (so nothing saved before changes); ids from any other workspace carry
+// its id in front ("personal__<id>"), so two workspaces can never hand the window the same id. qualify() and split() are
+// the only places that rule is written.
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { AsyncLocalStorage } = require('async_hooks');
 
 const root = () => path.join(app.getPath('userData'), 'profiles');
 const indexFile = () => path.join(root(), 'profiles.json');
@@ -78,16 +88,29 @@ function writeJsonSafe(file, value, space = 2) {
   renameRetry(tmp, file);
 }
 
+// (Read on nearly every call, so kept until the file changes.)
+let cache = null;
 function read() {
+  let st = null;
+  try {
+    st = fs.statSync(indexFile());
+  } catch {}
+  const stamp = st ? `${indexFile()}|${st.mtimeMs}|${st.size}` : null;
+  if (stamp && cache && cache.stamp === stamp) return JSON.parse(cache.body);
   const { value: j, from } = readJsonSafe(indexFile(), null);
-  if (j && Array.isArray(j.list) && j.list.length) return j;
+  if (j && Array.isArray(j.list) && j.list.length) {
+    if (stamp && from === 'file') cache = { stamp, body: JSON.stringify(j) };
+    return j;
+  }
   if (from !== 'none') {
     // The list was lost but the profiles' folders are still here: rebuild it from them rather than start over.
     try {
       const list = fs
         .readdirSync(root(), { withFileTypes: true })
         .filter((e) => e.isDirectory() && /^[a-z0-9-]+$/.test(e.name))
-        .map((e) => ({ id: e.name, name: e.name === 'school' ? 'School' : e.name.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase()), created: new Date().toISOString() }));
+        .map((e) => ({ id: e.name, name: e.name === 'school' ? 'School' : e.name.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase()), created: new Date().toISOString() }))
+        // (The first workspace's ids are the unprefixed ones: School stays first, as it was made first.)
+        .sort((a, b) => (b.id === 'school') - (a.id === 'school'));
       if (list.length) {
         console.error(`Kea: rebuilt the profile list from ${list.length} profile folder(s)`);
         const j2 = { active: list.some((p) => p.id === 'school') ? 'school' : list[0].id, list };
@@ -100,6 +123,7 @@ function read() {
 }
 
 function write(j) {
+  cache = null;
   writeJsonSafe(indexFile(), j);
 }
 
@@ -114,10 +138,43 @@ function all() {
   return j;
 }
 
-const active = () => all().active;
+const scope = new AsyncLocalStorage();
 
-/** Add a profile and, unless `select` is false, switch to it. */
-function create(name, { select = true } = {}) {
+/** Every workspace's id, the first (home) one first. */
+const ids = () => all().list.map((p) => p.id);
+/** The first workspace: where things with no class of their own live. */
+const home = () => all().list[0].id;
+const exists = (id) => typeof id === 'string' && all().list.some((p) => p.id === id);
+/** The workspace the current code works on (see the top of this file). */
+function active() {
+  const id = scope.getStore();
+  return id && exists(id) ? id : home();
+}
+/** Run fn with active() (and so paths()) set to workspace `id`, through everything it awaits. */
+const within = (id, fn) => scope.run(exists(id) ? id : home(), fn);
+const nameOf = (id) => all().list.find((p) => p.id === id)?.name || id;
+
+const SEP = '__';
+/** An id as the window sees it: the home workspace's as it is, another's with its workspace id in front. */
+function qualify(ws, id) {
+  if (id === null || id === undefined || id === '') return id;
+  const s = String(id);
+  if (!ws || ws === home()) return s;
+  return s.startsWith(ws + SEP) ? s : `${ws}${SEP}${s}`;
+}
+/** Which workspace an id from the window belongs to, and the id as that workspace knows it: { ws, id }. */
+function split(key) {
+  const s = String(key ?? '');
+  const i = s.indexOf(SEP);
+  if (i > 0) {
+    const ws = s.slice(0, i);
+    if (ws !== home() && exists(ws)) return { ws, id: s.slice(i + SEP.length) };
+  }
+  return { ws: home(), id: s };
+}
+
+/** Add a workspace (another class site). `select` is kept for older callers and changes nothing anyone sees. */
+function create(name, { select = false } = {}) {
   const j = all();
   const clean = String(name || '').trim().slice(0, 40) || 'Profile';
   let id = clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'profile';
@@ -158,4 +215,4 @@ function paths(id = active()) {
   };
 }
 
-module.exports = { all, active, create, select, rename, paths, readJsonSafe, writeJsonSafe };
+module.exports = { all, active, ids, home, exists, within, nameOf, qualify, split, create, select, rename, paths, readJsonSafe, writeJsonSafe };

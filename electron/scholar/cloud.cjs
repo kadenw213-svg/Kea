@@ -124,27 +124,39 @@ function autoDrive() {
 /** A drive Kea syncs through its own server (the Kea account's storage, or a KeaS server's), not a folder app. */
 const serverDrive = (id) => id === 'kea-hub' || String(id || '').startsWith('keas:');
 
-/** The folder Kea syncs into for the active profile, or null when syncing is off or the drive isn't there. */
+/**
+ * The folder Kea syncs into, or null when syncing is off or the drive isn't there. One folder for every class site:
+ * the first site's (named as it always was, so the phone and other computers keep finding it), holding all of them.
+ */
 function target() {
   const root = drive()?.path;
   if (!root || !fs.existsSync(root)) return null;
-  const name = (profiles.all().list.find((p) => p.id === profiles.active())?.name || profiles.active()).replace(/[<>:"/\\|?*]+/g, '').trim() || 'School';
+  const name = profiles.nameOf(profiles.home()).replace(/[<>:"/\\|?*]+/g, '').trim() || 'School';
   return path.join(root, 'Kea', name);
 }
+
+/** The first class site's folder (the synced copy's own records live there). */
+const H = () => profiles.paths(profiles.home());
+/** Every class site's textbook folder. */
+const allTextbooks = () => profiles.ids().map((id) => profiles.paths(id).textbooks);
 
 const sha = (s) => crypto.createHash('sha1').update(s).digest('hex');
 const readSig = () => {
   try {
-    return fs.readFileSync(path.join(profiles.paths().dir, 'library.sig'), 'utf8');
+    return fs.readFileSync(path.join(H().dir, 'library.sig'), 'utf8');
   } catch {
     return '';
   }
 };
 
-/** Copy src → dst only when it changed (size or time), then delete everything in dst that src doesn't have. */
-function mirror(src, dst) {
+/**
+ * Copy src → dst only when it changed (size or time), then delete everything in dst that src doesn't have. `srcs` may
+ * be a list of folders (every class site's textbooks), put together in dst.
+ */
+function mirror(srcs, dst) {
   const keep = new Set();
-  if (fs.existsSync(src)) {
+  for (const src of Array.isArray(srcs) ? srcs : [srcs]) {
+    if (!fs.existsSync(src)) continue;
     for (const cls of fs.readdirSync(src)) {
       const from = path.join(src, cls);
       if (!fs.statSync(from).isDirectory()) continue;
@@ -198,20 +210,23 @@ function crc32(buf) {
 
 /** Every file the library holds: [{ name (in the zip), file (on disk), size, mtime }], in a fixed order. */
 function libraryFiles() {
-  const P = profiles.paths();
+  const P = H();
   const out = [];
+  // (Every class site's textbooks go in; a class folder two sites both have keeps the first one's file of a name.)
+  const seen = new Set();
   const walk = (dir, prefix, keep) => {
     if (!fs.existsSync(dir)) return;
     for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const full = path.join(dir, e.name);
       if (e.isDirectory()) walk(full, `${prefix}${e.name}/`, keep);
-      else if (keep(e.name)) {
+      else if (keep(e.name) && !seen.has(`${prefix}${e.name}`)) {
+        seen.add(`${prefix}${e.name}`);
         const st = fs.statSync(full);
         out.push({ name: `${prefix}${e.name}`, file: full, size: st.size, mtime: Math.round(st.mtimeMs) });
       }
     }
   };
-  walk(P.textbooks, 'Textbooks/', (n) => /\.pdf$/i.test(n));
+  for (const t of allTextbooks()) walk(t, 'Textbooks/', (n) => /\.pdf$/i.test(n));
   walk(path.join(P.dir, 'study', 'images'), 'study/images/', (n) => /\.(jpe?g|png|webp|gif|svg)$/i.test(n));
   return out;
 }
@@ -319,7 +334,7 @@ function verified(text) {
 }
 
 /** What Kea last wrote as the library zip: { sig, size, sha256 } (profile folder, never shared). */
-const libMetaFile = () => path.join(profiles.paths().dir, 'library.json');
+const libMetaFile = () => path.join(H().dir, 'library.json');
 function readLibMeta() {
   try {
     return JSON.parse(fs.readFileSync(libMetaFile(), 'utf8'));
@@ -401,7 +416,7 @@ async function sync(build) {
     if (lib.length && (!meta || meta.sig !== sig || sig !== readSig() || onDrive !== meta.size)) {
       const zip = writeZip(lib, libFile);
       meta = { sig, size: zip.length, sha256: sha256(zip) };
-      fs.writeFileSync(path.join(profiles.paths().dir, 'library.sig'), sig);
+      fs.writeFileSync(path.join(H().dir, 'library.sig'), sig);
       fs.writeFileSync(libMetaFile(), JSON.stringify(meta));
     }
     const body = JSON.stringify({ ...snap, library: lib.length && meta ? { size: meta.size, sha256: meta.sha256 } : null });
@@ -436,7 +451,7 @@ async function sync(build) {
  * reads this through the Hub later; until then it keeps using a cloud drive.)
  */
 function syncHub(dir, snap) {
-  mirror(profiles.paths().textbooks, path.join(dir, 'Textbooks'));
+  mirror(allTextbooks(), path.join(dir, 'Textbooks'));
   const body = JSON.stringify({ ...snap, library: null });
   const file = path.join(dir, 'kea-data.json');
   let old = '';

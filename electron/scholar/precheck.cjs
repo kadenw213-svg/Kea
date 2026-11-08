@@ -660,13 +660,15 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
 const isCategory = (g) => g?.GradeObjectType === 9 || /^category$/i.test(String(g?.GradeObjectTypeName || ''));
 
 /** The signed-in student's user id on the class site (for telling their own posts apart), read once. */
-let myId = null;
+// (One per class site: the same person has another id at another school.)
+const myIds = new Map();
 async function whoami(v) {
   if (isCanvas()) return canvas().me();
-  if (myId) return myId;
+  const site = profiles.active();
+  if (myIds.get(site)) return myIds.get(site);
   const r = await browser.getJson(`/d2l/api/lp/${v.lp}/users/whoami`).catch(() => null);
-  myId = r?.data?.Identifier || null;
-  return myId;
+  myIds.set(site, r?.data?.Identifier || null);
+  return myIds.get(site);
 }
 
 const submissionsFile = () => path.join(profiles.paths().dir, 'submissions.json');
@@ -1249,7 +1251,8 @@ async function syncCheck(code, ou) {
 
 // ---------- Old check folders and run logs (kept two weeks) ----------
 const KEEP_DAYS = 14;
-let prunedOn = null;
+// (Per scan folder: each class site's is pruned on its own day.)
+const prunedOn = new Map();
 /**
  * Removes what's older than two weeks: the pre-check's and weekly check's day folders, saved enrollment lists and the
  * run logs. At most once a day, and the newest three day folders always stay (the engine reads the newest folder that
@@ -1257,8 +1260,8 @@ let prunedOn = null;
  */
 function prune(workspaceDir, now = new Date()) {
   const today = day(now);
-  if (prunedOn === today) return 0;
-  prunedOn = today;
+  if (prunedOn.get(workspaceDir) === today) return 0;
+  prunedOn.set(workspaceDir, today);
   const cutoff = day(new Date(now.getTime() - KEEP_DAYS * 864e5));
   const data = path.join(workspaceDir, 'data');
   let removed = 0;
@@ -1292,4 +1295,4 @@ function prune(workspaceDir, now = new Date()) {
   return removed;
 }
 
-module.exports = { versions, whoami, prune, classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, addInboxItems, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck, _test: { parseAlerts, fetchAreaRetry, writeSafe, readSafe, prune, resetPrune: () => (prunedOn = null), AREAS, refreshSubmissions, saveD2lPlaces, classPlatforms, updateGrades, updateInbox, hiddenWork } };
+module.exports = { versions, whoami, prune, classLaunch, savePlatformLinks, run, pollAnnouncements, readInbox, addInboxItems, markInboxRead, deleteInbox, inboxKey, readGrades, handInTargets, syncCheck, _test: { parseAlerts, fetchAreaRetry, writeSafe, readSafe, prune, resetPrune: () => prunedOn.clear(), AREAS, refreshSubmissions, saveD2lPlaces, classPlatforms, updateGrades, updateInbox, hiddenWork } };

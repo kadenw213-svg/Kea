@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const { ipcMain, BrowserWindow } = require('electron');
 const profiles = require('./profiles.cjs');
 const { handleApp } = require('../ipcGuard.cjs');
+const sites = () => require('./sites.cjs');
 
 const file = () => path.join(profiles.paths().dir, 'messages.json');
 function read() {
@@ -31,8 +32,9 @@ function write(m) {
 const changed = () => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
 
 let deps = null;
-let syncing = null;
-let lastSync = 0;
+// (Each class site's mailbox is read on its own schedule.)
+const syncing = new Map();
+const lastSync = new Map();
 const notes = [];
 const mailId = (r) => `mail:${crypto.createHash('sha1').update(r.url || `${r.subject}|${r.from}|${r.date}`).digest('hex').slice(0, 16)}`;
 
@@ -42,10 +44,11 @@ const mailId = (r) => `mail:${crypto.createHash('sha1').update(r.url || `${r.sub
  */
 async function syncMailbox(force = false) {
   if (!deps) return null;
-  if (syncing) return syncing;
-  if (!force && Date.now() - lastSync < 15 * 60e3) return null;
-  lastSync = Date.now();
-  syncing = (async () => {
+  const site = profiles.active();
+  if (syncing.has(site)) return syncing.get(site);
+  if (!force && Date.now() - (lastSync.get(site) || 0) < 15 * 60e3) return null;
+  lastSync.set(site, Date.now());
+  const run = (async () => {
     const { browser, db } = deps;
     if (!(await browser.status()).signedIn) return null;
     const box = await browser.readMailbox();
@@ -96,7 +99,9 @@ async function syncMailbox(force = false) {
         // Who sent it and the class, then the subject and the whole message; a click opens it in Kea with Reply open.
         const from = String(n.from || '').replace(/<[^>]*>?.*$/, '').replace(/"/g, '').trim();
         const note = new Notification({ title: [from || 'New message', n.course].filter(Boolean).join(' · '), body: `${n.subject}${n.preview && !String(n.subject).startsWith(n.preview) ? `\n${n.preview}` : ''}`, silent: notify.silent() });
-        note.on('click', () => openInKea(n.id, true));
+        // (The id as Kea's window knows it, with its class site.)
+        const shown = profiles.qualify(profiles.active(), n.id);
+        note.on('click', () => openInKea(shown, true));
         note.show();
         notes.push(note);
         notes.splice(0, Math.max(0, notes.length - 20));
@@ -117,9 +122,10 @@ async function syncMailbox(force = false) {
     if (inbox.length) changed();
     return { inbox: inbox.length, sent: sent.length, unreadable: keepOld };
   })().finally(() => {
-    syncing = null;
+    syncing.delete(site);
   });
-  return syncing;
+  syncing.set(site, run);
+  return run;
 }
 
 /**
@@ -223,7 +229,22 @@ function register({ browser, precheck, db }) {
     return [...box.map((x) => ({ id: x.id, course: x.course, title: x.subject, from: x.from, preview: x.preview || '', at: x.date || x.first, sortAt: x.first, url: x.url, loc: { folder: x.folder || 'inbox', subject: x.subject, date: x.date }, read: !x.unread })), ...alerts];
   };
 
-  handleApp(ipcMain, 'scholar:mailList', () => {
+  // (Every class site's messages together; each one's id says its site.)
+  handleApp(ipcMain, 'scholar:mailList', async () => {
+    const parts = await sites().each(() => listOne());
+    const home = parts[0]?.value || { messages: [], sent: [], drafts: [], checked: null };
+    const rest = parts.slice(1).filter((x) => x.value);
+    if (!rest.length) return home;
+    const tagged = (key) => parts.flatMap(({ ws, value }) => (value ? value[key].map((x) => sites().tag(ws, x)) : []));
+    const at = (x) => String(x.at || '');
+    return {
+      messages: tagged('messages').sort((a, b) => at(b).localeCompare(at(a))),
+      sent: tagged('sent').sort((a, b) => at(b).localeCompare(at(a))),
+      drafts: home.drafts,
+      checked: parts.map((x) => x.value?.checked).filter(Boolean).sort().pop() || null
+    };
+  });
+  const listOne = () => {
     const m = read();
     // Sent: what Kea sent, then the class site's Sent folder (messages sent there directly, or before Kea).
     const mine = m.sent.slice(0, 200);
@@ -241,10 +262,13 @@ function register({ browser, precheck, db }) {
       drafts: Object.entries(m.drafts).map(([key, d]) => ({ key, ...d })),
       checked: m.box.at || null
     };
-  });
+  };
 
   // Read the class site's mailbox now (the Refresh button).
-  handleApp(ipcMain, 'scholar:mailSync', () => syncMailbox(true));
+  handleApp(ipcMain, 'scholar:mailSync', async () => {
+    const parts = await sites().each(() => syncMailbox(true));
+    return parts.map((x) => x.value).find(Boolean) || null;
+  });
   // A message opened in Kea counts as read here (the class site marks it read when Kea opens it to read the body).
   const markRead = (id) => {
     const m = read();
@@ -256,7 +280,8 @@ function register({ browser, precheck, db }) {
   };
 
   // The whole message, read from the class site (and kept, so it opens at once next time).
-  handleApp(ipcMain, 'scholar:mailRead', async (_e, id, refresh) => {
+  handleApp(ipcMain, 'scholar:mailRead', (_e, id, refresh) => sites().routed(id, (raw) => readOne(raw, refresh)));
+  const readOne = async (id, refresh) => {
     const m = read();
     const out = (b) => ({ ...b, ...(b.text ? { text: cleanMessage(b.text).body, quoted: cleanMessage(b.text).quoted } : {}) });
     if (!refresh && m.bodies[id]) return out(m.bodies[id]);
@@ -273,7 +298,7 @@ function register({ browser, precheck, db }) {
     for (const k of keys.slice(0, Math.max(0, keys.length - 300))) delete fresh.bodies[k];
     write(fresh);
     return out(fresh.bodies[id]);
-  });
+  };
 
   handleApp(ipcMain, 'scholar:mailDraft', (_e, key, draft) => {
     const m = read();
@@ -287,7 +312,17 @@ function register({ browser, precheck, db }) {
 
   // Send: only when the student presses Send in Kea. One at a time, never retried by itself (a retry could send twice).
   let sending = false;
+  // (Through the class site the message is from, or the one with the class it's sent in.)
   handleApp(ipcMain, 'scholar:mailSend', async (_e, msg) => {
+    if (msg?.replyTo) {
+      const { ws, id } = profiles.split(msg.replyTo);
+      return profiles.within(ws, () => sendOne({ ...msg, replyTo: id }));
+    }
+    const code = String(msg?.course || '');
+    const found = (await sites().each(async () => (await db.watchList(profiles.paths().db)).some((c) => c.code === code))).find((x) => x.value);
+    return profiles.within(found ? found.ws : profiles.home(), () => sendOne(msg));
+  });
+  const sendOne = async (msg) => {
     if (sending) throw new Error('A message is already being sent. Wait for it to finish.');
     const body = String(msg?.body || '').trim();
     if (!body) throw new Error('Write something first.');
@@ -311,7 +346,7 @@ function register({ browser, precheck, db }) {
     } finally {
       sending = false;
     }
-  });
+  };
 }
 
 /** The class site's mailbox as the phone shows it, newest first: each message with its full text once Kea has read it. */

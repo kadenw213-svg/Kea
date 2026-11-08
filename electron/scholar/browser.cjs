@@ -108,15 +108,16 @@ const hostOf = (u) => {
 };
 
 // ---------- The hidden window ----------
-let win = null;
-let winProfile = '';
+// One hidden window per class site (each on its own signed-in session), so a scan of one site never closes another's.
+const wins = new Map();
+const liveWins = () => [...wins.values()].filter((w) => w && !w.isDestroyed());
 const partition = () => `persist:class-site-${profiles.active()}`;
 
 function getWindow() {
-  if (win && !win.isDestroyed() && winProfile === profiles.active()) return win;
-  if (win && !win.isDestroyed()) win.destroy();
-  winProfile = profiles.active();
-  win = new BrowserWindow({
+  const site = profiles.active();
+  const have = wins.get(site);
+  if (have && !have.isDestroyed()) return have;
+  const win = new BrowserWindow({
     show: false,
     width: 1100,
     height: 820,
@@ -125,6 +126,7 @@ function getWindow() {
     // (The preload also runs in frames, for dark mode inside embedded pages.)
     webPreferences: { partition: partition(), sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'browser-preload.cjs') }
   });
+  wins.set(site, win);
   prepareSession(session.fromPartition(partition()));
   // Pages can't open more windows: links that would, load here instead (http and https only).
   guardWindow(win);
@@ -190,6 +192,9 @@ const prepared = new WeakSet();
 function prepareSession(ses) {
   if (prepared.has(ses)) return;
   prepared.add(ses);
+  // (Each class site has its own session: its questions and answers are that site's, whatever runs when they come.)
+  const site = profiles.active();
+  const here = (fn) => profiles.within(site, fn);
   ses.setUserAgent(chromeAgent());
   require('./adblock.cjs').enable(ses);
   // What pages may ask for: nothing by default (sitePolicy.cjs). School platforms get what course work needs (full
@@ -198,7 +203,7 @@ function prepareSession(ses) {
   // says yes for that site. Opening another program (a link to a
   // Windows protocol handler) is never granted: a mailto: or https link goes through Kea's own question instead.
   // (Choosing a file to upload and downloads aren't permissions: they always work.)
-  ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+  ses.setPermissionRequestHandler((wc, permission, callback, details) => here(() => {
     if (permission === 'openExternal') {
       callback(false);
       if (details?.externalURL) confirmExternal(details.externalURL, wc);
@@ -212,23 +217,24 @@ function prepareSession(ses) {
     }
     if (typeof d !== 'object') return callback(d === 'allow');
     askSite(wc, d.origin, d.ask).then(callback, () => callback(false));
-  });
-  ses.setPermissionCheckHandler((_wc, permission, origin, details) => {
+  }));
+  ses.setPermissionCheckHandler((_wc, permission, origin, details) => here(() => {
     try {
       const d = policy.decide(permission, details?.requestingUrl || origin || details?.securityOrigin || '', schoolCtx());
       return typeof d === 'object' ? siteAnswer(d.origin, d.ask) === true : d === 'allow';
     } catch {
       return false;
     }
-  });
+  }));
 }
 
 // (Permission checks come often: the school's address is read from its encrypted file at most every few seconds.)
-let schoolCache = { at: 0, home: '', sso: '' };
+// (One per class site: each has its own file.)
+let schoolCache = { at: 0, file: '', home: '', sso: '' };
 function schoolCtx() {
-  if (Date.now() - schoolCache.at > 5000) {
+  if (Date.now() - schoolCache.at > 5000 || schoolCache.file !== schoolFile()) {
     const s = readSchool();
-    schoolCache = { at: Date.now(), home: s.home || '', sso: String(schoolLoginHost(s) || '').replace(/:\d+$/, '') };
+    schoolCache = { at: Date.now(), file: schoolFile(), home: s.home || '', sso: String(schoolLoginHost(s) || '').replace(/:\d+$/, '') };
   }
   return schoolCache;
 }
@@ -419,7 +425,7 @@ let themeScript = '';
 ipcMain.on('class-site:theme-script', (e) => (e.returnValue = themeScript || (themeScript = require('fs').readFileSync(path.join(__dirname, 'site-theme.js'), 'utf8'))));
 // Settings changed: every class-site window (the main one and the messages one) and all their frames take them.
 require('../settings.cjs').onChange(() => {
-  const open = [win, mailWin].filter((w) => w && !w.isDestroyed());
+  const open = [...liveWins(), mailWin].filter((w) => w && !w.isDestroyed());
   if (!open.length) return;
   const d = darkSettings();
   for (const w of open)
@@ -1382,7 +1388,7 @@ let pendingUser = null;
 // Each login is kept under its own host, so a platform's login (ALEKS, Pearson) never replaces the school's. Only the
 // window's own page counts: a frame inside it (an ad, an embedded tool) can't report a login.
 // (The scan window or the student's own window: the same signed-in session, the same rules for what's remembered.)
-const fromMainFrame = (e) => [win, pageWin].some((x) => !!(x && !x.isDestroyed() && e.sender === x.webContents && e.senderFrame && e.senderFrame === x.webContents.mainFrame));
+const fromMainFrame = (e) => [...liveWins(), pageWin].some((x) => !!(x && !x.isDestroyed() && e.sender === x.webContents && e.senderFrame && e.senderFrame === x.webContents.mainFrame));
 // Only the class site's own sign-in page or a known sign-in service may have a login saved (the phone's
 // ClassSite.mayFill rule, with the Public Suffix List): once the school's sign-in host is known, only that one. The page's
 // address is the frame's real one, never what the page says it is.
@@ -1394,7 +1400,12 @@ const mayRemember = (e) => {
   const fromHome = (settingUp || !!signingIn) && !!s.home && policy.inSchoolDomain(policy.hostOf(loadedTarget), policy.hostOf(s.home));
   return policy.mayRememberLogin(e.senderFrame?.url || '', { home: s.home || '', schoolLoginHost: settingUp ? '' : s.schoolLoginHost || '', fromHome });
 };
+/** The class site a window's report comes from (each window is opened for one site). */
+const siteOf = (e) => ([...wins].find(([, w]) => w && !w.isDestroyed() && e.sender === w.webContents)?.[0] || (pageWin && !pageWin.isDestroyed() && e.sender === pageWin.webContents ? pageProfile : mailWin && !mailWin.isDestroyed() && e.sender === mailWin.webContents ? mailProfile : profiles.active()));
 function onLoginSubmitted(e, form) {
+  return profiles.within(siteOf(e), () => loginSubmitted(e, form));
+}
+function loginSubmitted(e, form) {
   if (!wantsRemember() || !fromMainFrame(e) || !form || typeof form !== 'object') return;
   if (!mayRemember(e)) return;
   const host = hostOf(e.senderFrame.url);
@@ -1417,6 +1428,6 @@ function onLoginSubmitted(e, form) {
   pendingUser = null;
 }
 
-const remembering = (e) => (e.returnValue = !!(wantsRemember() && fromMainFrame(e) && mayRemember(e)));
+const remembering = (e) => profiles.within(siteOf(e), () => (e.returnValue = !!(wantsRemember() && fromMainFrame(e) && mayRemember(e))));
 
 module.exports = { request, publicHttps, SCHOOL_PLATFORMS, open, click, platformsRead, show, reply, readMessage, readMailbox, sendMessage, handIn, isClassSite, fetchText, getJson, pageHtml, postForm, platformOf, download, status, signIn, schoolInfo, setHome, forgetLogin, onLoginSubmitted, remembering };
