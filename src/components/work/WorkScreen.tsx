@@ -15,6 +15,7 @@ import { get, localTz, post, useMyId, useWork, Tab } from './workStore';
 import { can, canAny } from './types';
 import type { Org } from './types';
 import { Advanced, Card, Empty, Field, Loading } from './ui';
+import { FoldGroup } from '../Fold';
 import { applicationLine, latestApplication } from './payRules';
 import type { Application } from './payRules';
 import { TimeTab } from './TimeClock';
@@ -186,6 +187,8 @@ function OrgBody({ org, tabs, current, verified }: { org: Org; tabs: typeof TABS
           </button>
         ))}
       </nav>
+      {/* (Each tab's cards fold: the first open, the rest closed until opened, each remembered.) */}
+      <FoldGroup key={`${org.id}:${current}`} screen={`work:${current}`}>
       <div className="work-body">
         {current === 'schedule' && <MySchedule org={org} />}
         {current === 'time' && <TimeTab org={org} />}
@@ -200,6 +203,7 @@ function OrgBody({ org, tabs, current, verified }: { org: Org; tabs: typeof TABS
         {current === 'budgets' && <BudgetsTab org={org} />}
         {current === 'settings' && <SettingsTab key={org.id} org={org} />}
       </div>
+      </FoldGroup>
     </>
   );
 }

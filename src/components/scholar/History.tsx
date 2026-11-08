@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, History as HistoryIcon } from 'lucide-react';
 import { api, HistoryEvent } from '../../lib/api';
 import { useScholar } from './scholarStore';
+import { useFold, useFoldPlace } from '../Fold';
 
 const FIELD: Record<string, string> = {
   title: 'Name',
@@ -60,7 +61,9 @@ function describe(e: HistoryEvent, only?: Set<string>): string {
 
 /** The History section of an item's panel. */
 export function ItemHistory({ id }: { id: string }) {
-  const [open, setOpen] = useState(false);
+  // (One of the item panel's folding sections: closed unless it's the first showing; read only once opened.)
+  const place = useFoldPlace('history');
+  const [open, setOpen] = useFold(place.group?.screen || 'item', 'history', place.first ?? false);
   const [data, setData] = useState<{ events: HistoryEvent[]; sources: { title: string; source_type: string; url: string | null; retrieved_at: string }[] } | null>(null);
   const [err, setErr] = useState('');
   useEffect(() => {
@@ -71,8 +74,8 @@ export function ItemHistory({ id }: { id: string }) {
       .catch((e) => setErr(String(e?.message || e)));
   }, [open]);
   return (
-    <section className="hs-box">
-      <button className="hs-head" onClick={() => setOpen(!open)}>
+    <section className="hs-box" ref={place.ref}>
+      <button className="hs-head" aria-expanded={open} onClick={() => setOpen(!open)}>
         <HistoryIcon size={14} /> <span className="tb-h">History</span>
         <ChevronDown size={14} className={open ? 'flip' : ''} />
       </button>
@@ -118,7 +121,9 @@ const meaningful = (e: HistoryEvent) => {
  */
 export function ChangesBox() {
   const version = useScholar((s) => s.version);
-  const [open, setOpen] = useState(false);
+  // (One of the boxes above the calendar: closed unless it's the first showing.)
+  const place = useFoldPlace('changes');
+  const [open, setOpen] = useFold(place.group?.screen || 'attention', 'changes', place.first ?? false);
   const [events, setEvents] = useState<(HistoryEvent & { title: string | null; course: string | null })[] | null>(null);
   useEffect(() => {
     api.scholar
@@ -152,8 +157,8 @@ export function ChangesBox() {
   const total = byItem.size;
   if (!total) return null;
   return (
-    <section className="hs-changes">
-      <button className="hs-head" onClick={() => setOpen(!open)}>
+    <section className="hs-changes" ref={place.ref}>
+      <button className="hs-head" aria-expanded={open} onClick={() => setOpen(!open)}>
         <HistoryIcon size={15} /> <b>{total} calendar change{total === 1 ? '' : 's'} this week</b>
         <span className="muted">{[...groups].map(([c, list]) => `${c} ${list.length}`).join(' · ')}</span>
         <ChevronDown size={15} className={open ? 'flip' : ''} />

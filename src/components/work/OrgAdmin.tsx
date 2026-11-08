@@ -259,7 +259,7 @@ function Approvals({ org }: { org: Org }) {
   const claimed = (swaps.data?.swaps ?? []).filter((w) => w.status === 'claimed');
   return (
     <div className="wk-stack">
-      {can(org, 'people.approve') && <Card title="Asking to join">
+      {can(org, 'people.approve') && <Card title="Asking to join" alert={pending.length}>
         {!pending.length && <p className="muted">Nobody waiting.</p>}
         {pending.map((m) => (
           <div key={m.id} className="wk-row">
@@ -281,7 +281,7 @@ function Approvals({ org }: { org: Org }) {
           </div>
         ))}
       </Card>}
-      {can(org, 'swaps.decide') && <Card title="Shift swaps">
+      {can(org, 'swaps.decide') && <Card title="Shift swaps" alert={claimed.length}>
         {!claimed.length && <p className="muted">Nothing waiting.</p>}
         {claimed.map((w) => (
           <div key={w.id} className="wk-row">

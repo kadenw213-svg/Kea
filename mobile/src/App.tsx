@@ -1198,7 +1198,7 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
         )}
         {studyable && !TEST.has(it.type) && study}
         <LinkGroups links={rest} onOpen={(url) => Kea.open({ url })} />
-        {!guide && <OriginalWording text={instructions} />}
+        {!guide && <OriginalWording text={instructions} open={false} />}
         {(it.instructor || it.contact) && <p className="muted small">{[it.instructor, it.contact].filter(Boolean).join(' · ')}</p>}
       </div>
     </div>

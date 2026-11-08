@@ -237,7 +237,7 @@ function Builder({ org, id, onBack }: { org: Org; id: string; onBack(): void }) 
       {overBudget.length > 0 && <p className="af-info">Over the warning line: {overBudget.map((b) => `${b.departmentName} ${b.pct}%`).join(', ')}.</p>}
       {data.draftsWaiting > 0 && <Drafts org={org} id={id} pos={pos} />}
       {unfilled && unfilled.length > 0 && (
-        <Card title="Still open after auto-fill" actions={<button className="icon-btn sm" onClick={() => setUnfilled(null)}><X size={14} /></button>}>
+        <Card title="Still open after auto-fill" fold={false} actions={<button className="icon-btn sm" onClick={() => setUnfilled(null)}><X size={14} /></button>}>
           <div className="wk-tags">
             {unfilled.slice(0, 60).map((u) => {
               const s = data.slots.find((x) => x.key === u.slotKey);

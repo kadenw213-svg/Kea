@@ -1,6 +1,7 @@
 // Small pieces shared by the Work screens.
-import { ReactNode, useState } from 'react';
+import { createContext, ReactNode, useContext } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { FoldAlert, useFold, useFoldPlace } from '../Fold';
 import type { Stage } from './types';
 
 export function Loading() {
@@ -31,16 +32,40 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
     </div>
   );
 }
-export function Card({ title, actions, children, className = '' }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
+/** The card an Advanced section is in (each remembers being opened on its own). */
+const CardCtx = createContext<{ screen: string; id: string } | null>(null);
+/**
+ * A card. On a Work tab (inside its FoldGroup) a card with a title folds like every section in Kea: the first one
+ * showing starts open, the rest closed, and each remembers being opened or closed. `fold`: its name when the title
+ * isn't plain text, or false for a card that must stay open (an answer just asked for). `alert`: what's waiting or
+ * overdue in it, kept on its header while it's closed.
+ */
+export function Card({ title, actions, children, className = '', fold, alert }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; fold?: string | false; alert?: number | boolean | null }) {
+  // (A count in the title, "People (12)", isn't part of its name.)
+  const id = fold === false ? '' : fold || (typeof title === 'string' ? title.replace(/\s*\([^)]*\)\s*$/, '') : '');
+  const place = useFoldPlace(id || '-');
+  const foldable = !!id && !!place.group;
+  const screen = place.group?.screen || 'work';
+  const [open, setOpen] = useFold(screen, id, place.first ?? true);
+  const shown = !foldable || open;
   return (
-    <section className={`wk-card ${className}`}>
+    <section ref={foldable ? place.ref : undefined} className={`wk-card ${foldable && !open ? 'folded' : ''} ${className}`}>
       {(title || actions) && (
         <header className="wk-card-head">
-          {title && <h3>{title}</h3>}
-          {actions && <div className="wk-card-actions">{actions}</div>}
+          {title &&
+            (foldable ? (
+              <button className="wk-card-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+                {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                <h3>{title}</h3>
+                <FoldAlert open={open} alert={alert} />
+              </button>
+            ) : (
+              <h3>{title}</h3>
+            ))}
+          {actions && shown && <div className="wk-card-actions">{actions}</div>}
         </header>
       )}
-      {children}
+      {shown && <CardCtx.Provider value={id ? { screen, id } : null}>{children}</CardCtx.Provider>}
     </section>
   );
 }
@@ -64,9 +89,10 @@ export function Check({ label, checked, onChange, hint }: { label: string; check
     </label>
   );
 }
-/** The Advanced section every feature has: closed by default, every option inside. */
+/** The Advanced section every feature has: closed by default, every option inside; it remembers being opened. */
 export function Advanced({ children, label = 'Advanced' }: { children: ReactNode; label?: string }) {
-  const [open, setOpen] = useState(false);
+  const card = useContext(CardCtx);
+  const [open, setOpen] = useFold(card?.screen || 'work', `${card?.id || ''}/${label}`, false);
   return (
     <div className={`wk-advanced ${open ? 'open' : ''}`}>
       <button className="btn link sm wk-adv-toggle" onClick={() => setOpen(!open)}>
