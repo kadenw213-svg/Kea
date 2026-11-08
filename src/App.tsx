@@ -25,6 +25,8 @@ import { CommandPalette, openPalette } from './components/CommandPalette';
 import { toggleLookup } from './components/lookup/lookupStore';
 import { useTabs, editorRegistry, Tab } from './store';
 import { api } from './lib/api';
+// (Work's store listens for kea://join links opened from outside Kea.)
+import './components/work/workStore';
 import { openEntry, openPaths, openWithDialog, newFile } from './lib/open';
 import { requestCloseTab, requestQuit } from './lib/closing';
 import { modKey } from './lib/util';

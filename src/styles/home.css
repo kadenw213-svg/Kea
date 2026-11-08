@@ -1639,3 +1639,22 @@ button.fcard-desc.add:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Home's Work card: the time clock */
+.dclock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.dclock .wk-clock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dclock .wk-clock-state {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}

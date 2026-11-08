@@ -1510,3 +1510,94 @@ select.input {
 .wk-policy-body p {
   margin: 8px 0 0;
 }
+
+/* People → Roles */
+.wk-roles {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) 1fr;
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .wk-roles {
+    grid-template-columns: 1fr;
+  }
+}
+.wk-role-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wk-row-btn.on {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.wk-role-name {
+  font-weight: 500;
+  max-width: 260px;
+}
+.wk-abilities {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 4px 16px;
+  margin-bottom: 12px;
+}
+.wk-ab-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+.wk-ab-head {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  margin: 6px 0 2px;
+}
+.wk-give {
+  margin-top: 8px;
+}
+
+/* The time clock */
+.wk-clock {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.wk-clock-state {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wk-clock-state b {
+  font-weight: 500;
+  font-size: 15px;
+}
+.wk-clock-btn {
+  min-width: 120px;
+}
+.wk-server-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.wk-server-note .wk-row-main {
+  flex: 1;
+}
+.wk-chip-server {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-left: 4px;
+}
+.wk-tc-table td.num,
+.wk-tc-table th.num {
+  text-align: right;
+  white-space: nowrap;
+}

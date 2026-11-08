@@ -12,6 +12,7 @@ import { isPersonalProfile, openWork, useKeaModes, workAvailable } from '../../l
 import { useSetting } from '../../lib/settings';
 import { useHubStatus } from '../account/hubStore';
 import { NeedsOnline } from '../account/NeedsOnline';
+import { HomeClock } from '../work/TimeClock';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -241,6 +242,7 @@ function Work() {
     );
   return (
     <Card icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
+      <HomeClock />
       {data.next ? (
         <button className="dshift" onClick={openWork}>
           <Clock size={15} />

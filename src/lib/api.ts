@@ -1424,6 +1424,8 @@ export interface KeaApi {
   hubOrg: HubOrgApi;
   servers: ServersApi;
   sync: SyncApi;
+  /** kea://join links opened from outside Kea (the installed Kea registers kea://). */
+  work: { pendingJoin(): Promise<string | null>; onJoinLink(cb: (link: string) => void): () => void };
 }
 
 // ---------- KeaS servers joined with a server pass (electron/servers.cjs) ----------

@@ -8,6 +8,7 @@ import { ask, prompt, toast } from '../../store';
 import { act, clock, fmtDay, fmtWhen, todayIso, useHub, useMyId, useWork, addDays } from './workStore';
 import { Card, Empty, Loading, Problem, Seg } from './ui';
 import type { Member, Org, Shift, Swap } from './types';
+import { can } from './types';
 
 export function MySchedule({ org }: { org: Org }) {
   const [view, setView] = useState<'mine' | 'team'>('mine');
@@ -28,7 +29,7 @@ export function MySchedule({ org }: { org: Org }) {
       } else setEvents([]);
     });
   }, [org.id, version]);
-  const canTeam = org.role !== 'member' || org.settings?.membersSeeSchedule !== false;
+  const canTeam = can(org, 'schedule.view') || org.settings?.membersSeeSchedule !== false;
 
   // The Hub's list when it answered; otherwise the shifts from the saved copy.
   const mine: Shift[] = shifts.data?.shifts ?? (events ?? []).filter((e) => e.kind === 'shift').map(fromEvent);

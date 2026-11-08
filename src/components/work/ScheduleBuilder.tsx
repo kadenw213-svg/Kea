@@ -7,6 +7,7 @@ import { ask, toast } from '../../store';
 import { act, addDays, clock, wantText, fmtDay, fmtRange, hrs, money, post, useHub, useWork, WorkError } from './workStore';
 import { Advanced, Card, Check, Empty, Loading, Problem } from './ui';
 import type { Draft, Form, Org, Problem as Prob, Schedule, SchedPerson, SchedSlot, SchedView, Shift, Structure, Verdict } from './types';
+import { can } from './types';
 
 export function SchedulingTab({ org }: { org: Org }) {
   const focus = useWork((s) => s.focus);
@@ -21,7 +22,7 @@ export function SchedulingTab({ org }: { org: Org }) {
   const usable = (forms.data?.forms ?? []).filter((f) => f.status !== 'draft');
   return (
     <div className="wk-stack">
-      <Card title="New schedule">
+      {can(org, 'schedule.edit') && <Card title="New schedule">
         <div className="wk-form-row">
           <select className="input sm" value={formId} onChange={(e) => setFormId(e.target.value)}>
             <option value="">From availability form…</option>
@@ -43,7 +44,7 @@ export function SchedulingTab({ org }: { org: Org }) {
           </button>
         </div>
         {!usable.length && <p className="muted af-small">Send an availability form first; the schedule is built from its blocks and answers.</p>}
-      </Card>
+      </Card>}
       {list.data.schedules.length === 0 ? (
         <Empty title="No schedules yet" />
       ) : (
@@ -168,6 +169,8 @@ function Builder({ org, id, onBack }: { org: Org; id: string; onBack(): void }) 
   };
 
   const overBudget = data.budget.filter((b) => b.current && b.warn);
+  // (Building needs schedule.edit; someone who may only publish sees the schedule and the Publish button.)
+  const editable = can(org, 'schedule.edit');
   const reason: Record<string, string> = {
     cert_missing: 'no cert',
     cert_expired: 'cert expired',
@@ -188,15 +191,15 @@ function Builder({ org, id, onBack }: { org: Org; id: string; onBack(): void }) 
         </button>
         <h2 className="wk-h2">{data.schedule.title}</h2>
         <span className="wk-spacer" />
-        <button className="btn sm" disabled={busy} onClick={autofill} title="Fill open places from availability. Rules are never broken; Available comes before If needed.">
+        {editable && <button className="btn sm" disabled={busy} onClick={autofill} title="Fill open places from availability. Rules are never broken; Available comes before If needed.">
           <Wand2 size={14} /> Auto-fill
-        </button>
-        <button className="btn sm" onClick={async () => (await ask('Clear auto-filled shifts?', 'Shifts you placed yourself stay.', [{ id: 'no', label: 'Cancel' }, { id: 'yes', label: 'Clear', primary: true }])) === 'yes' && act(`/v1/orgs/${org.id}/schedules/${id}/clear`, { source: 'autofill' }, 'Cleared.')}>
+        </button>}
+        {editable && <button className="btn sm" onClick={async () => (await ask('Clear auto-filled shifts?', 'Shifts you placed yourself stay.', [{ id: 'no', label: 'Cancel' }, { id: 'yes', label: 'Clear', primary: true }])) === 'yes' && act(`/v1/orgs/${org.id}/schedules/${id}/clear`, { source: 'autofill' }, 'Cleared.')}>
           <Eraser size={14} /> Clear auto-fill
-        </button>
-        <button className="btn sm primary" disabled={!drafts} onClick={() => publish()}>
+        </button>}
+        {can(org, 'schedule.publish') && <button className="btn sm primary" disabled={!drafts} onClick={() => publish()}>
           <Send size={14} /> Publish{drafts ? ` ${drafts}` : ''}
-        </button>
+        </button>}
       </div>
       <Advanced label="Auto-fill options">
         {opts && (

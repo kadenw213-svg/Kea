@@ -480,6 +480,14 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('servers:changed', h);
     }
   },
+  work: {
+    pendingJoin: () => ipcRenderer.invoke('work:pendingJoin'),
+    onJoinLink: (cb) => {
+      const h = (_e, link) => cb(link);
+      ipcRenderer.on('work:joinLink', h);
+      return () => ipcRenderer.removeListener('work:joinLink', h);
+    }
+  },
   sync: {
     status: () => ipcRenderer.invoke('sync:status'),
     preview: (choice) => ipcRenderer.invoke('sync:preview', { choice }),

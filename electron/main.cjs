@@ -18,6 +18,9 @@ let mainWindow = null;
 let allowClose = false;
 let rendererReady = false;
 let pendingOpen = collectFileArgs(process.argv);
+// A join link for an organization's server (kea://join?s=<address>&c=<code>): Work opens with it filled in.
+const joinArg = (argv) => argv.find((a) => /^kea:\/\/join\?/i.test(String(a))) || null;
+let pendingJoin = joinArg(process.argv);
 
 // Small rolling log in the user data folder, for diagnosing problems on real machines.
 // Errors from Kea's background work (scans, sync, checks) are kept in kea.log too, so a problem can be found later.
@@ -67,6 +70,13 @@ if (!app.requestSingleInstanceLock()) {
   app.exit(0);
 } else {
   app.on('second-instance', (_e, argv) => {
+    const join = joinArg(argv);
+    if (join && mainWindow && !mainWindow.isDestroyed()) {
+      bringToFront(mainWindow);
+      mainWindow.webContents.send('work:joinLink', join);
+      return;
+    }
+    if (join) pendingJoin = join;
     const files = collectFileArgs(argv);
     log('second-instance', files);
     // If the window was lost (crash, never shown), bring a fresh one up instead of swallowing the request.
@@ -388,6 +398,13 @@ app.whenReady().then(() => {
   require('./keaCloud.cjs').register();
   require('./hubOrg.cjs').register();
   require('./servers.cjs').register();
+  // (Only the installed Kea opens kea:// links: a development copy never takes them over.)
+  if (app.isPackaged) app.setAsDefaultProtocolClient('kea');
+  handleApp(ipcMain, 'work:pendingJoin', () => {
+    const j = pendingJoin;
+    pendingJoin = null;
+    return j;
+  });
   require('./syncChoice.cjs').register();
   require('./scholar/index.cjs').register();
   require('./dict.cjs').register();

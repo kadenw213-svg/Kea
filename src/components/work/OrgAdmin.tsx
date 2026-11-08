@@ -6,19 +6,22 @@ import { ask, prompt, toast } from '../../store';
 import { act, bump, clock, get, post, wantText, fmtDay, fmtWhen, money, useHub, useWork, todayIso, addDays, localTz } from './workStore';
 import { formatPhone, telHref } from '../../lib/phone';
 import { Advanced, Card, Check, Empty, Field, Loading, Num, Problem, Seg } from './ui';
-import { RANK } from './types';
-import type { BudgetPlan, BudgetRow, Department, JoinCode, Member, Org, OrgSettings, Policy, Role, Structure, Swap } from './types';
+import { can, canAny, hasRoles, mayChange } from './types';
+import { RolesTab } from './Roles';
+import type { BudgetPlan, BudgetRow, Department, JoinCode, Member, Org, OrgRole, OrgSettings, Policy, Role, Structure, Swap } from './types';
 import { SupporterBadge } from '../scholar/HubAccount';
+import type { JoinedServer } from '../../lib/api';
 
 const ROLE: Record<Role, string> = { owner: 'Owner', admin: 'Admin', manager: 'Manager', member: 'Member' };
-const isAdmin = (o: Org) => RANK[o.role] >= RANK.admin;
+/** Someone's roles in a few words: "Lifeguard lead, Member", or the fixed role on a KeaS 0.5 Hub. */
+export const rolesText = (m: { role: Role; roles?: { name: string }[] }) => (m.roles?.length ? m.roles.map((r) => r.name).join(', ') : ROLE[m.role]);
 
 // ---------- people ----------
 /** "Email not verified", next to a name (only when the Hub says so; an older Hub doesn't). */
 const Unverified = ({ m }: { m: Member }) => (m.emailVerified === false ? <span className="wk-pill sm">Email not verified</span> : null);
 /** Marks someone's email verified, for a manager who knows the address is really theirs. */
 function VerifyEmailButton({ org, m }: { org: Org; m: Member }) {
-  if (m.emailVerified !== false) return null;
+  if (m.emailVerified !== false || !can(org, 'people.verify', m.departmentId)) return null;
   return (
     <button
       className="btn sm"
@@ -40,22 +43,33 @@ function VerifyEmailButton({ org, m }: { org: Org; m: Member }) {
   );
 }
 
+type PeopleView = 'people' | 'approvals' | 'codes' | 'roles';
 export function PeopleTab({ org }: { org: Org }) {
   const focus = useWork((s) => s.focus);
-  const [tab, setTab] = useState<'people' | 'approvals' | 'codes'>(focus?.view === 'approvals' ? 'approvals' : 'people');
+  // Each part only for those whose roles allow it (the Roles editor too, on a server with custom roles).
+  const views = (
+    [
+      ['people', 'People', true],
+      ['approvals', 'Approvals', canAny(org, ['people.approve', 'swaps.decide', 'forms.manage'])],
+      ['codes', 'Join codes', can(org, 'codes.make')],
+      ['roles', 'Roles', hasRoles(org) && canAny(org, ['roles.manage', 'roles.assign'])],
+    ] as [PeopleView, string, boolean][]
+  ).filter((v) => v[2]);
+  const [tab, setTab] = useState<PeopleView>(focus?.view === 'approvals' ? 'approvals' : 'people');
   useEffect(() => {
-    if (focus?.view === 'approvals') setTab('approvals');
+    if (focus?.view === 'approvals' || focus?.view === 'roles') setTab(focus.view);
   }, [focus?.view]);
+  const cur = views.some((v) => v[0] === tab) ? tab : 'people';
   return (
     <div>
-      <Seg value={tab} onChange={setTab} options={[['people', 'People'], ['approvals', 'Approvals'], ['codes', 'Join codes']]} />
+      {views.length > 1 && <Seg value={cur} onChange={setTab} options={views.map(([id, label]) => [id, label] as [PeopleView, string])} />}
       <div className="wk-gap" />
-      {tab === 'people' ? <People org={org} /> : tab === 'approvals' ? <Approvals org={org} /> : <Codes org={org} />}
+      {cur === 'people' ? <People org={org} onRoles={() => setTab('roles')} /> : cur === 'approvals' ? <Approvals org={org} /> : cur === 'codes' ? <Codes org={org} /> : <RolesTab org={org} />}
     </div>
   );
 }
 
-function People({ org }: { org: Org }) {
+function People({ org, onRoles }: { org: Org; onRoles(): void }) {
   const { data, error, reload } = useHub<{ members: Member[]; pending: Member[] }>(`/v1/orgs/${org.id}/members`);
   const st = useHub<Structure>(`/v1/orgs/${org.id}/structure`);
   const [edit, setEdit] = useState<string | null>(null);
@@ -77,7 +91,7 @@ function People({ org }: { org: Org }) {
       <tbody>
         {data.members.map((m) =>
           edit === m.id ? (
-            <EditMember key={m.id} org={org} m={m} s={s} done={() => setEdit(null)} />
+            <EditMember key={m.id} org={org} m={m} s={s} done={() => setEdit(null)} onRoles={onRoles} />
           ) : (
             <tr key={m.id}>
               <td>
@@ -95,17 +109,19 @@ function People({ org }: { org: Org }) {
                   )}
                 </div>
               </td>
-              <td>{ROLE[m.role]}</td>
+              <td>{rolesText(m)}</td>
               <td>{s?.departments.find((d) => d.id === m.departmentId)?.name ?? '—'}</td>
               <td>{m.positionIds.map((p) => s?.positions.find((x) => x.id === p)?.name).filter(Boolean).join(', ') || '—'}</td>
               <td>{wantText(m.desiredMin, m.desiredMax) ?? '—'}</td>
               <td className="wk-nowrap">
-                {(RANK[m.role] < RANK[org.role] || org.role === 'owner') && !m.you && (
+                <VerifyEmailButton org={org} m={m} />
+                {(mayChange(org, m) || mayChange(org, m, 'people.birthdate') || mayChange(org, m, 'rates.assign')) && (
+                  <button className="btn sm" onClick={() => setEdit(m.id)}>
+                    Edit
+                  </button>
+                )}
+                {mayChange(org, m, 'people.remove') && (
                   <>
-                    <VerifyEmailButton org={org} m={m} />
-                    <button className="btn sm" onClick={() => setEdit(m.id)}>
-                      Edit
-                    </button>
                     <button
                       className="icon-btn sm"
                       title="Remove from the organization"
@@ -126,30 +142,47 @@ function People({ org }: { org: Org }) {
   );
 }
 
-function EditMember({ org, m, s, done }: { org: Org; m: Member; s: Structure | null; done(): void }) {
+function EditMember({ org, m, s, done, onRoles }: { org: Org; m: Member; s: Structure | null; done(): void; onRoles(): void }) {
   const [role, setRole] = useState(m.role);
   const [dept, setDept] = useState(m.departmentId ?? '');
   const [pos, setPos] = useState<string[]>(m.positionIds);
   const [title, setTitle] = useState(m.title ?? '');
   const [birth, setBirth] = useState(m.birthdate ?? '');
   const [rate, setRate] = useState<number | null>(m.costRate ?? null);
-  const admin = isAdmin(org);
+  // What I may change about them (the server checks it again).
+  const edit = can(org, 'people.edit', m.departmentId);
+  const birthOk = can(org, 'people.birthdate', m.departmentId);
+  const rateOk = can(org, 'rates.assign', m.departmentId);
+  const roleOk = can(org, 'roles.assign', m.departmentId);
   const roles: Role[] = org.role === 'owner' ? ['owner', 'admin', 'manager', 'member'] : ['manager', 'member'];
   return (
     <tr className="wk-editing">
       <td colSpan={6}>
         <div className="wk-form-grid">
-          <Field label="Role">
-            <select className="input sm" value={role} disabled={!admin} onChange={(e) => setRole(e.target.value as Role)}>
-              {roles.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE[r]}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {hasRoles(org) ? (
+            <Field label="Roles">
+              <span className="wk-inline">
+                {rolesText(m)}
+                {roleOk && (
+                  <button className="btn link sm" onClick={onRoles}>
+                    Change in Roles
+                  </button>
+                )}
+              </span>
+            </Field>
+          ) : (
+            <Field label="Role">
+              <select className="input sm" value={role} disabled={!roleOk} onChange={(e) => setRole(e.target.value as Role)}>
+                {roles.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE[r]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Department">
-            <select className="input sm" value={dept} onChange={(e) => setDept(e.target.value)}>
+            <select className="input sm" value={dept} disabled={!edit} onChange={(e) => setDept(e.target.value)}>
               <option value="">None</option>
               {s?.departments.map((d) => (
                 <option key={d.id} value={d.id}>
@@ -159,14 +192,14 @@ function EditMember({ org, m, s, done }: { org: Org; m: Member; s: Structure | n
             </select>
           </Field>
           <Field label="Title">
-            <input className="input sm" value={title} onChange={(e) => setTitle(e.target.value)} />
+            <input className="input sm" value={title} disabled={!edit} onChange={(e) => setTitle(e.target.value)} />
           </Field>
-          {admin && (
+          {birthOk && (
             <Field label="Birthdate" hint="Only for the under-18 work rules.">
               <input className="input sm" type="date" value={birth} onChange={(e) => setBirth(e.target.value)} />
             </Field>
           )}
-          {admin && (
+          {rateOk && (
             <Field label="Cost per hour" hint="For budgets. Pay itself stays in payroll, never on the Hub.">
               <Num value={rate} onChange={setRate} step={0.25} />
             </Field>
@@ -175,7 +208,7 @@ function EditMember({ org, m, s, done }: { org: Org; m: Member; s: Structure | n
         <Field label="Positions">
           <div className="wk-tags">
             {s?.positions.map((p) => (
-              <button key={p.id} className={`wk-chip ${pos.includes(p.id) ? 'on' : ''}`} onClick={() => setPos(pos.includes(p.id) ? pos.filter((x) => x !== p.id) : [...pos, p.id])}>
+              <button key={p.id} className={`wk-chip ${pos.includes(p.id) ? 'on' : ''}`} disabled={!edit} onClick={() => setPos(pos.includes(p.id) ? pos.filter((x) => x !== p.id) : [...pos, p.id])}>
                 {p.name}
               </button>
             ))}
@@ -188,9 +221,10 @@ function EditMember({ org, m, s, done }: { org: Org; m: Member; s: Structure | n
           <button
             className="btn sm primary"
             onClick={async () => {
-              const body: Record<string, unknown> = { departmentId: dept || null, positionIds: pos, title: title || null };
-              if (role !== m.role) body.role = role;
-              if (admin) Object.assign(body, { birthdate: birth || null, costRate: rate });
+              const body: Record<string, unknown> = edit ? { departmentId: dept || null, positionIds: pos, title: title || null } : {};
+              if (!hasRoles(org) && role !== m.role) body.role = role;
+              if (birthOk) body.birthdate = birth || null;
+              if (rateOk) body.costRate = rate;
               if (await act(`/v1/orgs/${org.id}/members/${m.id}`, body, 'Saved.')) done();
             }}
           >
@@ -211,7 +245,7 @@ function Approvals({ org }: { org: Org }) {
   const claimed = (swaps.data?.swaps ?? []).filter((w) => w.status === 'claimed');
   return (
     <div className="wk-stack">
-      <Card title="Asking to join">
+      {can(org, 'people.approve') && <Card title="Asking to join">
         {!pending.length && <p className="muted">Nobody waiting.</p>}
         {pending.map((m) => (
           <div key={m.id} className="wk-row">
@@ -220,7 +254,8 @@ function Approvals({ org }: { org: Org }) {
                 {m.name} <Unverified m={m} />
               </span>
               <span className="wk-row-sub">
-                {m.email} · as {ROLE[m.role]}              </span>
+                {m.email} · as {rolesText(m)}
+              </span>
             </span>
             <VerifyEmailButton org={org} m={m} />
             <button className="btn sm" onClick={() => act(`/v1/orgs/${org.id}/members/${m.id}/approve`, { approve: false }, 'Declined.')}>
@@ -231,8 +266,8 @@ function Approvals({ org }: { org: Org }) {
             </button>
           </div>
         ))}
-      </Card>
-      <Card title="Shift swaps">
+      </Card>}
+      {can(org, 'swaps.decide') && <Card title="Shift swaps">
         {!claimed.length && <p className="muted">Nothing waiting.</p>}
         {claimed.map((w) => (
           <div key={w.id} className="wk-row">
@@ -253,8 +288,8 @@ function Approvals({ org }: { org: Org }) {
             </button>
           </div>
         ))}
-      </Card>
-      <Card title="Availability changes">
+      </Card>}
+      {can(org, 'forms.manage') && <Card title="Availability changes">
         <p className="muted af-small">Changes after a deadline are in each form, under Changes.</p>
         <div className="wk-tags">
           {(forms.data?.forms ?? [])
@@ -265,7 +300,7 @@ function Approvals({ org }: { org: Org }) {
               </button>
             ))}
         </div>
-      </Card>
+      </Card>}
     </div>
   );
 }
@@ -273,23 +308,27 @@ function Approvals({ org }: { org: Org }) {
 function Codes({ org }: { org: Org }) {
   const { data, error } = useHub<{ codes: JoinCode[] }>(`/v1/orgs/${org.id}/codes`);
   const st = useHub<Structure>(`/v1/orgs/${org.id}/structure`);
-  const [role, setRole] = useState<Role>('member');
+  // (A server with custom roles: a code can give any role but Owner; the server refuses ones above mine.)
+  const custom = useHub<{ roles: OrgRole[] }>(hasRoles(org) ? `/v1/orgs/${org.id}/roles` : null);
+  const [role, setRole] = useState<string>('member');
   const [days, setDays] = useState<number | null>(30);
   const [max, setMax] = useState<number | null>(null);
   const [approval, setApproval] = useState(false);
   const [pos, setPos] = useState('');
   const [dept, setDept] = useState('');
   const [label, setLabel] = useState('');
-  const can: Role[] = org.role === 'owner' ? ['member', 'manager', 'admin'] : org.role === 'admin' ? ['member', 'manager'] : ['member'];
+  const fixed: Role[] = org.role === 'owner' ? ['member', 'manager', 'admin'] : org.role === 'admin' ? ['member', 'manager'] : ['member'];
+  const choices: [string, string][] = custom.data ? custom.data.roles.filter((r) => r.templateKey !== 'owner').map((r) => [r.templateKey ?? `id:${r.id}`, r.name]) : fixed.map((r) => [r, ROLE[r]]);
+  const roleBody = role.startsWith('id:') ? { roleId: role.slice(3) } : { role };
   const fmt = (c: string) => c.replace(/(.{4})(?=.)/g, '$1-');
   return (
     <div className="wk-stack">
       <Card title="New join code">
         <div className="wk-form-row">
-          <select className="input sm wk-auto" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-            {can.map((r) => (
-              <option key={r} value={r}>
-                For {ROLE[r].toLowerCase()}s
+          <select className="input sm wk-auto" value={role} onChange={(e) => setRole(e.target.value)}>
+            {choices.map(([v, label]) => (
+              <option key={v} value={v}>
+                For {label}
               </option>
             ))}
           </select>
@@ -300,7 +339,7 @@ function Codes({ org }: { org: Org }) {
           <button
             className="btn sm primary"
             onClick={() =>
-              act(`/v1/orgs/${org.id}/codes`, { role, expiresDays: days || null, maxUses: max || null, needsApproval: role !== 'member' ? true : approval, positionId: pos || null, departmentId: dept || null, label: label || null }, 'Code made.')
+              act(`/v1/orgs/${org.id}/codes`, { ...roleBody, expiresDays: days || null, maxUses: max || null, needsApproval: role !== 'member' ? true : approval, positionId: pos || null, departmentId: dept || null, label: label || null }, 'Code made.')
             }
           >
             <Plus size={14} /> Make code
@@ -346,7 +385,7 @@ function Codes({ org }: { org: Org }) {
               <code className="wk-code">{fmt(c.code)}</code>
               <span className="wk-row-main">
                 <span className="wk-row-title">
-                  {ROLE[c.role]}
+                  {c.roleName ?? ROLE[c.role] ?? c.role}
                   {c.label ? ` · ${c.label}` : ''}
                   {c.needsApproval ? ' · you approve each' : ''}
                 </span>
@@ -582,7 +621,7 @@ export function BudgetsTab({ org }: { org: Org }) {
     );
   return (
     <div className="wk-stack">
-      {isAdmin(org) && (
+      {can(org, 'budgets.edit') && (
         <Card title="Set a budget">
           <div className="wk-form-row">
             <select className="input sm wk-auto" value={dept} onChange={(e) => setDept(e.target.value)}>
@@ -624,7 +663,7 @@ export function BudgetsTab({ org }: { org: Org }) {
               <span>
                 {money(b.scheduled)} of {money(b.amount)} {b.pct != null && `(${b.pct}%)`}
               </span>
-              {isAdmin(org) && (
+              {can(org, 'budgets.edit') && (
                 <button className="icon-btn sm" title="Delete" onClick={() => act(`/v1/orgs/${org.id}/budgets/${b.id}/delete`)}>
                   <Trash2 size={14} />
                 </button>
@@ -687,11 +726,12 @@ export function SettingsTab({ org }: { org: Org }) {
   const [tz, setTz] = useState(org.tz);
   const [state, setState] = useState(org.state ?? '');
   const [ws, setWs] = useState(org.workweekStart);
-  const [s, setS] = useState<OrgSettings>(org.settings!);
+  const [s0, setS] = useState<OrgSettings | undefined>(org.settings);
+  const s = s0 as OrgSettings;
   const save = (extra: Record<string, unknown> = {}) => act(`/v1/orgs/${org.id}`, { name, tz, state: state || null, workweekStart: ws, settings: s, ...extra }, 'Saved.').then((r) => r && refreshOrgs());
   return (
     <div className="wk-stack wk-narrow">
-      <Card title="Organization">
+      {s && can(org, 'settings.edit', null) && <Card title="Organization">
         <div className="wk-form-grid">
           <Field label="Name">
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
@@ -741,8 +781,8 @@ export function SettingsTab({ org }: { org: Org }) {
             Save
           </button>
         </div>
-      </Card>
-      <Policies org={org} />
+      </Card>}
+      {can(org, 'policies.manage') && <Policies org={org} />}
     </div>
   );
 }
@@ -818,7 +858,7 @@ export function OrgInfo({ org }: { org: Org }) {
             <span key={m.id} className="wk-person">
               {m.name}
               {m.supporter && <SupporterBadge compact />}
-              {m.role !== 'member' && <span className="muted"> · {ROLE[m.role]}</span>}
+              {(m.roles?.length ? m.roles.some((r) => r.templateKey !== 'member') : m.role !== 'member') && <span className="muted"> · {rolesText(m)}</span>}
               {m.phone && (
                 <span className="muted">
                   {' '}
@@ -831,7 +871,7 @@ export function OrgInfo({ org }: { org: Org }) {
       </Card>
       <Card title="Membership">
         <p className="muted">
-          You’re {ROLE[org.role].toLowerCase() === 'owner' ? 'an owner' : `a ${ROLE[org.role].toLowerCase()}`} of {org.name}.
+          {org.roles?.length ? `Your roles in ${org.name}: ${org.roles.map((r) => r.name).join(', ')}.` : `You’re ${org.role === 'owner' ? 'an owner' : `a ${ROLE[org.role].toLowerCase()}`} of ${org.name}.`}
         </p>
         <div className="wk-actions">
           <button className="btn danger" onClick={leave}>
@@ -894,13 +934,29 @@ function PolicyRow({ org, p }: { org: Org; p: Policy }) {
   );
 }
 
-/** Reload the list of my organizations. */
+/**
+ * Reload the list of my organizations (on every server), each with what I can do there: a newer server sends my
+ * abilities with the organization itself (GET /v1/orgs/:id); a KeaS 0.5 Hub sends only the fixed role.
+ */
 export async function refreshOrgs() {
   try {
-    const r = await get<{ orgs: Org[] }>('/v1/orgs');
-    useWork.getState().setOrgs(r.orgs);
+    const r = await get<{ orgs: Org[]; servers?: JoinedServer[] }>('/v1/orgs');
+    const orgs = await Promise.all(
+      r.orgs.map(async (o) => {
+        if (o.memberStatus !== 'active') return o;
+        try {
+          const d = await get<{ org: Org; me?: { abilities?: string[]; scopes?: Org['scopes']; roles?: Org['roles'] } }>(`/v1/orgs/${o.id}`);
+          return { ...o, ...d.org, server: o.server ?? null, ...(Array.isArray(d.me?.abilities) ? { abilities: d.me!.abilities, scopes: d.me!.scopes ?? {}, roles: d.me!.roles ?? [] } : {}) };
+        } catch {
+          return o;
+        }
+      })
+    );
+    useWork.getState().setOrgs(orgs, r.servers ?? []);
     bump();
   } catch (e: any) {
-    toast(e.message, 'error');
+    // (Nothing answered and there's nothing to show: the calm offline line is shown instead of an error.)
+    if (e.status === 0) useWork.getState().setOrgs(useWork.getState().orgs ?? []);
+    else toast(e.message, 'error');
   }
 }

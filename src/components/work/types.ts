@@ -1,7 +1,70 @@
-// What the Kea Hub's organization routes send back (hub/org/routes.mjs in KeaS).
+// What the organization routes send back (org/*.mjs in KeaS; hub/org/routes.mjs on a KeaS 0.5 Hub).
 export type Role = 'owner' | 'admin' | 'manager' | 'member';
 export type Answer = 'A' | 'I' | 'N';
+/** The fixed roles of KeaS 0.5 by rank: only for telling who's above whom on a server without custom roles. */
 export const RANK: Record<Role, number> = { member: 1, manager: 2, admin: 3, owner: 4 };
+
+// ---------- abilities ----------
+// A newer server sends each person's abilities (me.abilities, me.scopes) with the organization. A KeaS 0.5 Hub sends
+// only the fixed role: then the role's abilities are these (the same lists the newer server starts its Owner, Admin,
+// Manager and Member roles with: org/roles.mjs).
+const MEMBER_ABILITIES = ['clock.self', 'timeoff.request'];
+const MANAGER_ABILITIES = [...MEMBER_ABILITIES, 'people.view', 'people.approve', 'people.verify', 'people.edit', 'people.remove', 'codes.make', 'budgets.view', 'certs.manage', 'classes.manage', 'forms.manage', 'schedule.view', 'schedule.edit', 'schedule.publish', 'swaps.decide', 'policies.manage', 'timecards.view', 'timecards.approve', 'timeoff.decide'];
+const ADMIN_ABILITIES = [...MANAGER_ABILITIES, 'people.birthdate', 'roles.assign', 'roles.manage', 'structure.edit', 'settings.edit', 'rates.view', 'rates.assign', 'budgets.costs', 'budgets.edit', 'certs.types'];
+export const ROLE_ABILITIES: Record<Role, string[]> = { member: MEMBER_ABILITIES, manager: MANAGER_ABILITIES, admin: ADMIN_ABILITIES, owner: [...ADMIN_ABILITIES] };
+/** Abilities about yourself only (a department scope means nothing for them). */
+const SELF_ABILITIES = new Set(['clock.self', 'timeoff.request']);
+/**
+ * Can I do this in this organization? deptId: undefined = anywhere at all, null = for the whole organization, a
+ * department id = there (a grant for it or a department above it reaches it; the server sends the reach expanded).
+ */
+export function can(org: Pick<Org, 'role' | 'memberStatus' | 'abilities' | 'scopes'> | null | undefined, ability: string, deptId?: string | null): boolean {
+  if (!org || org.memberStatus !== 'active') return false;
+  if (!org.abilities) {
+    // (A KeaS 0.5 Hub: the old Owner had everything.)
+    if (org.role === 'owner') return true;
+    return (ROLE_ABILITIES[org.role] ?? []).includes(ability);
+  }
+  const s = org.scopes?.[ability] ?? (org.abilities.includes(ability) ? 'org' : undefined);
+  if (!s) return false;
+  if (s === 'org' || SELF_ABILITIES.has(ability)) return true;
+  if (deptId === undefined) return s.length > 0;
+  return deptId != null && s.includes(deptId);
+}
+export const canAny = (org: Parameters<typeof can>[0], list: string[], deptId?: string | null) => list.some((a) => can(org, a, deptId));
+/** Custom roles on this server (it sent abilities): roles are edited in People → Roles instead of picked from four. */
+export const hasRoles = (org: Pick<Org, 'abilities'>) => Array.isArray(org.abilities);
+/** Should I see the controls for changing this person? (The server has the last word: it refuses what I can't do.) */
+export function mayChange(org: Org, m: Pick<Member, 'role' | 'you' | 'departmentId'>, ability = 'people.edit') {
+  if (m.you || !can(org, ability, m.departmentId)) return false;
+  if (org.role === 'owner') return true;
+  // (With custom roles the fixed role is only a summary, so anyone but an owner may be below me: the server decides.)
+  return RANK[m.role] < RANK[org.role] || (hasRoles(org) && m.role !== 'owner');
+}
+
+export interface RoleGrant {
+  roleId: string;
+  name: string;
+  templateKey: string | null;
+  /** 'org' or the department ids it's given for. */
+  scope: 'org' | string[];
+}
+export interface OrgRole {
+  id: string;
+  name: string;
+  description: string | null;
+  template: boolean;
+  templateKey: string | null;
+  abilities: string[];
+  createdAt: number;
+  holders?: number;
+}
+export interface AbilityInfo {
+  id: string;
+  label: string;
+  self: boolean;
+  orgOnly: boolean;
+}
 
 export interface OrgSettings {
   autoApproveJoins: boolean;
@@ -25,6 +88,12 @@ export interface Org {
   memberStatus: 'active' | 'pending';
   members: number;
   settings?: OrgSettings;
+  /** From GET /v1/orgs/:id on a server with custom roles: what I can do, and where. */
+  abilities?: string[];
+  scopes?: Record<string, 'org' | string[]>;
+  roles?: RoleGrant[];
+  /** The KeaS server it's on (null: the Kea account server). */
+  server?: { id: string; name: string | null; url?: string } | null;
 }
 export interface Member {
   id: string;
@@ -50,6 +119,8 @@ export interface Member {
   birthdate?: string | null;
   costRate?: number | null;
   usualWeek?: Record<string, Answer>;
+  /** Their roles (for themselves, and for people who can give roles). */
+  roles?: RoleGrant[];
 }
 export interface Department {
   id: string;
@@ -76,6 +147,9 @@ export interface Structure {
 export interface JoinCode {
   code: string;
   role: Role;
+  /** On a server with custom roles: the role it gives. */
+  roleId?: string | null;
+  roleName?: string | null;
   label: string | null;
   departmentId: string | null;
   positionId: string | null;
