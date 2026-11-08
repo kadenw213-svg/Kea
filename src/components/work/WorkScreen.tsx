@@ -108,7 +108,7 @@ export function WorkScreen() {
           {hasOrgs && (
             <>
               <button className="btn sm" onClick={() => setAdding(adding === 'join' ? null : 'join')}>
-                <KeyRound size={14} /> Join with a code
+                <KeyRound size={14} /> Join
               </button>
               {status.signedIn && (
                 <button className="btn sm" onClick={() => setAdding(adding === 'create' ? null : 'create')}>
@@ -129,10 +129,10 @@ export function WorkScreen() {
         ) : !orgs.length ? (
           adding ? null : (
             <Empty title="You’re not in an organization yet">
-              <p className="muted">Ask your manager for a join code, or set up your own organization.</p>
+              <p className="muted">Open the join link your organization gave you, or paste it here.</p>
               <div className="wk-actions center">
                 <button className="btn primary" onClick={() => setAdding('join')}>
-                  <KeyRound size={15} /> Join with a code
+                  <KeyRound size={15} /> Join an organization
                 </button>
                 {status.signedIn && (
                   <button className="btn" onClick={() => setAdding('create')}>
@@ -243,7 +243,7 @@ function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
   });
   const [address, setAddress] = useState('');
   const [busy, setBusy] = useState(false);
-  // An older Kea Hub still refuses an unverified email: then the old way, verifying first, shows here.
+  // A KeaS 0.5 Hub still refuses an unverified email: then the old way, verifying first, shows here.
   const [needVerify, setNeedVerify] = useState(false);
   const link = isLink(code);
   const ready = link ? code.includes('c=') : code.replace(/[^A-Za-z0-9]/g, '').length >= 4 && (!!address.trim() || code.replace(/[^A-Za-z0-9]/g, '').length >= 10);
@@ -280,12 +280,12 @@ function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
           <VerifyEmail compact />
         </div>
       )}
-      <Field label="Join code or link" hint={link ? 'A link from your organization: Kea checks its server before signing you in.' : verified || needVerify ? 'From your manager. Dashes and spaces don’t matter.' : 'From your manager. Your email isn’t verified, so your manager approves your request first.'}>
-        <input className={`input ${link ? '' : 'wk-codein'}`} autoFocus value={code} placeholder="ABCD-EFGH-JKMN" onChange={(e) => setCode(isLink(e.target.value) ? e.target.value : e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && ready && !busy && join()} />
+      <Field label="Join link or code" hint={link ? 'Kea checks the organization’s server before signing you in.' : verified || needVerify ? 'From your organization. Dashes and spaces don’t matter.' : 'From your organization. Your email isn’t verified, so your manager approves your request first.'}>
+        <input className={`input ${link ? '' : 'wk-codein'}`} autoFocus value={code} placeholder="kea://join… or ABCD-EFGH-JKMN" onChange={(e) => setCode(isLink(e.target.value) ? e.target.value : e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && ready && !busy && join()} />
       </Field>
       {!link && (
         <Advanced>
-          <Field label="Server address" hint="Only for an organization with its own server, when you have its address instead of a link.">
+          <Field label="Server address" hint="Only when you have the server’s address and a code instead of a link. Put the code above.">
             <input className="input" value={address} placeholder="https://work.example.org" onChange={(e) => setAddress(e.target.value)} />
           </Field>
         </Advanced>
@@ -294,7 +294,7 @@ function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
         <button className="btn" onClick={onDone}>
           Cancel
         </button>
-        <button className="btn primary" disabled={busy || !ready} title={!ready ? 'Enter the whole code (10 letters and numbers), or paste the link' : undefined} onClick={join}>
+        <button className="btn primary" disabled={busy || !ready} title={!ready ? 'Paste the join link, or enter the whole code' : undefined} onClick={join}>
           {verified || link || address.trim() ? 'Join' : 'Ask to join'}
         </button>
       </div>
@@ -350,7 +350,7 @@ function CreateOrg({ onDone, verified }: { onDone(): void; verified: boolean }) 
           <input className="input" value={state} maxLength={2} onChange={(e) => setState(e.target.value.toUpperCase())} placeholder="CO" />
         </Field>
       </div>
-      <p className="muted af-small">Payroll details (SSNs, bank accounts, pay runs) stay in KeaS on your payroll admin’s PC.</p>
+      <p className="muted af-small">Payroll (SSNs, bank accounts, pay runs) stays in the KeaS app.</p>
       <div className="wk-actions">
         <button className="btn" onClick={onDone}>
           Cancel

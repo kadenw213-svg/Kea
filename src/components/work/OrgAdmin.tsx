@@ -35,7 +35,7 @@ function VerifyEmailButton({ org, m }: { org: Org; m: Member }) {
           toast(`${m.name}’s email is verified.`);
           bump();
         } catch (e: any) {
-          // (A Kea Hub from before this answers a route it doesn't have with a bare "Not found.")
+          // (An older server answers a route it doesn't have with a bare "Not found.")
           toast((e.status === 404 || e.status === 405) && e.message === 'Not found.' ? 'This server can’t verify emails yet. It needs an update.' : e.message, 'error');
         }
       }}
@@ -812,6 +812,7 @@ export function SettingsTab({ org }: { org: Org }) {
         </div>
       </Card>}
       {can(org, 'policies.manage') && <Policies org={org} />}
+      {org.server && can(org, 'settings.edit', null) && <p className="muted af-small">The server, payroll and security are in the KeaS app.</p>}
     </div>
   );
 }

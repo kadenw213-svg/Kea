@@ -92,7 +92,7 @@ export function MySchedule({ org }: { org: Org }) {
       </div>
       {offline && (
         <p className="af-info">
-          Your Kea account can’t be reached online, so this is the schedule Kea saved{offline.at ? ` ${fmtWhen(offline.at)}` : ' last time'}. Swaps wait until it’s back.
+          {org.name} can’t be reached right now, so this is the schedule Kea saved{offline.at ? ` ${fmtWhen(offline.at)}` : ' last time'}. Swaps wait until it’s back.
         </p>
       )}
       {waiting.length > 0 && (

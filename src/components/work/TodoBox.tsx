@@ -98,7 +98,7 @@ export function TodoBox({ orgId }: { orgId?: string | null }) {
         <header className="wk-todo-head">
           <h2>To do</h2>
         </header>
-        <div className="wk-todo-clear muted">Can’t reach your Kea account online right now. Your to-do list comes back when it does.</div>
+        <div className="wk-todo-clear muted">Can’t reach your organizations right now. Your to-do list comes back when Kea can.</div>
       </section>
     );
   if (!data) return <div className="wk-todo loading" />;
