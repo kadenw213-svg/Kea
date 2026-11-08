@@ -15,7 +15,7 @@ import java.net.URL;
 import java.security.MessageDigest;
 
 /**
- * The phone's connection to the Kea Hub: the person's Kea account and their Kea storage, which Kea on the PC syncs
+ * The phone's connection to the online Kea account server: the person's Kea account and their Kea storage, which Kea on the PC syncs
  * through. The session token lives only here, in Android's encrypted storage (Store.secure), and is added to each
  * request natively; the app's web code never sees it. Requests go out from Java rather than the WebView, so the Hub's
  * cross-site checks (which refuse browser requests from another origin) don't apply.
@@ -71,14 +71,30 @@ final class Hub {
     }
 
     /** Only the Hub's own API, on the address set for it. */
+    /** How long a request may take by default: connecting, then each read (files can be big). */
+    static final int CONNECT_MS = 15000, READ_MS = 60000;
+
+    /** A time limit the app asked for, kept between 1 second and the default. */
+    static int limit(int ms, int max) {
+        return ms <= 0 ? max : Math.max(1000, Math.min(ms, max));
+    }
+
     private static HttpURLConnection open(Context ctx, String method, String path, boolean auth, String ifMatch, boolean ifNoneMatch) throws Exception {
+        return open(ctx, method, path, auth, ifMatch, ifNoneMatch, CONNECT_MS, READ_MS);
+    }
+
+    /**
+     * Only the account server's own API, on the address set for it. `connectMs`/`readMs`: shorter limits for the
+     * background "is it there" checks and sign-ins, so not reaching the server is a quick, normal answer.
+     */
+    private static HttpURLConnection open(Context ctx, String method, String path, boolean auth, String ifMatch, boolean ifNoneMatch, int connectMs, int readMs) throws Exception {
         String base = url(ctx);
-        if (base.isEmpty()) throw new IllegalStateException("Enter your Kea Hub's address first.");
-        if (path == null || !path.startsWith("/v1/") || path.contains("..")) throw new IllegalArgumentException("Not a Kea Hub address.");
+        if (base.isEmpty()) throw new IllegalStateException("This copy of Kea has no Kea account address yet.");
+        if (path == null || !path.startsWith("/v1/") || path.contains("..")) throw new IllegalArgumentException("Not a Kea account address.");
         HttpURLConnection c = (HttpURLConnection) new URL(base + path).openConnection();
         c.setRequestMethod(method);
-        c.setConnectTimeout(15000);
-        c.setReadTimeout(60000);
+        c.setConnectTimeout(limit(connectMs, CONNECT_MS));
+        c.setReadTimeout(limit(readMs, READ_MS));
         c.setInstanceFollowRedirects(false);
         c.setRequestProperty("x-kea-client", "Kea for Android");
         if (auth) {
@@ -111,7 +127,11 @@ final class Hub {
      * answer is kept here and taken out of what the app gets back.
      */
     static Answer request(Context ctx, String method, String path, String body, String contentType, boolean auth, String ifMatch, boolean ifNoneMatch, boolean keepToken) throws Exception {
-        HttpURLConnection c = open(ctx, method, path, auth, ifMatch, ifNoneMatch);
+        return request(ctx, method, path, body, contentType, auth, ifMatch, ifNoneMatch, keepToken, CONNECT_MS, READ_MS);
+    }
+
+    static Answer request(Context ctx, String method, String path, String body, String contentType, boolean auth, String ifMatch, boolean ifNoneMatch, boolean keepToken, int connectMs, int readMs) throws Exception {
+        HttpURLConnection c = open(ctx, method, path, auth, ifMatch, ifNoneMatch, connectMs, readMs);
         try {
             if (body != null && !"GET".equals(method)) {
                 byte[] bytes = body.getBytes("UTF-8");
@@ -130,12 +150,62 @@ final class Hub {
                 JSONObject j = new JSONObject(a.body);
                 String t = j.optString("token", "");
                 if (!t.isEmpty()) {
+                    // (A Kea Hub 0.5 answers { token, account }; the Kea account server { token, me: { account } }.)
                     JSONObject acct = j.optJSONObject("account");
+                    if (acct == null && j.optJSONObject("me") != null) acct = j.optJSONObject("me").optJSONObject("account");
                     keep(ctx, t, acct == null ? "" : acct.optString("email", ""));
                     j.remove("token");
                     a.body = j.toString();
                 }
             }
+            return a;
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    // ---------- The Kea accounts kept on this phone (account.ts / accountCore.ts) ----------
+
+    /** The record of accounts made or signed in on this phone, with their password verifiers: encrypted storage only. */
+    static String accounts(Context ctx) {
+        return Store.secure(ctx).getString("keaAccounts", "");
+    }
+
+    static void keepAccounts(Context ctx, String text) {
+        Store.secure(ctx).edit().putString("keaAccounts", text == null ? "" : text).apply();
+    }
+
+    // ---------- Google and Microsoft sign-in: trading the code for tokens ----------
+
+    /** The only two places a sign-in code is sent. */
+    static String tokenUrl(String provider) {
+        if ("google".equals(provider)) return "https://oauth2.googleapis.com/token";
+        if ("microsoft".equals(provider)) return "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+        return null;
+    }
+
+    /** POST the form (code, PKCE verifier, client id; no secret) to the provider's token address: { status, body }. */
+    static Answer oauthToken(String provider, String form) throws Exception {
+        String u = tokenUrl(provider);
+        if (u == null) throw new IllegalArgumentException("Not a sign-in Kea knows.");
+        HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
+        try {
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(20000);
+            c.setInstanceFollowRedirects(false);
+            byte[] bytes = (form == null ? "" : form).getBytes("UTF-8");
+            c.setDoOutput(true);
+            c.setRequestProperty("content-type", "application/x-www-form-urlencoded");
+            c.setRequestProperty("accept", "application/json");
+            c.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream os = c.getOutputStream()) {
+                os.write(bytes);
+            }
+            Answer a = new Answer();
+            a.status = c.getResponseCode();
+            a.body = readText(a.status >= 400 ? c.getErrorStream() : c.getInputStream());
+            a.etag = "";
             return a;
         } finally {
             c.disconnect();

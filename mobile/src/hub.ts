@@ -1,10 +1,11 @@
-// The phone's Kea account: signing in to the Kea Hub (the same account as Kea on the PC), the terms gate, and syncing
+// The phone's link to the online Kea account (the same account as Kea on the PC): requests, the terms gate, and syncing
 // the PC's Kea folder through the person's Kea storage instead of a cloud drive's file picker. When this phone is
 // signed in and a profile is chosen, kea.ts reads and writes through here; otherwise it keeps using the drive files.
 //
 // Requests go through native code (KeaPlugin.hubRequest, Hub.java), which holds the session token in Android's
 // encrypted storage and adds it to each request: the web code never sees the token.
 import { Kea } from './kea';
+import { normalizeAccountUrl } from './accountCore';
 import { createPhoneSync, profilesIn, toRemote, type HubFile, type SyncClient, type SyncState } from './hubsync';
 
 const PROFILE = 'kea.hubProfile';
@@ -21,19 +22,40 @@ export class HubError extends Error {
   }
 }
 
-/** What someone types → the Hub's https origin. Bare names get https://; anything else is refused. */
+/** What someone types → the account server's https origin (accountCore.normalizeAccountUrl, as a HubError). */
 export function normalizeHubUrl(input: string): string {
-  let s = String(input || '').trim();
-  if (!s) throw new HubError('Enter your Kea Hub’s address (the same one Kea on your computer uses).', 400);
-  if (!/^[a-z]+:\/\//i.test(s)) s = `https://${s}`;
-  let u: URL;
   try {
-    u = new URL(s);
-  } catch {
-    throw new HubError('That isn’t a web address.', 400);
+    return normalizeAccountUrl(input);
+  } catch (e: any) {
+    throw new HubError(String(e?.message || e), 400);
   }
-  if (u.protocol !== 'https:') throw new HubError('Use the Hub’s https:// address. Android only connects to a Kea Hub over a secure link.', 400);
-  return u.origin;
+}
+
+/** Not reaching the server is a normal answer (status 0): the app shows "offline", never an error screen. */
+export const OFFLINE_MSG = 'Can’t reach your Kea account online right now. Everything on this phone still works; Kea tries again by itself.';
+/** How long a request may take (connecting, then reading): background checks are short, files may be big. */
+export const LIMITS = { status: { connectMs: 4000, readMs: 4000 }, auth: { connectMs: 8000, readMs: 20000 } } as const;
+
+// ---------- whether the server answered lately (this run of the app) ----------
+export const reach = { reachable: false, at: 0 };
+const listeners = new Set<() => void>();
+/** Something about the account changed by itself (the session ended, the server came back): tell the screens. */
+export function onAccountChange(fn: () => void) {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
+}
+export function accountChanged() {
+  for (const fn of [...listeners]) {
+    try {
+      fn();
+    } catch {}
+  }
+}
+function seen(ok: boolean) {
+  const was = reach.reachable;
+  reach.reachable = ok;
+  reach.at = Date.now();
+  if (was !== ok) accountChanged();
 }
 
 const enc = (p: string) => p.split('/').map(encodeURIComponent).join('/');
@@ -45,17 +67,30 @@ const parse = (text: string) => {
   }
 };
 
-/** One API call; throws HubError (with the Hub's own message) for anything but 2xx. */
-export async function hubCall<T = any>(method: string, path: string, body?: unknown, opts: { auth?: boolean; keepToken?: boolean } = {}): Promise<T> {
+/**
+ * One API call; throws HubError (with the server's own message) for anything but 2xx. `limit`: how long it may take
+ * (LIMITS; files keep the native default). `reauth`: the route asks for the password again, so a 401 means a wrong
+ * password, not that the sign-in ended.
+ */
+export async function hubCall<T = any>(method: string, path: string, body?: unknown, opts: { auth?: boolean; keepToken?: boolean; limit?: keyof typeof LIMITS; reauth?: boolean } = {}): Promise<T> {
   let r: { status: number; body: string };
+  const auth = opts.auth !== false;
   try {
-    r = await Kea.hubRequest({ method, path, body: body === undefined ? undefined : JSON.stringify(body), auth: opts.auth !== false, keepToken: opts.keepToken });
+    r = await Kea.hubRequest({ method, path, body: body === undefined ? undefined : JSON.stringify(body), auth, keepToken: opts.keepToken, ...(opts.limit ? LIMITS[opts.limit] : {}) });
   } catch (e: any) {
-    throw new HubError(`Couldn’t reach the Kea Hub: ${String(e?.message || e)}`, 0);
+    seen(false);
+    throw new HubError(OFFLINE_MSG, 0, { unreachable: true, detail: String(e?.message || e) });
   }
+  seen(true);
   const data = parse(r.body);
   if (r.status >= 200 && r.status < 300) return data as T;
-  throw new HubError(data.error || `The Kea Hub answered ${r.status}.`, r.status, data);
+  if (r.status === 401 && auth && !data.totpRequired && !opts.reauth && (await Kea.hubState().catch(() => null))?.signedIn) {
+    // The online session ended (signed out elsewhere, password changed, suspended). The account stays signed in on
+    // this phone; only what needs it online waits for "Sign in online".
+    await hubDropSession({ keepProfile: true });
+    accountChanged();
+  }
+  throw new HubError(data.error || `Your Kea account server answered ${r.status}.`, r.status, data);
 }
 
 /** Plain words for why syncing through the Hub stopped. */
@@ -63,7 +98,7 @@ export function hubProblem(e: any): string {
   const s = e?.status;
   if (s === 401) return 'Your Kea account sign-in ended. Sign in again under Settings → Kea account.';
   if (s === 428) return 'The Kea terms have changed. Open Settings → Kea account to read what changed and agree.';
-  if (s === 0 && /reach/.test(String(e?.message))) return 'Couldn’t reach your Kea Hub. Check your connection; your classes from last time are shown.';
+  if (s === 0) return 'Couldn’t reach your Kea account online. Check your connection; your classes from last time are shown.';
   return String(e?.message || e);
 }
 
@@ -101,22 +136,6 @@ export interface TermsGate {
   allIds: string[];
 }
 
-/** Sign in (the 6-digit code when two-step sign-in is on). Returns whether the terms must be agreed to first. */
-export async function hubSignIn(o: { url: string; email: string; password: string; code?: string }): Promise<{ email: string; needsTerms: boolean }> {
-  const url = normalizeHubUrl(o.url);
-  await Kea.hubSetUrl({ url });
-  const r = await hubCall<{ account: { email: string }; terms?: { needsAgreement: boolean } }>(
-    'POST',
-    '/v1/auth/login',
-    { email: o.email.trim(), password: o.password, ...(o.code ? { code: o.code.replace(/\s+/g, '') } : {}) },
-    { auth: false, keepToken: true }
-  );
-  try {
-    localStorage.setItem(ON, '1');
-  } catch {}
-  return { email: r.account.email, needsTerms: !!r.terms?.needsAgreement };
-}
-
 /** What changed in the terms since this account last agreed. */
 export async function termsGate(): Promise<TermsGate> {
   const [ch, cur] = await Promise.all([
@@ -147,12 +166,31 @@ export function setHubProfile(name: string) {
   sync().use(name);
 }
 
-/** Sign out: the Hub ends the session, the phone forgets the token, and the drive files (if chosen) take over again. */
-export async function hubSignOut() {
-  await hubCall('POST', '/v1/auth/logout').catch(() => {});
-  await Kea.hubForget();
-  for (const k of [ON, PROFILE, STATE]) localStorage.removeItem(k);
+/**
+ * The online session on this phone ends (another account signs in, the server ended it, or signing out): the token is
+ * forgotten and the drive files (if chosen) take over again. `keepProfile`: the same account will sign in again, so
+ * which classes it showed is kept.
+ */
+export async function hubDropSession({ keepProfile = false }: { keepProfile?: boolean } = {}) {
+  await Kea.hubForget().catch(() => {});
+  for (const k of keepProfile ? [ON] : [ON, PROFILE, STATE]) localStorage.removeItem(k);
+  if (!keepProfile) engine = null;
+}
+/** A different account signed in online: the last one's classes and sync state are never shown to it. */
+export function hubNewAccount() {
+  for (const k of [PROFILE, STATE]) localStorage.removeItem(k);
   engine = null;
+}
+/** After an online sign-in: classes come through the account again. */
+export function hubSessionStarted() {
+  try {
+    localStorage.setItem(ON, '1');
+  } catch {}
+}
+/** Sign out: the server ends the session (if it can be reached soon), then the phone forgets it. */
+export async function hubSignOut() {
+  await hubCall('POST', '/v1/auth/logout', undefined, { limit: 'status' }).catch(() => {});
+  await hubDropSession();
 }
 
 // ---------- the sync engine over the native client ----------
@@ -162,12 +200,12 @@ const client: SyncClient = {
   },
   async getText(path) {
     const r = await Kea.hubRequest({ method: 'GET', path: `/v1/files/${enc(path)}` });
-    if (r.status !== 200) throw new HubError(parse(r.body).error || `The Kea Hub answered ${r.status}.`, r.status, parse(r.body));
+    if (r.status !== 200) throw new HubError(parse(r.body).error || `Your Kea account server answered ${r.status}.`, r.status, parse(r.body));
     return { text: r.body, version: Number(r.version) || 0 };
   },
   async download(path, to, f) {
     const r = await Kea.hubDownload({ path: `/v1/files/${enc(path)}`, to, size: f.size, sha256: f.sha256 });
-    if (r.status !== 200) throw new HubError(parse(r.body || '').error || `The Kea Hub answered ${r.status}.`, r.status);
+    if (r.status !== 200) throw new HubError(parse(r.body || '').error || `Your Kea account server answered ${r.status}.`, r.status);
   },
   async removeLocal(to) {
     await Kea.hubRemoveLocal({ to });
@@ -182,7 +220,7 @@ const client: SyncClient = {
       ifNoneMatch: !!opts.ifNoneMatch
     });
     const data = parse(r.body);
-    if (r.status >= 300) throw new HubError(data.error || `The Kea Hub answered ${r.status}.`, r.status, data);
+    if (r.status >= 300) throw new HubError(data.error || `Your Kea account server answered ${r.status}.`, r.status, data);
     return { version: Number(data.version) || 0 };
   }
 };
