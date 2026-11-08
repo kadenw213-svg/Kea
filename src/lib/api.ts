@@ -1422,13 +1422,77 @@ export interface HubOrgApi {
 }
 export interface KeaApi {
   hubOrg: HubOrgApi;
+  servers: ServersApi;
+  sync: SyncApi;
+}
+
+// ---------- KeaS servers joined with a server pass (electron/servers.cjs) ----------
+export interface JoinedServer {
+  serverId: string;
+  url: string;
+  name: string | null;
+  joinedAt: number;
+  /** The server stopped taking this account's pass ("This organization signed you out"). */
+  signedOut: boolean;
+  message: string | null;
+  passUntil: number | null;
+  /** From Work's list of organizations: the server didn't answer just now. */
+  offline?: boolean;
+  error?: string | null;
+}
+export interface ServersApi {
+  list(): Promise<HubResult<JoinedServer[]>>;
+  /** A join link (kea://join?s=...&c=...), or the address and code from Advanced. */
+  join(a: { link?: string; address?: string; code?: string }): Promise<HubResult<{ org: any; alreadyMember?: boolean; pending?: boolean; server: JoinedServer }>>;
+  again(serverId: string): Promise<HubResult<JoinedServer>>;
+  remove(serverId: string): Promise<HubResult<JoinedServer[]>>;
+  parse(text: string): Promise<HubResult<{ url: string | null; code: string }>>;
+  onChanged(cb: () => void): () => void;
+}
+
+// ---------- Where your things sync (electron/syncChoice.cjs) ----------
+export type SyncKind = 'kea' | 'drive' | 'folder' | 'keas' | 'off';
+export interface SyncPlace {
+  id: string;
+  kind: SyncKind;
+  /** For a drive: google, onedrive or dropbox (its logo). */
+  brand?: string;
+  label: string;
+  detail: string;
+  root: string | null;
+  available: boolean;
+  locked: boolean;
+  why?: 'needsOnline' | 'notJoined' | 'signedOut' | 'noFolder' | 'notHere' | null;
+}
+export interface SyncStatus {
+  choice: string;
+  place: SyncPlace;
+  options: SyncPlace[];
+  docsRoot: string | null;
+}
+export interface SyncPreview {
+  from: SyncPlace;
+  to: SyncPlace;
+  documents: number;
+  classes: boolean;
+  phone: boolean;
+  text: string;
+}
+export interface SyncApi {
+  status(): Promise<HubResult<SyncStatus>>;
+  preview(choice: string): Promise<HubResult<SyncPreview>>;
+  choose(choice: string, folder?: string): Promise<HubResult<SyncStatus & { copied: { documents: { copied: number; same: number; kept: number } | null; phone: boolean } }>>;
+  pickFolder(): Promise<HubResult<string | null>>;
 }
 
 // ---------- Kea Cloud: documents in the person's Kea storage (electron/keaCloud.cjs) ----------
-export type KeaCloudState = 'signedOut' | 'off' | 'offline' | 'full' | 'error' | 'syncing' | 'synced';
+export type KeaCloudState = 'signedOut' | 'off' | 'offline' | 'full' | 'error' | 'syncing' | 'synced' | 'drive' | 'local';
 export type KeaCloudFileState = 'synced' | 'pending' | 'full' | 'local';
 export interface KeaCloudStatus {
+  /** Documents can be used now (Kea cloud: signed in online; a drive: it's on this computer). */
   signedIn: boolean;
+  /** Where they sync (Settings → Where your things sync). */
+  place?: { id: string; kind: SyncKind; label: string; brand: string | null; why: SyncPlace['why'] };
   enabled: boolean;
   email: string | null;
   /** The folder on this PC that mirrors the person's Kea storage. */

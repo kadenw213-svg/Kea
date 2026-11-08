@@ -136,9 +136,9 @@ export const SECTIONS: Section[] = [
     id: 'keacloud',
     label: 'Kea Cloud',
     icon: 'Cloud',
-    blurb: 'Documents you save to Kea Cloud live in your Kea storage, so they’re on your other computers and your phone too.',
+    blurb: 'Where your classes, documents and phone files sync, and Kea Cloud’s documents. They’re on your other computers and your phone too.',
     fields: [
-      { key: 'keaCloud.enabled', label: 'Use Kea Cloud for documents', type: 'toggle', default: true, help: 'Shows Kea Cloud on Home and keeps its documents in sync while you’re signed in to your Kea account.' },
+      { key: 'keaCloud.enabled', label: 'Use Kea Cloud for documents', type: 'toggle', default: true, help: 'Shows Kea Cloud on Home and keeps its documents in sync wherever your things sync.' },
       {
         key: 'keaCloud.saveTo',
         label: 'Saving a new file',
@@ -672,23 +672,8 @@ export const SECTIONS: Section[] = [
       { key: 'scholar.mailSignature', group: 'Messages', label: 'Message signature', type: 'text', default: '', help: 'Added under every new message you write in Messages (edit it there, under Signature).', advanced: true },
       { key: 'scholar.mailSignatureReplies', label: 'Add the signature to replies too', type: 'toggle', default: true, advanced: true },
       {
-        key: 'scholar.cloud',
-        group: 'Your devices',
-        label: 'Sync your phone and other devices through',
-        type: 'select',
-        default: 'auto',
-        options: [
-          { value: 'auto', label: 'Automatic (OneDrive if it’s here, otherwise Google Drive)' },
-          { value: 'onedrive', label: 'OneDrive' },
-          { value: 'google', label: 'Google Drive' },
-          { value: 'custom', label: 'Another folder (below)' },
-          { value: 'off', label: 'Don’t sync' }
-        ],
-        help: 'Everything goes in one “Kea” folder in that drive. Every device must use the same drive and account. Scans → Devices shows each device and which one scans.'
-      },
-      { key: 'scholar.cloudPath', label: 'Other folder to sync through', type: 'text', default: '', advanced: true },
-      {
         key: 'scholar.pcSync',
+        group: 'Your devices',
         label: 'Keep your other computers in step',
         type: 'toggle',
         default: true,

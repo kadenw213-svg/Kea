@@ -466,5 +466,24 @@ contextBridge.exposeInMainWorld('api', {
     events: (from, to) => ipcRenderer.invoke('hubOrg:events', { from, to }),
     saveIcs: (from, to) => ipcRenderer.invoke('hubOrg:saveIcs', { from, to }),
     showFile: (file) => ipcRenderer.invoke('hubOrg:showFile', { file })
+  },
+  // KeaS servers joined with a server pass (electron/servers.cjs), and where things sync (electron/syncChoice.cjs).
+  servers: {
+    list: () => ipcRenderer.invoke('servers:list'),
+    join: (a) => ipcRenderer.invoke('servers:join', a),
+    again: (serverId) => ipcRenderer.invoke('servers:again', { serverId }),
+    remove: (serverId) => ipcRenderer.invoke('servers:remove', { serverId }),
+    parse: (text) => ipcRenderer.invoke('servers:parse', { text }),
+    onChanged: (cb) => {
+      const h = () => cb();
+      ipcRenderer.on('servers:changed', h);
+      return () => ipcRenderer.removeListener('servers:changed', h);
+    }
+  },
+  sync: {
+    status: () => ipcRenderer.invoke('sync:status'),
+    preview: (choice) => ipcRenderer.invoke('sync:preview', { choice }),
+    choose: (choice, folder) => ipcRenderer.invoke('sync:choose', { choice, folder }),
+    pickFolder: () => ipcRenderer.invoke('sync:pickFolder')
   }
 });

@@ -851,19 +851,23 @@ async function launcherTick() {
   });
 }
 
-// ---------- Sync through the Hub (scholar/hubsync.cjs): the "Kea Hub" drive's folder, mirrored both ways ----------
+// ---------- Sync through a server (scholar/hubsync.cjs): the Kea account's storage, or a joined KeaS's ----------
+// The folder for the place picked in Settings → Where your things sync (syncChoice.cjs) is mirrored both ways with
+// that server's /v1/files: Kea cloud with this account's session, a KeaS server with its own session (servers.cjs).
 const isSignedIn = () => !!readToken();
 const syncRoot = () => path.join(app.getPath('userData'), 'hub-sync');
-let syncer = null, syncTimer = null, watcher = null, debounce = null, lastDown = 0, materialChecked = false;
+let syncer = null, syncKey = null, syncTimer = null, watcher = null, debounce = null, lastDown = 0, materialChecked = false;
 const syncState = { on: false, last: null, error: null, counts: null };
 function syncNow() {
-  if (!syncer || !isSignedIn()) return Promise.resolve(null);
+  if (!syncer) return Promise.resolve(null);
+  const onHub = syncKey === 'hub';
+  if (onHub && !isSignedIn()) return Promise.resolve(null);
   return syncer
     .cycle()
     .then((c) => {
       Object.assign(syncState, { last: Date.now(), error: null, offline: false, counts: c });
       // Course material from Kea's shared Claude that came down (or is still waiting for its class): take it in.
-      if (c.down > lastDown || !materialChecked) {
+      if (onHub && (c.down > lastDown || !materialChecked)) {
         materialChecked = true;
         require('./scholar/sharedMaterial.cjs').run().catch((e) => console.error('Shared material', e.message));
       }
@@ -874,34 +878,50 @@ function syncNow() {
       syncState.error = e.message;
       syncState.offline = !e.status; // (Kea Cloud shows "offline" rather than an error)
       // Signed out elsewhere, or new terms to agree to: stop until that's sorted (status() and the terms gate show it).
+      // (A KeaS session that ended is made again from the pass at the next start: servers.cjs.)
       if (e.status === 401 || e.status === 428) stopSync();
     });
 }
-function startSync() {
-  let cloud;
+let starting = false;
+async function startSync() {
+  let place = null;
   try {
-    cloud = require('./scholar/cloud.cjs');
+    place = require('./syncChoice.cjs').serverPlace();
   } catch {
     return;
   }
-  // Kea Cloud (keaCloud.cjs): documents sync whenever the person is signed in, even when Scholar uses another drive.
-  const want = isSignedIn() && (cloud.drive()?.id === 'kea-hub' || require('./keaCloud.cjs').enabled());
-  if (!want) return stopSync();
+  // Classes and Kea Cloud documents both follow the one choice: nothing to mirror unless it's a server.
+  if (!place) return stopSync();
+  if (syncer && syncKey === place.key) return;
+  if (syncer) stopSync();
+  if (starting) return;
+  starting = true;
+  try {
+    // (A KeaS server: its session first, from the pass. Offline or signed out: tried again at the next start.)
+    if (place.ensure) await place.ensure();
+  } catch (e) {
+    Object.assign(syncState, { on: false, error: e.message, offline: !e.status });
+    return;
+  } finally {
+    starting = false;
+  }
   if (syncer) return;
   const { createSync, httpClient } = require('./scholar/hubsync.cjs');
-  fs.mkdirSync(syncRoot(), { recursive: true });
+  fs.mkdirSync(place.root, { recursive: true });
+  syncKey = place.key;
   syncer = createSync({
-    root: syncRoot(),
-    stateFile: path.join(app.getPath('userData'), 'hub-sync-state.json'),
-    client: httpClient({ base: hubUrl, token: readToken, fetchFn: net.fetch, client: `Kea/${app.getVersion()}` }),
+    root: place.root,
+    stateFile: place.stateFile,
+    client: httpClient({ base: place.base, token: place.token, fetchFn: net.fetch, client: `Kea/${app.getVersion()}` }),
     log: (m) => console.log(m),
-    ...require('./keaCloud.cjs').syncOptions(() => cloud.drive()?.id === 'kea-hub'),
+    ...require('./keaCloud.cjs').syncOptions(() => true),
   });
   syncState.on = true;
+  syncState.place = place.key;
   // Others' changes every 15 s (a tiny "what changed" request); this device's changes 2 s after they happen.
   syncTimer = setInterval(syncNow, 15_000);
   try {
-    watcher = fs.watch(syncRoot(), { recursive: true }, () => {
+    watcher = fs.watch(place.root, { recursive: true }, () => {
       clearTimeout(debounce);
       debounce = setTimeout(syncNow, 2000);
     });
@@ -914,8 +934,14 @@ function stopSync() {
   try {
     watcher?.close();
   } catch {}
-  syncer = syncTimer = watcher = null;
+  syncer = syncTimer = watcher = syncKey = null;
   syncState.on = false;
+}
+/** The place changed (syncChoice.cjs): the old mirror stops, the new one starts. */
+function restartSync() {
+  stopSync();
+  Object.assign(syncState, { error: null, last: null, counts: null });
+  return startSync();
 }
 
 function register() {
@@ -936,7 +962,7 @@ function register() {
   watchJobs(8000);
   setInterval(launcherTick, 60_000);
   handleApp(ipcMain, 'hub:syncStatus', wrap(() => ({ ...syncState })));
-  handleApp(ipcMain, 'hub:syncNow', wrap(async () => (startSync(), await syncNow(), { ...syncState })));
+  handleApp(ipcMain, 'hub:syncNow', wrap(async () => (await startSync(), await syncNow(), { ...syncState })));
   // Who's signed in, from this computer alone (at once), and after a background check of the server (4 s at most).
   handleApp(ipcMain, 'hub:local', wrap(() => local()));
   handleApp(ipcMain, 'hub:status', wrap(() => status()));
@@ -1106,4 +1132,4 @@ module.exports = {
     setBackground: (on) => (background = on),
   },
   current: () => activeAccount(),
-  register, cached, req, signedIn: isSignedIn, syncRoot, syncNow, url: hubUrl, refreshStatus: status, DEFAULT_HUB_URL, syncState: () => ({ ...syncState }), startSync };
+  register, cached, req, signedIn: isSignedIn, syncRoot, syncNow, url: hubUrl, refreshStatus: status, DEFAULT_HUB_URL, syncState: () => ({ ...syncState }), startSync, restartSync, _token: readToken };

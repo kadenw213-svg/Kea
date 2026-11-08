@@ -4,6 +4,7 @@ import { api, DeviceShare, DevicesStatus, QueuedRun, RunProgress, ScholarNews, S
 import { useSetting, openSettings } from '../../lib/settings';
 import { ask, toast } from '../../store';
 import { reloadScholar } from './scholarStore';
+import { SyncLine } from '../settings/SyncPicker';
 
 /**
  * Joining another device's classes is always the student's choice, asked here by that device's name: they replace
@@ -230,7 +231,6 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
     setBusy('');
   };
   const driveName = (d: { label: string; account: string }) => (d.account ? `${d.label} · ${d.account}` : d.label);
-  const auto = dev.drives.find((d) => d.id === 'onedrive') || dev.drives.find((d) => d.id === 'google') || dev.drives[0];
   const others = dev.devices.filter((d) => !d.me);
   // (This device's version, to tell another computer it's behind.)
   const mine = dev.devices.find((d) => d.me)?.version || '';
@@ -247,23 +247,10 @@ function DevicesCard({ dev, reload }: { dev: DevicesStatus | null; reload: () =>
         ) : null}
       </div>
 
-      <label className="drive-row">
-        <Cloud size={16} />
-        <span>Sync through</span>
-        <select value={dev.choice} disabled={!!busy} onChange={(e) => act('drive', () => api.scholar.setDrive(e.target.value))}>
-          <option value="auto">Automatic{auto ? ` (${driveName(auto)})` : ''}</option>
-          {dev.drives
-            .filter((d) => d.id !== 'dropbox' || dev.choice === 'dropbox')
-            .map((d) => (
-              <option key={d.id} value={d.id}>
-                {driveName(d)}
-              </option>
-            ))}
-          {dev.choice === 'custom' && <option value="custom">Your own folder (Settings)</option>}
-          <option value="off">Don’t sync</option>
-        </select>
-      </label>
-      {!dev.drive && dev.choice !== 'off' && <p className="warn-line">That drive isn’t on this computer. Install OneDrive or Google Drive and sign in, or pick another one above.</p>}
+      <div className="drive-row">
+        <SyncLine onChange={() => openSettings('keacloud')} />
+      </div>
+      {!dev.drive && dev.choice !== 'off' && <p className="warn-line">That place isn’t ready on this computer. Change it in Settings → Kea Cloud.</p>}
       {dev.drive && <p className="hint-line">Every device must use this same drive and account to see each other.</p>}
 
       {dev.waiting && (

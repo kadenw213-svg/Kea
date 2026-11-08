@@ -731,7 +731,7 @@ function relay(req) {
  */
 function status() {
   const d = cloud.drive();
-  const base = { on: settings.get('scholar.pcSync', true) !== false, me: { id: me(), name: myName() }, drive: d, drives: cloud.drives(), choice: settings.get('scholar.cloud', 'auto') };
+  const base = { on: settings.get('scholar.pcSync', true) !== false, me: { id: me(), name: myName() }, drive: d, drives: cloud.drives(), choice: settings.get('scholar.cloud', 'kea-hub') };
   const dir = folder();
   if (!dir) return { ...base, role: 'alone', devices: [], primary: null, phone: null, run: null, queue: [], elsewhere: [], waiting: null };
   const p = primaryInfo(dir);

@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, CloudOff, FolderOpen, Loader2, RefreshCw }
 import { api, KeaCloudStatus } from '../../lib/api';
 import { STATE_LABEL, storageLine, useKeaCloud, watchKeaCloud } from '../../lib/keaCloud';
 import { NeedsOnline } from '../account/NeedsOnline';
+import { PlaceIcon, SyncPicker } from '../settings/SyncPicker';
 import { toast } from '../../store';
 import { timeAgo } from '../../lib/util';
 
@@ -19,7 +20,7 @@ export function KeaCloudMark({ size = 17 }: { size?: number }) {
 }
 
 export function StateIcon({ s, size = 14 }: { s: KeaCloudStatus['state']; size?: number }) {
-  if (s === 'synced') return <CheckCircle2 size={size} className="kc-ok" />;
+  if (s === 'synced' || s === 'drive') return <CheckCircle2 size={size} className="kc-ok" />;
   if (s === 'syncing') return <Loader2 size={size} className="spin kc-busy" />;
   if (s === 'offline') return <CloudOff size={size} className="kc-off" />;
   if (s === 'full' || s === 'error') return <AlertTriangle size={size} className="kc-bad" />;
@@ -54,7 +55,7 @@ export function KeaCloudHeader() {
   if (!s.signedIn)
     return (
       <div className="kc-head">
-        <NeedsOnline compact what="Kea Cloud keeps your documents on all your devices" />
+        {!s.place || s.place.kind === 'kea' ? <NeedsOnline compact what="Kea Cloud keeps your documents on all your devices" /> : <span className="muted">{notHere(s)}</span>}
       </div>
     );
   return (
@@ -65,9 +66,11 @@ export function KeaCloudHeader() {
           {STATE_LABEL[s.state]}
         </span>
         <StorageBar s={s} />
-        <button className="icon-btn sm" title="Sync now" onClick={syncNow}>
-          <RefreshCw size={15} />
-        </button>
+        {(!s.place || s.place.kind === 'kea' || s.place.kind === 'keas') && (
+          <button className="icon-btn sm" title="Sync now" onClick={syncNow}>
+            <RefreshCw size={15} />
+          </button>
+        )}
       </div>
       {s.state === 'full' && <div className="kc-alert">{s.message || 'Your Kea storage is full. Delete documents you don’t need, or ask for more space.'} Until there’s room, new changes stay on this PC.</div>}
       {s.state === 'error' && s.message && <div className="kc-alert">{s.message}</div>}
@@ -80,15 +83,28 @@ export function KeaCloudHeader() {
   );
 }
 
-/** Settings → Kea Cloud: the same status, with the folder and sync controls. */
+/** Why documents can't be used now, for a place other than Kea cloud. */
+const notHere = (s: KeaCloudStatus) =>
+  s.place?.why === 'signedOut' ? `${s.place.label} signed you out. Pick another place in Settings → Kea Cloud.` : `${s.place?.label ?? 'That place'} isn’t on this computer. Pick another place in Settings → Kea Cloud.`;
+
+/** Settings → Kea Cloud: where things sync, then the same status, with the folder and sync controls. */
 export function KeaCloudPanel() {
+  return (
+    <>
+      <SyncPicker />
+      <KeaCloudStatusPanel />
+    </>
+  );
+}
+function KeaCloudStatusPanel() {
   const s = useKeaCloud((x) => x.status);
   useEffect(() => watchKeaCloud(true), []);
   if (!s) return <div className="muted">Loading…</div>;
-  if (!s.signedIn) return <NeedsOnline what="Kea Cloud uses the storage that comes with your online Kea account" />;
+  if (!s.signedIn) return s.place && s.place.kind !== 'kea' ? <p className="warn-line">{notHere(s)}</p> : null;
+  const server = !s.place || s.place.kind === 'kea' || s.place.kind === 'keas';
   return (
     <div className="kc-panel">
-      <KeaCloudMark size={28} />
+      {s.place && s.place.kind !== 'kea' ? <PlaceIcon place={s.place} size={26} /> : <KeaCloudMark size={28} />}
       <div className="kc-panel-main">
         <b>
           <span className={`kc-state st-${s.state}`}>
@@ -96,15 +112,17 @@ export function KeaCloudPanel() {
           </span>
         </b>
         <span className="muted">
-          {s.email}
+          {s.place && s.place.kind !== 'kea' ? s.place.label : s.email}
           {s.files ? ` · ${s.files} document${s.files === 1 ? '' : 's'}` : ''}
           {s.last ? ` · checked ${timeAgo(s.last)}` : ''}
         </span>
         <StorageBar s={s} />
       </div>
-      <button className="btn sm" onClick={syncNow}>
-        <RefreshCw size={14} /> Sync now
-      </button>
+      {server && (
+        <button className="btn sm" onClick={syncNow}>
+          <RefreshCw size={14} /> Sync now
+        </button>
+      )}
       <button className="btn sm" onClick={() => api.keaCloud.open()}>
         <FolderOpen size={14} /> Open folder
       </button>

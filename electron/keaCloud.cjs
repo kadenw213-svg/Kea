@@ -73,20 +73,34 @@ function syncOptions(scholarOnHub) {
 // ---------- Electron side ----------
 const settings = () => require('./settings.cjs');
 const hub = () => require('./hub.cjs');
+const choice = () => require('./syncChoice.cjs');
 const { handleApp } = require('./ipcGuard.cjs');
 const enabled = () => settings().get('keaCloud.enabled', true) !== false;
-const root = () => path.join(hub().syncRoot(), FOLDER);
+// Documents follow Settings → Where your things sync (syncChoice.cjs): the Kea cloud folder (synced through the
+// account's storage), a KeaS server's folder, "Kea Documents" in a cloud drive or synced folder, or on this PC only.
+const placeNow = () => choice().placeOf(choice().current());
+const root = () => choice().docsRoot() ?? path.join(hub().syncRoot(), FOLDER);
+/** Documents can be used here now: Kea cloud signed in online, a server not signed out, a drive that's here. */
+function ready(place = placeNow()) {
+  if (place.kind === 'kea') return hub().signedIn();
+  if (place.kind === 'keas') return !place.locked;
+  if (place.kind === 'off') return true;
+  return !!choice().docsRoot(place.id);
+}
 
 function readSyncState() {
   try {
-    const { app } = require('electron');
-    return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'hub-sync-state.json'), 'utf8'));
+    const sp = choice().serverPlace();
+    if (!sp) return { files: {}, skip: {} };
+    return JSON.parse(fs.readFileSync(sp.stateFile, 'utf8'));
   } catch {
     return { files: {}, skip: {} };
   }
 }
+/** The synced folder documents are relative to (the server mirror's root, or the documents folder itself). */
+const baseOf = () => choice().serverPlace()?.root ?? path.dirname(root());
 
-/** Every document under the folder, as paths relative to the sync root ("Documents/Essay.docx"). */
+/** Every document under the folder, as full paths. */
 function walk(dir = root(), out = []) {
   let entries = [];
   try {
@@ -101,9 +115,11 @@ function walk(dir = root(), out = []) {
   }
   return out;
 }
-const relOf = (p) => path.relative(hub().syncRoot(), p).split(path.sep).join('/');
+const relOf = (p) => path.relative(baseOf(), p).split(path.sep).join('/');
 
 function stateOf(p, st) {
+  // (A cloud drive's own app syncs its folder; off keeps them here.)
+  if (!choice().serverPlace()) return placeNow().kind === 'off' ? 'local' : 'synced';
   let stat = null;
   try {
     stat = fs.statSync(p);
@@ -114,33 +130,37 @@ function stateOf(p, st) {
 
 function status() {
   const h = hub();
-  const signedIn = h.signedIn();
-  if (signedIn && enabled()) fs.mkdirSync(root(), { recursive: true });
+  const place = placeNow();
+  const ok = ready(place);
+  const server = place.kind === 'kea' || place.kind === 'keas';
+  if (ok && enabled()) fs.mkdirSync(root(), { recursive: true });
   const st = readSyncState();
-  // Signed in with Kea Cloud on but the sync isn't running yet (just signed in, or terms just agreed to): start it.
+  // A server place with Kea Cloud on but the sync isn't running yet (just signed in, or terms just agreed to): start it.
   const s0 = h.syncState();
-  if (signedIn && enabled() && !s0.on && (!s0.error || s0.offline)) h.startSync();
+  if (server && ok && enabled() && !s0.on && (!s0.error || s0.offline)) h.startSync();
   const sync = h.syncState();
-  const files = signedIn ? walk() : [];
-  const pending = files.filter((p) => stateOf(p, st) === 'pending').length;
+  const files = ok ? walk() : [];
+  const pending = server ? files.filter((p) => stateOf(p, st) === 'pending').length : 0;
   const cached = h.cached();
   return {
-    signedIn,
+    signedIn: ok,
     enabled: enabled(),
-    email: cached?.email || null,
+    email: place.kind === 'kea' ? cached?.email || null : null,
     root: root(),
-    state: summarize({ signedIn, enabled: enabled(), sync, st, pending }),
-    message: st.full?.message || sync.error || null,
-    last: sync.last,
+    place: { id: place.id, kind: place.kind, label: place.label, brand: place.brand ?? null, why: place.why ?? null },
+    state: server ? summarize({ signedIn: ok, enabled: enabled(), sync, st, pending }) : !ok ? 'signedOut' : !enabled() ? 'off' : place.kind === 'off' ? 'local' : 'drive',
+    message: server ? st.full?.message || sync.error || null : null,
+    last: server ? sync.last : null,
     pending,
     files: files.length,
-    storage: st.storage || null,
-    conflicts: (st.conflicts || []).filter((c) => c.rel.startsWith(`${FOLDER}/`)).slice(-5),
+    storage: server ? st.storage || null : null,
+    conflicts: server ? (st.conflicts || []).filter((c) => c.rel.startsWith(`${FOLDER}/`)).slice(-5) : [],
   };
 }
 
+const notReady = () => (placeNow().kind === 'kea' ? 'Sign in to your Kea account to use Kea Cloud.' : `${placeNow().label} isn’t on this computer right now.`);
 function guard(p) {
-  if (!hub().signedIn()) throw new Error('Sign in to your Kea account to use Kea Cloud.');
+  if (!ready()) throw new Error(notReady());
   if (!isInside(root(), p) || path.resolve(p) === path.resolve(root())) throw new Error('That isn’t in Kea Cloud.');
 }
 
@@ -162,7 +182,7 @@ function register() {
   }));
   // Where a new document goes: Kea Cloud's folder (made if needed), with a name not already taken.
   handleApp(ipcMain, 'keaCloud:newPath', wrap(({ name }) => {
-    if (!hub().signedIn()) throw new Error('Sign in to your Kea account to use Kea Cloud.');
+    if (!ready()) throw new Error(notReady());
     if (!validName(name)) throw new Error('That name can’t be used for a file.');
     fs.mkdirSync(root(), { recursive: true });
     return path.join(root(), uniqueName(String(name).trim(), (n) => fs.existsSync(path.join(root(), n))));
@@ -194,7 +214,7 @@ function register() {
     return to;
   }));
   handleApp(ipcMain, 'keaCloud:syncNow', wrap(async () => {
-    hub().startSync();
+    await hub().startSync();
     await hub().syncNow();
     return status();
   }));

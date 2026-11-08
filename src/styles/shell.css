@@ -165,3 +165,23 @@
 .reduce-motion .welcome-inner {
   animation: none;
 }
+.welcome-sync {
+  width: 100%;
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.welcome-sync h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 500;
+}
+.welcome-sync .welcome-sub {
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.welcome-sync .sync-pick {
+  width: 100%;
+  text-align: left;
+}

@@ -1,11 +1,101 @@
-// Work mode: organizations on the Kea Hub (join codes, availability, schedules, certs, the to-do box).
-// The page asks for Hub org routes through here, signed in with the same session as the rest of Kea (hub.cjs). Only
-// org routes pass; payroll never goes to the Hub at all.
+// Work mode: organizations (join codes, availability, schedules, certs, roles, the time clock, the to-do box), on the
+// Kea account server (Hub 0.5, signed in with the same session as the rest of Kea: hub.cjs) and on any KeaS servers
+// this account joined (servers.cjs, signed in with a server pass). The page calls org routes as if there were one
+// server; each call goes to the server that holds that organization, and the lists (organizations, to-dos, the
+// calendar) are put together from all of them. Only org routes pass; payroll never goes through here.
 const { app, ipcMain, dialog, BrowserWindow, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const hub = require('./hub.cjs');
 const { handleApp } = require('./ipcGuard.cjs');
+const servers = () => require('./servers.cjs');
+
+// ---------- which server holds what ----------
+// 'hub' is the Kea account server; anything else is a joined server's id.
+const HUB = 'hub';
+const orgSource = new Map(); // org id -> source
+const todoSource = new Map(); // to-do key -> source
+const sourceInfo = new Map(); // source -> { id, name, url } (null for the Kea account server)
+/** Where Work's organizations can be: the Kea account server when signed in online, and every joined server. */
+function sources() {
+  const out = [];
+  if (hub.signedIn()) out.push(HUB);
+  for (const s of servers().list()) {
+    sourceInfo.set(s.serverId, { id: s.serverId, name: s.name, url: s.url });
+    out.push(s.serverId);
+  }
+  return out;
+}
+const serverList = () => {
+  try {
+    return servers().list();
+  } catch {
+    return [];
+  }
+};
+const send = (src, method, p, body) => (src === HUB ? hub.req(method, p, body) : servers().req(src, method, p, body));
+/** Every source at once: [{ src, ok, value | error }]. */
+const all = (method, p, body) => Promise.all(sources().map((src) => send(src, method, p, body).then((value) => ({ src, ok: true, value }), (error) => ({ src, ok: false, error }))));
+/** The first error worth showing when nothing answered (offline over anything else, so the calendar falls back). */
+function noneAnswered(results) {
+  const errs = results.filter((r) => !r.ok).map((r) => r.error);
+  return errs.find((e) => e.status !== 0) ?? errs[0] ?? Object.assign(new Error('Sign in to your Kea account to use Work.'), { status: 401 });
+}
+const sortTodo = (items) =>
+  items.sort((a, b) => Number(!!b.overdue) - Number(!!a.overdue) || (b.urgency ?? 0) - (a.urgency ?? 0) || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity));
+
+/** My organizations on every server, each with the server it's on (null: the Kea account server). */
+async function listOrgs() {
+  const res = await all('GET', '/v1/orgs');
+  const orgs = [];
+  for (const r of res) {
+    if (!r.ok) continue;
+    for (const o of r.value.orgs || []) {
+      orgSource.set(o.id, r.src);
+      orgs.push({ ...o, server: r.src === HUB ? null : sourceInfo.get(r.src) ?? { id: r.src } });
+    }
+  }
+  // (A Kea account server without organizations answers 404: that's simply none.)
+  const failed = res.filter((r) => !r.ok && !(r.src === HUB && r.error.status === 404));
+  if (!orgs.length && failed.length && failed.length === res.length) throw noneAnswered(res);
+  const by = new Map(serverList().map((s) => [s.serverId, s]));
+  return {
+    orgs,
+    servers: [...by.values()].map((s) => {
+      const r = res.find((x) => x.src === s.serverId);
+      return { ...s, offline: !!r && !r.ok && r.error.status === 0, signedOut: s.signedOut || (!!r && !r.ok && !!r.error.data?.signedOut), error: r && !r.ok && r.error.status !== 0 ? r.error.message : null };
+    }),
+  };
+}
+/** The server holding an organization (looked up again from the lists when Kea doesn't know it yet). */
+async function sourceOf(orgId) {
+  if (!orgSource.has(orgId)) await listOrgs().catch(() => null);
+  return orgSource.get(orgId) ?? HUB;
+}
+async function todo() {
+  const res = await all('GET', '/v1/todo');
+  if (!res.some((r) => r.ok)) throw noneAnswered(res);
+  const out = { now: Date.now(), items: [], snoozed: [] };
+  for (const r of res.filter((x) => x.ok)) {
+    for (const it of [...(r.value.items || []), ...(r.value.snoozed || [])]) todoSource.set(it.key, r.src);
+    out.items.push(...(r.value.items || []));
+    out.snoozed.push(...(r.value.snoozed || []));
+    out.now = r.value.now ?? out.now;
+  }
+  sortTodo(out.items);
+  return out;
+}
+/** One org route, sent to the server that holds it. */
+async function route(m, p, body) {
+  const orgId = /^\/v1\/orgs\/([^/?]+)/.exec(p)?.[1];
+  if (m === 'GET' && /^\/v1\/orgs(\?|$)/.test(p)) return listOrgs();
+  if (m === 'GET' && /^\/v1\/todo(\?|$)/.test(p)) return todo();
+  if (m === 'POST' && p === '/v1/todo/snooze') return send(todoSource.get(body?.key) ?? HUB, m, p, body);
+  // Joining with a plain code, and making an organization: on the Kea account server (a join link goes through
+  // servers:join instead).
+  if (orgId && !['join'].includes(orgId)) return send(await sourceOf(decodeURIComponent(orgId)), m, p, body);
+  return send(HUB, m, p, body);
+}
 
 // The routes the page may call, by method.
 const ALLOWED = [
@@ -50,11 +140,15 @@ function readCache() {
 async function events(from, to) {
   try {
     const q = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
-    const r = await hub.req('GET', `/v1/orgs-calendar${q ? `?${q}` : ''}`);
-    // Keep what's known; replace the window just fetched.
-    const old = readCache().events.filter((e) => (from && e.end < from) || (to && e.start > to));
+    const res = await all('GET', `/v1/orgs-calendar${q ? `?${q}` : ''}`);
+    if (!res.some((x) => x.ok)) throw noneAnswered(res);
+    const r = { events: res.filter((x) => x.ok).flatMap((x) => (x.value.events || []).map((e) => ({ ...e, source: x.src }))) };
+    // Keep what's known; replace the window just fetched (a server that didn't answer keeps its copy).
+    const missed = new Set(res.filter((x) => !x.ok).map((x) => x.src));
+    const old = readCache().events.filter((e) => (from && e.end < from) || (to && e.start > to) || missed.has(e.source ?? HUB));
+    const kept = old.filter((e) => missed.has(e.source ?? HUB) && (!from || e.end >= from) && (!to || e.start <= to));
     fs.writeFileSync(cacheFile(), JSON.stringify({ account: accountId(), events: [...old, ...r.events].sort((a, b) => (a.start < b.start ? -1 : 1)), at: Date.now() }));
-    return { events: r.events, offline: false };
+    return { events: [...r.events, ...kept].sort((a, b) => (a.start < b.start ? -1 : 1)), offline: false, ...(kept.length || missed.size ? { partial: true } : {}) };
   } catch (e) {
     if (e.status !== 0) throw e;
     const c = readCache();
@@ -123,12 +217,12 @@ function register() {
   handleApp(ipcMain, 'hubOrg:call', wrap(async ({ method, path: p, body }) => {
     const m = String(method || 'GET').toUpperCase();
     if (!['GET', 'POST'].includes(m) || !ok(p)) throw refuse();
-    return hub.req(m, p, m === 'POST' ? body ?? {} : undefined);
+    return route(m, p, m === 'POST' ? body ?? {} : undefined);
   }));
   // An availability form's answers as CSV (the Google-Sheets shape, or one row per date).
   handleApp(ipcMain, 'hubOrg:saveCsv', wrap(async ({ orgId, formId, format }) => {
     if (!/^[\w-]{1,80}$/.test(String(orgId)) || !/^[\w-]{1,80}$/.test(String(formId))) throw refuse();
-    const r = await hub.req('GET', `/v1/orgs/${orgId}/forms/${formId}/export?as=json&format=${format === 'long' ? 'long' : 'sheets'}`);
+    const r = await send(await sourceOf(orgId), 'GET', `/v1/orgs/${orgId}/forms/${formId}/export?as=json&format=${format === 'long' ? 'long' : 'sheets'}`);
     return saveAs(r.filename, [{ name: 'CSV', extensions: ['csv'] }], '\ufeff' + r.csv);
   }));
   handleApp(ipcMain, 'hubOrg:events', wrap(({ from, to }) => events(from, to)));
@@ -150,7 +244,7 @@ let lastRefresh = 0;
  */
 function calendarItems({ from, to } = {}) {
   const settings = require('./settings.cjs');
-  if (settings.get('modes.work', false) !== true || !hub.signedIn()) return [];
+  if (settings.get('modes.work', false) !== true || !sources().length) return [];
   if (Date.now() - lastRefresh > 10 * 60_000) {
     lastRefresh = Date.now();
     const a = new Date(Date.now() - 7 * 864e5).toISOString();
@@ -196,4 +290,4 @@ function calendarItems({ from, to } = {}) {
     .filter((i) => i.date <= (to || '9999-99-99') && (i.dateEnd || i.date) >= (from || '0000-00-00'));
 }
 
-module.exports = { register, events, toIcs, calendarItems };
+module.exports = { register, events, toIcs, calendarItems, route, listOrgs };

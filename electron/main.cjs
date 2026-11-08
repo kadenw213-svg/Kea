@@ -387,6 +387,8 @@ app.whenReady().then(() => {
   require('./hub.cjs').register();
   require('./keaCloud.cjs').register();
   require('./hubOrg.cjs').register();
+  require('./servers.cjs').register();
+  require('./syncChoice.cjs').register();
   require('./scholar/index.cjs').register();
   require('./dict.cjs').register();
   updateLoop();

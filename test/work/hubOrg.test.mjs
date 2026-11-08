@@ -28,7 +28,8 @@ const fakeElectron = { app: { getPath: () => dir }, ipcMain: { handle: (n, f) =>
 const load = Module._load;
 Module._load = function (req, parent, ...rest) {
   if (req === 'electron') return fakeElectron;
-  if (req === './hub.cjs' && parent?.filename?.endsWith('hubOrg.cjs')) return { req: (...a) => hubReq(...a), cached: () => signedInAs };
+  if (req === './hub.cjs' && parent?.filename?.endsWith('hubOrg.cjs')) return { req: (...a) => hubReq(...a), cached: () => signedInAs, signedIn: () => true };
+  if (req === './servers.cjs' && parent?.filename?.endsWith('hubOrg.cjs')) return { list: () => [], req: () => Promise.reject(new Error('no servers')) };
   return load.call(this, req, parent, ...rest);
 };
 const hubOrg = require('../../electron/hubOrg.cjs');

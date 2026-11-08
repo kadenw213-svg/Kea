@@ -577,11 +577,9 @@ function register() {
     if (runner.status().running && id !== require('../settings.cjs').get('scholar.pcId')) throw new Error('A class scan is running on this device. Make another device the primary when it finishes (or stop it first).');
     return devices.makePrimary(id);
   });
+  // (The same switch as Settings → Where your things sync: documents and the phone's file get a copy there too.)
   handleApp(ipcMain, 'scholar:setDrive', async (_e, choice) => {
-    settings.set({ 'scholar.cloud': choice });
-    await devices.step();
-    watch();
-    devicesChanged();
+    await require('../syncChoice.cjs').choose(choice);
     return devices.status();
   });
   handleApp(ipcMain, 'scholar:stop', () => {
@@ -845,4 +843,12 @@ async function publish() {
   return devices.publishes() ? cloud.sync(snapshot) : null;
 }
 
-module.exports = { register, publish };
+/** The place things sync changed (syncChoice.cjs): the devices folder moves with it, and a fresh copy goes there. */
+async function driveChanged() {
+  await devices.step();
+  watch();
+  BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
+  syncSoon(3000);
+}
+
+module.exports = { register, publish, driveChanged };

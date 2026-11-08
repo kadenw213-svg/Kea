@@ -952,3 +952,88 @@ button.srow-where:hover {
 .kc-bar.bad > span {
   background: var(--danger);
 }
+
+/* Where your things sync (SyncPicker.tsx) */
+.sync-pick {
+  margin: 6px 0 14px;
+}
+.sync-pick-head {
+  font-size: 14px;
+  font-weight: 500;
+}
+.sync-pick-sub {
+  margin: 2px 0 8px;
+  font-size: 12.5px;
+}
+.sync-opts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 6px;
+}
+.sync-pick.compact .sync-opts {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.sync-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.sync-opt:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+.sync-opt.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+}
+.sync-opt.dim {
+  opacity: 0.55;
+  cursor: default;
+}
+.sync-ico {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.sync-txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12.5px;
+}
+.sync-txt b {
+  font-weight: 500;
+  font-size: 13px;
+}
+.sync-txt .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-def {
+  font-weight: 400;
+}
+.sync-check {
+  color: var(--accent);
+  flex: none;
+}
+.sync-pick .needs-online {
+  margin-top: 8px;
+}
+.sync-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
