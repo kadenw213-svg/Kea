@@ -1744,3 +1744,39 @@ button.bigrade {
   border-color: var(--accent);
   background: var(--accent-soft, rgba(127, 127, 127, 0.1));
 }
+
+/* Cloud features while the Kea account isn't online: a calm note in their place (NeedsOnline.tsx). */
+.needs-online {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 6px 0;
+  border: 1px dashed var(--border, rgba(127, 127, 127, 0.35));
+  border-radius: 12px;
+  color: var(--text-2);
+}
+.needs-online > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.needs-online-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.needs-online-text b {
+  color: var(--text);
+}
+.needs-online.compact {
+  padding: 8px 10px;
+}
+.needs-online .btn {
+  flex-shrink: 0;
+  align-self: center;
+}
+details.why .input {
+  margin: 6px 0;
+}

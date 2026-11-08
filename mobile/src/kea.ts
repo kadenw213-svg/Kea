@@ -70,12 +70,21 @@ interface KeaNative {
   readMore(o: { items: { id: string; text: string }[] }): Promise<void>;
   readControl(o: { action: 'pause' | 'resume' | 'stop' | 'skip' | 'settings' | 'sleep' | 'state'; by?: number; voice?: string; rate?: number; minutes?: number }): Promise<{ playing: boolean; id: string; sleepLeft: number }>;
   addListener(event: 'speech', cb: (p: { id: string; index: number; total: number; state: 'playing' | 'paused' | 'stopped' | 'done' | 'error' }) => void): Promise<{ remove(): void }>;
-  /** Kea account (Kea Hub): the address, and whether this phone is signed in. The session token stays in native code. */
+  /** Kea account (the online Kea account server): the address, and whether this phone is signed in. The session token stays in native code. */
   hubState(): Promise<{ url: string; signedIn: boolean; email: string; root: string }>;
   hubSetUrl(o: { url: string }): Promise<void>;
   /** One call to the Hub's API (`path` from /v1/). `keepToken`: a sign-in, whose token is kept natively and left out of `body`. */
-  hubRequest(o: { method: string; path: string; body?: string; contentType?: string; auth?: boolean; keepToken?: boolean; ifMatch?: string; ifNoneMatch?: boolean }): Promise<{ status: number; body: string; version: string }>;
+  hubRequest(o: { method: string; path: string; body?: string; contentType?: string; auth?: boolean; keepToken?: boolean; ifMatch?: string; ifNoneMatch?: boolean; connectMs?: number; readMs?: number }): Promise<{ status: number; body: string; version: string }>;
   hubForget(): Promise<void>;
+  /** The Kea accounts kept on this phone (accountCore's record, with password verifiers), in Android's encrypted storage. */
+  accountsRead(): Promise<{ text: string }>;
+  accountsWrite(o: { text: string }): Promise<void>;
+  /** Google's or Microsoft's sign-in page in a Custom Tab; it comes back as an 'oauth' event (or takeOauth after a restart). */
+  oauthOpen(o: { url: string }): Promise<void>;
+  takeOauth(): Promise<{ url?: string }>;
+  addListener(event: 'oauth', cb: (p: { url: string }) => void): Promise<{ remove(): void }>;
+  /** Trading the sign-in code for tokens at Google's or Microsoft's token address (only those two). */
+  oauthToken(o: { provider: string; body: string }): Promise<{ status: number; body: string }>;
   /** A file from Kea storage into the phone's library folder at `to`; skipped when the copy there matches `sha256`. */
   hubDownload(o: { path: string; to: string; size: number; sha256: string }): Promise<{ status: number; version?: string; size?: number; skipped?: boolean; body?: string }>;
   hubRemoveLocal(o: { to: string }): Promise<void>;
@@ -122,7 +131,7 @@ export type HubLink = { email: string; profile: string; url: string };
  */
 export async function keaState(): Promise<Awaited<ReturnType<KeaNative['state']>>> {
   const [st, h] = await Promise.all([Kea.state(), hubInfo()]);
-  if (h.signedIn && h.profile) return { ...st, dataFolder: `Kea Hub: ${h.profile}`, dataFileOnly: false, files: ['kea-data.json', 'phone.json'], drive: '', hub: { email: h.email, profile: h.profile, url: h.url } };
+  if (h.signedIn && h.profile) return { ...st, dataFolder: `Kea account: ${h.profile}`, dataFileOnly: false, files: ['kea-data.json', 'phone.json'], drive: '', hub: { email: h.email, profile: h.profile, url: h.url } };
   return st;
 }
 
@@ -245,7 +254,7 @@ export async function loadData(ms = 45000): Promise<{ data: KeaData | null; erro
     const m = String(e?.message || e);
     const error = /timeout/.test(m)
       ? hubOn()
-        ? 'Your Kea Hub is taking too long to answer.'
+        ? 'Your Kea account is taking too long to answer.'
         : 'Your drive app is taking too long to hand Kea the file (it may still be downloading it).'
       : /not found/.test(m)
         ? 'The chosen folder has no kea-data.json in it.'

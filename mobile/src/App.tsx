@@ -8,6 +8,7 @@ import { handInText, panelLinks, platformLine, quickVerb, relatedText, studyChap
 import { useSetting } from '../../src/lib/settings';
 import { useAreas } from '../../src/lib/areas';
 import { hubOn, hubSyncLibrary } from './hub';
+import { resumeOauth } from './account';
 import { Kea, KeaData, PhoneMail, cachedData, doneOf, inboxKey, keaState, loadData, phoneDeleted, phoneDone, phoneRead, phoneWithdrawn, setPhoneDeleted, setPhoneDone, setPhoneRead, setPhoneWithdrawn, syncOut, watchClasses, withdrawnNow } from './kea';
 import { loadStudy, onStudyChange } from './study';
 import { setDesktopData, studyChanged } from './desktopApi';
@@ -114,6 +115,10 @@ export function App() {
   const [opened, setOpened] = useState<OpenedFile | null>(null);
   const update = useUpdate();
   useEffect(() => {
+    // (A Google or Microsoft sign-in that came back after Android closed Kea: finished now, in the background.)
+    resumeOauth()
+      .then((r) => r && toast(r.state === 'online' ? 'Signed in to your Kea account online.' : 'Signed in on this phone.'))
+      .catch((e) => toast(e));
     Kea.takeOpenedFile()
       .then((r) => r.file && setOpened(r.file))
       .catch(() => {});

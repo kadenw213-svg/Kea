@@ -40,7 +40,11 @@ const mock = (cfg) => `(() => {
     say: async () => {},
     readAloud: async (o) => { setTimeout(() => listeners.speech && listeners.speech({ id: (o.items[3] || o.items[0]).id, index: 3, total: o.items.length, state: 'playing' }), 400); },
     readMore: async () => {},
-    readControl: async () => ({ playing: false, id: '', sleepLeft: 0 })
+    readControl: async () => ({ playing: false, id: '', sleepLeft: 0 }),
+    // (The Kea accounts kept on the phone: in memory for screenshots.)
+    accountsRead: async () => ({ text: sessionStorage.getItem('shots.accounts') || '' }),
+    accountsWrite: async ({ text }) => sessionStorage.setItem('shots.accounts', text),
+    takeOauth: async () => ({})
   };
   // (No network in screenshots: the update check finds nothing.)
   const realFetch = window.fetch;

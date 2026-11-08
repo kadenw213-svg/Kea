@@ -48,7 +48,8 @@ public class KeaPlugin extends Plugin {
     public void load() {
         scanLauncher = getActivity().registerForActivityResult(new ActivityResultContracts.StartIntentSenderForResult(), this::onScanned);
         CheckWorker.schedule(getContext());
-        takeOpened(getActivity().getIntent());
+        // (Kea started fresh by a Google or Microsoft sign-in coming back: kept for takeOauth.)
+        if (!takeOauthIntent(getActivity().getIntent())) takeOpened(getActivity().getIntent());
     }
 
     // ---------- Files opened with Kea (Open with, Share) ----------
@@ -57,7 +58,114 @@ public class KeaPlugin extends Plugin {
     @Override
     protected void handleOnNewIntent(Intent intent) {
         super.handleOnNewIntent(intent);
+        if (takeOauthIntent(intent)) {
+            if (oauthBack == null) return;
+            JSObject o = new JSObject();
+            o.put("url", oauthBack);
+            oauthBack = null;
+            notifyListeners("oauth", o, false);
+            return;
+        }
         if (takeOpened(intent)) notifyListeners("opened", opened, true);
+    }
+
+    // ---------- Google and Microsoft sign-in coming back (com.kea.scholar:/oauth?code=...&state=...) ----------
+    private String oauthBack;
+
+    /**
+     * The browser came back to Kea's own sign-in address: kept for the app, which checks it against the sign-in it
+     * started (state, PKCE). True when the intent was under Kea's scheme (anything but /oauth there is ignored).
+     */
+    private boolean takeOauthIntent(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) return false;
+        Uri u = intent.getData();
+        if (!getContext().getPackageName().equalsIgnoreCase(u.getScheme())) return false;
+        intent.setAction(Intent.ACTION_MAIN);
+        intent.setData(null);
+        if ("/oauth".equals(u.getPath())) oauthBack = u.toString();
+        return true;
+    }
+
+    /** The sign-in that came back while Kea wasn't running (once). */
+    @PluginMethod
+    public void takeOauth(PluginCall call) {
+        JSObject r = new JSObject();
+        if (oauthBack != null) r.put("url", oauthBack);
+        oauthBack = null;
+        call.resolve(r);
+    }
+
+    /**
+     * Google's or Microsoft's sign-in page in a Custom Tab (the phone's browser, with its own saved sign-ins; Kea never
+     * sees that password). Only those two sign-in pages. (The Custom Tabs extras, without the support library: a
+     * browser that doesn't know them opens the page normally.)
+     */
+    @PluginMethod
+    public void oauthOpen(PluginCall call) {
+        String url = call.getString("url", "");
+        Uri u = Uri.parse(url == null ? "" : url);
+        String host = u.getHost() == null ? "" : u.getHost().toLowerCase();
+        if (!"https".equalsIgnoreCase(u.getScheme()) || !("accounts.google.com".equals(host) || "login.microsoftonline.com".equals(host))) {
+            call.reject("Kea only opens Google's or Microsoft's sign-in page here.");
+            return;
+        }
+        Intent i = new Intent(Intent.ACTION_VIEW, u).addCategory(Intent.CATEGORY_BROWSABLE);
+        android.os.Bundle extras = new android.os.Bundle();
+        extras.putBinder("android.support.customtabs.extra.SESSION", null);
+        i.putExtras(extras);
+        i.putExtra("android.support.customtabs.extra.TOOLBAR_COLOR", 0xFF131314);
+        i.putExtra("android.support.customtabs.extra.TITLE_VISIBILITY", 1);
+        try {
+            getActivity().startActivity(i);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("There's no browser on this phone to sign in with.");
+        }
+    }
+
+    /** The code for tokens, at the provider's own token address (Hub.oauthToken): { status, body }. */
+    @PluginMethod
+    public void oauthToken(PluginCall call) {
+        String provider = call.getString("provider", "");
+        String body = call.getString("body", "");
+        new Thread(() -> {
+            try {
+                Hub.Answer a = Hub.oauthToken(provider, body);
+                JSObject r = new JSObject();
+                r.put("status", a.status);
+                r.put("body", a.body);
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        }).start();
+    }
+
+    /** The Kea accounts kept on this phone (with their password verifiers): Android's encrypted storage only. */
+    @PluginMethod
+    public void accountsRead(PluginCall call) {
+        new Thread(() -> {
+            try {
+                JSObject r = new JSObject();
+                r.put("text", Hub.accounts(getContext()));
+                call.resolve(r);
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void accountsWrite(PluginCall call) {
+        String text = call.getString("text", "");
+        new Thread(() -> {
+            try {
+                Hub.keepAccounts(getContext(), text);
+                call.resolve();
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        }).start();
     }
 
     /** A file another app handed to Kea: copied where the reader can load it. True when there was one. */
@@ -596,9 +704,11 @@ public class KeaPlugin extends Plugin {
         boolean keepToken = call.getBoolean("keepToken", false);
         String ifMatch = call.getString("ifMatch");
         boolean ifNoneMatch = call.getBoolean("ifNoneMatch", false);
+        int connectMs = call.getInt("connectMs", 0);
+        int readMs = call.getInt("readMs", 0);
         new Thread(() -> {
             try {
-                Hub.Answer a = Hub.request(getContext(), method, path, body, type, auth, ifMatch, ifNoneMatch, keepToken);
+                Hub.Answer a = Hub.request(getContext(), method, path, body, type, auth, ifMatch, ifNoneMatch, keepToken, connectMs, readMs);
                 JSObject r = new JSObject();
                 r.put("status", a.status);
                 r.put("body", a.body);
