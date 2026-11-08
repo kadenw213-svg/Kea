@@ -116,13 +116,14 @@ function all() {
 
 const active = () => all().active;
 
-function create(name) {
+/** Add a profile and, unless `select` is false, switch to it. */
+function create(name, { select = true } = {}) {
   const j = all();
   const clean = String(name || '').trim().slice(0, 40) || 'Profile';
   let id = clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'profile';
   for (let n = 2; j.list.some((p) => p.id === id); n++) id = `${id.replace(/-\d+$/, '')}-${n}`;
   j.list.push({ id, name: clean, created: new Date().toISOString() });
-  j.active = id;
+  if (select) j.active = id;
   write(j);
   return j;
 }

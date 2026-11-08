@@ -491,7 +491,9 @@ async function keepBanks() {
 function register() {
   const p = () => profiles.paths();
   handleApp(ipcMain, 'scholar:profiles', () => profiles.all());
-  handleApp(ipcMain, 'scholar:createProfile', (_e, name) => (profiles.create(name), watch(), profiles.all()));
+  // (While a class scan runs, the new profile is added but this one stays open: switching mid-scan is refused, so
+  // switching on create alone left the classes looking gone.)
+  handleApp(ipcMain, 'scholar:createProfile', (_e, name) => (profiles.create(name, { select: !runner.status().running }), watch(), profiles.all()));
   handleApp(ipcMain, 'scholar:selectProfile', (_e, id) => {
     if (runner.status().running) throw new Error('A class scan is running. Switch profiles when it finishes.');
     profiles.select(id);
