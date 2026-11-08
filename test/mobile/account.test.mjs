@@ -59,7 +59,7 @@ const server = {
     if (p === '/v1/auth/register') {
       const email = fromToken(body.idToken);
       if (body.termsVersion !== this.terms.version || body.age13 !== true) return [400, { error: 'Agree to the terms.' }];
-      if (this.online.has(email)) return this.kind === 'keac' ? [409, { error: 'Already has an account.' }] : [200, { ok: true }];
+      if (this.online.has(email)) return this.kind === 'keac' ? [409, { error: `${email} already has a Kea account. Sign in instead (with your password, or with Google).`, exists: true, email }] : [200, { ok: true }];
       const a = { id: `acc_${this.online.size + 1}`, email, password: body.password, displayName: body.displayName };
       this.online.set(email, a);
       return this.kind === 'keac' ? [200, session(a)] : [200, { ok: true }];
@@ -434,6 +434,21 @@ test('flows: going online links only the same email; no online account yet makes
   assert.equal(phone.opened.length, opens, 'the ID token from a moment ago is used again: no second trip to Google');
   assert.equal(server.online.get('sam@example.com').password, 'plain river lamp');
   assert.ok(auth().some((c) => c.path === '/v1/auth/register'));
+});
+
+test('flows: going online when the email has an online account already (another device): this password signs in to it and links; another password offers Google again', async () => {
+  const terms = { termsVersion: server.terms.version, termsSections: server.terms.sections.map((x) => x.id), age13: true };
+  await reset();
+  server.online.set('sam@example.com', { id: 'acc_other_device', email: 'sam@example.com', password: 'plain river lamp', displayName: 'Sam' });
+  await A.create({ email: 'sam@example.com', password: 'plain river lamp' });
+  const s = await A.link({ provider: 'google', password: 'plain river lamp', ...terms });
+  assert.equal(s.state, 'online');
+  assert.deepEqual(auth().map((c) => c.path), ['/v1/auth/register', '/v1/auth/login']);
+  await reset();
+  server.online.set('sam@example.com', { id: 'acc_other_device', email: 'sam@example.com', password: 'another long password', displayName: 'Sam' });
+  await A.create({ email: 'sam@example.com', password: 'plain river lamp' });
+  await assert.rejects(() => A.link({ provider: 'google', password: 'plain river lamp', ...terms }), (e) => e.status === 409 && e.data.existsOnline === true);
+  assert.equal((await A.local()).state, 'offline');
 });
 
 test('flows: Continue with Google on a Kea Hub 0.5 uses /v1/auth/google; Microsoft is offered only where the server takes it', async () => {

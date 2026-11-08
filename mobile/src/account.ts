@@ -346,8 +346,15 @@ export async function link(o: { provider: Provider; password?: string; code?: st
   if (!d.link) throw fail(linkRefusal(d, label), 409, { mismatch: true, ...d });
   if (password && termsVersion != null) {
     const req = registerRequest({ email: rec.email, name: rec.name, password, provider, idToken, termsVersion, termsSections: termsSections || [], age13: age13 === true });
-    const reg = await hubCall('POST', req.path, req.body, { auth: false, keepToken: true, limit: 'auth' });
-    if (reg.me || reg.account) return signedIn(reg, { password, provider });
+    let reg: any = null;
+    try {
+      reg = await hubCall('POST', req.path, req.body, { auth: false, keepToken: true, limit: 'auth' });
+    } catch (e: any) {
+      // (The Kea account server says this email has an online account already, made on another device: signed in to
+      // with this password below, or "Continue with Google again" when its password is another one.)
+      if (!(e?.status === 409 && e?.data?.exists)) throw e;
+    }
+    if (reg?.me || reg?.account) return signedIn(reg, { password, provider });
     // (Hub 0.5 answers the same whether or not the email had an account, and never signs in by itself.)
     try {
       return await signedIn(await hubCall('POST', '/v1/auth/login', { email: rec.email, password }, { auth: false, keepToken: true, limit: 'auth' }), { password, provider });

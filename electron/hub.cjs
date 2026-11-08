@@ -497,19 +497,26 @@ async function link({ provider = 'google', password, code, termsVersion, termsSe
       { mismatch: true, ...d }
     );
   if (password && termsVersion != null) {
-    const reg = await req('POST', '/v1/auth/register', {
-      email: rec.email,
-      password,
-      displayName: rec.name || rec.email.split('@')[0],
-      ...(rec.name ? { name: rec.name } : {}),
-      age13: age13 === true,
-      termsVersion,
-      termsSections,
-      provider,
-      idToken,
-      ...(provider === 'google' ? { googleIdToken: idToken } : {}),
-    }, { auth: false });
-    if (reg.token) return signedIn(reg, { password, provider });
+    let reg = null;
+    try {
+      reg = await req('POST', '/v1/auth/register', {
+        email: rec.email,
+        password,
+        displayName: rec.name || rec.email.split('@')[0],
+        ...(rec.name ? { name: rec.name } : {}),
+        age13: age13 === true,
+        termsVersion,
+        termsSections,
+        provider,
+        idToken,
+        ...(provider === 'google' ? { googleIdToken: idToken } : {}),
+      }, { auth: false });
+    } catch (e) {
+      // (The Kea account server says this email has an online account already, made on another device: signed in to
+      // with this password below, or "Continue with Google again" when its password is another one.)
+      if (!(e.status === 409 && e.data?.exists)) throw e;
+    }
+    if (reg?.token) return signedIn(reg, { password, provider });
     // (Hub 0.5 answers the same whether or not the email had an account, and never signs in by itself.)
     try {
       return await signedIn(await req('POST', '/v1/auth/login', { email: rec.email, password }, { auth: false }), { password, provider });
