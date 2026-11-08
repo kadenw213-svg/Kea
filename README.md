@@ -47,16 +47,23 @@ Wikipedia and a built-in dictionary, and voice typing runs Whisper on your own m
 
 The Android app runs the same study code as the desktop app, so textbooks, practice exams and flashcards behave
 the same on both. It also shows your calendar and can scan paper homework into a PDF and turn it in. The phone
-and computer sync through a few files in your own OneDrive or Google Drive, and study progress from both sides
-is merged rather than overwritten.
+gets your classes from wherever Kea on your computer syncs, and study progress from both sides is merged rather
+than overwritten.
 
 ## Accounts and sync
 
-A free Kea account signs you in to a Kea Hub, the server run with [KeaS](https://github.com/kadenw213-svg/KeaS).
-With an account, your computers sync through your own Kea storage on the Hub instead of a cloud drive, and you can
-join classes and study groups, appear on class leaderboards, and, if you don't have a Claude plan, have your classes
-set up by the Hub's shared Claude. You sign in with **Continue with Google** or **Continue with Microsoft**: there's
-no Kea password. With no connection, just your email opens Kea on that device, and the same email links it later.
+A free Kea account keeps everything together: one calendar and one class list, whichever of Personal, School and
+Work you turn on. You sign in with **Continue with Google** or **Continue with Microsoft**; there's no Kea password.
+With no connection, just your email opens Kea on that device at once, and continuing with Google or Microsoft on the
+same email later links it without losing anything.
+
+You choose one place for your things to sync: Kea cloud (the default), Google Drive, OneDrive, Dropbox, any synced
+folder, or your organization's server. Organizations run on servers made with [KeaS](https://github.com/kadenw213-svg/KeaS),
+or are hosted by Kea. You join one with its join link, and get its schedules, a time clock and your pay in Kea.
+
+Class scans with your own Claude need no online account. Without a Claude plan, Kea's shared Claude can set up your
+classes with an online account, within limits: one full scan per class each term, a light check at most once a day,
+practice questions 25 at a time and one guide per assignment.
 
 ## Install
 
