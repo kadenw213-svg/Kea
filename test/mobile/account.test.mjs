@@ -1,5 +1,6 @@
-// The Kea account on the phone (mobile/src/accountCore.ts and account.ts): the password verifier, the accounts kept on
-// the phone, the states, linking by the same email only, Google and Microsoft sign-in addresses (PKCE), and the flows
+// The Kea account on the phone (mobile/src/accountCore.ts and account.ts), with no passwords: the accounts kept on the
+// phone (just an email offline), the states, linking by the same email only, Google and Microsoft sign-in addresses
+// (PKCE), the first sign-in making the online account after the terms, and the flows
 // against a stand-in phone (encrypted storage, the browser coming back) and a stand-in account server (the Kea account
 // server, or a Kea Hub 0.5). No real Google, Microsoft or server is reached.
 //   node --test test/mobile/account.test.mjs
@@ -41,28 +42,24 @@ const server = {
       this.sessions.set(t, a.email);
       return this.kind === 'keac' ? { token: t, me: { account: acct(a) } } : { token: t, account: acct(a) };
     };
-    if (p === '/v1/health') return [200, this.kind === 'keac' ? { ok: true, service: 'keac', features: ['backupCodes', 'google', 'microsoft', 'passes'] } : { ok: true, service: 'kea-hub' }];
+    if (p === '/v1/health') return [200, this.kind === 'keac' ? { ok: true, service: 'keac', features: ['google', 'microsoft', 'oauthCreate', 'passwordRetired', 'passes'] } : { ok: true, service: 'kea-hub' }];
     if (p === '/v1/terms') return [200, { terms: this.terms }];
-    if (p === '/v1/auth/login') {
-      const a = this.online.get(String(body.email).toLowerCase());
-      if (!a || a.password !== body.password) return [401, { error: 'Wrong email or password.' }];
-      if (a.totp && body.code !== '123456') return [401, { error: 'Enter the code.', totpRequired: true }];
-      return [200, session(a)];
-    }
+    if (p === '/v1/auth/login' || p === '/v1/auth/register') return [410, { error: 'Kea accounts now sign in with Google or Microsoft only.', passwordRetired: true }];
     const fromToken = (t) => JSON.parse(Buffer.from(String(t).split('.')[1], 'base64url').toString()).email;
     if (p === '/v1/auth/oauth' || p === '/v1/auth/google') {
       if (p === '/v1/auth/oauth' && this.kind !== 'keac') return [404, { error: 'Not found.' }];
-      const a = this.online.get(fromToken(body.idToken));
-      if (!a) return [404, { error: 'No account for that email.' }];
-      return [200, session(a)];
-    }
-    if (p === '/v1/auth/register') {
       const email = fromToken(body.idToken);
-      if (body.termsVersion !== this.terms.version || body.age13 !== true) return [400, { error: 'Agree to the terms.' }];
-      if (this.online.has(email)) return this.kind === 'keac' ? [409, { error: `${email} already has a Kea account. Sign in instead (with your password, or with Google).`, exists: true, email }] : [200, { ok: true }];
-      const a = { id: `acc_${this.online.size + 1}`, email, password: body.password, displayName: body.displayName };
-      this.online.set(email, a);
-      return this.kind === 'keac' ? [200, session(a)] : [200, { ok: true }];
+      const a = this.online.get(email);
+      if (!a && this.kind !== 'keac') return [404, { error: 'No account for that email.' }];
+      if (!a && body.termsVersion == null) return [404, { error: `There’s no Kea account for ${email} yet. Agree to the terms to make it.`, needsAccount: true, email, name: null }];
+      if (!a) {
+        if (body.termsVersion !== this.terms.version || body.age13 !== true || 'password' in body) return [400, { error: 'Agree to the terms.' }];
+        const n = { id: `acc_${this.online.size + 1}`, email, displayName: email.split('@')[0] };
+        this.online.set(email, n);
+        return [201, session(n)];
+      }
+      if (a.totp && body.code !== '123456') return [401, { error: 'Enter the code.', totpRequired: true }];
+      return [200, session(a)];
     }
     if (p === '/v1/me') {
       const e = this.sessions.get(token);
@@ -151,98 +148,62 @@ after(async () => {
   await A?.signOut().catch(() => {});
 });
 
-const FAST = { iter: 2000, keylen: 32 };
 const memIO = () => {
   let text = null;
   return { io: { read: async () => text, write: async (t) => void (text = t) }, text: () => text };
 };
 
-// ---------- the verifier ----------
-test('the verifier: PBKDF2-SHA256 at 600,000 iterations, never the password, constant answers for broken ones', async () => {
-  assert.deepEqual(C.STRONG, { iter: 600_000, keylen: 32 });
-  const v = await C.makeVerifier('correct horse battery', C.STRONG);
-  assert.equal(v.alg, 'pbkdf2-sha256');
-  assert.equal(v.iter, 600_000);
-  assert.equal(Buffer.from(v.salt, 'base64').length, 16);
-  assert.equal(Buffer.from(v.hash, 'base64').length, 32);
-  assert.ok(!JSON.stringify(v).includes('horse'));
-  // The same as Node's own PBKDF2 (the phone's WebCrypto is the vetted implementation; this checks the inputs).
-  const want = crypto.pbkdf2Sync(Buffer.from('correct horse battery'.normalize('NFKC')), Buffer.from(v.salt, 'base64'), 600_000, 32, 'sha256');
-  assert.equal(v.hash, want.toString('base64'));
-  assert.equal(await C.checkVerifier('correct horse battery', v), true);
-  assert.equal(await C.checkVerifier('correct horse batterY', v), false);
-  assert.equal(C.weak(v), false);
-  const w = await C.makeVerifier('pw-0123456789', FAST);
-  assert.equal(C.weak(w), true);
-  assert.equal(await C.checkVerifier('pw-0123456789', w), true);
-  // Broken or changed records never throw, and can't make a check take minutes.
-  for (const bad of [null, {}, { ...w, alg: 'scrypt' }, { ...w, iter: 50_000_000 }, { ...w, iter: 10 }, { ...w, keylen: 16 }, { ...w, hash: '' }, { ...w, salt: '' }, { ...w, hash: '%%%' }])
-    assert.equal(await C.checkVerifier('pw-0123456789', bad), false);
-  assert.equal(await C.checkVerifier(undefined, w), false);
-  await assert.rejects(() => C.makeVerifier(''), /Enter a password/);
-});
-
-test('password rules match the Kea account server', () => {
-  assert.match(C.passwordProblem('short', 'a@b.co'), /10 characters/);
-  assert.match(C.passwordProblem('aaaaaaaaaaaa', 'a@b.co'), /repeated/);
-  assert.match(C.passwordProblem('my-samwise-password', 'samwise@example.com'), /email/);
-  assert.match(C.passwordProblem('JaneDoe rocks 2026', 'x@example.com', 'Jane Doe'), /name/);
-  assert.equal(C.passwordProblem('plain river lamp', 'sam@example.com', 'Sam'), null);
-});
-
 // ---------- the accounts on the phone ----------
-test('accounts on the phone: made at once, checked here, signing out keeps them, online sign-ins link by email', async () => {
+test('accounts on the phone: just an email, made at once; the same email opens it again; online sign-ins link by email', async () => {
   const m = memIO();
   let t = 1000;
-  const S = C.createStore(m.io, { params: FAST, now: () => ++t });
+  const S = C.createStore(m.io, { now: () => ++t });
   assert.equal(await S.active(), null);
-  const a = await S.create({ email: ' Sam@Example.com ', password: 'plain river lamp', name: 'Sam' });
+  const r = await S.open({ email: ' Sam@Example.com ', name: 'Sam' });
+  const a = r.account;
+  assert.equal(r.created, true);
   assert.equal(a.email, 'sam@example.com');
   assert.equal(a.hub, null);
-  assert.equal(a.canSignInOffline, true);
   assert.equal((await S.active()).id, a.id);
-  assert.ok(!m.text().includes('plain river lamp'), 'the password is never kept');
-  await assert.rejects(() => S.create({ email: 'sam@example.com', password: 'plain river lamp' }), (e) => e.exists === true);
-  await assert.rejects(() => S.create({ email: 'nope', password: 'plain river lamp' }), (e) => e.field === 'email');
-  await assert.rejects(() => S.create({ email: 'b@example.com', password: 'short' }), (e) => e.field === 'password');
-
-  assert.equal((await S.check({ email: 'nobody@example.com', password: 'x' })).reason, 'unknown');
-  assert.equal((await S.check({ email: 'sam@example.com', password: 'wrong wrong wrong' })).reason, 'wrong');
-  const ok = await S.check({ email: 'SAM@example.com', password: 'plain river lamp' });
-  assert.equal(ok.ok, true);
-  assert.equal(ok.weak, false);
+  assert.deepEqual(Object.keys(JSON.parse(m.text()).accounts[a.id]).sort(), ['createdAt', 'email', 'hub', 'id', 'lastSignIn', 'name']);
+  await assert.rejects(() => S.open({ email: 'nope' }), (e) => e.field === 'email');
+  assert.equal(C.makeVerifier, undefined, 'no password verifier any more');
+  assert.equal(C.passwordProblem, undefined);
 
   await S.signOut();
   assert.equal(await S.active(), null);
   assert.equal((await S.list()).length, 1, 'signing out keeps the account here');
-  assert.equal((await S.signIn({ email: 'sam@example.com', password: 'plain river lamp' })).ok, true);
+  const again = await S.open({ email: 'SAM@example.com' });
+  assert.equal(again.created, false);
+  assert.equal(again.account.id, a.id, 'the same account, with what it has here');
 
   // An online sign-in for the same email links this account (nothing else changes); another email gets its own.
-  const linked = await S.rememberOnline({ email: 'sam@example.com', name: 'Sam Online', hubId: 'acc_1', url: 'https://k.example', provider: 'google' });
+  const linked = await S.attachOnline({ email: 'sam@example.com', name: 'Sam Online', hubId: 'acc_1', url: 'https://k.example', provider: 'google' });
   assert.equal(linked.id, a.id);
   assert.equal(linked.name, 'Sam');
   assert.deepEqual(linked.hub, { id: 'acc_1', url: 'https://k.example', provider: 'google' });
-  const other = await S.rememberOnline({ email: 'kim@example.com', hubId: 'acc_2', url: 'https://k.example', password: 'kim online pass' });
+  const other = await S.attachOnline({ email: 'kim@example.com', hubId: 'acc_2', url: 'https://k.example' });
   assert.notEqual(other.id, a.id);
-  assert.equal(other.canSignInOffline, true, 'signing in online keeps a verifier for offline sign-in later');
-  assert.equal((await S.check({ email: 'kim@example.com', password: 'kim online pass' })).ok, true);
   assert.equal((await S.list())[0].email, 'kim@example.com');
-  const noPw = await S.attachOnline({ email: 'lee@example.com', hubId: null, url: 'https://k.example' });
-  assert.equal((await S.check({ email: 'lee@example.com', password: 'whatever pass' })).reason, 'noVerifier');
-  await S.remove(noPw.id);
-  assert.equal(await S.find('lee@example.com'), null);
+  await S.remove(other.id);
+  assert.equal(await S.find('kim@example.com'), null);
   // A broken record reads as empty, never an error.
-  const S2 = C.createStore({ read: async () => '{nope', write: async () => {} }, { params: FAST });
+  const S2 = C.createStore({ read: async () => '{nope', write: async () => {} });
   assert.equal(await S2.active(), null);
 });
 
-test('a weak verifier is made again at the next sign-in', async () => {
+test('an older phone record (PBKDF2 verifiers): its accounts and emails stay, the verifiers are dropped once', async () => {
   const m = memIO();
-  const S = C.createStore(m.io, { params: FAST });
-  await S.create({ email: 'w@example.com', password: 'plain river lamp' });
-  const S2 = C.createStore(m.io, { params: { iter: 3000, keylen: 32 } });
-  await S2.signIn({ email: 'w@example.com', password: 'plain river lamp' });
-  assert.equal(JSON.parse(m.text()).accounts[(await S2.active()).id].verifier.iter, 3000);
+  await m.io.write(JSON.stringify({ v: 1, active: 'loc_a', accounts: { loc_a: { id: 'loc_a', email: 'Sam@Example.com', name: 'Sam', createdAt: 1, lastSignIn: 2, verifier: { alg: 'pbkdf2-sha256', iter: 600000, keylen: 32, salt: 'AA==', hash: 'AA==' }, hub: { id: 'acc_1', url: 'https://k.example', provider: 'google' } } } }));
+  const S = C.createStore(m.io);
+  const a = await S.active();
+  assert.equal(a.id, 'loc_a', 'still signed in as before');
+  assert.equal(a.email, 'sam@example.com');
+  assert.deepEqual(a.hub, { id: 'acc_1', url: 'https://k.example', provider: 'google' });
+  assert.ok(!m.text().includes('verifier') && !m.text().includes('pbkdf2'));
+  assert.equal(JSON.parse(m.text()).v, 2);
+  await S.signOut();
+  assert.equal((await S.open({ email: 'sam@example.com' })).account.id, 'loc_a');
 });
 
 // ---------- states and the locked wording ----------
@@ -265,7 +226,7 @@ test('states come from the phone alone, and cloud features say what they need', 
   assert.equal(C.needsOnlineText('offline').text, 'Take your account online with Google or Microsoft to use it. Everything on this phone works without it.');
   assert.equal(C.needsOnlineText('offline').action, 'Go online');
   assert.equal(C.needsOnlineText('linked').text, 'Sign in online to use it.');
-  assert.equal(C.needsOnlineText('linked', 'password').text, 'Your password changed online. Sign in online again to use it.');
+
   assert.equal(C.needsOnlineText('linked').action, 'Sign in online');
   assert.equal(C.needsOnlineText('unreachable').text, 'Kea can’t reach it right now, and tries again by itself.');
   assert.equal(C.needsOnlineText('unreachable').action, null);
@@ -326,13 +287,11 @@ test('which server: the Kea account server takes /v1/auth/oauth; a Kea Hub 0.5 G
   assert.deepEqual(keac, { current: true, google: true, microsoft: true });
   const hub = C.serverKind({ ok: true, service: 'kea-hub' });
   assert.deepEqual(hub, { current: false, google: true, microsoft: false });
-  assert.deepEqual(C.oauthRequest(keac, 'microsoft', 'tok', '123456'), { path: '/v1/auth/oauth', body: { provider: 'microsoft', idToken: 'tok', code: '123456' } });
+  assert.deepEqual(C.oauthRequest(keac, 'microsoft', 'tok', { code: '123456' }), { path: '/v1/auth/oauth', body: { provider: 'microsoft', idToken: 'tok', code: '123456' } });
+  assert.deepEqual(C.oauthRequest(keac, 'google', 'tok', { termsVersion: 3, termsSections: ['a'], age13: true }), { path: '/v1/auth/oauth', body: { provider: 'google', idToken: 'tok', termsVersion: 3, termsSections: ['a'], age13: true } });
   assert.deepEqual(C.oauthRequest(hub, 'google', 'tok'), { path: '/v1/auth/google', body: { idToken: 'tok' } });
   assert.throws(() => C.oauthRequest(hub, 'microsoft', 'tok'), /Microsoft/);
-  const r = C.registerRequest({ email: 'Sam@Example.com', name: 'Sam', password: 'pw', provider: 'google', idToken: 'tok', termsVersion: 3, termsSections: ['a'], age13: true });
-  assert.equal(r.path, '/v1/auth/register');
-  assert.deepEqual(r.body, { email: 'sam@example.com', password: 'pw', displayName: 'Sam', name: 'Sam', age13: true, termsVersion: 3, termsSections: ['a'], provider: 'google', idToken: 'tok', googleIdToken: 'tok' });
-  assert.equal(C.registerRequest({ email: 'a@b.co', password: 'pw', provider: 'microsoft', idToken: 't', termsVersion: 1, termsSections: [], age13: false }).body.googleIdToken, undefined);
+  assert.equal(C.registerRequest, undefined, 'no password registration any more');
 });
 
 test('the address: built in (empty until it exists), the Advanced one first, https only', () => {
@@ -357,7 +316,7 @@ const reset = async ({ kind = 'keac', up = true, url = 'https://keac.example' } 
 };
 const auth = () => server.calls.filter((c) => c.path.startsWith('/v1/auth/') && c.path !== '/v1/auth/logout');
 
-test('flows: an account made and signed in with no connection; the server unreachable is a normal state', async () => {
+test('flows: just an email opens Kea on the phone with no connection; the server unreachable is a normal state', async () => {
   await reset({ up: false });
   const s0 = await A.status();
   assert.equal(s0.state, 'none');
@@ -366,47 +325,55 @@ test('flows: an account made and signed in with no connection; the server unreac
   // The background check is short.
   assert.deepEqual(server.calls.map((c) => [c.path, c.connectMs, c.readMs]), [['/v1/health', 4000, 4000]]);
   server.calls = [];
-  const s = await A.create({ email: 'sam@example.com', password: 'plain river lamp', name: 'Sam' });
+  const s = await A.openOffline({ email: 'sam@example.com', name: 'Sam' });
   assert.equal(s.state, 'offline');
-  assert.equal(server.calls.length, 0, 'making an account needs no connection');
-  assert.ok(!phone.accounts.includes('plain river lamp'));
+  assert.equal(s.created, true);
+  assert.equal(server.calls.length, 0, 'no connection needed');
   await A.signOut();
   assert.equal((await A.local()).state, 'none');
-  await assert.rejects(() => A.login({ email: 'sam@example.com', password: 'not the password' }), /Wrong password/);
-  const back = await A.login({ email: 'sam@example.com', password: 'plain river lamp' });
+  const back = await A.openOffline({ email: 'SAM@example.com' });
   assert.equal(back.state, 'offline');
+  assert.equal(back.created, false);
+  assert.equal(back.account.id, s.account.id, 'the same account on this phone');
   assert.equal(auth().length, 0);
-  // A new email can't sign in while the server can't be reached: said calmly, with what to do.
-  await A.signOut();
-  await assert.rejects(() => A.login({ email: 'new@example.com', password: 'plain river lamp' }), (e) => e.status === 0 && /hasn’t signed in on this phone before/.test(e.message));
+  assert.equal(A.login, undefined);
+  assert.equal(A.create, undefined);
 });
 
-test('flows: signing in online keeps a verifier, so the next sign-in works offline (linked), then online again by itself', async () => {
+test('flows: the first Google sign-in asks for the terms, then the same sign-in makes the online account; it stays signed in', async () => {
   await reset();
-  server.online.set('kim@example.com', { id: 'acc_9', email: 'kim@example.com', password: 'kim online pass', displayName: 'Kim' });
-  const s = await A.login({ email: 'kim@example.com', password: 'kim online pass' });
+  const s0 = await A.status();
+  await assert.rejects(() => A.oauthSignIn({ provider: 'google' }), (e) => e.status === 404 && e.data.needsAccount === true && e.data.email === 'sam@example.com');
+  assert.deepEqual((await A.local()).pending, { email: 'sam@example.com', name: null, provider: 'google' });
+  const opens = phone.opened.length;
+  await assert.rejects(() => A.continueSignIn({ termsVersion: 7, termsSections: ['a', 'b'], age13: false }), /13/);
+  const terms = await A.currentTerms();
+  const s = await A.continueSignIn({ termsVersion: terms.version, termsSections: terms.sections.map((x) => x.id), age13: true });
   assert.equal(s.state, 'online');
   assert.equal(s.account.linked, true);
-  assert.equal(s.account.canSignInOffline, true);
-  assert.equal(auth().at(-1).connectMs, 8000);
+  assert.equal(phone.opened.length, opens, 'the same Google sign-in, no second trip');
+  const tokens = auth().map((c) => c.path);
+  assert.deepEqual(tokens, ['/v1/auth/oauth', '/v1/auth/oauth']);
+  assert.equal((await A.local()).pending, null);
   assert.equal(storage.get('kea.hubOn'), '1');
+  // Stays signed in; signed out with no connection, the same email opens it again (linked).
   await A.signOut();
   server.up = false;
-  const off = await A.login({ email: 'kim@example.com', password: 'kim online pass' });
+  const off = await A.openOffline({ email: 'sam@example.com' });
   assert.equal(off.state, 'linked');
   server.up = true;
-  // (The background sign-in tried once while unreachable; "Sign in online" now.)
-  const on = await A.login({ email: 'kim@example.com', password: 'kim online pass', online: true });
-  assert.equal(on.state, 'online');
   // The session ending online leaves the account signed in here, linked.
+  phone.providerEmail = 'sam@example.com';
+  const on = await A.link({ provider: 'google' });
+  assert.equal(on.state, 'online');
   server.sessions.clear();
-  const st = await A.status();
-  assert.equal(st.state, 'linked');
+  assert.equal((await A.status()).state, 'linked');
+  void s0;
 });
 
-test('flows: going online links only the same email; no online account yet makes one with the terms', async () => {
+test('flows: going online links only the same email; an existing (moved) account with that email is signed in to', async () => {
   await reset();
-  await A.create({ email: 'sam@example.com', password: 'plain river lamp' });
+  await A.openOffline({ email: 'sam@example.com' });
   phone.providerEmail = 'someone.else@example.com';
   await assert.rejects(
     () => A.link({ provider: 'google' }),
@@ -422,56 +389,46 @@ test('flows: going online links only the same email; no online account yet makes
   const form = phone.tokenForms.at(-1).form;
   assert.equal(await C.pkceChallenge(form.get('code_verifier')), u.searchParams.get('code_challenge'));
   assert.equal(form.get('redirect_uri'), 'com.kea.scholar:/oauth');
-
+  // The same email, an online account made elsewhere (moved from the old Hub): signed in to and linked.
+  server.online.set('sam@example.com', { id: 'acc_moved', email: 'sam@example.com', displayName: 'Sam' });
   phone.providerEmail = 'sam@example.com';
-  await assert.rejects(() => A.link({ provider: 'google' }), (e) => e.status === 404 && e.data.needsCreate);
-  const opens = phone.opened.length;
-  await assert.rejects(() => A.link({ provider: 'google', password: 'not this one', termsVersion: 7, termsSections: ['a', 'b'], age13: true }), (e) => e.data.field === 'password');
-  const terms = await A.currentTerms();
-  const s = await A.link({ provider: 'google', password: 'plain river lamp', termsVersion: terms.version, termsSections: terms.sections.map((x) => x.id), age13: true });
+  const s = await A.link({ provider: 'google' });
   assert.equal(s.state, 'online');
   assert.equal(s.account.provider, 'google');
-  assert.equal(phone.opened.length, opens, 'the ID token from a moment ago is used again: no second trip to Google');
-  assert.equal(server.online.get('sam@example.com').password, 'plain river lamp');
-  assert.ok(auth().some((c) => c.path === '/v1/auth/register'));
+  assert.ok(!auth().some((c) => c.path === '/v1/auth/login' || c.path === '/v1/auth/register'));
 });
 
-test('flows: going online when the email has an online account already (another device): this password signs in to it and links; another password offers Google again', async () => {
-  const terms = { termsVersion: server.terms.version, termsSections: server.terms.sections.map((x) => x.id), age13: true };
+test('flows: only the owner account is asked for a two-step code; the same sign-in goes again with it', async () => {
   await reset();
-  server.online.set('sam@example.com', { id: 'acc_other_device', email: 'sam@example.com', password: 'plain river lamp', displayName: 'Sam' });
-  await A.create({ email: 'sam@example.com', password: 'plain river lamp' });
-  const s = await A.link({ provider: 'google', password: 'plain river lamp', ...terms });
+  server.online.set('sam@example.com', { id: 'acc_owner', email: 'sam@example.com', displayName: 'Owner', totp: true });
+  await assert.rejects(() => A.oauthSignIn({ provider: 'google' }), (e) => e.data?.totpRequired === true);
+  const opens = phone.opened.length;
+  const s = await A.continueSignIn({ code: '123 456' });
   assert.equal(s.state, 'online');
-  assert.deepEqual(auth().map((c) => c.path), ['/v1/auth/register', '/v1/auth/login']);
-  await reset();
-  server.online.set('sam@example.com', { id: 'acc_other_device', email: 'sam@example.com', password: 'another long password', displayName: 'Sam' });
-  await A.create({ email: 'sam@example.com', password: 'plain river lamp' });
-  await assert.rejects(() => A.link({ provider: 'google', password: 'plain river lamp', ...terms }), (e) => e.status === 409 && e.data.existsOnline === true);
-  assert.equal((await A.local()).state, 'offline');
+  assert.equal(phone.opened.length, opens);
 });
 
 test('flows: Continue with Google on a Kea Hub 0.5 uses /v1/auth/google; Microsoft is offered only where the server takes it', async () => {
   await reset({ kind: 'hub05', url: 'https://old-hub05.example' });
-  server.online.set('sam@example.com', { id: 'acc_1', email: 'sam@example.com', password: 'p', displayName: 'Sam' });
+  server.online.set('sam@example.com', { id: 'acc_1', email: 'sam@example.com', displayName: 'Sam' });
   const s = await A.oauthSignIn({ provider: 'google' });
   assert.equal(s.state, 'online');
   assert.equal(s.microsoftOnServer, false);
   assert.ok(auth().some((c) => c.path === '/v1/auth/google'));
   assert.ok(!auth().some((c) => c.path === '/v1/auth/oauth'));
   await assert.rejects(() => A.oauthSignIn({ provider: 'microsoft' }), /Microsoft/);
+  // An older server with no account for that email: said plainly.
+  phone.providerEmail = 'nobody@example.com';
+  await A.signOut();
+  await assert.rejects(() => A.oauthSignIn({ provider: 'google' }), (e) => e.status === 404 && e.data.noAccount === true);
 
   await reset({ kind: 'keac' });
-  server.online.set('sam@example.com', { id: 'acc_1', email: 'sam@example.com', password: 'p', displayName: 'Sam' });
+  server.online.set('sam@example.com', { id: 'acc_1', email: 'sam@example.com', displayName: 'Sam' });
   const m = await A.oauthSignIn({ provider: 'microsoft' });
   assert.equal(m.state, 'online');
   assert.equal(phone.opened.at(-1).host, 'login.microsoftonline.com');
   assert.equal(phone.tokenForms.at(-1).provider, 'microsoft');
   assert.ok(auth().some((c) => c.path === '/v1/auth/oauth'));
-  // Continue with Google for an email with no online account says how to make one.
-  phone.providerEmail = 'nobody@example.com';
-  await A.signOut();
-  await assert.rejects(() => A.oauthSignIn({ provider: 'google' }), (e) => e.status === 404 && /Create an account on this phone/.test(e.message));
 });
 
 test('flows: with no address anywhere, the account on the phone still works and online waits calmly', async () => {
@@ -479,7 +436,7 @@ test('flows: with no address anywhere, the account on the phone still works and 
   const s = await A.status();
   assert.equal(s.url, '');
   assert.equal(server.calls.length, 0);
-  assert.equal((await A.create({ email: 'sam@example.com', password: 'plain river lamp' })).state, 'offline');
+  assert.equal((await A.openOffline({ email: 'sam@example.com' })).state, 'offline');
   assert.equal(C.onlineNeed(await A.local()), 'noAddress');
   await assert.rejects(() => A.link({ provider: 'google' }), (e) => e.data.noAddress);
   // Setting one under Advanced: https only.

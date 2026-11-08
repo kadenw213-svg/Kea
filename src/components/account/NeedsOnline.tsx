@@ -8,9 +8,7 @@ export function NeedsOnline({ what, compact = false, onOpen }: { what?: string; 
   const need = onlineNeed(s);
   const text =
     need === 'linked'
-      ? s?.onlineNote === 'password'
-        ? 'Your password changed online. Sign in online again to use it.'
-        : 'Sign in online to use it.'
+      ? 'Sign in online to use it.'
       : need === 'unreachable'
         ? 'Kea can’t reach it right now, and tries again by itself.'
         : 'Take your account online with Google or Microsoft to use it. Everything on this computer works without it.';

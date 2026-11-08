@@ -55,8 +55,8 @@ is merged rather than overwritten.
 A free Kea account signs you in to a Kea Hub, the server run with [KeaS](https://github.com/kadenw213-svg/KeaS).
 With an account, your computers sync through your own Kea storage on the Hub instead of a cloud drive, and you can
 join classes and study groups, appear on class leaderboards, and, if you don't have a Claude plan, have your classes
-set up by the Hub's shared Claude. Accounts use two-step sign-in and **Verify with Google**, and Kea works the same
-without one.
+set up by the Hub's shared Claude. You sign in with **Continue with Google** or **Continue with Microsoft**: there's
+no Kea password. With no connection, just your email opens Kea on that device, and the same email links it later.
 
 ## Install
 

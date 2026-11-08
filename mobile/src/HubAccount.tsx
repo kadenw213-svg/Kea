@@ -1,13 +1,14 @@
-// The Kea account on the phone. An account is made, and signed in to, on the phone at once with no connection; the same
-// account goes online with Google or Microsoft (the same email links it), or signs in online with its password. Online,
-// the account's terms, which profile's classes to show, its notifications and storage; the classes and textbooks then
-// come through the Kea account instead of a drive's files. The account's address is under Advanced.
+// The Kea account on the phone. Continue with Google or Microsoft signs in (the first time it makes the online account,
+// after the terms); with no connection, just an email opens that account on the phone at once. An account on the phone
+// goes online later with the same email. There are no passwords. Online, the account's terms, which profile's classes
+// to show, its notifications and storage; the classes and textbooks then come through the Kea account instead of a
+// drive's files. The account's address is under Advanced.
 import { useEffect, useState } from 'react';
-import { Bell, Check, CheckCircle2, ExternalLink, Heart, KeyRound, Loader2, LogIn, LogOut, RefreshCw, Smartphone, UserPlus, UserRound } from 'lucide-react';
+import { Bell, Check, CheckCircle2, ExternalLink, Heart, Loader2, LogIn, LogOut, RefreshCw, Smartphone, UserPlus, UserRound } from 'lucide-react';
 import { Kea } from './kea';
 import { HubError, HubInfo, HubMeSummary, HubNote, TermsGate, acceptTerms, hubInfo, hubMe, hubNotes, hubNotesRead, hubProfiles, setHubProfile, termsGate, termsUrl } from './hub';
-import { create, currentTerms, link, login, oauthSignIn, setAdvancedUrl, signOut, status as accountStatus, type AccountStatus, type SignedIn } from './account';
-import { PROVIDERS, passwordProblem, type Provider } from './accountCore';
+import { NOT_SET_UP, cancelSignIn, continueSignIn, currentTerms, link, oauthSignIn, openOffline, setAdvancedUrl, signOut, status as accountStatus, type AccountStatus, type SignedIn } from './account';
+import { EMAIL, PROVIDERS, type Provider } from './accountCore';
 import { NeedsOnline, useAccount } from './NeedsOnline';
 
 /** `onChange`: signed in or out, or the profile changed (the app reads the classes again). */
@@ -36,91 +37,139 @@ export function HubAccount({ onChange, compact = false }: { onChange(): void; co
 const errText = (e: any) => String(e?.message || e);
 const providerList = (s: AccountStatus): Provider[] => (['google', 'microsoft'] as Provider[]).filter((p) => s.providers[p] && !(p === 'microsoft' && s.microsoftOnServer === false));
 
-/** Continue with Google / Microsoft (only the ones this copy of Kea is set up for). */
-function ProviderButtons({ s, busy, verb = 'Continue with', onPick }: { s: AccountStatus; busy: boolean; verb?: string; onPick(p: Provider): void }) {
+/** Continue with Google / Microsoft (only the ones this copy of Kea is set up for; none: a plain sentence). */
+function ProviderButtons({ s, busy, onPick }: { s: AccountStatus; busy: boolean; onPick(p: Provider): void }) {
   const list = providerList(s);
-  if (!list.length || !s.url) return null;
+  if (!list.length) return <p className="muted small">{NOT_SET_UP}</p>;
+  if (!s.url) return null;
   return (
     <>
       {list.map((p) => (
-        <button key={p} className="btn" disabled={busy} onClick={() => onPick(p)}>
-          <LogIn size={16} /> {verb} {PROVIDERS[p].label}
+        <button key={p} className="btn primary" disabled={busy} onClick={() => onPick(p)}>
+          <LogIn size={16} /> Continue with {PROVIDERS[p].label}
         </button>
       ))}
     </>
   );
 }
 
-// ---------- No account signed in on this phone: sign in, or make one ----------
-function Start({ s, compact, onDone }: { s: AccountStatus; compact: boolean; onDone(s: AccountStatus): void }) {
-  const [mode, setMode] = useState<'signin' | 'create'>(s.known.length ? 'signin' : 'create');
-  const [email, setEmail] = useState(s.known[0]?.email || '');
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [needCode, setNeedCode] = useState<null | 'password' | Provider>(null);
+/**
+ * Continue with Google or Microsoft and what it may still need: the terms (the first sign-in makes the online account)
+ * or the owner's two-step code.
+ */
+function useOnline(onDone: (s: AccountStatus) => void) {
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<'terms' | 'code' | null>(null);
   const [msg, setMsg] = useState('');
-  const run = async (fn: () => Promise<SignedIn | AccountStatus>, codeFor: 'password' | Provider | null = null) => {
+  const run = async (fn: () => Promise<SignedIn | AccountStatus>) => {
     setBusy(true);
     setMsg('');
     try {
       const r = await fn();
-      setPassword('');
-      setCode('');
-      setNeedCode(null);
+      setStep(null);
       onDone(r);
     } catch (e: any) {
-      if (e instanceof HubError && e.data?.totpRequired && codeFor) {
-        if (needCode) setMsg(e.message);
-        setNeedCode(codeFor);
-      } else setMsg(errText(e));
+      if (e instanceof HubError && e.data?.needsAccount) setStep('terms');
+      else if (e instanceof HubError && e.data?.totpRequired) {
+        if (step === 'code') setMsg(e.message);
+        setStep('code');
+      } else {
+        setStep(null);
+        setMsg(errText(e));
+      }
     }
     setBusy(false);
   };
-  const problem = mode === 'create' && password ? passwordProblem(password, email, name) : null;
+  return { busy, step, msg, run, cancel: () => (setStep(null), run(() => cancelSignIn())) };
+}
+
+/** The first Google or Microsoft sign-in for an email: the terms and the age box make the online Kea account. */
+function NewOnlineAccount({ s, o }: { s: AccountStatus; o: ReturnType<typeof useOnline> }) {
+  const [terms, setTerms] = useState<{ version: number; sections: { id: string; title: string }[] } | null>(null);
+  const [agree, setAgree] = useState(false);
+  const [age13, setAge13] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    currentTerms().then(setTerms, (e) => setErr(errText(e)));
+  }, []);
   return (
     <>
-      {!compact && <p className="muted small">Your Kea account is kept on this phone and works with no connection. Take it online with Google or Microsoft to get your classes and textbooks from Kea on your computer, with no drive app or file picking.</p>}
-      <div className="chips">
-        <button className={mode === 'signin' ? 'on' : ''} onClick={() => (setMode('signin'), setMsg(''))}>
-          Sign in
+      <p className="small">
+        <b>Create your Kea account</b>
+        {s.pending?.email ? (
+          <>
+            {' '}
+            for <b>{s.pending.email}</b>
+          </>
+        ) : null}
+        . Agree to the terms to make it.
+      </p>
+      <label className="toggle">
+        <input type="checkbox" checked={age13} onChange={(e) => setAge13(e.target.checked)} />
+        <span>I’m 13 or older</span>
+      </label>
+      <label className="toggle">
+        <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} disabled={!terms} />
+        <span>I agree to the Kea terms{terms ? ` (${terms.sections.length} sections)` : ''}</span>
+      </label>
+      {s.url && (
+        <button className="btn ghost" onClick={() => Kea.open({ url: termsUrl(s.url) })}>
+          <ExternalLink size={16} /> Read the Kea terms
         </button>
-        <button className={mode === 'create' ? 'on' : ''} onClick={() => (setMode('create'), setMsg(''), setNeedCode(null))}>
-          Create account
-        </button>
-      </div>
-      {mode === 'create' && <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name (optional)" autoComplete="name" />}
-      <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" autoCapitalize="none" autoComplete="username" inputMode="email" list="kea-known" />
+      )}
+      <button className="btn primary" disabled={o.busy || !agree || !age13 || !terms} onClick={() => o.run(() => continueSignIn({ termsVersion: terms!.version, termsSections: terms!.sections.map((x) => x.id), age13: true }))}>
+        {o.busy ? <Loader2 size={16} className="spin" /> : <UserPlus size={16} />} Create my account
+      </button>
+      <button className="btn ghost" disabled={o.busy} onClick={o.cancel}>
+        Cancel
+      </button>
+      {err && <p className="note warn">{err}</p>}
+    </>
+  );
+}
+
+/** The owner account's two-step code, after its Google or Microsoft sign-in. */
+function OwnerCode({ o }: { o: ReturnType<typeof useOnline> }) {
+  const [code, setCode] = useState('');
+  return (
+    <>
+      <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Two-step code" inputMode="text" autoComplete="one-time-code" maxLength={12} />
+      <button className="btn primary" disabled={o.busy || code.replace(/\s/g, '').length < 6} onClick={() => o.run(() => continueSignIn({ code }))}>
+        {o.busy ? <Loader2 size={16} className="spin" /> : <LogIn size={16} />} Sign in
+      </button>
+      <button className="btn ghost" disabled={o.busy} onClick={o.cancel}>
+        Cancel
+      </button>
+    </>
+  );
+}
+
+// ---------- No account signed in on this phone: Continue with Google or Microsoft, or just an email ----------
+function Start({ s, compact, onDone }: { s: AccountStatus; compact: boolean; onDone(s: AccountStatus): void }) {
+  const [email, setEmail] = useState('');
+  const o = useOnline(onDone);
+  const step = o.step || (s.pending ? 'terms' : null);
+  if (step === 'terms') return <NewOnlineAccount s={s} o={o} />;
+  if (step === 'code') return <OwnerCode o={o} />;
+  return (
+    <>
+      {!compact && <p className="muted small">Sign in with Google or Microsoft to get your classes and textbooks from Kea on your computer. No connection? Your email alone opens Kea on this phone.</p>}
+      <ProviderButtons s={s} busy={o.busy} onPick={(p) => o.run(() => oauthSignIn({ provider: p }))} />
+      <p className="muted small">Or use Kea on this phone:</p>
       {s.known.length > 0 && (
-        <datalist id="kea-known">
-          {s.known.map((k) => (
-            <option key={k.email} value={k.email} />
+        <div className="chips">
+          {s.known.slice(0, 4).map((k) => (
+            <button key={k.email} disabled={o.busy} onClick={() => o.run(() => openOffline({ email: k.email }))}>
+              {k.email}
+            </button>
           ))}
-        </datalist>
+        </div>
       )}
-      <input className="input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === 'create' ? 'Choose a password' : 'Password'} type="password" autoComplete={mode === 'create' ? 'new-password' : 'current-password'} />
-      {needCode && <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="6-digit code from your authenticator app" inputMode="numeric" autoComplete="one-time-code" maxLength={12} />}
-      {mode === 'create' ? (
-        <>
-          {problem && <p className="muted small">{problem}</p>}
-          <button className="btn primary" disabled={busy || !email.trim() || !!problem || !password} onClick={() => run(() => create({ email, password, name }))}>
-            {busy ? <Loader2 size={16} className="spin" /> : <UserPlus size={16} />} Create account
-          </button>
-          <p className="muted small">Made on this phone right away, no connection needed. The same password works online once you take it online.</p>
-        </>
-      ) : (
-        <button
-          className="btn primary"
-          disabled={busy || (needCode === 'password' || !needCode ? !email.trim() || !password : false) || (!!needCode && code.replace(/\s/g, '').length < 6)}
-          onClick={() => (needCode && needCode !== 'password' ? run(() => oauthSignIn({ provider: needCode, code }), needCode) : run(() => login({ email, password, code: needCode ? code : undefined }), 'password'))}
-        >
-          {busy ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />} Sign in
-        </button>
-      )}
-      <ProviderButtons s={s} busy={busy} onPick={(p) => run(() => oauthSignIn({ provider: p, email: email.trim() || undefined }), p)} />
-      {msg && <p className="note warn">{msg}</p>}
-      <p className="muted small">Only a check of your password is kept, in Android’s encrypted storage, never the password itself.</p>
+      <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" autoCapitalize="none" autoComplete="username" inputMode="email" />
+      <button className="btn" disabled={o.busy || !EMAIL.test(email.trim())} onClick={() => o.run(() => openOffline({ email }))}>
+        {o.busy ? <Loader2 size={16} className="spin" /> : <Smartphone size={16} />} Use offline
+      </button>
+      {o.msg && <p className="note warn">{o.msg}</p>}
     </>
   );
 }
@@ -128,55 +177,9 @@ function Start({ s, compact, onDone }: { s: AccountStatus; compact: boolean; onD
 // ---------- Signed in on this phone, not online: everything here works; going online is one step ----------
 function OnPhone({ s, onDone }: { s: AccountStatus; onDone(s: AccountStatus): void }) {
   const a = s.account!;
-  const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [needCode, setNeedCode] = useState(false);
-  // Making the online account: which provider, and the terms to agree to.
-  const [making, setMaking] = useState<Provider | null>(null);
-  const [terms, setTerms] = useState<{ version: number; sections: { id: string; title: string }[] } | null>(null);
-  const [agree, setAgree] = useState(false);
-  const [age13, setAge13] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
+  const o = useOnline(onDone);
   const [open, setOpen] = useState(false);
-  const run = async (fn: () => Promise<SignedIn | AccountStatus>) => {
-    setBusy(true);
-    setMsg('');
-    try {
-      const r = await fn();
-      setPassword('');
-      setCode('');
-      setNeedCode(false);
-      setMaking(null);
-      onDone(r);
-    } catch (e: any) {
-      if (e instanceof HubError && e.data?.totpRequired) {
-        if (needCode) setMsg(e.message);
-        setNeedCode(true);
-      } else if (e instanceof HubError && e.data?.needsCreate && !making) {
-        setMsg(e.message);
-        startMaking((e as any).provider);
-      } else setMsg(errText(e));
-    }
-    setBusy(false);
-  };
-  const startMaking = async (p: Provider) => {
-    setMaking(p);
-    try {
-      setTerms(await currentTerms());
-    } catch (e) {
-      setMsg(errText(e));
-    }
-  };
-  const goOnline = (p: Provider) =>
-    run(async () => {
-      try {
-        return await link({ provider: p });
-      } catch (e: any) {
-        if (e instanceof HubError && e.data?.needsCreate) (e as any).provider = p;
-        throw e;
-      }
-    });
+  const step = o.step || (s.pending ? 'terms' : null);
   return (
     <>
       <div className="set-row">
@@ -189,59 +192,23 @@ function OnPhone({ s, onDone }: { s: AccountStatus; onDone(s: AccountStatus): vo
           </span>
         </span>
       </div>
-      <NeedsOnline status={s} what="Your classes, Kea storage and notifications through your Kea account" onOpen={() => setOpen(true)} />
-      {(open || s.state === 'linked' || making) && s.url && (
+      {step === 'terms' ? (
+        <NewOnlineAccount s={s} o={o} />
+      ) : step === 'code' ? (
+        <OwnerCode o={o} />
+      ) : (
         <>
-          {s.state === 'linked' && !making && (
+          <NeedsOnline status={s} what="Your classes, Kea storage and notifications through your Kea account" onOpen={() => setOpen(true)} />
+          {(open || s.state === 'linked') && (
             <>
-              <input className="input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" type="password" autoComplete="current-password" />
-              {needCode && <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="6-digit code from your authenticator app" inputMode="numeric" autoComplete="one-time-code" maxLength={12} />}
-              <button className="btn primary" disabled={busy || !password || (needCode && code.replace(/\s/g, '').length < 6)} onClick={() => run(() => login({ email: a.email, password, code: needCode ? code : undefined, online: true }))}>
-                {busy ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />} Sign in online
-              </button>
-            </>
-          )}
-          {!making && <ProviderButtons s={s} busy={busy} onPick={goOnline} />}
-          {!making && s.state === 'offline' && !providerList(s).length && <p className="muted small">Taking an account online needs Google or Microsoft sign-in, which this copy of Kea isn’t set up for. Everything on this phone keeps working.</p>}
-          {!making && s.state === 'offline' && providerList(s).length > 0 && <p className="muted small">Use the {providerList(s).map((p) => PROVIDERS[p].label).join(' or ')} account with {a.email}. A different email never links to this account, and nothing on this phone changes.</p>}
-          {making && (
-            <>
-              <p className="small">
-                Make your online Kea account for <b>{a.email}</b> with {PROVIDERS[making].label}. Enter this account’s password; it becomes your online password too.
-              </p>
-              <input className="input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="This account’s password" type="password" autoComplete="current-password" />
-              {needCode && <input className="input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="6-digit code from your authenticator app" inputMode="numeric" autoComplete="one-time-code" maxLength={12} />}
-              <label className="toggle">
-                <input type="checkbox" checked={age13} onChange={(e) => setAge13(e.target.checked)} />
-                <span>I’m 13 or older</span>
-              </label>
-              <label className="toggle">
-                <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} disabled={!terms} />
-                <span>I agree to the Kea terms{terms ? ` (${terms.sections.length} sections)` : ''}</span>
-              </label>
-              <button className="btn ghost" onClick={() => Kea.open({ url: termsUrl(s.url) })}>
-                <ExternalLink size={16} /> Read the Kea terms
-              </button>
-              <button
-                className="btn primary"
-                disabled={busy || !password || !agree || !age13 || !terms || (needCode && code.replace(/\s/g, '').length < 6)}
-                onClick={() =>
-                  run(() =>
-                    needCode ? link({ provider: making, password, code }) : link({ provider: making, password, termsVersion: terms!.version, termsSections: terms!.sections.map((x) => x.id), age13 })
-                  )
-                }
-              >
-                {busy ? <Loader2 size={16} className="spin" /> : <UserPlus size={16} />} Make my online Kea account
-              </button>
-              <button className="btn ghost" disabled={busy} onClick={() => (setMaking(null), setMsg(''))}>
-                Not now
-              </button>
+              <ProviderButtons s={s} busy={o.busy} onPick={(p) => o.run(() => link({ provider: p }))} />
+              {providerList(s).length > 0 && <p className="muted small">Use the account with {a.email}. A different email never links to this account, and nothing on this phone changes.</p>}
             </>
           )}
         </>
       )}
-      {msg && <p className="note warn">{msg}</p>}
-      <button className="btn ghost danger-text" disabled={busy} onClick={() => run(() => signOut())}>
+      {o.msg && <p className="note warn">{o.msg}</p>}
+      <button className="btn ghost danger-text" disabled={o.busy} onClick={() => o.run(() => signOut())}>
         <LogOut size={16} /> Sign out on this phone
       </button>
     </>

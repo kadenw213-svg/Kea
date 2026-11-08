@@ -829,6 +829,11 @@
 .needs-online.compact {
   padding: 6px 10px;
 }
+.acct-or {
+  margin: 14px 0 2px;
+  font-size: 12px;
+  text-align: center;
+}
 .acct-known {
   display: flex;
   flex-wrap: wrap;

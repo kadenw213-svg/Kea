@@ -27,7 +27,7 @@ export function useAccount(): [AccountStatus | null, (s: AccountStatus) => void]
 export function NeedsOnline({ status: s, what, compact = false, onOpen }: { status: AccountStatus | null; what?: string; compact?: boolean; onOpen?(): void }) {
   const need = onlineNeed(s);
   if (!need) return null;
-  const t = needsOnlineText(need, s?.onlineNote ?? null);
+  const t = needsOnlineText(need);
   return (
     <div className={`needs-online ${compact ? 'compact' : ''}`}>
       <CloudOff size={16} />

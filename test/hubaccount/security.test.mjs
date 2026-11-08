@@ -1,7 +1,8 @@
-// The account page's main-process side (electron/hub.cjs): a wrong password on a route that asks for it again never
-// signs Kea out (a 401 there is the password, not the sign-in), while a 401 anywhere else still does; "Download my
-// data" puts the account's and the organizations' exports in one file; deleting the account forgets the sign-in, the
-// cached account and the work calendar copy.
+// The account page's main-process side (electron/hub.cjs): a refused fresh Google sign-in on a route that asks for one
+// (signing out other devices, deleting the account) never signs Kea out (a 401 there is that proof, not the sign-in),
+// while a 401 anywhere else still does; "Download my data" puts the account's and the organizations' exports in one
+// file; deleting the account sends a fresh Google sign-in (no password) and forgets the sign-in, the cached account and
+// the work calendar copy. The password and two-step routes are gone from Kea.
 import { test, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -25,6 +26,8 @@ globalThis.setTimeout = globalThis.setInterval = () => ({ unref() {} });
 const hub = require('../../electron/hub.cjs');
 hub.register();
 Object.assign(globalThis, timers);
+const proof = (email) => `${Buffer.from('{}').toString('base64url')}.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.sig`;
+hub._account.setIdTokens(async (provider, hint) => proof(hint || 'ana@x.org'));
 
 const token = path.join(dir, 'hub-session.bin');
 const cache = path.join(dir, 'hub-account.json');
@@ -46,12 +49,11 @@ beforeEach(() => {
   asked.length = 0;
 });
 
-test('a wrong password where the Hub asks for it again keeps Kea signed in', async () => {
-  routes['/v1/me/password'] = [401, { error: 'Your current password is wrong.' }];
-  routes['/v1/me/sessions/sign-out-others'] = [401, { error: 'Your password is wrong.' }];
-  routes['/v1/me/totp/setup'] = [401, { error: 'Your password is wrong.' }];
-  routes['/v1/me/delete'] = [401, { error: 'Your password or two-step code is wrong.' }];
-  for (const [name, arg] of [['hub:changePassword', { current: 'x', next: 'y' }], ['hub:signOutOthers', { password: 'x' }], ['hub:totpSetup', { password: 'x' }], ['hub:deleteAccount', { confirm: 'DELETE', password: 'x' }]]) {
+test('a refused fresh sign-in where the server asks for one keeps Kea signed in; no password routes are left', async () => {
+  for (const name of ['hub:changePassword', 'hub:totpSetup', 'hub:totpEnable', 'hub:totpDisable', 'hub:backupCodes', 'hub:googleReset', 'hub:login', 'hub:create']) assert.equal(handlers[name], undefined, name);
+  routes['/v1/me/sessions/sign-out-others'] = [401, { error: 'Continue with Google or Microsoft to confirm it’s you.', signInRequired: true }];
+  routes['/v1/me/delete'] = [401, { error: 'Continue with Google or Microsoft to confirm it’s you.', signInRequired: true }];
+  for (const [name, arg] of [['hub:signOutOthers', { provider: 'google' }], ['hub:deleteAccount', { confirm: 'DELETE', provider: 'google' }]]) {
     const r = await handlers[name](APP, arg);
     assert.equal(r.ok, false, name);
     assert.equal(r.status, 401, name);
@@ -78,41 +80,15 @@ test('Download my data: both exports in one file', async () => {
   assert.equal(await hub._exportData({ save: async () => null }), null);
 });
 
-test('deleting the account sends the confirmation and forgets everything about it here', async () => {
+test('deleting the account sends the confirmation with a fresh Google sign-in and forgets everything about it here', async () => {
   routes['/v1/me/delete'] = [200, { ok: true, deleted: true }];
-  const r = await handlers['hub:deleteAccount'](APP, { confirm: 'DELETE', password: 'pw', code: '123456' });
+  // Not typed: nothing sent.
+  let r = await handlers['hub:deleteAccount'](APP, { confirm: 'nope', provider: 'google' });
+  assert.equal(r.ok, false);
+  assert.equal(asked.length, 0);
+  r = await handlers['hub:deleteAccount'](APP, { confirm: 'DELETE', provider: 'google' });
   assert.equal(r.ok, true);
   assert.equal(r.value.signedIn, false);
-  assert.deepEqual(asked.find((a) => a.p === '/v1/me/delete').body, { confirm: 'DELETE', password: 'pw', code: '123456' });
+  assert.deepEqual(asked.find((a) => a.p === '/v1/me/delete').body, { confirm: 'DELETE', provider: 'google', idToken: proof('ana@x.org') });
   for (const f of [token, cache, work]) assert.ok(!fs.existsSync(f), f);
-});
-
-test('two-step backup codes: shown once after turning it on, new ones on request, and an older Hub said plainly', async () => {
-  const me = { account: { id: 'a1', email: 'ana@x.org', displayName: 'Ana', totpEnabled: true, backupCodesLeft: 10 }, notifications: { latest: 0 } };
-  routes['/v1/me'] = [200, me];
-  const codes = Array.from({ length: 10 }, (_, i) => `ABCDE-FGH${String(i).padStart(2, '2')}`);
-  routes['/v1/me/totp/enable'] = [200, { ok: true, backupCodes: codes }];
-  let r = await handlers['hub:totpEnable'](APP, { code: '123456' });
-  assert.equal(r.ok, true);
-  assert.deepEqual([r.value.signedIn, r.value.me.account.totpEnabled, r.value.backupCodes.length], [true, true, 10]);
-  // An older Hub: no codes, just the status as before.
-  routes['/v1/me/totp/enable'] = [200, { ok: true }];
-  r = await handlers['hub:totpEnable'](APP, { code: '123456' });
-  assert.equal(r.value.backupCodes, undefined);
-
-  routes['/v1/me/totp/backup-codes'] = [200, { backupCodes: codes, left: 10 }];
-  r = await handlers['hub:backupCodes'](APP, { password: 'pw', code: '123456' });
-  assert.deepEqual([r.ok, r.value.left], [true, 10]);
-  assert.deepEqual(asked.at(-1), { p: '/v1/me/totp/backup-codes', body: { password: 'pw', code: '123456' } });
-  // A wrong password or code there keeps Kea signed in.
-  routes['/v1/me/totp/backup-codes'] = [401, { error: 'Your password or the code from your authenticator app is wrong.' }];
-  r = await handlers['hub:backupCodes'](APP, { password: 'pw', code: '000000' });
-  assert.deepEqual([r.ok, r.status], [false, 401]);
-  assert.ok(fs.existsSync(token));
-  // A Hub without the route: a plain message, still signed in.
-  delete routes['/v1/me/totp/backup-codes'];
-  r = await handlers['hub:backupCodes'](APP, { password: 'pw', code: '123456' });
-  assert.equal(r.ok, false);
-  assert.match(r.error, /doesn’t have backup codes yet/);
-  assert.ok(fs.existsSync(token));
 });

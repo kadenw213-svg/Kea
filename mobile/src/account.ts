@@ -1,10 +1,11 @@
-// The Kea account on the phone: accounts made and signed in on the phone with no connection, linked to the online Kea
-// account by the same Google or Microsoft email, and signed in online. Every answer comes from what's on the phone at
-// once; the server is only checked in the background, never longer than a few seconds, and not reaching it is a
-// normal state. The same rules as Kea on the computer (electron/hub.cjs).
+// The Kea account on the phone: an account opened on the phone with just its email and no connection, linked to the
+// online Kea account by the same Google or Microsoft email, and signed in online with Google or Microsoft (no
+// passwords). Every answer comes from what's on the phone at once; the server is only checked in the background, never
+// longer than a few seconds, and not reaching it is a normal state. The same rules as Kea on the computer
+// (electron/hub.cjs).
 //
 // Where things are kept:
-//   - the accounts and their password verifiers: Android's encrypted storage (KeaPlugin.accountsRead/Write, Store.secure);
+//   - the accounts: Android's encrypted storage (KeaPlugin.accountsRead/Write, Store.secure);
 //   - the online session token: Android's encrypted storage too (Hub.java), never seen by this code;
 //   - the address under Advanced: localStorage kea.accountUrl (the built-in DEFAULT_ACCOUNT_URL otherwise).
 import { Kea } from './kea';
@@ -26,7 +27,6 @@ import {
   parseRedirect,
   pkceChallenge,
   randomBytes,
-  registerRequest,
   serverKind,
   tokenRequest,
   type AccountState,
@@ -117,18 +117,17 @@ export interface AccountStatus {
   url: string;
   advancedUrl: string;
   defaultUrl: string;
-  account: { id: string; email: string; name: string; linked: boolean; canSignInOffline: boolean; provider: string | null } | null;
+  account: { id: string; email: string; name: string; linked: boolean; provider: string | null } | null;
   known: { email: string; name: string }[];
   providers: { google: boolean; microsoft: boolean };
-  /** Why the background online sign-in stopped: 'code' (two-step) | 'password' (changed online). */
-  onlineNote: string | null;
+  /** A Google or Microsoft sign-in waiting for the terms (a new account) or the owner's two-step code. */
+  pending: { email: string; name: string | null; provider: Provider } | null;
   signedIn: boolean;
   reachable: boolean;
   checked: boolean;
   /** The server can take Microsoft sign-in (the Kea account server; a Kea Hub 0.5 takes Google only). */
   microsoftOnServer: boolean | null;
 }
-let onlineNote: string | null = null;
 
 /** The account signed in here, also for a phone signed in before it kept accounts (sign-in only, Kea 0.70). */
 async function activeAccount(h: { signedIn: boolean; email: string }): Promise<LocalAccount | null> {
@@ -148,10 +147,10 @@ export async function local(): Promise<AccountStatus> {
     url: currentUrl(),
     advancedUrl: advancedUrl(),
     defaultUrl: DEFAULT_ACCOUNT_URL,
-    account: a ? { id: a.id, email: a.email, name: a.name, linked: !!a.hub, canSignInOffline: a.canSignInOffline, provider: a.hub?.provider || null } : null,
+    account: a ? { id: a.id, email: a.email, name: a.name, linked: !!a.hub, provider: a.hub?.provider || null } : null,
     known: (await accounts().list()).map((x) => ({ email: x.email, name: x.name })),
     providers: providers(),
-    onlineNote: state === 'linked' ? onlineNote : null,
+    pending: pending && Date.now() - pending.at < PENDING_MS ? { email: pending.email, name: pending.name, provider: pending.provider } : null,
     signedIn: h.signedIn,
     reachable: reach.reachable,
     checked: reach.at > 0,
@@ -184,19 +183,18 @@ const onlineAccountOf = (r: any) => r?.account || r?.me?.account || null;
 export type SignedIn = AccountStatus & { needsTerms?: boolean };
 /**
  * After any online sign-in (the token is already kept natively): the account on this phone for that email (made if
- * there's none, linked, signed in), with a verifier of `password` so it signs in offline later.
+ * there's none, linked, signed in).
  */
-async function signedIn(r: any, { password = null, provider = null }: { password?: string | null; provider?: string | null } = {}): Promise<SignedIn> {
+async function signedIn(r: any, { provider = null }: { provider?: string | null } = {}): Promise<SignedIn> {
   const acc = onlineAccountOf(r);
   if (acc?.email) {
     const was = await accounts().active();
     // (Another account's classes and sync state are never shown to this one.)
     if (was && norm(was.email) !== norm(acc.email)) hubNewAccount();
-    await accounts().rememberOnline({ email: acc.email, name: acc.displayName, hubId: acc.id ?? null, url: currentUrl(), provider, password });
+    await accounts().attachOnline({ email: acc.email, name: acc.displayName, hubId: acc.id ?? null, url: currentUrl(), provider });
   }
   hubSessionStarted();
-  onlineNote = null;
-  clearTimeout(bgLogin);
+  pending = null;
   accountChanged();
   return { ...(await local()), needsTerms: !!(r?.terms?.needsAgreement || r?.me?.terms?.needsAgreement) };
 }
@@ -206,92 +204,41 @@ async function switchingTo(email: string) {
   if (was && norm(was.email) !== norm(email) && (await Kea.hubState().catch(() => null))?.signedIn) await hubDropSession();
 }
 
-// ---------- signing in and making an account ----------
-/**
- * Email and password. An account kept on this phone is checked here, at once, with no connection; a linked one then
- * signs in online in the background. An email this phone hasn't signed in with goes to the server. `online`: sign in
- * online now ("Sign in online", with a two-step code when asked).
- */
-export async function login({ email, password, code, online = false }: { email: string; password: string; code?: string; online?: boolean }): Promise<SignedIn> {
-  const S = accounts();
-  const e = norm(email);
-  if (!e || !password) throw fail('Enter your email and password.', 400);
-  const here = await S.check({ email: e, password });
-  if (here.ok && !online) {
-    const was = await S.active();
-    if (was && was.id !== here.account.id) await hubDropSession();
-    const r = await S.signIn({ email: e, password });
-    onlineNote = null;
-    if (r.ok && r.account.hub && !(await Kea.hubState().catch(() => null))?.signedIn) onlineInBackground(e, password);
-    accountChanged();
-    return local();
-  }
-  if (!here.ok && here.reason === 'wrong' && !here.account?.hub) throw fail('Wrong password for this account.', 401);
-  const unreachable = () => {
-    if (here.ok) return fail(OFFLINE_MSG, 0, { unreachable: true });
-    if (here.reason === 'wrong') return fail('Wrong password. (Kea can’t reach your Kea account online to check a newer one.)', 401);
-    return fail('This email hasn’t signed in on this phone before, and Kea can’t reach your Kea account online right now. Try again once you’re online, or create an account on this phone.', 0, { unreachable: true });
-  };
-  if (!currentUrl()) throw unreachable();
-  await ensureUrl();
-  await switchingTo(e);
+// ---------- signing in ----------
+// No passwords: on this phone an account is its email, and online a Kea account signs in with Google or Microsoft.
+/** Using Kea on this phone with just an email, no connection needed: that account's things here open, or it's made. */
+export async function openOffline({ email, name }: { email: string; name?: string }): Promise<AccountStatus & { created: boolean }> {
+  pending = null;
   let r;
   try {
-    r = await hubCall('POST', '/v1/auth/login', { email: e, password, ...(code ? { code: code.replace(/\s+/g, '') } : {}) }, { auth: false, keepToken: true, limit: 'auth' });
-  } catch (err: any) {
-    if (err?.status === 0) throw unreachable();
-    throw err;
-  }
-  return signedIn(r, { password });
-}
-let bgLogin: ReturnType<typeof setTimeout> | undefined;
-/** A linked account signed in offline: its online session comes back by itself once the server answers. */
-function onlineInBackground(email: string, password: string) {
-  const attempt = async () => {
-    try {
-      if (!currentUrl()) return;
-      await ensureUrl();
-      const r = await hubCall('POST', '/v1/auth/login', { email, password }, { auth: false, keepToken: true, limit: 'auth' });
-      const a = await accounts().active();
-      if (a && norm(a.email) === email) await signedIn(r, { password });
-      else await hubDropSession({ keepProfile: true });
-    } catch (e: any) {
-      if (e?.status === 0) return void (bgLogin = setTimeout(attempt, 60_000)); // offline: try again in a minute
-      onlineNote = e?.data?.totpRequired ? 'code' : 'password';
-      accountChanged();
-    }
-  };
-  clearTimeout(bgLogin);
-  bgLogin = setTimeout(attempt, 0);
-}
-/** A new account, made on this phone at once (no connection needed) and signed in. */
-export async function create({ email, password, name }: { email: string; password: string; name?: string }): Promise<AccountStatus> {
-  clearTimeout(bgLogin);
-  try {
     const was = await accounts().active();
-    if (was && (await Kea.hubState().catch(() => null))?.signedIn) await hubDropSession();
-    await accounts().create({ email, password, name });
+    if ((await Kea.hubState().catch(() => null))?.signedIn && (!was || norm(was.email) !== norm(email))) await hubDropSession();
+    r = await accounts().open({ email, name });
   } catch (e: any) {
-    if (e instanceof AccountError) throw fail(e.message, e.exists ? 409 : 400, { field: e.field, exists: e.exists });
+    if (e instanceof AccountError) throw fail(e.message, 400, { field: e.field });
     throw e;
   }
-  onlineNote = null;
   accountChanged();
-  return local();
+  return { ...(await local()), created: r.created };
 }
-/** Signed out on this phone: the online session ends too; the account and its verifier stay (it signs in again offline). */
+/** Signed out on this phone: the online session ends too; the account stays (its email opens it again, offline too). */
 export async function signOut(): Promise<AccountStatus> {
-  clearTimeout(bgLogin);
+  pending = null;
   await hubSignOut();
   await accounts().signOut();
-  onlineNote = null;
   accountChanged();
   return local();
 }
 
 // ---------- Google and Microsoft ----------
+// A sign-in waiting for one more thing: the terms (the first sign-in makes the account) or, for the owner's account
+// only, its two-step code. Its ID token stays in this page's memory for a few minutes and goes again with that; the
+// Kea account server uses it up only when it signs in.
+type Pending = { provider: Provider; idToken: string; email: string; name: string | null; at: number };
+let pending: Pending | null = null;
+const PENDING_MS = 10 * 60e3;
 /** Signing in with a provider's ID token: the Kea account server at /v1/auth/oauth, a Kea Hub 0.5 at /v1/auth/google. */
-async function oauthLogin(provider: Provider, idToken: string, code?: string) {
+async function oauthLogin(provider: Provider, idToken: string, extra: Record<string, unknown> = {}) {
   let kind: ServerKind;
   try {
     kind = await serverInfo();
@@ -300,76 +247,86 @@ async function oauthLogin(provider: Provider, idToken: string, code?: string) {
   }
   let req;
   try {
-    req = oauthRequest(kind, provider, idToken, code ? code.replace(/\s+/g, '') : undefined);
+    req = oauthRequest(kind, provider, idToken, extra);
   } catch (e: any) {
     throw fail(String(e?.message || e), 400, { unsupported: true });
   }
   return hubCall('POST', req.path, req.body, { auth: false, keepToken: true, limit: 'auth' });
 }
-/** From the sign-in screen: Continue with Google or Microsoft (an online account for that email, kept here and linked). */
-export async function oauthSignIn({ provider, email, code }: { provider: Provider; email?: string; code?: string }): Promise<SignedIn> {
-  needAddress();
-  await ensureUrl();
-  const idToken = await idTokenFor(provider, email, { reuse: !!code, purpose: 'signin' });
-  return finishOauthSignIn(provider, idToken, code);
-}
-async function finishOauthSignIn(provider: Provider, idToken: string, code?: string) {
-  await switchingTo(idTokenEmail(idToken).email);
+async function trySignIn(p: Omit<Pending, 'at'>, extra: Record<string, unknown> = {}): Promise<SignedIn> {
+  await switchingTo(p.email);
+  let r;
   try {
-    return await signedIn(await oauthLogin(provider, idToken, code), { provider });
+    r = await oauthLogin(p.provider, p.idToken, extra);
   } catch (e: any) {
-    if (e?.status === 404) throw fail('There’s no online Kea account for that email yet. Create an account on this phone, then take it online here with Google or Microsoft.', 404, { needsCreate: true });
+    if (e?.status === 404 && e?.data?.needsAccount) {
+      pending = { ...p, email: e.data.email || p.email, name: e.data.name || null, at: Date.now() };
+      throw fail(`Create your Kea account for ${pending.email}: agree to the terms first.`, 404, { needsAccount: true, email: pending.email, name: pending.name });
+    }
+    if (e?.data?.totpRequired) {
+      pending = { ...p, at: Date.now() };
+      throw e;
+    }
+    pending = null;
+    // (An older Kea account server that can't make accounts this way.)
+    if (e?.status === 404) throw fail(`There’s no online Kea account for ${p.email || 'that email'} yet.`, 404, { noAccount: true });
     throw e;
   }
+  return signedIn(r, { provider: p.provider });
 }
 /**
- * Taking the account on this phone online: a Google or Microsoft sign-in with the same email links it to the online
- * Kea account for that email (made now when `password` and the terms come along, else signed in to). A different
- * email never links: nothing here changes. Nothing on the phone is deleted by linking.
+ * Continue with Google or Microsoft from the sign-in screen: signs in to the online Kea account for that email, made
+ * now if there's none (the screen then shows the terms, and continueSignIn finishes). The account on this phone with
+ * the same email is linked (made if there's none).
  */
-export async function link(o: { provider: Provider; password?: string; code?: string; termsVersion?: number; termsSections?: string[]; age13?: boolean }, given?: string): Promise<SignedIn> {
-  const { provider, password, code, termsVersion, termsSections, age13 } = o;
+export async function oauthSignIn({ provider }: { provider: Provider }, given?: string): Promise<SignedIn> {
+  needAddress();
+  await ensureUrl();
+  pending = null;
+  const idToken = given || (await idTokenFor(provider, undefined, { purpose: 'signin' }));
+  return trySignIn({ provider, idToken, email: idTokenEmail(idToken).email, name: idTokenEmail(idToken).name });
+}
+/**
+ * Taking the account on this phone online (or signing in online again): a Google or Microsoft sign-in with the same
+ * email. A different email never links: nothing is sent and nothing here changes. Nothing on the phone is deleted.
+ */
+export async function link({ provider }: { provider: Provider }, given?: string): Promise<SignedIn> {
   const label = PROVIDERS[provider]?.label;
   if (!label) throw fail('Pick Google or Microsoft.', 400);
   const rec = await accounts().active();
   if (!rec) throw fail('Sign in on this phone first.', 401);
   needAddress();
-  if (password) {
-    const c = await accounts().check({ email: rec.email, password });
-    if (!c.ok && c.reason !== 'noVerifier') throw fail('That isn’t this account’s password.', 401, { field: 'password' });
-  }
   await ensureUrl();
-  // (Finishing a two-step sign-in that the new or existing online account asked for.)
-  if (code && password) return signedIn(await hubCall('POST', '/v1/auth/login', { email: rec.email, password, code: code.replace(/\s+/g, '') }, { auth: false, keepToken: true, limit: 'auth' }), { password, provider });
-  const idToken = given || (await idTokenFor(provider, rec.email, { reuse: true, purpose: 'link' }));
-  const d = linkDecision(rec, idTokenEmail(idToken).email);
+  pending = null;
+  const idToken = given || (await idTokenFor(provider, rec.email, { purpose: 'link' }));
+  const who = idTokenEmail(idToken);
+  const d = linkDecision(rec, who.email);
   if (!d.link) throw fail(linkRefusal(d, label), 409, { mismatch: true, ...d });
-  if (password && termsVersion != null) {
-    const req = registerRequest({ email: rec.email, name: rec.name, password, provider, idToken, termsVersion, termsSections: termsSections || [], age13: age13 === true });
-    let reg: any = null;
+  return trySignIn({ provider, idToken, email: who.email, name: who.name });
+}
+/** The waiting sign-in, finished: with the terms agreed (a new account), or the owner's two-step code. */
+export async function continueSignIn(o: { code?: string; termsVersion?: number; termsSections?: string[]; age13?: boolean }): Promise<SignedIn> {
+  const p = pending;
+  if (!p || Date.now() - p.at > PENDING_MS) {
+    pending = null;
+    throw fail('That sign-in timed out. Continue with Google or Microsoft again.', 408, { expired: true });
+  }
+  if (o.code) {
+    const code = o.code.replace(/\s+/g, '');
     try {
-      reg = await hubCall('POST', req.path, req.body, { auth: false, keepToken: true, limit: 'auth' });
+      return await trySignIn(p, { code });
     } catch (e: any) {
-      // (The Kea account server says this email has an online account already, made on another device: signed in to
-      // with this password below, or "Continue with Google again" when its password is another one.)
-      if (!(e?.status === 409 && e?.data?.exists)) throw e;
-    }
-    if (reg?.me || reg?.account) return signedIn(reg, { password, provider });
-    // (Hub 0.5 answers the same whether or not the email had an account, and never signs in by itself.)
-    try {
-      return await signedIn(await hubCall('POST', '/v1/auth/login', { email: rec.email, password }, { auth: false, keepToken: true, limit: 'auth' }), { password, provider });
-    } catch (e: any) {
-      if (e?.data?.totpRequired) throw e;
-      if (e?.status === 401) throw fail(`There’s already an online Kea account for ${rec.email} with a different password. Continue with ${label} again to sign in to it.`, 409, { existsOnline: true });
-      throw e;
+      // (A Kea Hub 0.5 uses the Google sign-in up before it asks for the code: one more sign-in, the code with it.)
+      if (!(e?.status === 401 && /already used/i.test(String(e?.message)))) throw e;
+      return trySignIn({ ...p, idToken: await idTokenFor(p.provider, p.email || undefined, { purpose: 'signin' }) }, { code });
     }
   }
-  try {
-    return await signedIn(await oauthLogin(provider, idToken, code), { provider });
-  } catch (e: any) {
-    if (e?.status === 404) throw fail(`There’s no online Kea account for ${rec.email} yet. Enter this account’s password and agree to the terms to make it.`, 404, { needsCreate: true });
-    throw e;
-  }
+  if (o.age13 !== true) throw fail('Kea accounts are for people 13 and older.', 400, { field: 'age13' });
+  return trySignIn(p, { termsVersion: o.termsVersion, termsSections: o.termsSections || [], age13: true });
+}
+export function cancelSignIn(): Promise<AccountStatus> {
+  pending = null;
+  return local();
 }
 /** The current terms (for making the online account): the version and every section id. */
 export async function currentTerms(): Promise<{ version: number; sections: { id: string; title: string; body: string }[] }> {
@@ -378,13 +335,10 @@ export async function currentTerms(): Promise<{ version: number; sections: { id:
   const r = await hubCall<{ terms: { version: number; sections: { id: string; title: string; body: string }[] } }>('GET', '/v1/terms', undefined, { auth: false, limit: 'auth' });
   return r.terms;
 }
-
 // ---------- the ID token: Custom Tabs + PKCE, back through com.kea.scholar:/oauth ----------
 type Waiting = { state: string; provider: Provider; verifier: string; resolve(t: string): void; reject(e: any): void; timer: ReturnType<typeof setTimeout> };
 let waiting: Waiting | null = null;
 let listening = false;
-// (The last ID token, for a minute or two: a two-step code or the terms asked next don't open the browser again.)
-let lastToken: { provider: Provider; idToken: string; at: number } | null = null;
 
 function listen() {
   if (listening) return;
@@ -429,14 +383,12 @@ async function exchange(provider: Provider, code: string, verifier: string): Pro
     j = JSON.parse(r.body || '{}');
   } catch {}
   if (r.status < 200 || r.status >= 300 || !j.id_token) throw fail(j.error_description || `${label} sign-in failed.`, 400);
-  lastToken = { provider, idToken: j.id_token, at: Date.now() };
   return j.id_token;
 }
-async function idTokenFor(provider: Provider, loginHint: string | undefined, { reuse = false, purpose }: { reuse?: boolean; purpose: 'signin' | 'link' }): Promise<string> {
+export const NOT_SET_UP = 'Online sign-in isn’t available in this copy of Kea yet. You can still use Kea on this phone with just your email.';
+async function idTokenFor(provider: Provider, loginHint: string | undefined, { purpose }: { purpose: 'signin' | 'link' }): Promise<string> {
   const label = PROVIDERS[provider]?.label || provider;
-  if (!clientId(provider)) throw fail(`Continue with ${label} isn’t set up in this copy of Kea.`, 503);
-  // (Only a token for the same email: one that didn't link is never tried again.)
-  if (reuse && lastToken && lastToken.provider === provider && Date.now() - lastToken.at < 2 * 60e3 && (!loginHint || idTokenEmail(lastToken.idToken).email === norm(loginHint))) return lastToken.idToken;
+  if (!clientId(provider)) throw fail(NOT_SET_UP, 503, { notSetUp: true });
   if (waiting) done(waiting, fail('Replaced by a newer sign-in.', 409));
   listen();
   const verifier = b64url(randomBytes(48));
@@ -469,7 +421,7 @@ export async function resumeOauth(): Promise<SignedIn | null> {
   if ('error' in back) throw fail(back.error, 400);
   await ensureUrl();
   const idToken = await exchange(p.provider, back.code, p.verifier);
-  return p.purpose === 'link' ? link({ provider: p.provider }, idToken) : finishOauthSignIn(p.provider, idToken);
+  return p.purpose === 'link' ? link({ provider: p.provider }, idToken) : oauthSignIn({ provider: p.provider }, idToken);
 }
 
 /** Plain words for a failed account action (offline is calm, never an error screen). */

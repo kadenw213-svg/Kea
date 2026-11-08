@@ -1,7 +1,7 @@
 // The Kea account server moved (the owner's Kea Hub to KeaC, electron/hub.cjs): the old address says where it went
 // ({ movedTo, keacKeyKid } in its health check, 410 on account routes). Kea follows only to an https (or this-computer)
 // address that has the old server's signing key, and then it's like changing the address under Advanced: the online
-// sign-in ends, the account on this computer and its offline password stay, and a notice says to sign in once.
+// sign-in ends, the account on this computer stays, and a notice says to sign in once (with Google or Microsoft).
 // Otherwise nothing switches and the notice says the new address couldn't be checked.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,6 +24,9 @@ const A = hub._account;
 A.setBackground(false);
 A.setLimits({ req: 3000, status: 2000 });
 const tokenFile = path.join(userData, 'hub-session.bin');
+const idToken = (email) => `${Buffer.from('{}').toString('base64url')}.${Buffer.from(JSON.stringify({ email, n: Math.random() })).toString('base64url')}.sig`;
+const emailOf = (tok) => JSON.parse(Buffer.from(String(tok).split('.')[1], 'base64url').toString('utf8')).email;
+A.setIdTokens(async () => idToken('ana@x.org'));
 
 const servers = [];
 function serve(handler) {
@@ -50,14 +53,14 @@ after(() => {
 
 const account = { id: 'h-ana', email: 'ana@x.org', displayName: 'Ana', emailVerified: true };
 const me = () => ({ account, terms: { needsAgreement: false, current: 1 }, progress: null });
-/** A Kea account server (the Hub before the move, or the new one): signs in ana@x.org with her password. */
+/** A Kea account server (the Hub before the move, or the new one): signs in ana@x.org with Google. */
 function accountRoutes(name, srv, extra = () => null) {
   return (m, p, b, rq) => {
     srv.calls.push(`${m} ${p}`);
     const x = extra(m, p, b, rq);
     if (x) return x;
     if (p === '/v1/health') return [200, { ok: true, service: name }];
-    if (p === '/v1/auth/login') return b?.password === 'lantern velvet orbit' ? [200, { token: `${name}-token`, account }] : [401, { error: 'Wrong email or password.' }];
+    if (p === '/v1/auth/google' || p === '/v1/auth/oauth') return emailOf(b?.idToken) === 'ana@x.org' ? [200, { token: `${name}-token`, account }] : [404, { error: 'No account.' }];
     if (p === '/v1/me') return rq.headers.authorization === `Bearer ${name}-token` ? [200, me()] : [401, { error: 'Sign in again.' }];
     return null;
   };
@@ -87,8 +90,8 @@ const fresh = () => {
 /** Ana's account on this computer, signed in online on the old Hub. */
 async function anaOnline(old) {
   process.env.KEA_HUB_URL = old.url;
-  await A.create({ email: 'ana@x.org', password: 'lantern velvet orbit', name: 'Ana' });
-  const s = await A.login({ email: 'ana@x.org', password: 'lantern velvet orbit', online: true });
+  A.openOffline({ email: 'ana@x.org', name: 'Ana' });
+  const s = await A.link({ provider: 'google' });
   assert.equal(s.state, 'online');
   return s;
 }
@@ -117,16 +120,16 @@ test('moved, with the same signing key: Kea switches, the online sign-in ends, t
   // The notice is shown once.
   assert.equal(A.movedSeen().moved.seen, true);
   assert.equal(A.local().moved.seen, true);
-  // The offline password still works, with no connection.
+  // Signed out with no connection: the same email opens the account here again.
   A.logout();
   process.env.KEA_HUB_URL = 'http://127.0.0.1:9';
   settings.set({ 'hub.url': 'http://127.0.0.1:9' });
-  assert.equal((await A.login({ email: 'ana@x.org', password: 'lantern velvet orbit' })).state, 'linked');
+  assert.equal(A.openOffline({ email: 'ana@x.org' }).state, 'linked');
   // Signing in once on the new server.
   settings.set({ 'hub.url': keac.url });
-  s = await A.login({ email: 'ana@x.org', password: 'lantern velvet orbit', online: true });
+  s = await A.link({ provider: 'google' });
   assert.equal(s.state, 'online');
-  assert.ok(keac.calls.includes('POST /v1/auth/login'));
+  assert.ok(keac.calls.includes('POST /v1/auth/google'));
   assert.equal(hub._token(), 'keac-token');
   assert.equal(s.moved, null, 'the notice has done its job');
 });
@@ -143,7 +146,7 @@ test('moved, but the new address has another signing key: nothing switches, the 
   assert.equal(s.moved.kind, 'unchecked');
   assert.equal(s.moved.to, fake.url, 'the address, for Advanced');
   assert.match(s.moved.reason, /different key/);
-  assert.ok(!fake.calls.includes('POST /v1/auth/login') && !fake.calls.includes('GET /v1/me'), 'nothing was sent there');
+  assert.ok(!fake.calls.includes('POST /v1/auth/google') && !fake.calls.includes('GET /v1/me'), 'nothing was sent there');
   // An account route says so too (and isn't asked again at once).
   await assert.rejects(hub.req('GET', '/v1/me'), (e) => e.status === 410 && e.data?.unchecked && /couldn’t be checked/.test(e.message));
   assert.equal(fake.calls.filter((c) => c === 'GET /v1/keys').length, 1, 'tried again only after a while');
@@ -156,7 +159,7 @@ test('a sign-in that meets the move goes to the checked new address at once', as
   const keac = await newServer('kid-2');
   process.env.KEA_HUB_URL = old.url;
   old.moved = { movedTo: keac.url, keacKeyKid: 'kid-2' };
-  const s = await A.login({ email: 'ana@x.org', password: 'lantern velvet orbit' });
+  const s = await A.oauthSignIn({ provider: 'google' });
   assert.equal(s.state, 'online');
   assert.equal(hub.url(), keac.url);
   assert.equal(hub._token(), 'keac-token');

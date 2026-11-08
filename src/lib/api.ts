@@ -493,13 +493,14 @@ export interface HubStatus {
   url: string;
   state: KeaAccountState;
   /** The account signed in on this computer (null: nobody). */
-  account: { id: string; email: string; name: string; linked: boolean; canSignInOffline: boolean; provider: string | null } | null;
+  account: { id: string; email: string; name: string; linked: boolean; provider: string | null } | null;
   /** Accounts used on this computer before (to sign in again with one tap). */
   known: { email: string; name: string }[];
   /** Which of Continue with Google / Microsoft this copy of Kea is set up for. */
   providers: { google: boolean; microsoft: boolean };
-  /** linked: the background online sign-in needs a two-step code, or the password changed online. */
-  onlineNote: 'code' | 'password' | null;
+  /** A Google or Microsoft sign-in waiting for the terms (a new account) or the owner's two-step code. */
+  pending?: { email: string; name: string | null; provider: KeaSignInProvider } | null;
+  onlineNote?: string | null;
   /** Whether the server has been checked yet since Kea started. */
   checked?: boolean;
   /** The address this copy of Kea came with. */
@@ -595,32 +596,24 @@ export interface HubApi {
   openSupport(): Promise<HubResult<boolean>>;
   changes(): Promise<HubResult<HubTermsChanges>>;
   openTerms(since?: number): Promise<HubResult<void>>;
-  /** A new account on this computer, at once, with no connection needed. */
-  create(a: { email: string; password: string; name?: string }): Promise<HubResult<HubStatus>>;
-  /** Continue with Google or Microsoft from the start screen. */
-  oauthSignIn(a: { provider: KeaSignInProvider; email?: string; code?: string }): Promise<HubResult<HubStatus>>;
-  /** Takes the account on this computer online (same email only); with password + terms it makes the online account. */
-  link(a: { provider: KeaSignInProvider; password?: string; code?: string; age13?: boolean } & Partial<Agreement>): Promise<HubResult<HubStatus>>;
-  login(a: { email: string; password: string; code?: string; online?: boolean }): Promise<HubResult<HubStatus>>;
+  /** Kea on this computer with just an email, at once, no connection needed: that account opens here (made the first time). */
+  openOffline(a: { email: string; name?: string }): Promise<HubResult<HubStatus & { created?: boolean }>>;
+  /** Continue with Google or Microsoft from the start screen: signs in, or (data.needsAccount) asks for the terms first. */
+  oauthSignIn(a: { provider: KeaSignInProvider }): Promise<HubResult<HubStatus>>;
+  /** Takes the account on this computer online with Google or Microsoft (the same email only). */
+  link(a: { provider: KeaSignInProvider }): Promise<HubResult<HubStatus>>;
+  /** Finishes the waiting sign-in: the terms for a new account, or the owner's two-step code. */
+  continueSignIn(a: ({ age13: boolean; name?: string } & Agreement) | { code: string }): Promise<HubResult<HubStatus>>;
+  cancelSignIn(): Promise<HubResult<HubStatus>>;
   accept(a: Agreement): Promise<HubResult<HubStatus>>;
   googleVerify(): Promise<HubResult<HubStatus>>;
-  googleSignIn(a: { email?: string; code?: string }): Promise<HubResult<HubStatus>>;
-  googleReset(a: { email?: string; password: string; code?: string }): Promise<HubResult<HubStatus>>;
-  /** Needs the account's current password (the Hub asks for proof before changing sign-in). */
-  totpSetup(a: { password: string }): Promise<HubResult<{ secret: string; uri: string }>>;
-  /** With a Hub that has them, the ten new backup codes come along (shown once). */
-  totpEnable(a: { code: string }): Promise<HubResult<HubStatus & { backupCodes?: string[] }>>;
-  /** New backup codes (the old ones stop working): the password and a code from the authenticator app. */
-  backupCodes(a: { password: string; code: string }): Promise<HubResult<{ backupCodes: string[]; left: number }>>;
-  totpDisable(a: { password: string; code: string }): Promise<HubResult<HubStatus>>;
   setName(name: string): Promise<HubResult<HubStatus>>;
-  /** Signs out every other device. */
-  changePassword(a: { current: string; next: string }): Promise<HubResult<HubStatus>>;
   sessions(): Promise<HubResult<{ sessions: HubSession[] }>>;
-  signOutOthers(a: { password: string }): Promise<HubResult<{ signedOut: number }>>;
+  /** Signs out every other device, after a fresh Google or Microsoft sign-in with this account's email. */
+  signOutOthers(a: { provider: KeaSignInProvider }): Promise<HubResult<{ signedOut: number }>>;
   /** Saves everything the Hub keeps about this account as one JSON file; the path, or null when cancelled. */
   exportData(): Promise<HubResult<string | null>>;
-  deleteAccount(a: { confirm: 'DELETE'; password: string; code?: string }): Promise<HubResult<HubStatus>>;
+  deleteAccount(a: { confirm: 'DELETE'; provider: KeaSignInProvider }): Promise<HubResult<HubStatus>>;
   logout(): Promise<HubResult<HubStatus>>;
   /** Syncing through the Hub: on, when it last finished, the last error, and what moved. */
   syncStatus(): Promise<HubResult<HubSyncState>>;
