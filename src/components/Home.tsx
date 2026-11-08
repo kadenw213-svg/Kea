@@ -173,7 +173,7 @@ export function HomeScreen({ visible }: { visible: boolean }) {
     for (const k of known) list.push({ id: k.id, label: k.label, path: k.path, icon: icon(k.id) });
     for (const f of settings.folders || []) list.push({ id: 'folder:' + f, label: f.split(/[\\/]/).filter(Boolean).pop() || f, path: f, icon: <Folder size={17} />, removable: true });
     // Kea Cloud: the person's Kea storage, first among the cloud drives.
-    if (cloudOn && cloud) list.push({ id: 'keacloud', label: cloud.signedIn ? 'Kea Cloud' : 'Kea Cloud · Sign in', path: cloud.root, icon: <KeaCloudMark />, cloud: 'kea' });
+    if (cloudOn && cloud) list.push({ id: 'keacloud', label: cloud.signedIn ? 'Kea Cloud' : 'Kea Cloud · Not online', path: cloud.root, icon: <KeaCloudMark />, cloud: 'kea' });
     for (const d of drives)
       for (const a of d.accounts)
         list.push({ id: `${d.id}:${a.path}`, label: d.accounts.length > 1 || a.label !== d.label ? `${d.label === a.label ? '' : d.label + ' · '}${a.label}` : d.label, path: a.path, icon: <DriveLogo id={d.id} size={17} />, cloud: d.id });

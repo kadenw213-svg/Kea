@@ -1,10 +1,10 @@
 // Kea Cloud's status: the sync state, the storage used, and what to do when it's full or signed out. Shown on Home
 // (above Kea Cloud's files) and in Settings → Accounts & cloud → Kea Cloud.
 import { useEffect } from 'react';
-import { AlertTriangle, CheckCircle2, CloudOff, FolderOpen, Loader2, LogIn, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CloudOff, FolderOpen, Loader2, RefreshCw } from 'lucide-react';
 import { api, KeaCloudStatus } from '../../lib/api';
 import { STATE_LABEL, storageLine, useKeaCloud, watchKeaCloud } from '../../lib/keaCloud';
-import { openAccount } from '../account/hubStore';
+import { NeedsOnline } from '../account/NeedsOnline';
 import { toast } from '../../store';
 import { timeAgo } from '../../lib/util';
 
@@ -40,8 +40,6 @@ function StorageBar({ s }: { s: KeaCloudStatus }) {
   );
 }
 
-const signIn = () => openAccount();
-
 async function syncNow() {
   const r = await api.keaCloud.syncNow();
   if (r.ok) useKeaCloud.setState({ status: r.value });
@@ -56,10 +54,7 @@ export function KeaCloudHeader() {
   if (!s.signedIn)
     return (
       <div className="kc-head">
-        <span className="muted">Sign in to your Kea account to keep documents in Kea Cloud, on all your devices.</span>
-        <button className="btn sm primary" onClick={signIn}>
-          <LogIn size={14} /> Sign in
-        </button>
+        <NeedsOnline compact what="Kea Cloud keeps your documents on all your devices" />
       </div>
     );
   return (
@@ -95,12 +90,8 @@ export function KeaCloudPanel() {
       <div className="kc-panel">
         <KeaCloudMark size={28} />
         <div className="kc-panel-main">
-          <b>Not signed in</b>
-          <span className="muted">Kea Cloud uses the storage that comes with your Kea account.</span>
+          <NeedsOnline what="Kea Cloud uses the storage that comes with your online Kea account" />
         </div>
-        <button className="btn sm primary" onClick={signIn}>
-          <LogIn size={14} /> Sign in
-        </button>
       </div>
     );
   return (

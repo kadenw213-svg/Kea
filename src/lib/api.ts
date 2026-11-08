@@ -482,10 +482,29 @@ export interface HubMe {
   storage: { used: number; quota: number; over?: boolean; custom?: boolean; supporter?: boolean; standard?: number; supporterQuota?: number };
   notifications?: { unread: number; latest: number };
 }
+/**
+ * The account on this computer, from its files alone (never the network):
+ *   none: nobody signed in (the start screen shows); offline: made on this computer, not online yet;
+ *   linked: linked to an online Kea account, signed in here without an online session; online: signed in online.
+ */
+export type KeaAccountState = 'none' | 'offline' | 'linked' | 'online';
+export type KeaSignInProvider = 'google' | 'microsoft';
 export interface HubStatus {
   url: string;
+  state: KeaAccountState;
+  /** The account signed in on this computer (null: nobody). */
+  account: { id: string; email: string; name: string; linked: boolean; canSignInOffline: boolean; provider: string | null } | null;
+  /** Accounts used on this computer before (to sign in again with one tap). */
+  known: { email: string; name: string }[];
+  /** Which of Continue with Google / Microsoft this copy of Kea is set up for. */
+  providers: { google: boolean; microsoft: boolean };
+  /** linked: the background online sign-in needs a two-step code, or the password changed online. */
+  onlineNote: 'code' | 'password' | null;
+  /** Whether the server has been checked yet since Kea started. */
+  checked?: boolean;
   /** The address this copy of Kea came with. */
   defaultUrl?: string;
+  /** An online session is kept here (online, even while the server can't be reached). */
   signedIn: boolean;
   reachable: boolean;
   me: HubMe | null;
@@ -560,6 +579,9 @@ export interface HubSyncState {
   counts: { up: number; down: number; deleted: number; bytesUp: number; bytesDown: number } | null;
 }
 export interface HubApi {
+  /** From this computer alone, at once. */
+  local(): Promise<HubResult<HubStatus>>;
+  /** After checking the server (a few seconds at most). */
   status(): Promise<HubResult<HubStatus>>;
   terms(): Promise<HubResult<HubTerms>>;
   /** The Hub's donation link, if its owner set one. */
@@ -567,8 +589,13 @@ export interface HubApi {
   openSupport(): Promise<HubResult<boolean>>;
   changes(): Promise<HubResult<HubTermsChanges>>;
   openTerms(since?: number): Promise<HubResult<void>>;
-  register(a: { email: string; password: string; name: string; age13: boolean; birthYear?: number } & Agreement): Promise<HubResult<HubStatus>>;
-  login(a: { email: string; password: string; code?: string }): Promise<HubResult<HubStatus>>;
+  /** A new account on this computer, at once, with no connection needed. */
+  create(a: { email: string; password: string; name?: string }): Promise<HubResult<HubStatus>>;
+  /** Continue with Google or Microsoft from the start screen. */
+  oauthSignIn(a: { provider: KeaSignInProvider; email?: string; code?: string }): Promise<HubResult<HubStatus>>;
+  /** Takes the account on this computer online (same email only); with password + terms it makes the online account. */
+  link(a: { provider: KeaSignInProvider; password?: string; code?: string; age13?: boolean } & Partial<Agreement>): Promise<HubResult<HubStatus>>;
+  login(a: { email: string; password: string; code?: string; online?: boolean }): Promise<HubResult<HubStatus>>;
   accept(a: Agreement): Promise<HubResult<HubStatus>>;
   googleVerify(): Promise<HubResult<HubStatus>>;
   googleSignIn(a: { email?: string; code?: string }): Promise<HubResult<HubStatus>>;
@@ -623,6 +650,8 @@ export interface HubApi {
   onNotifications(cb: (n: HubNotifications) => void): () => void;
   /** A Windows notification from the Hub was clicked: show the account page. */
   onOpenAccount(cb: () => void): () => void;
+  /** The account changed by itself (a background online sign-in, the session ended, the server came back). */
+  onChanged(cb: () => void): () => void;
   /** The optional phone number (null clears it) and who sees it. */
   setPhone(a: { phone?: string | null; visibility?: HubPhoneVisibility }): Promise<HubResult<HubStatus>>;
 }
@@ -680,8 +709,8 @@ export interface AiState {
 }
 export type AvatarCrop = { x: number; y: number; zoom: number; w: number; h: number };
 /**
- * The Kea account as this computer shows it: email, name and verified from the Kea Hub, the picture kept here. School
- * mode also counts the email as verified when it's signed in here to Claude, OneDrive or Google (verifiedHere).
+ * The Kea account signed in on this computer: its email and name, verified (the online account's email), and the
+ * picture kept here.
  */
 export interface KeaAccount {
   email: string;
@@ -691,15 +720,12 @@ export interface KeaAccount {
   crop: AvatarCrop | null;
   verified: boolean;
   verifiedBy: string | null;
-  verifiedHere?: boolean;
   /** Kea's creator. */
   owner: boolean;
 }
 export interface AccountApi {
   /** null when signed out of the Kea account. */
   get(): Promise<KeaAccount | null>;
-  /** Looks for the account's email among this computer's sign-ins (for School mode). */
-  verifyHere(): Promise<KeaAccount | null>;
   avatar(clear?: boolean): Promise<KeaAccount | null>;
   crop(c: AvatarCrop | null): Promise<KeaAccount | null>;
 }

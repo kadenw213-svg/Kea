@@ -1,6 +1,7 @@
 // How someone shows on Kea Hub class leaderboards: their name, a nickname, or hidden. Kept apart from HubClasses so
 // Settings can show it without loading the class pages.
 import { useEffect, useState } from 'react';
+import { NeedsOnline } from '../account/NeedsOnline';
 import { hubc, BoardShow } from '../../lib/hubClasses';
 import { HubResult } from '../../lib/api';
 import { toast } from '../../store';
@@ -52,7 +53,7 @@ export function BoardNameSetting() {
   useEffect(() => {
     if (cur) (setShow(cur.show), setNick(cur.nickname || ''));
   }, [cur?.show, cur?.nickname]);
-  if (!status?.signedIn) return <p className="muted">Sign in to your Kea account to choose how you show on class leaderboards.</p>;
+  if (!status?.signedIn) return <NeedsOnline compact what="Class leaderboards" />;
   return (
     <div>
       <BoardChoice show={show} nick={nick} setShow={setShow} setNick={setNick} />

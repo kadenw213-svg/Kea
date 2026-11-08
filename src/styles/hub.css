@@ -802,3 +802,48 @@
   color: var(--danger, #e5534b);
   font-size: 12px;
 }
+
+/* "Needs your Kea account online": a calm locked state for cloud features (never an error). */
+.needs-online {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 13px;
+  text-align: left;
+}
+.needs-online > svg {
+  flex: none;
+  color: var(--text-2);
+}
+.needs-online-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.needs-online.compact {
+  padding: 6px 10px;
+}
+.acct-known {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.acct-where {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.gate-advanced {
+  margin-top: 10px;
+  text-align: left;
+}
+.gate-advanced > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+}

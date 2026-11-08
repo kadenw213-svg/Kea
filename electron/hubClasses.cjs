@@ -192,7 +192,7 @@ async function live(key, fn, put) {
     if (e.status !== 0) throw e;
     const was = typeof key === 'function' ? key(s) : s[key];
     if (was) return { ...was, offline: true };
-    throw new OfflineError("The Kea Hub is offline right now (its computer may be asleep or updating). Try again in a bit.");
+    throw new OfflineError("Can’t reach your Kea account online right now. Try again in a bit.");
   }
 }
 
@@ -355,7 +355,7 @@ function register() {
     try {
       return await hub.req('POST', `/v1/sets/${enc(setId)}/answer`, { questionId, choice });
     } catch (e) {
-      if (e.status === 0) throw new OfflineError('The Kea Hub is offline, so answers can’t be checked right now. Your progress is safe; try again when it’s back.');
+      if (e.status === 0) throw new OfflineError('Your Kea account is offline right now, so answers can’t be checked. Your progress is safe; try again when it’s back.');
       throw e;
     }
   });

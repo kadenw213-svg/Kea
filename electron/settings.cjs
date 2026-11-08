@@ -57,7 +57,7 @@ function set(patch) {
 
 // Settings the page may never change through settings:set: where Kea's secrets go and what it runs. Each has its own
 // checked IPC (hub:setUrl for the Hub's address) or is Kea's own bookkeeping.
-const PROTECTED = new Set(['hub.url', 'hub.ownerKeyFile', 'hub.ownerPort', 'hub.googleClientId', 'hub.googleClientSecret', 'scholar.pcId', 'scholar.lastPrimary', 'app.storageMoved']);
+const PROTECTED = new Set(['hub.url', 'hub.ownerKeyFile', 'hub.ownerPort', 'hub.googleClientId', 'hub.googleClientSecret', 'hub.microsoftClientId', 'scholar.pcId', 'scholar.lastPrimary', 'app.storageMoved']);
 const protectedKey = (k) => PROTECTED.has(k) || /^hub\.(owner|google)/.test(k) || k === '__proto__' || k === 'constructor' || k === 'prototype';
 // Settings the page may change, but only to a value of the right shape.
 const CHECKED = {

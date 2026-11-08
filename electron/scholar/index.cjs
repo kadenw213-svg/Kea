@@ -296,7 +296,7 @@ const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() 
 /** Whether class scans can run for this profile: Claude signed in, the engine installed, a class site saved. */
 async function ready() {
   const c = await workspace.check();
-  return !!(c.claude && c.uv && c.account.loggedIn && c.engineReady && browser.schoolInfo().home && require('../account.cjs').verified());
+  return !!(c.claude && c.uv && c.account.loggedIn && c.engineReady && browser.schoolInfo().home);
 }
 
 /**
@@ -419,7 +419,7 @@ let offlineUntil = 0;
 const BANK_RUNS = 12;
 let bankRuns = { day: '', n: 0 };
 async function keepBanks() {
-  if (banking || devices.follower() || settings.get('scholar.questionBanks', true) === false || !require('../account.cjs').verified()) return;
+  if (banking || devices.follower() || settings.get('scholar.questionBanks', true) === false) return;
   if (!(await workspace.check().then((c) => c.account?.loggedIn).catch(() => false))) return;
   banking = true;
   try {
@@ -558,8 +558,7 @@ function register() {
   // On a device that isn't the primary, the primary is asked to (through the drive), so nothing runs twice.
   // (Starting a Claude run answers only Kea's own page: ipcGuard.cjs.)
   ipcMain.handle('scholar:run', require('../ipcGuard.cjs').appOnly((_e, task, arg) => {
-    // School mode needs a Kea account with a verified email.
-    if (!require('../account.cjs').verified()) throw new Error('Verify your Kea account’s email first (Settings → Kea account).');
+    // (Scans with this computer's own Claude need no online account: only Kea's shared Claude does, hub.cjs.)
     if (task !== 'probe' && devices.follower()) return devices.relay({ task, arg: arg || '' });
     runner.run(task, arg || '', 'manual').then(() => task === 'study' && keepBanks());
     return true;

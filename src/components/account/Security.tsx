@@ -425,7 +425,7 @@ export function YourData({ status }: { status: HubStatus }) {
       <div className="acct-row-block">
         <div className="acct-row">
           <Download size={16} />
-          <span className="acct-row-main">Everything the Kea Hub keeps about you (account, classes, organizations, availability, shifts, files list, sign-ins) as one file.</span>
+          <span className="acct-row-main">Everything your online Kea account keeps about you (account, classes, organizations, availability, shifts, files list, sign-ins) as one file.</span>
           <button
             className="btn sm"
             disabled={busy}

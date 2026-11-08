@@ -7,6 +7,7 @@ import { ask, toast } from '../../store';
 import { refreshHub, useHubStatus } from '../scholar/HubAccount';
 import { VerifyEmail } from '../scholar/Account';
 import { accountOf } from '../account/hubStore';
+import { NeedsOnline } from '../account/NeedsOnline';
 import { localTz, post, useMyId, useWork, Tab } from './workStore';
 import { RANK } from './types';
 import type { Org } from './types';
@@ -57,8 +58,7 @@ export function WorkScreen() {
       <div className="work">
         <div className="work-inner wk-narrow">
           <h1 className="work-title">Work</h1>
-          {/* (Kea's sign-in screen covers this while signed out: one place to sign in.) */}
-          <p className="muted">Sign in with your Kea account to see your organizations: schedules, availability, certs and classes.</p>
+          <NeedsOnline what="Work shows your organizations: schedules, availability, certs and classes" />
         </div>
       </div>
     );

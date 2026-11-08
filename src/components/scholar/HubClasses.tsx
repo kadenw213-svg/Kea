@@ -27,6 +27,7 @@ import { hubc, useHubClasses, HubClass, HubClassDetail, HubSession, HubSetInfo, 
 import { HubResult, api } from '../../lib/api';
 import { toast, ask } from '../../store';
 import { useScholar } from './scholarStore';
+import { NeedsOnline } from '../account/NeedsOnline';
 import { hubSetId } from './studyIds';
 import { useHubStatus, refreshHub, SupporterBadge } from './HubAccount';
 import { openLink } from './kinds';
@@ -94,14 +95,7 @@ export function HubView({ classId }: { classId?: string }) {
       <div className="sch-page">
         <h1 className="sch-title">Kea Hub classes</h1>
         <p className="sch-sub">Classes on the Kea Hub: join with a code from your instructor, study the class’s sets and see the leaderboard.</p>
-        <div className="acct-card">
-          <p className="muted acct-note">Sign in to your Kea account first.</p>
-          <div className="acct-actions">
-            <button className="btn primary" onClick={() => useScholar.getState().set({ view: { name: 'account' } })}>
-              Sign in or create an account
-            </button>
-          </div>
-        </div>
+        <NeedsOnline what="Joining hosted classes" onOpen={() => useScholar.getState().set({ view: { name: 'account' } })} />
       </div>
     );
   return classId ? <ClassPage key={classId} id={classId} /> : <HubHome />;
@@ -110,7 +104,7 @@ export function HubView({ classId }: { classId?: string }) {
 function OfflineNote({ when: at }: { when?: number }) {
   return (
     <p className="hub-warn hubc-offline">
-      <CloudOff size={14} /> The Kea Hub is offline, so this is what Kea last saw{at ? ` (${new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })})` : ''}. Changes can be made when it’s back.
+      <CloudOff size={14} /> Your Kea account is offline right now, so this is what Kea last saw{at ? ` (${new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })})` : ''}. Changes can be made when it’s back.
     </p>
   );
 }

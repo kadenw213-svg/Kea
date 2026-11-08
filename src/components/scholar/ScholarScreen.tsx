@@ -34,7 +34,6 @@ import {
   Trash2,
   Monitor,
   ClipboardCheck,
-  ShieldAlert,
   Reply,
   CalendarClock,
   Link2,
@@ -61,7 +60,7 @@ import { MessagesView } from './Messages';
 import { ChangesBox, ItemHistory } from './History';
 import { openClassStudy, openStudyHub } from './StudyHub';
 import { studyRoute } from './studyIds';
-import { Avatar, VerifiedBadge, VerifyEmail, useAccount } from './Account';
+import { Avatar, VerifiedBadge, useAccount } from './Account';
 import { openAccount } from '../account/hubStore';
 import { HubPanel, SharedClaude } from './HubAccount';
 import { HubNav, HubView, HubPractice, useHubClassList } from './HubClasses';
@@ -245,7 +244,7 @@ export function ScholarScreen() {
     ) : view.name === 'account' ? (
       <div className="sch-page">
         <h1 className="sch-title">Your account</h1>
-        <p className="sch-sub">One Kea account for Kea and KeaS. School mode needs a verified email.</p>
+        <p className="sch-sub">One Kea account for Kea and KeaS.</p>
         <HubPanel />
         {showHub && (
           <div className="acct-card hub-card">
@@ -330,13 +329,6 @@ export function ScholarScreen() {
         </button>
       </nav>
       <main className="sch-main">
-        {hasData && account && !account.verified && view.name !== 'account' && (
-          <div className="acct-banner">
-            <ShieldAlert size={16} />
-            <span>Class checks are paused until your email is verified.</span>
-            <VerifyEmail school compact />
-          </div>
-        )}
         {main}
       </main>
       {item && <ItemPanel ctx={ctx} item={item} onClose={() => setItem(null)} />}
@@ -1715,8 +1707,6 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
     if (found) ctx.open(found);
     else toast('Kea couldn’t find that work on your calendar any more.', 'error');
   };
-  // (A guide is promised only while class checks run: they need a verified Kea account.)
-  const [account] = useAccount();
   return (
     <aside className="sch-panel" style={{ ['--kc' as any]: ctx.colors.item(it) }}>
       <div className="sch-panel-head">
@@ -1843,7 +1833,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
       })()}
       {format && <p className="pn-format">{format.replace(/^(exam |test |quiz )?format:\s*/i, 'Format: ')}</p>}
       {/* How to do it, step by step (Claude's guide, written ahead of time). */}
-      <AssignmentGuide it={it} raw={instructions} onOpen={openLink} onItem={openItem} checksOn={!!account?.verified} />
+      <AssignmentGuide it={it} raw={instructions} onOpen={openLink} onItem={openItem} />
       {it.readings.length > 0 && (
         <details className="pn-readings" open={it.type === 'reading'}>
           <summary>
@@ -1915,19 +1905,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
 }
 
 // ---------- Adding a class ----------
-/** Before school mode: an account with a verified email. */
-function AccountStep() {
-  return (
-    <div className="acct-step">
-      <h3>First, verify your email</h3>
-      <p className="muted">School mode needs your Kea account’s email verified: with Google, or by the same email being signed in here to Claude, OneDrive or Google.</p>
-      <VerifyEmail school compact />
-    </div>
-  );
-}
-
 function AddClass({ first }: { first: boolean }) {
-  const [account] = useAccount();
   const modes = useKeaModes();
   const [profiles, setProfiles] = useState<ProfileList | null>(null);
   useEffect(() => {
@@ -1975,7 +1953,7 @@ function AddClass({ first }: { first: boolean }) {
         <div className="gate">
           <h2>Bring in classes from another device</h2>
           <p>Kea looks in OneDrive and Google Drive on this computer for the classes your other device shares. Both need the same drive account, and Kea open on the other one.</p>
-          {account?.verified ? <FromAnotherDevice onDone={() => useScholar.getState().set({ view: { name: 'calendar' } })} /> : <AccountStep />}
+          <FromAnotherDevice onDone={() => useScholar.getState().set({ view: { name: 'calendar' } })} />
         </div>
       )}
       {gate && (
@@ -1994,11 +1972,7 @@ function AddClass({ first }: { first: boolean }) {
             </li>
             <li>Without Claude, this stays off rather than guessing. Classes you join with a code work without it.</li>
           </ul>
-          {account?.verified ? (
-            <SetupWizard onDone={() => useScholar.getState().set({ view: { name: 'scans' } })} />
-          ) : (
-            <AccountStep />
-          )}
+          <SetupWizard onDone={() => useScholar.getState().set({ view: { name: 'scans' } })} />
           <SharedClaude />
           <details className="gate-adv">
             <summary>Already use the Class Calendar Import skills?</summary>

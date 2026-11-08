@@ -10,7 +10,7 @@ export function AccountButton() {
   const status = useHubStatus();
   const [account] = useAccount();
   const notes = useHubNotifications();
-  if (!status?.signedIn || !account) return null;
+  if (!status?.account || !account) return null;
   const unread = notes?.unread ?? status.me?.notifications?.unread ?? 0;
   return (
     <MenuButton
@@ -30,7 +30,7 @@ export function AccountButton() {
               {account.name || account.email} <VerifiedBadge account={account} size={13} />
             </span>
             <span className="muted">{account.email}</span>
-            {!account.verified && <span className="acct-tb-warn">Email not verified</span>}
+            {status.state === 'online' ? !account.verified && <span className="acct-tb-warn">Email not verified</span> : <span className="muted">{status.state === 'offline' ? 'On this computer only' : 'Not online right now'}</span>}
           </div>
           <button className="menu-item" onClick={() => (close(), openAccount())}>
             <UserCircle size={16} /> Your account
