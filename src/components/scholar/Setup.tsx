@@ -166,7 +166,7 @@ export function SetupWizard({ onDone, target }: { onDone?(): void; target?: stri
         )}
         {signedIn && <div className="setup-ok">Signed in.</div>}
         {site === 'canvas' && (
-          <p className="muted">Canvas support is new. If something from your classes looks wrong or missing, tell us under Settings → Feedback.</p>
+          <p className="muted">If something from your Canvas classes looks wrong or missing, tell us under Settings → Feedback.</p>
         )}
       </Step>
 

@@ -49,7 +49,7 @@ export const PANELS: Panel[] = [
   { id: 'p-control', label: 'Connect an app (MCP)', section: 'control', words: 'mcp claude code agent api automation connect app key revoke' },
   { id: 'p-aimodels', label: 'AI image tools: models', section: 'aimodels', words: 'background removal upscale download models gpu image ai' },
   { id: 'p-lookup-model', label: 'Local model for the Encyclopedia', section: 'lookup', words: 'llama qwen ai model download offline local gpu' },
-  { id: 'p-account', label: 'How you use Kea, and your Kea account', section: 'account', words: 'sign in sign out log in log out profile modes personal school work hub email password leaderboard' },
+  { id: 'p-account', label: 'How you use Kea, and your Kea account', section: 'account', words: 'sign in sign out log in log out google microsoft modes personal school work email password leaderboard' },
   { id: 'p-cloud', label: 'Kea cloud storage', section: 'keacloud', words: 'storage space quota cloud sync documents full used free room' },
   { id: 'p-sync', label: 'Where your things sync', section: 'keacloud', words: 'sync syncing onedrive google drive dropbox folder phone devices other computers kea cloud server keas organization off where' },
   { id: 'p-history', label: 'Version history on this PC', section: 'files', words: 'version history space disk storage delete versions' },

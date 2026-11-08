@@ -262,7 +262,7 @@ export const SECTIONS: Section[] = [
       { key: 'areas.documents', group: 'Areas of Kea', label: 'Documents (docs, sheets, slides, PDFs and files)', type: 'toggle', default: true },
       { key: 'scholar.enabled', label: 'School (classes, calendar, study and library)', type: 'toggle', default: true },
       { key: 'areas.auto', label: 'Turn areas on by themselves when I start using them', type: 'toggle', default: true, advanced: true, help: 'Joining a class turns on School.' },
-      { key: 'areas.setupDone', label: 'First-run setup finished', type: 'toggle', default: false, advanced: true, help: 'Turn off to see the "What will you use Kea for?" screen again.' },
+      { key: 'areas.setupDone', label: 'First-run setup finished', type: 'toggle', default: false, advanced: true, help: 'Turn off to see the "How do you use Kea?" screen again.' },
       { key: 'home.greeting', group: 'Today', label: 'Show greeting and date', type: 'toggle', default: true },
       { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from School and your Kea classes.' },
       { key: 'home.showClasses', label: 'Show my classes', type: 'toggle', default: true },
@@ -547,7 +547,7 @@ export const SECTIONS: Section[] = [
     id: 'scholar',
     label: 'Classes and study',
     icon: 'GraduationCap',
-    blurb: 'Your classes, their textbooks and calendar. Classes you add from your school are kept up to date by scans that run in the background through your own Claude account.',
+    blurb: 'Your classes, their textbooks and calendar. Classes from your class sites are kept up to date by scans that run in the background with your own Claude, or with Kea’s shared Claude (limited).',
     fields: [
       {
         key: 'scholar.scanEvery',
@@ -678,7 +678,7 @@ export const SECTIONS: Section[] = [
         type: 'toggle',
         default: true,
         advanced: true,
-        help: 'Kea on another computer with the same drive shows the same classes, checkmarks, notifications and study sets. Only the primary device (Scans → Devices) ever checks the class site or uses your Claude plan.'
+        help: 'Kea on another computer that syncs to the same place shows the same classes, checkmarks, notifications and study sets. Only the primary device (Scans → Devices) ever checks the class site or uses your Claude plan.'
       },
       { key: 'scholar.deviceName', label: 'This device’s name', type: 'text', default: '', advanced: true, help: 'Shown to your other devices. Empty: the computer’s own name.' },
       {
@@ -885,7 +885,7 @@ export const SECTIONS: Section[] = [
     id: 'privacy',
     label: 'Privacy & data',
     icon: 'Shield',
-    blurb: 'Kea talks to your Kea account online (its address is under Kea account → Advanced) while you’re signed in: it checks for account notifications every few minutes, syncs Kea cloud documents about every 15 seconds while you use them, and loads classes, shifts and forms when you open School or Work. Your password goes only to your Kea account, once, when you sign in. Otherwise Kea only goes online to check GitHub for updates, to read Wikipedia and Wiktionary when you use the Encyclopedia, to download models you choose, and to set up cloud drives you sign in to.',
+    blurb: 'Kea talks to your Kea account online (its address is under Kea account → Advanced) while you’re signed in: it checks for account notifications every few minutes, syncs Kea cloud documents about every 15 seconds while you use them, and loads classes, shifts and forms when you open School or Work. Signing in goes through Google or Microsoft; Kea has no password of its own. Otherwise Kea only goes online to check GitHub for updates, to read Wikipedia and Wiktionary when you use the Encyclopedia, to download models you choose, and to set up cloud drives you sign in to.',
     fields: [
       { key: 'privacy.citeLookup', label: 'Allow citation look-ups', type: 'toggle', default: true, help: 'When you click "Look up" in Citations, Kea asks Crossref (DOIs), Open Library (ISBNs) or the web page itself for the details. Nothing is sent otherwise.' },
       { key: 'privacy.log', label: 'Keep a troubleshooting log', type: 'toggle', default: true, advanced: true, help: 'A small local file (kea.log) with errors and file names. Never sent anywhere.' }

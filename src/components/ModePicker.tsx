@@ -8,7 +8,7 @@ import { toast } from '../store';
 const CHOICES: { id: KeaMode; label: string; blurb: string; icon: JSX.Element }[] = [
   { id: 'personal', label: 'Personal', blurb: 'Study on your own: notes and practice for things you learn. No school account.', icon: <Heart size={22} /> },
   { id: 'school', label: 'School', blurb: 'Connects to your school’s class site, plus classes you join with a code.', icon: <GraduationCap size={22} /> },
-  { id: 'work', label: 'Work', blurb: 'Join your organization with a code. Its classes, trainings and shifts show up in Kea.', icon: <Briefcase size={22} /> },
+  { id: 'work', label: 'Work', blurb: 'Join your organization with its join link or code. Your shifts, time clock and pay show up in Kea.', icon: <Briefcase size={22} /> },
 ];
 // (Work only where this copy of Kea has the Work area.)
 const shown = () => CHOICES.filter((c) => c.id !== 'work' || workAvailable);

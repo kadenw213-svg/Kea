@@ -248,7 +248,7 @@ function AboutPanel() {
         <Logo size={56} />
         <div>
           <div className="about-name">Kea {version}</div>
-          <div className="muted">A free, offline office suite. Open source under the MIT license.</div>
+          <div className="muted">A study app and office suite in one. Free and open source under the MIT license.</div>
         </div>
       </div>
       <div className="about-card">

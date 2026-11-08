@@ -236,7 +236,7 @@ function Work() {
   if (data.offline && !data.next && !data.todo.length)
     return (
       <Card id="work" alert={alert} icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
-        <div className="dempty">Can’t reach your Kea account online right now. Your shifts show here when it’s back.</div>
+        <div className="dempty">Can’t reach your organization right now. Your shifts show here when it’s back.</div>
       </Card>
     );
   return (
@@ -272,7 +272,7 @@ function Work() {
           ))}
         </ul>
       ) : (
-        <div className="dempty">{data.offline ? 'Can’t reach your Kea account online right now.' : 'Nothing waiting on you.'}</div>
+        <div className="dempty">{data.offline ? 'Can’t reach your organization right now.' : 'Nothing waiting on you.'}</div>
       )}
     </Card>
   );

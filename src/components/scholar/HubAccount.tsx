@@ -978,8 +978,8 @@ export function MovedNotice() {
 }
 
 /**
- * No Claude account? Kea's shared Claude (run by Kea's creator, free, limited and queued) can set up this profile's
- * classes. Only the class site's address goes to the Hub, never the login: while the scan runs it browses the class
+ * No Claude account? Kea's shared Claude (run by Kea's creator, free, limited and queued) can set up your classes.
+ * Only the class site's address goes to the Kea account server, never the login: while the scan runs it browses the class
  * site through this Kea, which has to stay open.
  */
 export function SharedClaude() {
@@ -1010,12 +1010,12 @@ export function SharedClaude() {
     <div className="hub-shared">
       <h3 className="hub-title">No Claude account? Use Kea’s shared Claude</h3>
       <p className="muted acct-note">
-        Free and limited: Kea’s creator’s Claude sets up your classes once, in a queue. Your school password never leaves this computer: the scan reads your class site through this Kea, so keep Kea open while it runs. To rescan or rewrite anything later, connect your own Claude.
+        Free, with limits: one full scan per class each term, a light check at most once a day, practice questions 25 at a time and one guide per assignment. It needs your Kea account online. Your school password never leaves this computer: the scan reads your class site through this Kea, so keep Kea open while it runs. With your own Claude there are no limits and no account is needed.
       </p>
       {!status?.signedIn || !status.reachable ? (
         <NeedsOnline what="Kea’s shared Claude" />
       ) : !status.me?.account.emailVerified ? (
-        <div className="hub-warn">Verify your email with Google first. <VerifyEmail compact /></div>
+        <div className="hub-warn">Verify your email first. <VerifyEmail compact /></div>
       ) : status.me.account.birthYear == null || status.me.account.parentSignOff === 'needed' || status.me.account.parentSignOff === 'pending' ? (
         <ParentSignOff status={status} />
       ) : open ? (
@@ -1242,7 +1242,7 @@ function MoreQuestions({ jobs, onAsked }: { jobs: HubScanJob[]; onAsked(): void 
   return (
     <div className="acct-form">
       <h3 className="hub-title">Ran out of practice questions?</h3>
-      <p className="muted acct-note">Ask for 25 new questions on one chapter. They’re different from the ones you have, classmates who ask for the same chapter get them too, and they show up in My resources after a sync.</p>
+      <p className="muted acct-note">Ask for 25 new questions on one chapter; the next 25 come once you’ve answered 20. They’re different from the ones you have, classmates who ask for the same chapter get them too, and they show up in Study after a sync.</p>
       {waiting.map((j) => (
         <p key={j.id} className="hub-warn">
           {j.chapter}: {j.status === 'running' ? 'being written now.' : `in line${j.position != null ? `, about ${Math.max(1, j.etaMinutes ?? 0)} min` : ''}.`}

@@ -31,11 +31,11 @@ export function useAccount() {
   return [!key ? undefined : key === 'out' ? null : account, set] as const;
 }
 
-/** The verified mark beside a name; Kea's creator gets their own. */
+/** The badge beside a name: only Kea's creator has one (a verified email shows no badge). */
 export function VerifiedBadge({ account, size = 15 }: { account: KeaAccount | null | undefined; size?: number }) {
-  if (!account?.verified) return null;
+  if (!account?.verified || !account.owner) return null;
   return (
-    <span className={`acct-badge ${account.owner ? 'owner' : ''}`} title={account.owner ? 'Verified · Kea’s creator' : `Verified through ${account.verifiedBy}`}>
+    <span className="acct-badge owner" title="Kea’s creator">
       <BadgeCheck size={size} />
     </span>
   );
