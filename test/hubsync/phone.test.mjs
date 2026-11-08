@@ -87,6 +87,21 @@ test('profiles: every Kea → <profile> folder that has the data file', () => {
   assert.deepEqual(P.profilesIn(list), ['School', 'Work #2']);
 });
 
+test('the phone reads the folder whose data file is newest (one phone copy; old folders may linger)', () => {
+  assert.equal(P.newestProfileIn([]), null);
+  assert.equal(P.newestProfileIn([{ path: 'kea/Kea/School/phone.json', updatedAt: 9 }]), null);
+  const list = [
+    { path: 'kea/Kea/School/kea-data.json', updatedAt: 100 },
+    { path: 'kea/Kea/Personal/phone.json', updatedAt: 999 },
+    { path: 'kea/Kea/Personal/kea-data.json', updatedAt: 50 },
+    { path: `kea/Kea/${P.encodeSeg('Work #2')}/kea-data.json`, updatedAt: 300 },
+    { path: 'kea/Kea/Bad~110000~/kea-data.json', updatedAt: 5000 }
+  ];
+  assert.equal(P.newestProfileIn(list), 'Work #2');
+  // A tie keeps to the first name, so the choice doesn't flip between checks.
+  assert.equal(P.newestProfileIn([{ path: 'kea/Kea/B/kea-data.json', updatedAt: 7 }, { path: 'kea/Kea/A/kea-data.json', updatedAt: 7 }]), 'A');
+});
+
 test('only what changed moves; textbooks queue until the library step', async () => {
   const hub = fakeHub();
   hub.write('kea/Kea/School/kea-data.json', '{"v":1}');
@@ -95,7 +110,7 @@ test('only what changed moves; textbooks queue until the library step', async ()
   hub.write('kea/Kea/Other/kea-data.json', '{"other":1}');
   const clock = { t: 0 };
   const s = phone(hub, clock);
-  await assert.rejects(s.pull(), /profile/);
+  await assert.rejects(s.pull(), /No classes in Kea cloud yet/);
   s.use('School');
   let r = await s.pull();
   assert.equal(r.data, '{"v":1}');
@@ -204,7 +219,7 @@ test('a profile with no data file yet says so in plain words', async () => {
   const hub = fakeHub();
   const s = phone(hub);
   s.use('School');
-  await assert.rejects(s.pull(true), /no classes in your Kea storage yet/);
+  await assert.rejects(s.pull(true), /No classes in Kea cloud yet/);
 });
 
 // ---------- against a real Kea Hub, with Kea on a PC on the other side ----------

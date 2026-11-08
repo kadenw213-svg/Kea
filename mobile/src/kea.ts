@@ -5,7 +5,7 @@ import { registerPlugin } from '@capacitor/core';
 import { phoneRequests, studyOut } from './study';
 import { getLook, onThemeChange, setLook } from './theme';
 import { THEMES } from '../../src/lib/themes';
-import { hubInfo, hubOn, hubProblem, hubPushPhone, hubReadData } from './hub';
+import { hubInfo, hubOn, hubPickFolder, hubProblem, hubPushPhone, hubReadData } from './hub';
 import type { NativeOrgs } from './orgCore';
 import type { ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 
@@ -136,16 +136,18 @@ export const setPages = (path: string, n: number) => {
 
 export const Kea: KeaNative = (globalThis as any).__keaMock || registerPlugin<KeaNative>('Kea');
 
-/** Classes through the Kea account (set by keaState, never by the native side): which profile, and whose account. */
+/** Classes through the Kea account (set by keaState, never by the native side): which folder (never shown), and whose account. */
 export type HubLink = { email: string; profile: string; url: string };
 
 /**
- * The phone's state, with the Kea account folded in: signed in with a profile chosen, the classes come through the
- * Kea Hub (dataFolder names it) and the drive files are left alone.
+ * The phone's state, with the Kea account folded in: signed in with Kea's folder found, the classes come through
+ * Kea cloud (dataFolder says so, never the folder's name) and the drive files are left alone.
  */
 export async function keaState(): Promise<Awaited<ReturnType<KeaNative['state']>>> {
   const [st, h] = await Promise.all([Kea.state(), hubInfo()]);
-  if (h.signedIn && h.profile) return { ...st, dataFolder: `Kea account: ${h.profile}`, dataFileOnly: false, files: ['kea-data.json', 'phone.json'], drive: '', hub: { email: h.email, profile: h.profile, url: h.url } };
+  // (Signed in, and Kea's folder not found yet: the classes may have arrived in Kea cloud since.)
+  if (h.signedIn && !h.profile) h.profile = await hubPickFolder().catch(() => '');
+  if (h.signedIn && h.profile) return { ...st, dataFolder: 'Kea cloud', dataFileOnly: false, files: ['kea-data.json', 'phone.json'], drive: '', hub: { email: h.email, profile: h.profile, url: h.url } };
   return st;
 }
 

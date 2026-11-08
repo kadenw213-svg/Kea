@@ -11,15 +11,19 @@ import { toast } from './ui';
 import { ACCENT_LIST, PAGES, PageId, THEME_LIST, setLook, useLook } from './theme';
 import { VoiceSheet } from './Book';
 import { useSetting, useSettings } from '../../src/lib/settings';
+import { Logo } from '../../src/components/Logo';
+
+/** Kea cloud's mark: Kea's own logo, as in Kea on the computer (Settings → Kea cloud → Where your things sync). */
+const KeaMark = () => <Logo size={22} className="drive-logo" />;
 
 type NativeState = Awaited<ReturnType<typeof Kea.state>>;
 const DOWNLOAD = 'https://github.com/kadenw213-svg/Kea/releases/latest';
 
 /** The drives Kea on the PC can sync through, with where Kea's files are in each and its name in Android's picker. */
 const DRIVES = [
-  { id: 'google', label: 'Google Drive', app: 'com.google.android.apps.docs', menu: 'Drive', where: 'My Drive → Kea → School' },
-  { id: 'onedrive', label: 'OneDrive', app: 'com.microsoft.skydrive', menu: 'OneDrive', where: 'Kea → School' },
-  { id: 'dropbox', label: 'Dropbox', app: 'com.dropbox.android', menu: 'Dropbox', where: 'Kea → School' },
+  { id: 'google', label: 'Google Drive', app: 'com.google.android.apps.docs', menu: 'Drive', where: 'My Drive → Kea' },
+  { id: 'onedrive', label: 'OneDrive', app: 'com.microsoft.skydrive', menu: 'OneDrive', where: 'Kea' },
+  { id: 'dropbox', label: 'Dropbox', app: 'com.dropbox.android', menu: 'Dropbox', where: 'Kea' },
   { id: 'phone', label: 'A folder on this phone', app: '', menu: '', where: '' }
 ] as const;
 type DriveId = (typeof DRIVES)[number]['id'];
@@ -229,10 +233,10 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
             <ol className="how">
               <li>Install Kea on your computer and connect your classes there.</li>
               <li>
-                Sign in to your <b>Kea account</b> in Kea on the computer (your name → Your account). Your classes then sync through your Kea storage, and this phone signs in to the same account.
+                In Kea on the computer, sign in with Google or Microsoft and keep <b>Where your things sync</b> on <b>Kea cloud</b> (the default). This phone then signs in to the same Kea account.
               </li>
               <li>
-                Or, without an account: in Kea on the computer, open <b>Scans → Devices</b> and turn on sync with <b>Google Drive</b> or <b>OneDrive</b>. Kea puts a <b>Kea</b> folder in that drive.
+                Or, if the computer syncs through <b>Google Drive</b>, <b>OneDrive</b>, <b>Dropbox</b> or a synced folder (Settings → Kea cloud → Where your things sync), choose Kea’s files from there.
               </li>
             </ol>
             <button className="btn" onClick={() => Kea.open({ url: DOWNLOAD })}>
@@ -243,7 +247,8 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
         {step === 1 && viaHub && (
           <>
             <UserRound size={34} className="pair-ic" />
-            <h1>Your Kea account</h1>
+            <h1>Kea cloud</h1>
+            <p>Sign in to the same Kea account as Kea on your computer.</p>
             <HubAccount
               compact
               onChange={async () => {
@@ -261,16 +266,16 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
         {step === 1 && !viaHub && !drive && (
           <>
             <Cloud size={34} className="pair-ic" />
-            <h1>Where is Kea’s folder?</h1>
+            <h1>Where do your things sync?</h1>
             <p>
-              Sign in to your Kea account, or choose the drive your computer syncs Kea through (the one chosen in Kea on the computer under <b>Scans → Devices</b>).
+              Choose the same place Kea on your computer syncs to (Settings → Kea cloud → <b>Where your things sync</b>). Kea cloud is the default.
             </p>
             <div className="drives">
               <button className="drive-opt" onClick={() => setViaHub(true)}>
-                <UserRound size={22} />
+                <KeaMark />
                 <span>
-                  <b>My Kea account</b>
-                  <span className="muted small block">{st?.hub ? `Signed in as ${st.hub.email}` : 'The same account as Kea on your computer'}</span>
+                  <b>Kea cloud</b>
+                  <span className="muted small block">{st?.hub ? `Through your Kea account · ${st.hub.email}` : 'Through your Kea account'}</span>
                 </span>
                 <ChevronRight size={18} className="muted" />
               </button>
@@ -306,14 +311,14 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
               </div>
             )}
             {drv.id === 'phone' ? (
-              <p>If a sync app keeps your Kea folder on this phone, choose it: the Kea folder or Kea → School both work.</p>
+              <p>If a sync app keeps your Kea folder on this phone, choose it: the Kea folder or the folder inside it both work.</p>
             ) : (
               <ol className="how">
                 <li>
                   Tap the button below. If the picker opens somewhere else, tap <b>☰</b> and choose <b>{drv.menu}</b>.
                 </li>
                 <li>
-                  Open <b>{drv.where}</b>.
+                  Open <b>{drv.where}</b>, then the folder inside it that has kea-data.json.
                 </li>
                 <li>Press and hold the first file, tap the other two, then tap Select.</li>
               </ol>
@@ -444,8 +449,8 @@ export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onC
               <div className="set-row">
                 <CheckCircle2 size={18} className="ok-ic" />
                 <span>
-                  <b>Through your Kea account</b>
-                  <span className="muted small block">{state.hub.profile} · synced with Kea on your computer through your Kea storage</span>
+                  <b>Through Kea cloud</b>
+                  <span className="muted small block">Synced with Kea on your computer</span>
                 </span>
               </div>
               <button className="btn" onClick={onPair}>
@@ -553,7 +558,7 @@ export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onC
         </section>
         <section className="set">
           <h2>About</h2>
-          <p className="muted small">Kea is free and open source. Your scans and files stay on your phone; your classes sync only through your own drive.</p>
+          <p className="muted small">Kea is free and open source. Your scans and files stay on your phone; your classes sync through the place Kea on your computer uses: Kea cloud, or your own drive or folder.</p>
           <button className="btn" onClick={onWelcome}>
             Show the welcome tour
           </button>

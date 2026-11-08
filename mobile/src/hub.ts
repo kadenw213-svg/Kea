@@ -1,12 +1,13 @@
 // The phone's link to the online Kea account (the same account as Kea on the PC): requests, the terms gate, and syncing
-// the PC's Kea folder through the person's Kea storage instead of a cloud drive's file picker. When this phone is
-// signed in and a profile is chosen, kea.ts reads and writes through here; otherwise it keeps using the drive files.
+// the PC's Kea folder through Kea cloud instead of a cloud drive's file picker. When this phone is signed in and Kea's
+// folder is found (hubPickFolder: the newest one, picked by itself), kea.ts reads and writes through here; otherwise it
+// keeps using the drive files.
 //
 // Requests go through native code (KeaPlugin.hubRequest, Hub.java), which holds the session token in Android's
 // encrypted storage and adds it to each request: the web code never sees the token.
 import { Kea } from './kea';
 import { normalizeAccountUrl } from './accountCore';
-import { createPhoneSync, profilesIn, toRemote, type HubFile, type SyncClient, type SyncState } from './hubsync';
+import { FULL_EVERY, createPhoneSync, newestProfileIn, profilesIn, toRemote, type HubFile, type SyncClient, type SyncState } from './hubsync';
 
 const PROFILE = 'kea.hubProfile';
 const STATE = 'kea.hubSync';
@@ -156,7 +157,7 @@ export async function acceptTerms(g: TermsGate) {
 /** The readable terms page on the Hub (only the changes, when `since` is given). */
 export const termsUrl = (url: string, since?: number | null) => `${url}/terms${since ? `?since=${since}` : ''}`;
 
-/** The Kea profiles (Kea → School, …) the PC has synced into this account's storage. */
+/** The folders (Kea → <name>) the PC has synced into this account's storage that have Kea's data file. */
 export async function hubProfiles(): Promise<string[]> {
   const r = await hubCall<{ files: HubFile[] }>('GET', `/v1/files?prefix=${encodeURIComponent('kea/Kea/')}`);
   return profilesIn(r.files);
@@ -164,6 +165,20 @@ export async function hubProfiles(): Promise<string[]> {
 export function setHubProfile(name: string) {
   localStorage.setItem(PROFILE, name);
   sync().use(name);
+}
+
+let pickedAt = 0;
+/**
+ * Read the folder Kea on the PC writes the phone copy into: the one whose kea-data.json is newest (folders from before
+ * one calendar per account may linger). Switches when a newer one appears. Returns the folder, or '' when there are no
+ * classes in Kea cloud yet. Throws HubError like any call (offline, the terms gate, a sign-in that ended).
+ */
+export async function hubPickFolder(): Promise<string> {
+  const r = await hubCall<{ files: HubFile[] }>('GET', `/v1/files?prefix=${encodeURIComponent('kea/Kea/')}`, undefined, { limit: 'auth' });
+  pickedAt = Date.now();
+  const newest = newestProfileIn(r.files) || '';
+  if (newest && newest !== hubProfile()) setHubProfile(newest);
+  return newest;
 }
 
 /**
@@ -257,7 +272,17 @@ function sync() {
 
 /** kea-data.json from the Hub: its text when it changed (or `force`), else null (the copy from last time is current). */
 export async function hubReadData(force: boolean): Promise<string | null> {
-  return serial(async () => (await sync().pull(force)).data);
+  return serial(async () => {
+    // (Now and then, and when asked for anyway: a newer folder from the PC takes over. Offline: the one from last time.)
+    if (force || Date.now() - pickedAt > FULL_EVERY) {
+      const was = hubProfile();
+      try {
+        await hubPickFolder();
+      } catch {}
+      if (hubProfile() !== was) force = true;
+    }
+    return (await sync().pull(force)).data;
+  });
 }
 export async function hubPushPhone(text: string) {
   return serial(() => sync().push(text));

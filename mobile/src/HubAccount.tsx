@@ -1,17 +1,17 @@
 // The Kea account on the phone. Continue with Google or Microsoft signs in (the first time it makes the online account,
 // after the terms); with no connection, just an email opens that account on the phone at once. An account on the phone
-// goes online later with the same email. There are no passwords. Online, the account's terms, which profile's classes
-// to show, its notifications and storage; the classes and textbooks then come through the Kea account instead of a
-// drive's files. The account's address is under Advanced.
+// goes online later with the same email. There are no passwords. Online, the account's terms, its notifications and
+// storage; the classes and textbooks then come through Kea cloud instead of a drive's files (from the folder Kea on the
+// computer writes them into, picked by itself). The account's address is under Advanced.
 import { useEffect, useState } from 'react';
-import { Bell, Check, CheckCircle2, ExternalLink, Heart, Loader2, LogIn, LogOut, RefreshCw, Smartphone, UserPlus, UserRound } from 'lucide-react';
+import { Bell, Check, CheckCircle2, ExternalLink, Heart, Loader2, LogIn, LogOut, RefreshCw, Smartphone, UserPlus } from 'lucide-react';
 import { Kea } from './kea';
-import { HubError, HubInfo, HubMeSummary, HubNote, TermsGate, acceptTerms, hubInfo, hubMe, hubNotes, hubNotesRead, hubProfiles, setHubProfile, termsGate, termsUrl } from './hub';
+import { HubError, HubInfo, HubMeSummary, HubNote, TermsGate, acceptTerms, hubInfo, hubMe, hubNotes, hubNotesRead, hubPickFolder, termsGate, termsUrl } from './hub';
 import { NOT_SET_UP, cancelSignIn, continueSignIn, currentTerms, link, oauthSignIn, openOffline, setAdvancedUrl, signOut, status as accountStatus, type AccountStatus, type SignedIn } from './account';
 import { EMAIL, PROVIDERS, type Provider } from './accountCore';
 import { NeedsOnline, useAccount } from './NeedsOnline';
 
-/** `onChange`: signed in or out, or the profile changed (the app reads the classes again). */
+/** `onChange`: signed in or out, or Kea's folder in Kea cloud changed (the app reads the classes again). */
 export function HubAccount({ onChange, compact = false }: { onChange(): void; compact?: boolean }) {
   const [s, setS] = useAccount();
   const changed = (n: AccountStatus) => {
@@ -198,7 +198,7 @@ function OnPhone({ s, onDone }: { s: AccountStatus; onDone(s: AccountStatus): vo
         <OwnerCode o={o} />
       ) : (
         <>
-          <NeedsOnline status={s} what="Your classes, Kea storage and notifications through your Kea account" onOpen={() => setOpen(true)} />
+          <NeedsOnline status={s} what="Your classes through Kea cloud, Kea storage and notifications" onOpen={() => setOpen(true)} />
           {(open || s.state === 'linked') && (
             <>
               <ProviderButtons s={s} busy={o.busy} onPick={(p) => o.run(() => link({ provider: p }))} />
@@ -258,8 +258,8 @@ function Advanced({ s, onDone }: { s: AccountStatus; onDone(s: AccountStatus): v
   );
 }
 
-// ---------- Online: the terms, which classes, notifications and storage ----------
-type View = 'loading' | 'terms' | 'profile' | 'ready';
+// ---------- Online: the terms, notifications and storage ----------
+type View = 'loading' | 'terms' | 'ready';
 
 function Online({ s, compact, onChange, onSignedOut }: { s: AccountStatus; compact: boolean; onChange(): void; onSignedOut(s: AccountStatus): void }) {
   const [info, setInfo] = useState<HubInfo | null>(null);
@@ -268,24 +268,23 @@ function Online({ s, compact, onChange, onSignedOut }: { s: AccountStatus; compa
   const [msg, setMsg] = useState('');
   const [gate, setGate] = useState<TermsGate | null>(null);
   const [ticked, setTicked] = useState<Record<string, boolean>>({});
-  const [profiles, setProfiles] = useState<string[] | null>(null);
+  /** Whether Kea cloud has classes from Kea on the computer (null: not known yet, or offline). */
+  const [hasClasses, setHasClasses] = useState<boolean | null>(null);
 
-  /** Where things stand: terms to agree to, a profile to choose, or all set. */
+  /**
+   * Where things stand: terms to agree to, or all set. Kea's folder in Kea cloud is picked by itself (the newest), so
+   * there's nothing to choose.
+   */
   const check = async () => {
     const i = await hubInfo();
     setInfo(i);
     if (!i.signedIn) return accountStatus().then(onSignedOut);
     try {
-      const list = await hubProfiles();
-      setProfiles(list);
-      if (!i.profile || !list.includes(i.profile)) {
-        if (list.length === 1) {
-          setHubProfile(list[0]);
-          setInfo({ ...i, profile: list[0] });
-          onChange();
-          return setView('ready');
-        }
-        return setView('profile');
+      const folder = await hubPickFolder();
+      setHasClasses(!!folder);
+      if (folder && folder !== i.profile) {
+        setInfo({ ...i, profile: folder });
+        onChange();
       }
       setView('ready');
     } catch (e: any) {
@@ -293,7 +292,7 @@ function Online({ s, compact, onChange, onSignedOut }: { s: AccountStatus; compa
       if (e instanceof HubError && e.status === 401) return accountStatus().then(onSignedOut);
       // (Offline: the account is still signed in; what's shown is from last time.)
       if (!(e instanceof HubError && e.status === 0)) setMsg(errText(e));
-      setView(i.profile ? 'ready' : 'profile');
+      setView('ready');
     }
   };
   useEffect(() => {
@@ -332,7 +331,7 @@ function Online({ s, compact, onChange, onSignedOut }: { s: AccountStatus; compa
     setBusy(true);
     const r = await signOut();
     setBusy(false);
-    setProfiles(null);
+    setHasClasses(null);
     setMsg('');
     onSignedOut(r);
   };
@@ -381,65 +380,23 @@ function Online({ s, compact, onChange, onSignedOut }: { s: AccountStatus; compa
     );
   }
 
-  if (view === 'profile')
-    return (
-      <>
-        <p>
-          Signed in as <b>{who}</b>. {profiles?.length ? 'Which classes should this phone show?' : ''}
-        </p>
-        {unreachable}
-        {profiles && !profiles.length && (
-          <p className="note">No classes in your Kea storage yet. Sign in to the same Kea account in Kea on your computer, and it syncs your classes here. Then check again.</p>
-        )}
-        <div className="drives">
-          {(profiles || []).map((p) => (
-            <button
-              key={p}
-              className="drive-opt"
-              onClick={() => {
-                setHubProfile(p);
-                setInfo(info && { ...info, profile: p });
-                setView('ready');
-                onChange();
-              }}
-            >
-              <UserRound size={22} />
-              <span>
-                <b>{p}</b>
-              </span>
-            </button>
-          ))}
-        </div>
-        <button className="btn" disabled={busy} onClick={check}>
-          <RefreshCw size={16} /> Check again
-        </button>
-        {msg && <p className="note warn">{msg}</p>}
-        {!compact && <AccountNotes />}
-        <button className="btn ghost danger-text" disabled={busy} onClick={out}>
-          <LogOut size={16} /> Sign out
-        </button>
-      </>
-    );
-
   return (
     <>
       <div className="set-row">
         <CheckCircle2 size={18} className="ok-ic" />
         <span>
           <b>{who}</b>
-          <span className="muted small block">
-            {info?.profile ? `${info.profile} · ` : ''}
-            Your Kea account online
-          </span>
+          <span className="muted small block">Your Kea account online</span>
         </span>
       </div>
       {unreachable}
+      {hasClasses === false && <p className="note">No classes in Kea cloud yet. Sign in to the same Kea account in Kea on your computer and keep it syncing through Kea cloud; your classes come here.</p>}
       {msg && <p className="note warn">{msg}</p>}
       {!compact && <AccountNotes />}
       <div className="actions">
-        {(profiles?.length || 0) > 1 && (
-          <button className="btn" onClick={() => setView('profile')}>
-            <UserRound size={16} /> Other classes
+        {hasClasses === false && (
+          <button className="btn" disabled={busy} onClick={check}>
+            <RefreshCw size={16} /> Check again
           </button>
         )}
         <button className="btn ghost danger-text" disabled={busy} onClick={out}>

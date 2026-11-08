@@ -298,7 +298,7 @@ export function App() {
             <div className="bar">
               <span style={{ width: `${[8, 30, 70, 100][step] || 8}%` }} />
             </div>
-            <p className="muted">{['Starting…', 'Checking your setup…', 'Reading your classes from your drive…', 'Opening…'][step]}</p>
+            <p className="muted">{['Starting…', 'Checking your setup…', state?.hub ? 'Reading your classes from Kea cloud…' : 'Reading your classes from your drive…', 'Opening…'][step]}</p>
             <p className="muted small">This takes a few seconds. Kea only reads the copy your computer already made.</p>
           </>
         ) : (
@@ -308,7 +308,7 @@ export function App() {
               <RefreshCw size={16} /> Try again
             </button>
             <button className="btn" onClick={() => setPairing(true)}>
-              <FolderOpen size={16} /> Choose Kea’s files again
+              <FolderOpen size={16} /> {state?.hub ? 'Where your classes come from' : 'Choose Kea’s files again'}
             </button>
             <button className="btn ghost" onClick={() => (setState({ ...state!, dataFolder: '' }), setTab('files'))}>
               Use the scanner and PDFs for now

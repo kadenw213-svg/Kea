@@ -1,7 +1,8 @@
-// The phone's side of syncing through the Kea Hub: the same files Kea on the PC mirrors into the person's Kea storage
-// (electron/scholar/hubsync.cjs), seen from the phone.
+// The phone's side of syncing through Kea cloud (the Kea account server; "Hub" in the code): the same files Kea on the
+// PC mirrors into the person's Kea storage (electron/scholar/hubsync.cjs), seen from the phone. <profile> is the one
+// folder Kea on the PC writes the phone copy into (every class site in it; see newestProfileIn), never shown.
 //
-//   kea/Kea/<profile>/kea-data.json       written by the PC: classes, calendar, grades, study sets (read here)
+//   kea/Kea/<profile>/kea-data.json      written by the PC: classes, calendar, grades, study sets (read here)
 //   kea/Kea/<profile>/Textbooks/<CODE>/…  written by the PC: textbook PDFs, one file each (downloaded into the library)
 //   kea/Kea/<profile>/phone.json          written by the phone: checkmarks, read, study progress, requests
 //
@@ -94,6 +95,23 @@ export function profilesIn(files: Pick<HubFile, 'path'>[]): string[] {
   return [...out].sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * The folder the phone reads: the one whose kea-data.json is newest. Kea on the computer writes one phone copy holding
+ * every class site into one folder (Kea → <name>); folders from before one calendar per account may linger, stale.
+ * Null when there's none yet. A tie goes to the first name in order, so the choice doesn't flip.
+ */
+export function newestProfileIn(files: Pick<HubFile, 'path' | 'updatedAt'>[]): string | null {
+  let best: { name: string; at: number } | null = null;
+  for (const f of files) {
+    const m = /^kea\/Kea\/([^/]+)\/kea-data\.json$/.exec(f.path);
+    const name = m ? decodeSeg(m[1]) : null;
+    if (name == null) continue;
+    const at = Number(f.updatedAt) || 0;
+    if (!best || at > best.at || (at === best.at && name.localeCompare(best.name) < 0)) best = { name, at };
+  }
+  return best?.name ?? null;
+}
+
 /** A short, stable fingerprint of phone.json's text (what changed is all that matters, not secrecy). */
 export function fingerprint(s: string) {
   let h1 = 0x811c9dc5,
@@ -141,7 +159,7 @@ export function createPhoneSync({
    * for a phone with no copy of its own), else null. Library changes are queued for `library()`.
    */
   async function pull(wantData = false): Promise<{ data: string | null; dataVersion: number }> {
-    if (!st.profile) throw Object.assign(new Error('Choose which of your Kea profiles this phone shows.'), { status: 0 });
+    if (!st.profile) throw Object.assign(new Error('No classes in Kea cloud yet. Sign in to the same Kea account in Kea on your computer and keep it syncing through Kea cloud; your classes come here.'), { status: 0 });
     const full = now() - st.fullAt > FULL_EVERY;
     const list = await client.list(base(), full ? 0 : st.since);
     const seen = new Set<string>();
@@ -183,7 +201,7 @@ export function createPhoneSync({
         st.dataV = r.version || dataFile?.version || 0;
       } catch (e: any) {
         keep();
-        if (e?.status === 404) throw Object.assign(new Error('This profile has no classes in your Kea storage yet. Sign in to the same Kea account in Kea on your computer (your name → Your account), and it syncs your classes here.'), { status: 404 });
+        if (e?.status === 404) throw Object.assign(new Error('No classes in Kea cloud yet. Sign in to the same Kea account in Kea on your computer and keep it syncing through Kea cloud; your classes come here.'), { status: 404 });
         throw e;
       }
     }
