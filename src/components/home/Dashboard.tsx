@@ -1,14 +1,13 @@
 // The top of Home: what matters today, the way a school or workplace app shows it. "Coming up" (what's due and class
 // sessions from Scholar), "Classes" (Scholar's classes and Kea Hub classes) and, with Work mode on, "Work" (the to-do
-// box's most urgent items and the next shift). Each card only appears when its part of Kea is on; a Personal profile
-// shows no Kea Hub classes.
+// box's most urgent items and the next shift). Each card only appears when its part of Kea is on.
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, BriefcaseBusiness, CalendarClock, CalendarDays, ChevronRight, Clock, GraduationCap, Plus, Users } from 'lucide-react';
 import { api, ScholarCourse, ScholarItem, WorkEvent } from '../../lib/api';
 import { openScholar, useScholar } from '../scholar/scholarStore';
 import { isDone, isMissing, useColors, TODO } from '../scholar/kinds';
 import { HubClass, useHubClasses } from '../../lib/hubClasses';
-import { isPersonalProfile, openWork, useKeaModes, workAvailable } from '../../lib/modes';
+import { openWork, useKeaModes, workAvailable } from '../../lib/modes';
 import { useSetting } from '../../lib/settings';
 import { useHubStatus } from '../account/hubStore';
 import { NeedsOnline } from '../account/NeedsOnline';
@@ -67,18 +66,6 @@ function useSchool(on: boolean, days: number) {
     };
   }, [on, days, version]);
   return data;
-}
-
-function usePersonalProfile(on: boolean) {
-  const [personal, setPersonal] = useState(false);
-  useEffect(() => {
-    if (!on) return;
-    api.scholar
-      .profiles()
-      .then((p) => setPersonal(isPersonalProfile(p.list.find((x) => x.id === p.active))))
-      .catch(() => {});
-  }, [on]);
-  return personal;
 }
 
 interface TodoItem {
@@ -289,9 +276,8 @@ export function Dashboard({ showSchool }: { showSchool: boolean }) {
   const days = Number(useSetting('home.todayDays')) || 7;
   const max = Number(useSetting('home.todayMax')) || 6;
   const school = useSchool(showSchool && (showToday || showClasses), days);
-  const personal = usePersonalProfile(showSchool);
-  // Kea Hub classes belong to School mode; a Personal profile never shows them.
-  const hub = hubSetting && showSchool && modes.school && !personal;
+  // Kea Hub classes come with School.
+  const hub = hubSetting && showSchool && modes.school;
   const hubAll = useHubClasses((s) => s.list);
   const hubLoaded = useHubClasses((s) => s.loaded);
   useEffect(() => {

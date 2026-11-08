@@ -1,14 +1,14 @@
 // "How do you use Kea?": Personal, School and Work, any mix. Asked after the first Kea account sign-in and changed
 // in Settings → Kea account.
 //
-// - Personal: your own study tools, offline. Its classes live in a Scholar profile named "Personal", which shows no
-//   Kea Hub classes.
-// - School: Scholar as it is (class-site scans) plus Kea Hub classes, in the "School" profile.
+// - Personal: your own study tools, offline.
+// - School: Scholar's class-site scans and Kea classes.
 // - Work: the Work area (an organization's classes, shifts and calendar), when this copy of Kea has it.
 //
-// Personal and School both live in Scholar, so either one keeps School (scholar.enabled) on.
+// The answers only turn parts of Kea on or off. Everything lives on one calendar and one class list (every class site,
+// Kea classes, study and Work together); nothing is hidden or split by them. Personal and School both live in
+// Scholar, so either one keeps School (scholar.enabled) on.
 import { useSettings } from './settings';
-import { api, ProfileList } from './api';
 import { useTabs } from '../store';
 
 export type KeaMode = 'personal' | 'school' | 'work';
@@ -37,27 +37,9 @@ export function useKeaModes(): KeaModes {
 }
 export const keaModes = () => modesFrom(useSettings.getState().values);
 
-/** A profile is a Personal one by its name or id ("Personal", "personal-2"). */
-export const isPersonalProfile = (p: { id: string; name: string } | undefined | null) => !!p && (/^personal(-\d+)?$/.test(p.id) || /^personal\b/i.test(p.name));
-
-/** Save the answer and line up Kea's profiles with it. */
+/** Save the answer. (It turns parts of Kea on or off; it never moves or hides anyone's classes.) */
 export async function setModes(m: { personal: boolean; school: boolean; work: boolean }) {
   useSettings.getState().set({ 'modes.personal': m.personal, 'modes.school': m.school, 'modes.work': m.work, 'modes.asked': true, 'scholar.enabled': m.personal || m.school });
-  if (!m.personal && !m.school) return;
-  let p: ProfileList;
-  try {
-    p = await api.scholar.profiles();
-  } catch {
-    return; // (a build without Scholar)
-  }
-  const was = p.active;
-  if (m.personal && !p.list.some(isPersonalProfile)) p = await api.scholar.createProfile('Personal');
-  const personal = p.list.find(isPersonalProfile);
-  const school = p.list.find((x) => !isPersonalProfile(x));
-  // Stay where the person was unless that profile's mode is now off.
-  const keep = p.list.find((x) => x.id === was);
-  const want = keep && (isPersonalProfile(keep) ? m.personal : m.school) ? keep : m.school ? school : personal;
-  if (want && want.id !== p.active) await api.scholar.selectProfile(want.id);
 }
 
 // ---------- Work ----------

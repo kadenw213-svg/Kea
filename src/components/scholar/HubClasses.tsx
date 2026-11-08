@@ -745,7 +745,7 @@ function SetMaker({ classId, onDone }: { classId: string; onDone(): void }) {
                 </button>
               ))
             ) : (
-              <p className="muted">No Kea practice exams or flashcards in this profile yet.</p>
+              <p className="muted">No Kea practice exams or flashcards yet.</p>
             )}
           </div>
         )}

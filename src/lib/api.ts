@@ -126,19 +126,25 @@ export interface KeaApi {
     items(q: { from: string; to: string; courseId?: string }): Promise<ScholarItem[]>;
     course(id: string): Promise<ScholarCourseDetail | null>;
     setDone(id: string, done: boolean): Promise<boolean>;
-    importExisting(folder: string): Promise<{ pdfs: number }>;
-    school(): Promise<SchoolInfo>;
-    setSchoolHome(home: string, platform?: SchoolPlatform): Promise<SchoolInfo>;
-    signIn(remember: boolean): Promise<SchoolInfo & { signedIn: boolean }>;
-    forgetLogin(): Promise<SchoolInfo>;
-    siteStatus(): Promise<{ setUp: boolean; signedIn: boolean; home?: string }>;
-    check(): Promise<ScholarSetup>;
+    /** The connected class sites, each with its status. */
+    sites(): Promise<ScholarSite[]>;
+    /** Another class site (another school): its own folder, set up with `site` passed to the calls below. */
+    addSite(name?: string): Promise<{ id: string; sites: ScholarSite[] }>;
+    renameSite(id: string, name: string): Promise<ScholarSite[]>;
+    // (`site`: which class site; the first one when left out.)
+    importExisting(folder: string, site?: string): Promise<{ pdfs: number }>;
+    school(site?: string): Promise<SchoolInfo>;
+    setSchoolHome(home: string, platform?: SchoolPlatform, site?: string): Promise<SchoolInfo>;
+    signIn(remember: boolean, site?: string): Promise<SchoolInfo & { signedIn: boolean }>;
+    forgetLogin(site?: string): Promise<SchoolInfo>;
+    siteStatus(site?: string): Promise<{ setUp: boolean; signedIn: boolean; home?: string }>;
+    check(site?: string): Promise<ScholarSetup>;
     installUv(): Promise<{ code: number; out: string }>;
     installClaude(): Promise<{ code: number; out: string }>;
     signInClaude(): Promise<ClaudeAccount>;
-    setupEngine(): Promise<boolean>;
-    /** On a device that isn't the primary, the primary is asked instead: `relayed` names it. */
-    run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe' | 'curriculum' | 'steps', arg?: string): Promise<boolean | { relayed: string; online: boolean }>;
+    setupEngine(site?: string): Promise<boolean>;
+    /** On a device that isn't the primary, the primary is asked instead: `relayed` names it. Without `site`, a check of everything runs on every class site. */
+    run(task: 'daily' | 'import' | 'sync' | 'study' | 'probe' | 'curriculum' | 'steps', arg?: string, site?: string): Promise<boolean | { relayed: string; online: boolean }>;
     /** Your devices: the drive they sync through, which one is the primary, and what it's running. */
     devices(): Promise<DevicesStatus>;
     /** Classes other devices share, found in every drive on this one, and what's missing when there are none. */
@@ -969,6 +975,19 @@ export interface ProfileList {
   active: string;
   list: { id: string; name: string; created: string }[];
 }
+/** A connected class site (each school's own scans and classes; all of them show together). */
+export interface ScholarSite {
+  id: string;
+  name: string;
+  /** What it's called beside its classes: its name, or its address. */
+  label: string;
+  home: string;
+  host: string;
+  platform: SchoolPlatform;
+  hasData: boolean;
+  first: boolean;
+  lastCheck: { at: string; ok: boolean; label: string } | null;
+}
 export type StudyKind = 'exam' | 'cards';
 export interface HistoryEvent {
   ts: string;
@@ -1271,6 +1290,9 @@ export interface ScholarCourse {
   id: string;
   code: string;
   name: string;
+  /** The class site it's from, and what that site is called. */
+  site?: string;
+  siteName?: string;
   term: string;
   instructor: string | null;
   url: string | null;

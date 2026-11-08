@@ -178,3 +178,11 @@ test('the old profile switch changes nothing anyone sees', async () => {
   assert.equal(courses.length, 2);
   assert.equal((await call('scholar:profiles')).active, 'school');
 });
+
+test('“How do you use Kea?” only turns parts of Kea on or off: it never makes, picks or hides class sites', () => {
+  const modes = fs.readFileSync(new URL('../../src/lib/modes.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(modes, /api\.scholar|Profile/);
+  const screen = fs.readFileSync(new URL('../../src/components/scholar/ScholarScreen.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(screen, /selectProfile|createProfile|isPersonalProfile/);
+  assert.match(screen, /Add another class site/);
+});
