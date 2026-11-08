@@ -6,6 +6,7 @@ import { phoneRequests, studyOut } from './study';
 import { getLook, onThemeChange, setLook } from './theme';
 import { THEMES } from '../../src/lib/themes';
 import { hubInfo, hubOn, hubProblem, hubPushPhone, hubReadData } from './hub';
+import type { NativeOrgs } from './orgCore';
 import type { ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 
 interface KeaNative {
@@ -88,6 +89,19 @@ interface KeaNative {
   /** A file from Kea storage into the phone's library folder at `to`; skipped when the copy there matches `sha256`. */
   hubDownload(o: { path: string; to: string; size: number; sha256: string }): Promise<{ status: number; version?: string; size?: number; skipped?: boolean; body?: string }>;
   hubRemoveLocal(o: { to: string }): Promise<void>;
+  /** Work: organization servers joined, with their passes and sessions kept natively (Orgs.java; orgCore.NativeOrgs). */
+  orgList: NativeOrgs['orgList'];
+  orgIdentity: NativeOrgs['orgIdentity'];
+  orgAdd: NativeOrgs['orgAdd'];
+  orgUpdate: NativeOrgs['orgUpdate'];
+  orgRemove: NativeOrgs['orgRemove'];
+  orgFetchPass: NativeOrgs['orgFetchPass'];
+  orgSignIn: NativeOrgs['orgSignIn'];
+  orgRequest: NativeOrgs['orgRequest'];
+  orgDropSession: NativeOrgs['orgDropSession'];
+  /** A join link (kea://join?...) that opened Kea; while Kea is open it comes as a 'join' event. */
+  takeJoin(): Promise<{ link?: string }>;
+  addListener(event: 'join', cb: (p: { link: string }) => void): Promise<{ remove(): void }>;
   downloadUpdate(o: { url: string }): Promise<{ path: string; version: string }>;
   installUpdate(): Promise<{ started: boolean; needsPermission?: boolean }>;
   addListener(event: 'update', cb: (p: { received: number; total: number }) => void): Promise<{ remove(): void }>;

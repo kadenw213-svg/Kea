@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Award, Bell, BookOpen, Brain, CalendarDays, Camera, CheckCircle2, ChevronDown, ChevronLeft, Circle, ClipboardCheck, Download, ExternalLink, FolderOpen, GraduationCap, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Award, Bell, BookOpen, Brain, Briefcase, CalendarDays, Camera, CheckCircle2, ChevronDown, ChevronLeft, Circle, ClipboardCheck, Download, ExternalLink, FolderOpen, GraduationCap, Loader2, Mail, MapPin, Megaphone, RefreshCw, Settings, Sun, Trash2, X } from 'lucide-react';
 import type { ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
 import { CATEGORIES, CLASS_COLORS, LinkGroups, TODO, categoryOf, extendedInfo, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
@@ -7,7 +7,9 @@ import { CATEGORIES, CLASS_COLORS, LinkGroups, TODO, categoryOf, extendedInfo, i
 import { handInText, panelLinks, platformLine, quickVerb, relatedText, studyChapters, typeLabel } from '../../src/components/scholar/itemRules';
 import { useSetting } from '../../src/lib/settings';
 import { useAreas } from '../../src/lib/areas';
-import { hubOn, hubSyncLibrary } from './hub';
+import { hubOn, hubSyncLibrary, onAccountChange } from './hub';
+import { WorkTab } from './Work';
+import { hookJoinLinks, workReady } from './orgs';
 import { resumeOauth } from './account';
 import { Kea, KeaData, PhoneMail, cachedData, doneOf, inboxKey, keaState, loadData, phoneDeleted, phoneDone, phoneRead, phoneWithdrawn, setPhoneDeleted, setPhoneDone, setPhoneRead, setPhoneWithdrawn, syncOut, watchClasses, withdrawnNow } from './kea';
 import { loadStudy, onStudyChange } from './study';
@@ -87,7 +89,7 @@ function useStudyData(data: KeaData | null) {
 
 // Classes connected: Home (what's next and missing, studying, readings and each class), the calendar, the inbox and
 // files. Not connected: files (scan and PDFs) and what connecting classes would add.
-type Tab = 'calendar' | 'classes' | 'messages' | 'inbox' | 'files';
+type Tab = 'calendar' | 'classes' | 'messages' | 'inbox' | 'files' | 'work';
 const WELCOMED = 'kea.welcomed';
 
 export function App() {
@@ -114,6 +116,15 @@ export function App() {
   // A file another app opened with Kea.
   const [opened, setOpened] = useState<OpenedFile | null>(null);
   const update = useUpdate();
+  // Work: a tab once the account is online or linked, or has organization servers joined on this phone (or a join
+  // link opened Kea, which shows Work with it filled in).
+  const [workOn, setWorkOn] = useState(false);
+  useEffect(() => {
+    const check = () => void workReady().then((r) => r.usable && setWorkOn(true), () => {});
+    check();
+    hookJoinLinks(() => (setWorkOn(true), setTab('work'), setSettings(false)));
+    return onAccountChange(check);
+  }, []);
   useEffect(() => {
     // (A Google or Microsoft sign-in that came back after Android closed Kea: finished now, in the background.)
     resumeOauth()
@@ -321,6 +332,7 @@ export function App() {
     ).filter(Boolean) as [Tab, typeof Sun, string, number][]
   );
   if (!tabs.length) tabs.push(['files', Camera, 'Scan & PDFs', 0]);
+  if (workOn) tabs.push(['work', Briefcase, 'Work', 0]);
   const current = tab && tabs.some(([id]) => id === tab) ? tab : tabs[0][0];
   const ctx = classes && { data: classes, items, gone, withdraw, inbox, open: setItem, toggle, openCourse: (code: string) => (setCourse(code), setTab('classes')), read: (t: ReaderTarget) => setReader(t), markRead, calendar: () => setTab('calendar') };
   return (
@@ -357,6 +369,7 @@ export function App() {
         {ctx && current === 'calendar' && <Agenda ctx={ctx} missing={missing} />}
         {current === 'classes' && (ctx ? <Classes ctx={ctx} code={course} setCode={setCourse} missing={missing} /> : <ClassesPitch onConnect={() => setPairing(true)} />)}
         {current === 'files' && <FilesTab data={classes} read={read} />}
+        {current === 'work' && <WorkTab onAccount={() => setSettings(true)} />}
       </main>
       <nav className="tabs">
         {tabs.map(([id, Icon, label, badge]) => (

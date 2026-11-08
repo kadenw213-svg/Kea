@@ -45,6 +45,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="${applicationId}" />
             </intent-filter>
+            <!-- Join links for organizations (kea://join?s=<server>&c=<code>): Work opens with the link filled in, and
+                 nothing is joined until the person taps Join (KeaPlugin.takeJoinIntent). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="kea" android:host="join" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

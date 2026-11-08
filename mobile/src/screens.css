@@ -1780,3 +1780,109 @@ button.bigrade {
 details.why .input {
   margin: 6px 0;
 }
+
+/* ---------- Work (Work.tsx): the same cards, chips and sheets as the rest of the phone ---------- */
+.work-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.work-head h1 {
+  flex: 1;
+}
+.work-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.work-empty p {
+  margin: 0;
+}
+.work .card .row-main,
+.work-sheet .card .row-main {
+  flex: 1;
+}
+.work .card.link {
+  gap: 10px;
+}
+.work-overdue {
+  border-left: 3px solid var(--danger);
+}
+.work-clock {
+  align-items: flex-start;
+}
+.work-clock > .btn {
+  flex-shrink: 0;
+  align-self: center;
+}
+.work-code {
+  margin-top: 8px;
+  padding: 8px 10px;
+}
+.work-period {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.work-tc-day {
+  display: grid;
+  grid-template-columns: 7.5em 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+.work-tc-day:last-of-type {
+  border-bottom: 0;
+}
+.work-form {
+  flex-direction: column;
+  align-items: stretch;
+}
+.work-h-btn {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  min-height: 30px;
+}
+.work-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.work-slot .chips button:disabled {
+  opacity: 0.5;
+}
+.work-decide {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.work-signed-out .btn {
+  flex-shrink: 0;
+}
+.work-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 50%;
+}
+.work select.input,
+.work-sheet select.input {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  line-height: 1.35;
+  min-height: 46px;
+}
+.work select.input.work-code {
+  min-height: 40px;
+  padding: 8px 10px;
+}

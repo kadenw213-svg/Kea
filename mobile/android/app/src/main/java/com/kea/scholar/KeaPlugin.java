@@ -49,7 +49,8 @@ public class KeaPlugin extends Plugin {
         scanLauncher = getActivity().registerForActivityResult(new ActivityResultContracts.StartIntentSenderForResult(), this::onScanned);
         CheckWorker.schedule(getContext());
         // (Kea started fresh by a Google or Microsoft sign-in coming back: kept for takeOauth.)
-        if (!takeOauthIntent(getActivity().getIntent())) takeOpened(getActivity().getIntent());
+        // (Or by a join link: kept for takeJoin.)
+        if (!takeOauthIntent(getActivity().getIntent()) && !takeJoinIntent(getActivity().getIntent())) takeOpened(getActivity().getIntent());
     }
 
     // ---------- Files opened with Kea (Open with, Share) ----------
@@ -66,7 +67,143 @@ public class KeaPlugin extends Plugin {
             notifyListeners("oauth", o, false);
             return;
         }
+        if (takeJoinIntent(intent)) {
+            if (joinBack == null) return;
+            JSObject o = new JSObject();
+            o.put("link", joinBack);
+            joinBack = null;
+            notifyListeners("join", o, false);
+            return;
+        }
         if (takeOpened(intent)) notifyListeners("opened", opened, true);
+    }
+
+    // ---------- Join links (kea://join?s=<server>&c=<code>): Work opens with them filled in ----------
+    private String joinBack;
+
+    /** A join link someone tapped: kept for the app (it asks before joining anything). True when it was one. */
+    private boolean takeJoinIntent(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) return false;
+        Uri u = intent.getData();
+        if (!"kea".equalsIgnoreCase(u.getScheme())) return false;
+        intent.setAction(Intent.ACTION_MAIN);
+        intent.setData(null);
+        String s = u.toString();
+        if ("join".equalsIgnoreCase(u.getHost()) && s.length() < 2000) joinBack = s;
+        return true;
+    }
+
+    /** The join link that opened Kea (once). */
+    @PluginMethod
+    public void takeJoin(PluginCall call) {
+        JSObject r = new JSObject();
+        if (joinBack != null) r.put("link", joinBack);
+        joinBack = null;
+        call.resolve(r);
+    }
+
+    // ---------- Organization servers (Orgs.java): passes and sessions stay in Java ----------
+    private interface OrgJob {
+        JSObject run() throws Exception;
+    }
+
+    private void orgJob(PluginCall call, OrgJob job) {
+        new Thread(() -> {
+            try {
+                call.resolve(job.run());
+            } catch (Exception e) {
+                call.reject(String.valueOf(e.getMessage()));
+            }
+        }).start();
+    }
+
+    private static JSObject answer(int status, String body) {
+        JSObject r = new JSObject();
+        r.put("status", status);
+        r.put("body", body == null ? "" : body);
+        return r;
+    }
+
+    @PluginMethod
+    public void orgList(PluginCall call) {
+        String account = call.getString("account", "");
+        orgJob(call, () -> {
+            JSObject r = new JSObject();
+            r.put("servers", Orgs.list(getContext(), account));
+            return r;
+        });
+    }
+
+    @PluginMethod
+    public void orgIdentity(PluginCall call) {
+        String url = call.getString("url", "");
+        orgJob(call, () -> JSObject.fromJSONObject(Orgs.identity(url)));
+    }
+
+    @PluginMethod
+    public void orgAdd(PluginCall call) {
+        String account = call.getString("account", ""), url = call.getString("url", ""), id = call.getString("serverId", ""), name = call.getString("name");
+        orgJob(call, () -> {
+            Orgs.add(getContext(), account, url, id, name);
+            return new JSObject();
+        });
+    }
+
+    @PluginMethod
+    public void orgUpdate(PluginCall call) {
+        String account = call.getString("account", ""), id = call.getString("serverId", "");
+        JSONObject patch = new JSONObject();
+        try {
+            JSObject d = call.getData();
+            for (String k : new String[] { "name", "signedOut", "message" }) if (d.has(k)) patch.put(k, d.get(k));
+        } catch (Exception ignored) {
+        }
+        orgJob(call, () -> {
+            Orgs.update(getContext(), account, id, patch);
+            return new JSObject();
+        });
+    }
+
+    @PluginMethod
+    public void orgRemove(PluginCall call) {
+        String account = call.getString("account", ""), id = call.getString("serverId", "");
+        orgJob(call, () -> {
+            Orgs.remove(getContext(), account, id);
+            return new JSObject();
+        });
+    }
+
+    @PluginMethod
+    public void orgDropSession(PluginCall call) {
+        String account = call.getString("account", ""), id = call.getString("serverId", "");
+        orgJob(call, () -> {
+            Orgs.dropSession(getContext(), account, id);
+            return new JSObject();
+        });
+    }
+
+    @PluginMethod
+    public void orgFetchPass(PluginCall call) {
+        String account = call.getString("account", ""), id = call.getString("serverId", "");
+        orgJob(call, () -> JSObject.fromJSONObject(Orgs.fetchPass(getContext(), account, id)));
+    }
+
+    @PluginMethod
+    public void orgSignIn(PluginCall call) {
+        String account = call.getString("account", ""), id = call.getString("serverId", "");
+        orgJob(call, () -> {
+            Orgs.Answer a = Orgs.signIn(getContext(), account, id);
+            return answer(a.status, a.body);
+        });
+    }
+
+    @PluginMethod
+    public void orgRequest(PluginCall call) {
+        String account = call.getString("account", ""), id = call.getString("serverId", ""), method = call.getString("method", "GET"), path = call.getString("path", ""), body = call.getString("body");
+        orgJob(call, () -> {
+            Orgs.Answer a = Orgs.request(getContext(), account, id, method, path, body);
+            return answer(a.status, a.body);
+        });
     }
 
     // ---------- Google and Microsoft sign-in coming back (com.kea.scholar:/oauth?code=...&state=...) ----------

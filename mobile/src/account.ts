@@ -97,12 +97,19 @@ const needAddress = () => {
 };
 
 // ---------- what the server can do, and whether it answers ----------
-let health: { kind: ServerKind; at: number; url: string } | null = null;
+let health: { kind: ServerKind; at: number; url: string; raw: any } | null = null;
 async function serverInfo(): Promise<ServerKind> {
   if (health && health.url === currentUrl() && Date.now() - health.at < 10 * 60e3) return health.kind;
   const h = await hubCall('GET', '/v1/health', undefined, { auth: false, limit: 'status' });
-  health = { kind: serverKind(h), at: Date.now(), url: currentUrl() };
+  health = { kind: serverKind(h), at: Date.now(), url: currentUrl(), raw: h };
   return health.kind;
+}
+/** The account server's /v1/health as last read (read again when it's older than ten minutes), or null offline. */
+export async function serverHealth(): Promise<any | null> {
+  try {
+    await serverInfo();
+  } catch {}
+  return health && health.url === currentUrl() ? health.raw : null;
 }
 
 export interface AccountStatus {
