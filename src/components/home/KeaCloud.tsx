@@ -85,15 +85,7 @@ export function KeaCloudPanel() {
   const s = useKeaCloud((x) => x.status);
   useEffect(() => watchKeaCloud(true), []);
   if (!s) return <div className="muted">Loading…</div>;
-  if (!s.signedIn)
-    return (
-      <div className="kc-panel">
-        <KeaCloudMark size={28} />
-        <div className="kc-panel-main">
-          <NeedsOnline what="Kea Cloud uses the storage that comes with your online Kea account" />
-        </div>
-      </div>
-    );
+  if (!s.signedIn) return <NeedsOnline what="Kea Cloud uses the storage that comes with your online Kea account" />;
   return (
     <div className="kc-panel">
       <KeaCloudMark size={28} />

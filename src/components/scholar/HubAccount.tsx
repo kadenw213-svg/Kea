@@ -224,7 +224,7 @@ function SignIn({ onDone, initialEmail = '' }: { onDone(): void; initialEmail?: 
       {known.length > 0 && !initialEmail && (
         <div className="acct-known" aria-label="Accounts used on this computer">
           {known.slice(0, 4).map((k) => (
-            <button key={k.email} type="button" className={`chip ${email === k.email ? 'on' : ''}`} onClick={() => setEmail(k.email)} title={k.name || undefined}>
+            <button key={k.email} type="button" className={`btn sm ${email === k.email ? 'primary' : ''}`} onClick={() => setEmail(k.email)} title={k.name || undefined}>
               {k.email}
             </button>
           ))}
@@ -354,6 +354,10 @@ function GoOnline() {
   const reachable = !!status?.reachable;
   useEffect(() => {
     if (reachable && !terms) api.hub.terms().then((r) => r.ok && setTerms(r.value));
+    // (Not reachable: checked again every half minute while this is open.)
+    if (reachable) return;
+    const t = setInterval(() => refreshHub(), 30_000);
+    return () => clearInterval(t);
   }, [reachable]);
   if (!status?.account) return null;
   const go = async (provider: KeaSignInProvider, how: 'create' | 'existing') => {
@@ -1095,6 +1099,13 @@ export function TermsGate() {
     const offChanged = api.hub.onChanged(() => refreshHub());
     return () => (clearInterval(t), offNotes(), offOpen(), offChanged());
   }, []);
+  // (Signed in online but the server can't be reached: checked again every minute, so Kea catches up when it's back.)
+  const away = !!status?.signedIn && !!status.checked && !status.reachable;
+  useEffect(() => {
+    if (!away) return;
+    const t = setInterval(() => refreshHub(), 60_000);
+    return () => clearInterval(t);
+  }, [away]);
   useEffect(() => {
     if (!needs) return setChanges(null);
     run(api.hub.changes()).then(setChanges);

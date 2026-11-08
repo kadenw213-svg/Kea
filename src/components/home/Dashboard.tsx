@@ -10,6 +10,8 @@ import { isDone, isMissing, useColors, TODO } from '../scholar/kinds';
 import { HubClass, useHubClasses } from '../../lib/hubClasses';
 import { isPersonalProfile, openWork, useKeaModes, workAvailable } from '../../lib/modes';
 import { useSetting } from '../../lib/settings';
+import { useHubStatus } from '../account/hubStore';
+import { NeedsOnline } from '../account/NeedsOnline';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -222,6 +224,14 @@ function left(ms: number | null, overdue: boolean) {
 
 function Work() {
   const data = useWorkData(true);
+  const status = useHubStatus();
+  // (Without an online session there are no organizations to show: the card says what's needed, calmly.)
+  if (status && !status.signedIn)
+    return (
+      <Card icon={<BriefcaseBusiness size={16} />} title="Work" action="Open Work" onAction={openWork}>
+        <NeedsOnline compact />
+      </Card>
+    );
   if (!data) return null;
   if (data.offline && !data.next && !data.todo.length)
     return (
