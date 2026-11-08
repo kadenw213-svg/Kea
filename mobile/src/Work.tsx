@@ -581,7 +581,9 @@ function ClockCard({ org, offline }: { org: WorkOrg; offline: boolean }) {
   const [busy, setBusy] = useState(false);
   const codes = (pay.data?.codes ?? []).filter((c: any) => c.active !== false);
   useEffect(() => {
-    if (!code && (st.data?.defaultPayCodeId || pay.data?.defaultCodeId)) setCode(st.data?.defaultPayCodeId || pay.data?.defaultCodeId || '');
+    // My default, only when it's one of my codes that's turned on (as on the computer).
+    const d = st.data?.defaultPayCodeId || pay.data?.defaultCodeId || codes.find((c) => c.default)?.id || '';
+    if (!code && d && codes.some((c) => c.id === d)) setCode(d);
   }, [st.data, pay.data]);
   if (offline || st.error) {
     const unreachable = offline || /reach|connection/i.test(st.error || '');
@@ -604,7 +606,8 @@ function ClockCard({ org, offline }: { org: WorkOrg; offline: boolean }) {
     setBusy(true);
     const type = st.data!.clockedIn ? 'out' : 'in';
     try {
-      const r: any = await work.clock(org.id, type, code || null);
+      // Only one of my codes that's turned on; otherwise none, and the server uses my default.
+      const r: any = await work.clock(org.id, type, type === 'in' && codes.some((c) => c.id === code) ? code : null);
       toast(type === 'out' ? 'Clocked out.' : r?.late ? `Clocked in, ${r.minutesLate} min late.` : 'Clocked in.');
       st.reload();
       todayShifts.reload();
