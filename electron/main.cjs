@@ -728,21 +728,28 @@ ipcMain.on('app:set-title-overlay', (_e, color, symbolColor) => {
 let updater = null;
 // The version downloaded and waiting to install, if any.
 let downloaded = null;
+// The updater's last word, for a window opened later (Kea started in the background, or the page reloaded).
+let lastUpdate = { status: 'idle' };
 /**
- * Every few hours, look for a new version (and download it, unless the student turned that off). A downloaded update
- * installs by itself once Kea's window is closed (Kea in the notification area) and no scan is running, so every
- * computer stays on the same version without anyone being restarted mid-work.
+ * Look for a new version soon after Kea starts (also when it started in the background at sign-in, before any window),
+ * then every few hours, in every mode, and download it unless the person turned that off. A downloaded update installs
+ * by itself once Kea's window is closed (Kea in the notification area) and no scan is running, so every computer stays
+ * on the same version without anyone being restarted mid-work; otherwise the title bar says "Restart to update".
  */
 function updateLoop() {
   if (!canSelfUpdate()) return;
+  // (A hidden copy running one shared-Claude job never updates or installs anything itself.)
+  if (process.env.KEA_WORKER_JOB) return;
   const check = () => {
     if (settings.get('updates.autoCheck', true) === false) return;
+    // (Already downloaded: nothing more to fetch until Kea restarts into it.)
+    if (downloaded) return;
     const u = getUpdater();
     u.autoDownload = settings.get('updates.autoDownload', true) !== false;
     u.allowPrerelease = settings.get('updates.prerelease', false) === true;
     u.checkForUpdates().catch((err) => log('update check', err));
   };
-  setTimeout(check, 10 * 60e3);
+  setTimeout(check, 20e3);
   setInterval(check, 4 * 3600e3);
   setInterval(() => {
     if (!downloaded || settings.get('updates.autoInstall', true) === false) return;
@@ -762,7 +769,10 @@ function getUpdater() {
   const { autoUpdater } = require('electron-updater');
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
-  const send = (state) => mainWindow && mainWindow.webContents.send('update:state', state);
+  const send = (state) => {
+    lastUpdate = state;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:state', state);
+  };
   autoUpdater.on('checking-for-update', () => send({ status: 'checking' }));
   autoUpdater.on('update-available', (info) => send({ status: 'available', version: info.version, notes: info.releaseNotes || '' }));
   autoUpdater.on('update-not-available', () => send({ status: 'latest' }));
@@ -801,6 +811,8 @@ function friendlyUpdateError(err) {
 }
 
 handleApp(ipcMain, 'app:version', () => app.getVersion());
+// (A downloaded update is always reported as ready, whatever was said after it.)
+handleApp(ipcMain, 'update:status', () => (downloaded ? { status: 'ready', version: downloaded } : lastUpdate));
 handleApp(ipcMain, 'update:check', async () => {
   if (!app.isPackaged) return { status: 'dev' };
   if (!canSelfUpdate()) return { status: 'manual' };

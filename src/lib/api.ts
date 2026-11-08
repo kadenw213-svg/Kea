@@ -389,6 +389,8 @@ export interface KeaApi {
   confirmClose(): void;
   getVersion(): Promise<string>;
   checkForUpdates(): Promise<{ status: string; message?: string }>;
+  /** The updater's last state (a downloaded update is always "ready"), for a window opened after it spoke. */
+  updateStatus(): Promise<UpdateState>;
   downloadUpdate(): Promise<boolean>;
   installUpdate(): void;
   onUpdateState(cb: (s: UpdateState) => void): () => void;

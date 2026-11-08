@@ -1,6 +1,7 @@
 // The account in the title bar, in every mode: your picture, and a menu with who's signed in, the account page,
-// notifications and signing out.
-import { Bell, LogOut, UserCircle } from 'lucide-react';
+// notifications, checking for updates and signing out.
+import { Bell, LogOut, RefreshCw, UserCircle } from 'lucide-react';
+import { installNow, openUpdates, useUpdates } from '../Updates';
 import { MenuButton } from '../Popover';
 import { Avatar, VerifiedBadge, useAccount } from '../scholar/Account';
 import { signOutAsked } from '../scholar/HubAccount';
@@ -10,6 +11,7 @@ export function AccountButton() {
   const status = useHubStatus();
   const [account] = useAccount();
   const notes = useHubNotifications();
+  const update = useUpdates((s) => s.state.status);
   if (!status?.account || !account) return null;
   const unread = notes?.unread ?? status.me?.notifications?.unread ?? 0;
   return (
@@ -37,6 +39,9 @@ export function AccountButton() {
           </button>
           <button className="menu-item" onClick={() => (close(), openAccount())}>
             <Bell size={16} /> Notifications {unread > 0 && <span className="kbd" style={{ color: 'var(--accent)' }}>{unread}</span>}
+          </button>
+          <button className="menu-item" onClick={() => (close(), update === 'ready' ? installNow() : openUpdates())}>
+            <RefreshCw size={16} /> {update === 'ready' ? 'Restart to update' : update === 'available' || update === 'downloading' ? 'Update available' : 'Check for updates'}
           </button>
           <div className="menu-sep" />
           <button className="menu-item" onClick={() => (close(), signOutAsked())}>

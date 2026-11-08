@@ -875,7 +875,7 @@ export const SECTIONS: Section[] = [
     label: 'Updates',
     icon: 'RefreshCw',
     fields: [
-      { key: 'updates.autoCheck', label: 'Check for updates when Kea starts', type: 'toggle', default: true },
+      { key: 'updates.autoCheck', label: 'Check for updates automatically', type: 'toggle', default: true, help: 'When Kea starts and every few hours. You can always check yourself from the Kea menu or your account menu.' },
       { key: 'updates.autoDownload', label: 'Download updates automatically', type: 'toggle', default: true, help: 'Every computer stays on the same version, so your files and settings work the same on each.' },
       { key: 'updates.autoInstall', label: 'Install downloaded updates by themselves', type: 'toggle', default: true, help: 'Only while Kea’s window is closed (it’s in the notification area by the clock) and nothing is running; otherwise you choose when to restart.' },
       { key: 'updates.prerelease', label: 'Get early test versions', type: 'toggle', default: false, advanced: true }

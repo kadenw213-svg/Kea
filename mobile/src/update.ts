@@ -31,6 +31,8 @@ const set = (s: UpdateState) => {
 /** Look for a newer Kea and download it. `force`: now, even if it looked recently or updates are set to manual. */
 export async function checkForUpdate(force = false) {
   if (state.status === 'checking' || state.status === 'downloading') return;
+  // (Downloaded and waiting for its install: nothing more to fetch.)
+  if (!force && state.status === 'ready') return;
   const version = state.version || (await Kea.appInfo().catch(() => ({ version: '' }))).version;
   if (!force) {
     if (localStorage.getItem(AUTO) === 'off') return set({ status: 'idle', version });

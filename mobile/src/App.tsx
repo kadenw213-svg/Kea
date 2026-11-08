@@ -200,7 +200,9 @@ export function App() {
       checkForUpdate().catch(() => {});
     };
     document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
+    // (And every six hours while it stays open.)
+    const every = setInterval(() => checkForUpdate().catch(() => {}), 6 * 3600e3);
+    return () => (document.removeEventListener('visibilitychange', onVisible), clearInterval(every));
   }, []);
 
   // Each item's checkmark: the PC's, unless the phone changed it more recently.
