@@ -22,7 +22,7 @@ import { places } from './Book';
 import { reloadScholar } from '../../src/components/scholar/scholarStore';
 import { FilesTab } from './Files';
 import { PairFlow, SettingsPage, Welcome } from './Welcome';
-import { checkForUpdate, installUpdate, useUpdate } from './update';
+import { behind, checkForUpdate, installUpdate, noteAdvertised, useUpdate, useVersionNotes } from './update';
 import { toast } from './ui';
 import { useBack } from './back';
 import { getLook } from './theme';
@@ -116,6 +116,8 @@ export function App() {
   // A file another app opened with Kea.
   const [opened, setOpened] = useState<OpenedFile | null>(null);
   const update = useUpdate();
+  // A server that needs a newer Kea, or the PC (or a server) on a newer one than this phone: said, with Update.
+  const lag = behind(useVersionNotes());
   // Work: a tab once the account is online or linked, or has organization servers joined on this phone (or a join
   // link opened Kea, which shows Work with it filled in).
   const [workOn, setWorkOn] = useState(false);
@@ -178,6 +180,7 @@ export function App() {
         setStep(3);
         if (r.data) {
           setData(r.data);
+          noteAdvertised('pc', r.data.keaVersion);
           watchClasses(r.data).catch(() => {});
         }
         if (r.error) setLoadError(r.error);
@@ -351,6 +354,13 @@ export function App() {
         </button>
       </header>
       <main className="body">
+        {lag && update.status !== 'ready' && (
+          <button className={`stale upd${lag.kind === 'required' ? ' required' : ''}`} onClick={() => checkForUpdate(true).catch(() => {})} disabled={update.status === 'checking' || update.status === 'downloading'}>
+            {lag.kind === 'required' ? <AlertTriangle size={14} /> : <Download size={14} />}{' '}
+            {update.status === 'downloading' ? `Downloading Kea ${update.next}… ${update.percent}%` : update.status === 'checking' ? 'Checking for the update…' : `${lag.text} Tap to update.`}
+            {update.status === 'idle' && update.error ? ` (${update.error})` : ''}
+          </button>
+        )}
         {update.status === 'ready' && (
           <button className="stale upd" onClick={installUpdate}>
             <Download size={14} /> {update.needsPermission ? 'Allow Kea to install updates, then tap here again.' : `Kea ${update.next} is ready. Tap to install.`}

@@ -2,6 +2,7 @@
 // and sessions kept by native code in Android's encrypted storage (KeaPlugin org*, Orgs.java; this code never sees
 // them), hosted organizations on the Kea account server through the account session (hub.ts), join links that
 // opened Kea, the daily pass renewal while Kea is open, and the saved copy in app storage.
+import { noteServed, noteTooOld } from './update';
 import { useEffect, useState } from 'react';
 import { Kea } from './kea';
 import { local, serverHealth, type AccountStatus } from './account';
@@ -48,7 +49,10 @@ export const work = createOrgClient({
       return store.get(HOSTED) === '1';
     },
     req: (method, path, body) => hubCall(method, path, body, { limit: 'auth' })
-  }
+  },
+  // (A server that needs a newer Kea: the phone says so with an Update button, update.ts.)
+  onTooOld: (id, body) => noteTooOld(`org:${id}`, body),
+  onServed: (id) => noteServed(`org:${id}`)
 });
 
 /** The account as the phone knows it now (Work keys everything by it). */

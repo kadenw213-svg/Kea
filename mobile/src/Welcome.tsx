@@ -6,7 +6,7 @@ import { BookOpen, Bell, Brain, CalendarDays, Check, CheckCircle2, ChevronLeft, 
 import { Kea, getNotify, setNotifyPrefs, NotifyPrefs, cachedData, keaState, readKeaData } from './kea';
 import { HubAccount } from './HubAccount';
 import type { DriveFrom } from './kea';
-import { AUTO, checkForUpdate, installUpdate, useUpdate } from './update';
+import { AUTO, behind, checkForUpdate, installUpdate, useUpdate, useVersionNotes } from './update';
 import { toast } from './ui';
 import { ACCENT_LIST, PAGES, PageId, THEME_LIST, setLook, useLook } from './theme';
 import { VoiceSheet } from './Book';
@@ -427,6 +427,7 @@ export function PairFlow({ state, onDone, onCancel }: { state: NativeState | nul
 /** Settings: classes, class site, notifications, updates and the tour, each explained in a line. */
 export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onClose, onAccount }: { state: NativeState | null; paired: boolean; onPair(): void; onUnpaired(): void; onWelcome(): void; onClose(): void; onAccount?(): void }) {
   const u = useUpdate();
+  const lag = behind(useVersionNotes());
   const [auto, setAuto] = useState(localStorage.getItem(AUTO) !== 'off');
   const [confirm, setConfirm] = useState(false);
   return (
@@ -530,6 +531,7 @@ export function SettingsPage({ state, paired, onPair, onUnpaired, onWelcome, onC
                           ? `Couldn’t check: ${u.error}`
                           : ''}
               </span>
+              {lag && u.status !== 'ready' && <span className="small block warn">{lag.text}</span>}
             </span>
           </div>
           <div className="actions">

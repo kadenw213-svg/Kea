@@ -472,7 +472,7 @@ final class Orgs {
             c.setReadTimeout(READ_MS);
             c.setInstanceFollowRedirects(false);
             c.setRequestProperty("x-kea", "1");
-            c.setRequestProperty("x-kea-client", "Kea for Android");
+            c.setRequestProperty("x-kea-client", Hub.client(null));
             c.setRequestProperty("accept", "application/json");
             if (token != null && !token.isEmpty()) c.setRequestProperty("authorization", "Bearer " + token);
             if (body != null) {

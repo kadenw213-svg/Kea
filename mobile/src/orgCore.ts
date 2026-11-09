@@ -300,7 +300,22 @@ export interface WorkOrg {
   serverName: string | null;
 }
 
-export function createOrgClient({ native, account, store, now = () => Date.now() }: { native: NativeOrgs; account: AccountSide; store: KeyValue; now?: () => number }) {
+export function createOrgClient({
+  native,
+  account,
+  store,
+  now = () => Date.now(),
+  onTooOld = () => {},
+  onServed = () => {}
+}: {
+  native: NativeOrgs;
+  account: AccountSide;
+  store: KeyValue;
+  now?: () => number;
+  /** A server turned this phone away as too old (426), or served it normally (docs/protocol.md section 0). */
+  onTooOld?: (serverId: string, body: any) => void;
+  onServed?: (serverId: string) => void;
+}) {
   const me = () => {
     const k = account.key();
     if (!k) throw new OrgError('Sign in to your Kea account first.', 401, { needsAccount: true });
@@ -404,6 +419,12 @@ export function createOrgClient({ native, account, store, now = () => Date.now()
       r = await send();
     }
     const d = parse(r.body);
+    // Too old for this server: its plain words and an Update button (update.ts), not a broken organization.
+    if (r.status === 426) {
+      onTooOld(id, d);
+      throw new OrgError(d.error || 'Update Kea to keep using this organization’s server.', 426, { ...d, upgradeRequired: true });
+    }
+    if (r.status < 500) onServed(id);
     if (r.status < 200 || r.status >= 300) throw new OrgError(d.error || `The server said ${r.status}.`, r.status, d);
     return d;
   }
@@ -664,6 +685,6 @@ export function createOrgClient({ native, account, store, now = () => Date.now()
     } catch {}
   };
 
-  return { servers, join, renew, again, remove, orgs, shifts, todo, saved, clock, call, sourceOf, snooze, identity, forgetCache, _signIn: signIn };
+  return { servers, join, renew, again, remove, orgs, shifts, todo, saved, clock, call, sourceOf, snooze, identity, forgetCache, _signIn: signIn, _serverReq: serverReq };
 }
 export type OrgClient = ReturnType<typeof createOrgClient>;

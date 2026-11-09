@@ -6,6 +6,7 @@
 // Requests go through native code (KeaPlugin.hubRequest, Hub.java), which holds the session token in Android's
 // encrypted storage and adds it to each request: the web code never sees the token.
 import { Kea } from './kea';
+import { noteAdvertised, noteServed, noteTooOld } from './update';
 import { normalizeAccountUrl } from './accountCore';
 import { FULL_EVERY, createPhoneSync, newestProfileIn, profilesIn, toRemote, type HubFile, type SyncClient, type SyncState } from './hubsync';
 
@@ -84,6 +85,14 @@ export async function hubCall<T = any>(method: string, path: string, body?: unkn
   }
   seen(true);
   const data = parse(r.body);
+  // Too old for the Kea account server (docs/protocol.md section 0): said plainly with an Update button (update.ts),
+  // never a half-working account. A normal answer means it's over; its health says the newest Kea.
+  if (r.status === 426) {
+    noteTooOld('account', data);
+    throw new HubError(data.error || 'Update Kea to keep using your Kea account.', 426, { ...data, upgradeRequired: true });
+  }
+  if (r.status < 500) noteServed('account');
+  if (r.status >= 200 && r.status < 300 && path === '/v1/health') noteAdvertised('account', data?.latest?.kea);
   if (r.status >= 200 && r.status < 300) return data as T;
   if (r.status === 401 && auth && !data.totpRequired && !opts.reauth && (await Kea.hubState().catch(() => null))?.signedIn) {
     // The online session ended (signed out elsewhere, suspended). The account stays signed in on
@@ -99,6 +108,7 @@ export function hubProblem(e: any): string {
   const s = e?.status;
   if (s === 401) return 'Your Kea account sign-in ended. Sign in again under Settings → Kea account.';
   if (s === 428) return 'The Kea terms have changed. Open Settings → Kea account to read what changed and agree.';
+  if (s === 426) return String(e?.message || 'Update Kea to keep using your Kea account.');
   if (s === 0) return 'Couldn’t reach the Kea account server. Check your connection; your classes from last time are shown.';
   return String(e?.message || e);
 }

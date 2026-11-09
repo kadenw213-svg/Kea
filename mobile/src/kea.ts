@@ -207,6 +207,8 @@ export interface KeaData {
   doneLog?: Record<string, { on: boolean; at: string }>;
   /** Classes withdrawn from, as the PC logs them (withdrawn.cjs). */
   withdrawn?: Record<string, { on: boolean; at: string; by?: string; code?: string }>;
+  /** The Kea version on the PC that wrote it (older PCs don't say), so the phone can say when it's behind. */
+  keaVersion?: string;
 }
 
 const CACHE = 'kea.data';

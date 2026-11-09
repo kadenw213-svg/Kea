@@ -83,6 +83,12 @@
 .stale.upd {
   background: var(--accent-soft);
 }
+.stale.upd.required {
+  background: color-mix(in srgb, var(--danger, #d33) 16%, transparent);
+}
+.small.block.warn {
+  color: var(--warning);
+}
 .clamp2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;

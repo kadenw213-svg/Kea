@@ -33,6 +33,19 @@ final class Hub {
         return Store.plain(ctx).getString("hubUrl", "");
     }
 
+    // What this phone says it is to servers: "Kea-Phone/<version>" (docs/protocol.md section 0), so a server can say
+    // plainly when it's too old. Before the version is known: "Kea for Android", which servers serve as before.
+    private static volatile String client = "Kea for Android";
+    static String client(Context ctx) {
+        if (ctx != null && client.equals("Kea for Android")) {
+            try {
+                String v = ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0).versionName;
+                if (v != null && v.matches("\\d+\\.\\d+\\.\\d+.*")) client = "Kea-Phone/" + v;
+            } catch (Exception ignored) {}
+        }
+        return client;
+    }
+
     /**
      * Only an https address (the session token goes with every request to it); anything else is ignored. A different
      * Hub (another scheme, host or port) signs this phone out first: the token and email are forgotten, so a session
@@ -96,7 +109,7 @@ final class Hub {
         c.setConnectTimeout(limit(connectMs, CONNECT_MS));
         c.setReadTimeout(limit(readMs, READ_MS));
         c.setInstanceFollowRedirects(false);
-        c.setRequestProperty("x-kea-client", "Kea for Android");
+        c.setRequestProperty("x-kea-client", client(ctx));
         if (auth) {
             String t = token(ctx);
             if (!t.isEmpty()) c.setRequestProperty("authorization", "Bearer " + t);

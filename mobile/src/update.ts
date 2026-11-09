@@ -34,6 +34,7 @@ export async function checkForUpdate(force = false) {
   // (Downloaded and waiting for its install: nothing more to fetch.)
   if (!force && state.status === 'ready') return;
   const version = state.version || (await Kea.appInfo().catch(() => ({ version: '' }))).version;
+  noteOwnVersion(version);
   if (!force) {
     if (localStorage.getItem(AUTO) === 'off') return set({ status: 'idle', version });
     if (Date.now() - Number(localStorage.getItem(LAST) || 0) < 6 * 3600e3 && state.status !== 'idle') return;
@@ -68,6 +69,88 @@ export async function installUpdate() {
   if (state.status !== 'ready') return;
   const r = await Kea.installUpdate().catch(() => null);
   if (r?.needsPermission) set({ ...state, needsPermission: true });
+}
+
+// ---------- what the PC and the servers say (docs/protocol.md section 0) ----------
+// So the phone never falls behind without saying so: the newest Kea the Kea account server or an organization's
+// server knows of (their /v1/health `latest.kea`), the version Kea on the PC is (kea-data.json `keaVersion`), and a
+// server that turned this phone away as too old (426). Kept in localStorage, so it's there after a restart.
+const NOTES = 'kea.versionNotes';
+export type VersionFrom = 'pc' | 'account' | `org:${string}`;
+export interface VersionNotes {
+  /** This phone's Kea version, once known. */
+  version: string;
+  /** Newer versions others say exist: { from: { version, at } }. */
+  latest: Record<string, { version: string; at: number }>;
+  /** Servers that turned this phone away: { from: { error, minVersion, updateUrl, at } }. */
+  tooOld: Record<string, { error: string; minVersion: string | null; updateUrl: string | null; at: number }>;
+}
+const readNotes = (): VersionNotes => {
+  try {
+    const j = JSON.parse(localStorage.getItem(NOTES) || '{}');
+    return { version: String(j.version || ''), latest: j.latest && typeof j.latest === 'object' ? j.latest : {}, tooOld: j.tooOld && typeof j.tooOld === 'object' ? j.tooOld : {} };
+  } catch {
+    return { version: '', latest: {}, tooOld: {} };
+  }
+};
+let notes = readNotes();
+const noteSubs = new Set<(n: VersionNotes) => void>();
+const saveNotes = (n: VersionNotes) => {
+  notes = n;
+  try {
+    localStorage.setItem(NOTES, JSON.stringify(n));
+  } catch {}
+  noteSubs.forEach((f) => f(n));
+};
+const VERSION_RE = /^v?\d+\.\d+\.\d+/;
+/** This phone's version (Kea.appInfo), for comparing with what others say. */
+export function noteOwnVersion(version: string) {
+  if (VERSION_RE.test(version) && version !== notes.version) saveNotes({ ...notes, version });
+}
+/** The PC's Kea version, or a server's health (`latest.kea`). Anything unreadable is ignored. */
+export function noteAdvertised(from: VersionFrom, version: unknown) {
+  if (typeof version !== 'string' || !VERSION_RE.test(version)) return;
+  const v = version.replace(/^v/, '');
+  if (notes.latest[from]?.version === v) return;
+  saveNotes({ ...notes, latest: { ...notes.latest, [from]: { version: v, at: Date.now() } } });
+}
+/** A server answered 426 (`body`: { error, minVersion, updateUrl }). */
+export function noteTooOld(from: VersionFrom, body: any) {
+  const x = { error: String(body?.error || 'Update Kea to keep using your Kea account.'), minVersion: typeof body?.minVersion === 'string' ? body.minVersion : null, updateUrl: typeof body?.updateUrl === 'string' ? body.updateUrl : null, at: Date.now() };
+  if (notes.tooOld[from]?.error === x.error && notes.tooOld[from]?.minVersion === x.minVersion) return;
+  saveNotes({ ...notes, tooOld: { ...notes.tooOld, [from]: x } });
+}
+/** That server answered normally: its refusal is over. */
+export function noteServed(from: VersionFrom) {
+  if (!notes.tooOld[from]) return;
+  const { [from]: _gone, ...rest } = notes.tooOld;
+  saveNotes({ ...notes, tooOld: rest });
+}
+
+/**
+ * What the phone says about falling behind: a server that needs a newer Kea (the account server's first), or the
+ * newest version the PC or a server has that's newer than this phone. null when it's up to date as far as anyone says.
+ */
+export function behind(n: VersionNotes = notes): { kind: 'required'; text: string; minVersion: string | null; updateUrl: string | null } | { kind: 'behind'; text: string; version: string; from: string } | null {
+  const own = n.version;
+  const refusals = Object.entries(n.tooOld).filter(([, x]) => !own || !x.minVersion || newer(x.minVersion, own));
+  const r = refusals.find(([f]) => f === 'account') || refusals[0];
+  if (r) return { kind: 'required', text: r[1].error, minVersion: r[1].minVersion, updateUrl: r[1].updateUrl };
+  if (!own) return null;
+  let best: { version: string; from: string } | null = null;
+  for (const [from, x] of Object.entries(n.latest)) if (newer(x.version, own) && (!best || newer(x.version, best.version))) best = { version: x.version, from };
+  if (!best) return null;
+  const who = best.from === 'pc' ? 'Your PC has' : best.from === 'account' ? 'Your Kea account server says' : 'Your organization’s server says';
+  return { kind: 'behind', version: best.version, from: best.from, text: best.from === 'pc' ? `${who} Kea ${best.version}; this phone has ${own}.` : `${who} Kea ${best.version} is out; this phone has ${own}.` };
+}
+
+export function useVersionNotes() {
+  const [n, setN] = useState(notes);
+  useEffect(() => {
+    noteSubs.add(setN);
+    return () => void noteSubs.delete(setN);
+  }, []);
+  return n;
 }
 
 export function useUpdate() {

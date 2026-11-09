@@ -46,6 +46,8 @@ public class KeaPlugin extends Plugin {
 
     @Override
     public void load() {
+        // (So the organization client says which version it is from its first request: Hub.client.)
+        Hub.client(getContext());
         scanLauncher = getActivity().registerForActivityResult(new ActivityResultContracts.StartIntentSenderForResult(), this::onScanned);
         CheckWorker.schedule(getContext());
         // (Kea started fresh by a Google or Microsoft sign-in coming back: kept for takeOauth.)
