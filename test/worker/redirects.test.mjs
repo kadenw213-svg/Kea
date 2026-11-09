@@ -162,7 +162,7 @@ test('moving to another Hub’s address: only once a Hub answers there, asked fi
   const realFetch = electron.net.fetch;
   electron.net.fetch = async (url, opts) => {
     asked.push({ url: String(url), auth: opts?.headers?.authorization || '' });
-    if (/^(https:\/\/(one|two)\.example|http:\/\/127\.0\.0\.1:4860)\/v1\/health$/.test(String(url))) return { ok: true, status: 200, json: async () => ({ ok: true, service: 'kea-hub' }) };
+    if (/^(https:\/\/(one|two)\.example|https:\/\/kadensdesktop\.tailc64e1d\.ts\.net)\/v1\/health$/.test(String(url))) return { ok: true, status: 200, json: async () => ({ ok: true, service: 'kea-hub' }) };
     throw new Error('offline');
   };
   const timers = { setTimeout: globalThis.setTimeout, setInterval: globalThis.setInterval };

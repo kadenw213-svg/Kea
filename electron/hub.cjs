@@ -23,7 +23,7 @@ const core = require('./accountCore.cjs');
 // Where Kea finds the Kea account server unless the person sets another address (Settings → Kea account → Advanced).
 // This is the one place to change it: the server's public https:// address goes here for releases, so every device
 // reaches it. 127.0.0.1 only works on the server's own PC.
-const DEFAULT_HUB_URL = 'http://127.0.0.1:4860';
+const DEFAULT_HUB_URL = 'https://kadensdesktop.tailc64e1d.ts.net';
 // How long Kea waits for the server: any request, and the background "is it there" checks.
 const LIMITS = { req: 8000, status: 4000 };
 const OFFLINE_MSG = 'Can’t reach your Kea account online right now. Everything on this computer still works; Kea tries again by itself.';

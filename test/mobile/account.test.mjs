@@ -294,8 +294,8 @@ test('which server: the Kea account server takes /v1/auth/oauth; a Kea Hub 0.5 G
   assert.equal(C.registerRequest, undefined, 'no password registration any more');
 });
 
-test('the address: built in (empty until it exists), the Advanced one first, https only', () => {
-  assert.equal(C.DEFAULT_ACCOUNT_URL, '');
+test('the address: built in, the Advanced one first, https only', () => {
+  assert.match(C.DEFAULT_ACCOUNT_URL, /^https:\/\/[^/]+$/);
   assert.equal(C.accountUrl('', ''), '');
   assert.equal(C.accountUrl('k.example/x', 'https://built.example'), 'https://k.example');
   assert.equal(C.accountUrl('', 'https://built.example/'), 'https://built.example');
@@ -431,14 +431,11 @@ test('flows: Continue with Google on a Kea Hub 0.5 uses /v1/auth/google; Microso
   assert.ok(auth().some((c) => c.path === '/v1/auth/oauth'));
 });
 
-test('flows: with no address anywhere, the account on the phone still works and online waits calmly', async () => {
+test('flows: with no address under Advanced, the built-in one is used, and the account on the phone works', async () => {
   await reset({ url: '' });
   const s = await A.status();
-  assert.equal(s.url, '');
-  assert.equal(server.calls.length, 0);
+  assert.equal(s.url, C.DEFAULT_ACCOUNT_URL);
   assert.equal((await A.openOffline({ email: 'sam@example.com' })).state, 'offline');
-  assert.equal(C.onlineNeed(await A.local()), 'noAddress');
-  await assert.rejects(() => A.link({ provider: 'google' }), (e) => e.data.noAddress);
   // Setting one under Advanced: https only.
   await assert.rejects(() => A.setAdvancedUrl('http://k.example'), /https/);
   const a = await A.setAdvancedUrl('keac.example');

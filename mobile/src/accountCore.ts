@@ -17,8 +17,8 @@
 //
 // (Only erasable TypeScript here: Node runs this file as it is in the tests.)
 
-/** The Kea account server's address, built in. Empty until it has one; then the address under Advanced is used. */
-export const DEFAULT_ACCOUNT_URL = '';
+/** The Kea account server's address, built in (the same one as electron/hub.cjs). The address under Advanced wins. */
+export const DEFAULT_ACCOUNT_URL = 'https://kadensdesktop.tailc64e1d.ts.net';
 
 export const norm = (e: unknown) =>
   String(e || '')
