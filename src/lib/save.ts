@@ -5,14 +5,8 @@ import { setting } from './settings';
 import { saveToGoogle } from './google';
 import { chooseSaveTarget, inKeaCloud } from './keaCloud';
 
-/** Turn a title (a document's first line, a slide's title) into a file name: no characters Windows refuses, at most ~60 long. */
-export function safeFileName(title: string) {
-  const clean = title.replace(/[\u0000-\u001f<>:"/\\|?*]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '');
-  if (clean.length <= 60) return clean;
-  const cut = clean.slice(0, 60);
-  const sp = cut.lastIndexOf(' ');
-  return (sp > 30 ? cut.slice(0, sp) : cut).trim();
-}
+import { safeFileName } from './fileNames';
+export { safeFileName };
 
 let silentDepth = 0;
 /** True while an autosave is running: saves must not show dialogs or toasts. */
