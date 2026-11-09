@@ -9,6 +9,8 @@ interface Props {
   editingId?: string | null;
   textRef?: (el: HTMLDivElement | null) => void;
   interactive?: boolean;
+  /** Elements Claude just changed: they glow briefly. */
+  flashIds?: Set<string>;
 }
 
 function ShapeSvg({ el }: { el: El }) {
@@ -39,10 +41,10 @@ function ShapeSvg({ el }: { el: El }) {
   return null;
 }
 
-function ElView({ el, font, editing, textRef, interactive }: { el: El; font: string; editing: boolean; textRef?: Props['textRef']; interactive?: boolean }) {
+function ElView({ el, font, editing, textRef, interactive, flash }: { el: El; font: string; editing: boolean; textRef?: Props['textRef']; interactive?: boolean; flash?: boolean }) {
   const transform = [el.rot ? `rotate(${el.rot}deg)` : '', el.type === 'image' && el.flipH ? 'scaleX(-1)' : '', el.type === 'image' && el.flipV ? 'scaleY(-1)' : ''].filter(Boolean).join(' ');
   const style: React.CSSProperties = { left: el.x, top: el.y, width: el.w, height: el.h, transform: transform || undefined };
-  const cls = `sv-el${el.locked ? ' locked' : ''}`;
+  const cls = `sv-el${el.locked ? ' locked' : ''}${flash ? ' sv-flash' : ''}`;
   if (el.type === 'image') {
     return (
       <div className={cls} data-el={el.locked || !interactive ? undefined : el.id} style={style}>
@@ -79,11 +81,11 @@ function ElView({ el, font, editing, textRef, interactive }: { el: El; font: str
 
 const quoteFont = (f: string) => (/^['"]/.test(f) || !/\s/.test(f) ? f : `'${f}'`);
 
-function SlideViewInner({ slide, w, h, font, editingId, textRef, interactive }: Props) {
+function SlideViewInner({ slide, w, h, font, editingId, textRef, interactive, flashIds }: Props) {
   return (
     <div className="slide-view" style={{ width: w, height: h, background: slide.bg, fontFamily: font }}>
       {slide.els.map((el) => (
-        <ElView key={el.id} el={el} font={font} editing={editingId === el.id} textRef={textRef} interactive={interactive} />
+        <ElView key={el.id} el={el} font={font} editing={editingId === el.id} textRef={textRef} interactive={interactive} flash={!!flashIds?.has(el.id)} />
       ))}
     </div>
   );

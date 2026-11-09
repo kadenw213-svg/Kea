@@ -90,11 +90,19 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean; a
   const gen = generation.get(tabId) || 0;
   const live = () => (generation.get(tabId) || 0) === gen;
   const mine = () => runs.get(tabId) === run;
+  // Where the person is right now is Claude's "here" for this request, even if they move on while it works.
+  const hooks = editorRegistry.get(tabId)?.ai;
+  try {
+    hooks?.beginRun?.();
+  } catch {}
   try {
     await askRun(tabId, text, opts, run, live);
   } catch (err: any) {
     if (live()) addItem(tabId, { kind: 'error', text: String(err?.message || err) });
   } finally {
+    try {
+      if (mine()) editorRegistry.get(tabId)?.ai?.endRun?.();
+    } catch {}
     if (mine()) {
       runs.delete(tabId);
       setActivity(tabId, undefined);

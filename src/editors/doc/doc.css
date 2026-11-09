@@ -246,7 +246,28 @@
 .doc-content mark {
   border-radius: 2px;
   padding: 0 1px;
+  color: inherit;
+}
+/*
+ * Text on a highlight reads in every theme. Each highlight carries data-ink (from its lightness, src/lib/highlightInk.ts).
+ * White page: the document's own text colour stays on light highlights; dark highlights get white text.
+ * Dark page: light highlights get dark text (the page's light text would vanish), dark ones keep the page's light text.
+ * A highlight with no colour of its own is the browser's yellow: dark text.
+ */
+.paper-light .doc-content mark[data-ink='light'] {
+  color: #ffffff;
+}
+.paper-dark .doc-content mark[data-ink='dark'],
+.paper-dark .doc-content mark:not([data-color]) {
   color: #202124;
+}
+.paper-dark .doc-content mark[data-ink='light'] {
+  color: var(--ink);
+}
+.paper-light .doc-content mark[data-ink='light'] *,
+.paper-dark .doc-content mark[data-ink] *,
+.paper-dark .doc-content mark:not([data-color]) * {
+  color: inherit !important;
 }
 .doc-content img {
   max-width: 100%;
@@ -1299,4 +1320,27 @@
   --cmt-strength-line: #188038;
   --cmt-question: rgba(161, 66, 244, 0.12);
   --cmt-question-line: #a142f4;
+}
+
+/* What Claude just changed: a brief tint that fades (src/editors/doc/claudeEdits.ts). Never saved or printed. */
+.doc-content .claude-flash {
+  border-radius: 2px;
+  animation: claude-flash 2.4s ease-out forwards;
+}
+@keyframes claude-flash {
+  0%,
+  35% {
+    background-color: color-mix(in srgb, var(--accent) 24%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .doc-content .claude-flash {
+    animation: none;
+    background-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
 }

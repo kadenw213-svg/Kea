@@ -348,6 +348,7 @@ export const SECTIONS: Section[] = [
       { key: 'doc.margin', label: 'Margins', type: 'number', default: 1, min: 0, max: 4, step: 0.25, unit: 'in', advanced: true },
       { key: 'doc.pageless', label: 'Pageless (one long page, no page breaks)', type: 'toggle', default: false },
       { key: 'doc.zoom', label: 'Zoom', type: 'select', default: 1, options: pct([0.75, 0.9, 1, 1.1, 1.25, 1.5]), advanced: true },
+      { key: 'doc.highlightDefault', label: 'Default highlight colour', type: 'color', default: '#f2e2a0', advanced: true, help: 'What Ctrl+Shift+H and “Default highlight” use. Text on any highlight is drawn dark or light to stay readable; the colour itself is saved unchanged.' },
       { key: 'doc.citationStyle', label: 'Citation style', type: 'select', default: 'mla', options: [{ value: 'mla', label: 'MLA 9' }, { value: 'apa', label: 'APA 7' }, { value: 'chicago', label: 'Chicago (author-date)' }] },
       { key: 'doc.replyToClaude', label: 'Replying to Claude’s comments asks Claude', type: 'toggle', default: true, help: 'A reply in the thread of one of Claude’s comments (or one that says “Claude”) goes to Claude, which answers in the thread and makes the small fix you ask for.' },
       { key: 'doc.statusHints', label: 'Show keyboard hints in the status bar', type: 'toggle', default: true, advanced: true, help: 'They show for your first few documents, then step aside.' }
@@ -832,10 +833,46 @@ export const SECTIONS: Section[] = [
       },
       { key: 'assistant.autoLook', label: 'Show Claude a picture of photos, slides and video frames with each message', type: 'toggle', default: true, help: 'Off: Claude looks only when it decides to (or when you press the eye button). Each picture costs about 1,600 tokens.' },
       { key: 'assistant.track', label: 'Make Claude’s document edits as suggestions', type: 'toggle', default: false, help: 'Edits show as tracked changes you accept or reject, instead of changing the text directly.' },
+      { key: 'assistant.flashEdits', label: 'Briefly highlight what Claude changes', type: 'toggle', default: true, help: 'Claude edits in the background: your cursor, selection, scroll and focus stay where they are, and you can keep typing. Each change is one Ctrl+Z.' },
+      { key: 'assistant.flashSeconds', label: 'Highlight Claude’s changes for', type: 'number', default: 2.4, min: 0.5, max: 10, step: 0.1, unit: 'seconds', advanced: true, when: (v) => v['assistant.flashEdits'] !== false },
+      { key: 'assistant.followEdits', label: 'Scroll to Claude’s changes as they happen', type: 'toggle', default: false, advanced: true, help: 'Only while you aren’t typing or moving around yourself. Off: the page and slide you’re on stay put.' },
       { key: 'assistant.web', label: 'Let Claude search the web (to find and check sources)', type: 'toggle', default: true, help: 'On your Claude plan, Claude can look things up and open web pages, for example to verify a source before citing it. Searches count toward your plan’s usage.' },
       { key: 'assistant.showThinking', label: 'Show Claude’s reasoning (folded)', type: 'toggle', default: false, advanced: true },
       { key: 'assistant.showSteps', label: 'List every step Claude takes', type: 'toggle', default: false, advanced: true, help: 'Off: the steps fold into one line you can open. On: each step is listed as it happens.' },
-      { key: 'assistant.showUsage', label: 'Show tokens used under the conversation', type: 'toggle', default: true, advanced: true }
+      { key: 'assistant.showUsage', label: 'Show tokens used under the conversation', type: 'toggle', default: true, advanced: true },
+      { key: 'assistant.assignmentBar', group: 'Assignments', label: 'Show the assignment bar in documents and presentations', type: 'toggle', default: true, help: 'Only on a file linked to an assignment: what it’s for, an estimated grade, and Check against rubric. Link a file from its menu or the Claude tab.' },
+      { key: 'assistant.gradeEstimate', label: 'Show an estimated grade', type: 'toggle', default: true, when: (v) => v['assistant.assignmentBar'] !== false, help: 'Claude compares the rubric with your file when you press Refresh, on your own Claude. It’s a draft estimate, not a grade.' },
+      { key: 'assistant.gradeAutoFirst', label: 'Estimate once when the bar first appears', type: 'toggle', default: false, advanced: true, when: (v) => v['assistant.assignmentBar'] !== false && v['assistant.gradeEstimate'] !== false, help: 'Off: only when you press Refresh.' },
+      { key: 'assistant.gradeFromInstructions', label: 'Without a rubric, offer a rough estimate from the instructions', type: 'toggle', default: true, advanced: true, when: (v) => v['assistant.assignmentBar'] !== false && v['assistant.gradeEstimate'] !== false },
+      {
+        key: 'assistant.gradeModel',
+        label: 'Model for grade estimates',
+        type: 'select',
+        default: '',
+        advanced: true,
+        when: (v) => v['assistant.assignmentBar'] !== false && v['assistant.gradeEstimate'] !== false,
+        options: [
+          { value: '', label: 'The same as above' },
+          { value: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
+          { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
+          { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (quickest)' },
+          { value: 'claude-fable-5-1', label: 'Claude Fable 5.1' }
+        ]
+      },
+      {
+        key: 'assistant.gradeEffort',
+        label: 'How hard Claude thinks about grade estimates',
+        type: 'select',
+        default: 'low',
+        advanced: true,
+        when: (v) => v['assistant.assignmentBar'] !== false && v['assistant.gradeEstimate'] !== false,
+        options: [
+          { value: 'low', label: 'Low (quickest)' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'high', label: 'High (most careful)' }
+        ]
+      },
+      { key: 'assistant.nameFromAssignment', label: 'Name a new, empty file after the assignment it’s for', type: 'toggle', default: true, help: 'Only an untitled document or presentation with nothing in it yet. Files with a name or content keep theirs, and an existing file is never overwritten.' },
     ]
   },
   {

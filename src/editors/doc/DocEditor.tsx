@@ -5,7 +5,6 @@ import Underline from '@tiptap/extension-underline';
 import TextStyle from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import FontFamily from '@tiptap/extension-font-family';
-import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -119,9 +118,14 @@ import { bytesToText, textToBytes, bytesToDataUrl, escapeHtml, modKey, clamp } f
 import { api } from '../../lib/api';
 import { MenuButton } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
+import { DocHighlight, defaultHighlight } from './highlight';
+import { HIGHLIGHT_SWATCHES } from '../../lib/highlightInk';
 import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
 import { docAiHooks } from './aiHooks';
+import { AssignmentBar, AssignmentMenuItem } from '../../components/assistant/AssignmentBar';
+import { namedAfterAssignment } from '../../lib/assignmentLink';
+import { ClaudeEdits } from './claudeEditsExt';
 import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
 import { HandInButton } from '../../components/scholar/HandIn';
@@ -282,7 +286,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
       Color,
       FontFamily,
       FontSize,
-      Highlight.configure({ multicolor: true }),
+      DocHighlight,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener noreferrer', target: null } }),
       Placeholder.configure({ placeholder: 'Start typing…' }),
@@ -308,7 +312,8 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
       Deletion,
       Review,
       Grammar,
-      MathNode
+      MathNode,
+      ClaudeEdits
     ],
     content: initialHtml,
     autofocus: initialHtml ? false : 'start',
@@ -460,7 +465,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   };
   const loss = useOfficeLossGuard(tab);
   const save = (saveAs: boolean) =>
-    loss.save(saveAs, (as, opts) => saveTabFile(tab.id, formats(), as, { suggestedName: !tab.path ? firstLine() : undefined, ...opts }));
+    loss.save(saveAs, (as, opts) => saveTabFile(tab.id, formats(), as, { suggestedName: !tab.path ? (namedAfterAssignment(tab.id) ? useTabs.getState().tabs.find((t) => t.id === tab.id)?.name : firstLine()) : undefined, ...opts }));
 
   const exportPdf = () =>
     exportFile(`${baseName(tab.name)}.pdf`, {
@@ -662,6 +667,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     <div className={`doc-editor ${focusMode ? 'focus-mode' : ''}`}>
       <Toolbar
         editor={editor}
+        tabId={tab.id}
         handIn={tab.path ? <HandInButton path={tab.path} dirty={tab.dirty} /> : null}
         zoom={zoom}
         setZoom={setZoom}
@@ -695,6 +701,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
           toast('Focus mode. Press Esc to exit.');
         }}
       />
+      <AssignmentBar tabId={tab.id} active={active} />
       {mathEdit && (
         <MathDialog
           initial={mathEdit.latex}
@@ -864,6 +871,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
 // ---------- Toolbar ----------
 function Toolbar(p: {
   editor: Editor;
+  tabId: string;
   /** Hand in to a class (shown only in School mode with an open assignment folder). */
   handIn: React.ReactNode;
   zoom: number;
@@ -996,6 +1004,8 @@ function Toolbar(p: {
         icon={<Highlighter size={18} />}
         value={editor.getAttributes('highlight').color || null}
         allowNone
+        palette={HIGHLIGHT_SWATCHES}
+        preset={{ color: defaultHighlight(), label: 'Default highlight' }}
         onChange={(c) => (c ? chain().setHighlight({ color: c }).run() : chain().unsetHighlight().run())}
       />
       <div className="tb-sep" />
@@ -1221,6 +1231,7 @@ function Toolbar(p: {
             <button className="menu-item" onClick={() => (p.onPrint(), close())}>
               <Printer size={16} /> Print… <span className="kbd">Ctrl+P</span>
             </button>
+            <AssignmentMenuItem tabId={p.tabId} close={close} />
             <div className="menu-sep" />
             <button className="menu-item" onClick={() => (p.onPageSetup(), close())}>
               <FileCog size={16} /> Page setup
@@ -1546,6 +1557,7 @@ del.sg-del { color: #a50e0e; text-decoration: line-through; }
 .toc-entry { display: flex; align-items: baseline; gap: 4px; margin: 0 0 2pt; }
 .toc-dots { flex: 1; border-bottom: 1px dotted #5f6368; transform: translateY(-3px); }
 mark { color: inherit; }
+mark[data-ink='light'], mark[data-ink='light'] * { color: #fff !important; }
 </style></head><body>${body}</body></html>`;
 }
 

@@ -470,3 +470,35 @@
   align-items: center;
   gap: 6px;
 }
+
+/* What Claude just changed (in the background): a brief glow on the boxes and the slide's thumbnail. */
+.sv-el.sv-flash {
+  animation: sv-claude-flash 2.4s ease-out forwards;
+}
+@keyframes sv-claude-flash {
+  0%,
+  35% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent), 0 0 18px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  100% {
+    box-shadow: none;
+  }
+}
+.slide-thumb.claude-glow .thumb-frame {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+  transition: box-shadow 0.6s ease-out;
+}
+/* A slide check_design measures out of sight. */
+.slide-probe {
+  position: fixed;
+  left: -100000px;
+  top: 0;
+  pointer-events: none;
+  contain: layout paint;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sv-el.sv-flash {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}

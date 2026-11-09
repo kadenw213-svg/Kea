@@ -209,7 +209,7 @@ export function AssistantPanel() {
                   <Sparkles size={28} />
                   <div>{usable ? `Ask Claude about this ${hooks?.noun || 'file'}, or tell it what to change.` : 'Open a file to work on it with Claude.'}</div>
                   <div className="muted">
-                    Claude reads the {hooks?.noun || 'file'}, makes the changes you ask for with the editor’s own tools, and tells you what it did. Each change is one Ctrl+Z. {onPlan ? 'It runs on your own Claude plan.' : `It uses your own Claude API key${key?.hint ? ` (${key.hint})` : ''}.`}
+                    Claude reads the {hooks?.noun || 'file'}, makes the changes you ask for with the editor’s own tools, and tells you what it did. You can keep working while it does; each change is one Ctrl+Z. {onPlan ? 'It runs on your own Claude plan.' : `It uses your own Claude API key${key?.hint ? ` (${key.hint})` : ''}.`}
                   </div>
                   {usable && hooks && (
                     <div className="as-starters">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardList, X, Search, ClipboardPaste, BookOpenCheck } from 'lucide-react';
 import { api, type AssignmentChoice } from '../../lib/api';
 import { assignmentOf, setAssignment, useAssignments, fileKey } from '../../lib/assignmentContext';
+import { linkAssignment } from '../../lib/assignmentLink';
 
 const dateText = (a: AssignmentChoice) => new Date(`${a.date}T12:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
@@ -67,7 +68,7 @@ export function AssignmentPicker({ tabId, onClose }: { tabId: string; onClose: (
   const coming = shown.filter((a) => a.date >= today);
   const past = shown.filter((a) => a.date < today);
   const pick = (a: AssignmentChoice) => {
-    setAssignment(tabId, { id: a.id, label: `${a.course} · ${a.title}` });
+    linkAssignment(tabId, { id: a.id, label: `${a.course} · ${a.title}`, title: a.title });
     onClose();
   };
   const row = (a: AssignmentChoice) => (

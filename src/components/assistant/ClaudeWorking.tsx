@@ -4,8 +4,8 @@ import { stop } from '../../lib/assistant';
 
 /**
  * Over the file Claude is working on: a soft glowing edge and a pill saying what it's doing right now ("Adding a
- * text box"), with Stop. The editor itself shows each change as it lands (the new element selected, the page
- * scrolled to it), so the student watches the file being built. Hidden while Claude takes its own look.
+ * text box"), with Stop. Claude's changes land in the background with a brief highlight; the student's cursor,
+ * selection, scroll and focus stay put, and they can keep working. Hidden while Claude takes its own look.
  */
 export function ClaudeWorking({ tabId }: { tabId: string }) {
   const activity = useAssistant((s) => s.activity[tabId]);

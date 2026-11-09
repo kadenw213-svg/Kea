@@ -5,6 +5,7 @@ import type { Editor } from '@tiptap/react';
 import type { AssistantTool } from '../../store';
 import { attachment, imageSource, resolveImage } from '../../lib/attachments';
 import { findQuote } from './aiHooks';
+import { asClaude } from './claudeEditsExt';
 import { PAGE_SIZES, type DocMeta } from './docMeta';
 
 const hex = { type: 'string', description: 'CSS hex colour like "#1a73e8"' };
@@ -13,7 +14,7 @@ const where = {
   quote: { type: 'string', description: 'With where "after": text copied from the paragraph it goes after' }
 };
 
-export function docTools(get: () => Editor | null, meta?: { get(): DocMeta; set(m: DocMeta): void }): AssistantTool[] {
+export function docTools(get: () => Editor | null, meta?: { get(): DocMeta; set(m: DocMeta): void }, here?: (e: Editor) => { from: number; to: number }): AssistantTool[] {
   const ed = () => {
     const e = get();
     if (!e) throw new Error('The document isn’t ready.');
@@ -30,7 +31,8 @@ export function docTools(get: () => Editor | null, meta?: { get(): DocMeta; set(
       const $p = e.state.doc.resolve(r.to);
       return $p.depth >= 1 ? $p.after(1) : r.to;
     }
-    const $to = e.state.selection.$to;
+    // "At the cursor": where the person was when they asked (claudeEdits.ts), not wherever they are now.
+    const $to = e.state.doc.resolve(here ? here(e).to : e.state.selection.to);
     return $to.depth >= 1 ? $to.after(1) : e.state.doc.content.size;
   };
 
@@ -54,7 +56,7 @@ export function docTools(get: () => Editor | null, meta?: { get(): DocMeta; set(
           return `src=${q}${a.dataUrl}${q}`;
         });
         if (missing.length) throw new Error(`No attached image ${missing.join(', ')}.`);
-        if (!e.chain().focus().insertContentAt(posFor(e, w, quote), full).run()) throw new Error('The editor couldn’t insert that there.');
+        if (!e.chain().insertContentAt(posFor(e, w, quote), full).run()) throw new Error('The editor couldn’t insert that there.');
         return 'Inserted.';
       }
     },
@@ -69,11 +71,8 @@ export function docTools(get: () => Editor | null, meta?: { get(): DocMeta; set(
         const img = await resolveImage({ attachment: a, path, svg });
         const e = ed();
         const pct = Math.max(5, Math.min(100, width ?? 100));
-        const ok = e
-          .chain()
-          .focus()
-          .insertContentAt(posFor(e, w, quote), { type: 'image', attrs: { src: img.dataUrl, alt: img.name, width: `${pct}%`, align } })
-          .run();
+        // (The picture has loaded: the place is worked out now, and it goes in as Claude's edit.)
+        const ok = asClaude(e, () => e.chain().insertContentAt(posFor(e, w, quote), { type: 'image', attrs: { src: img.dataUrl, alt: img.name, width: `${pct}%`, align } }).run());
         if (!ok) throw new Error('The editor couldn’t insert the picture there.');
         return `Inserted “${img.name}” at ${pct}% width.`;
       }
