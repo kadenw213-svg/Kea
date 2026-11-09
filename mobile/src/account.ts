@@ -37,6 +37,7 @@ import {
   type ServerKind
 } from './accountCore';
 import { HubError, OFFLINE_MSG, accountChanged, hubCall, hubDropSession, hubNewAccount, hubSessionStarted, hubSignOut, reach } from './hub';
+import { profileOf, type Profile, type ProfilePatch } from '../../src/lib/profile';
 
 const ADVANCED = 'kea.accountUrl';
 const PENDING = 'kea.oauthPending';
@@ -164,7 +165,8 @@ export async function status(): Promise<AccountStatus> {
   await ensureUrl();
   if (!currentUrl()) return local();
   try {
-    await serverInfo();
+    // (Not answering last time: asked again now, so Kea catches up as soon as it's back.)
+    await serverInfo({ fresh: !reach.reachable });
   } catch {}
   const h = await Kea.hubState().catch(() => null);
   if (h?.signedIn && reach.reachable) {
@@ -173,6 +175,7 @@ export async function status(): Promise<AccountStatus> {
       const a = await accounts().active();
       if (me?.account?.email && (!a || norm(a.email) !== norm(me.account.email) || a.hub?.id !== me.account.id))
         await accounts().attachOnline({ email: me.account.email, name: me.account.displayName, hubId: me.account.id, url: currentUrl() });
+      if (me?.account?.email) await seenProfile(me.account.email, await flushProfile(me.account.email, me));
     } catch {
       // (Offline, the terms gate, or the session ended: still signed in here, working from what Kea last knew.)
     }
@@ -194,6 +197,7 @@ async function signedIn(r: any, { provider = null }: { provider?: string | null 
     // (Another account's classes and sync state are never shown to this one.)
     if (was && norm(was.email) !== norm(acc.email)) hubNewAccount();
     await accounts().attachOnline({ email: acc.email, name: acc.displayName, hubId: acc.id ?? null, url: currentUrl(), provider });
+    askProfileFor(acc.email);
   }
   hubSessionStarted();
   pending = null;
@@ -443,6 +447,114 @@ export async function resumeOauth(): Promise<SignedIn | null> {
   await ensureUrl();
   const idToken = await exchange(p.provider, back.code, p.verifier);
   return p.purpose === 'link' ? link({ provider: p.provider }, idToken) : oauthSignIn({ provider: p.provider }, idToken);
+}
+
+// ---------- name and phone (PATCH /v1/me), saved later when the server can't be reached ----------
+// localStorage: kea.profileSeen { [email]: Profile } (what Kea last saw), kea.profileQueue { [email]: { patch, at } }
+// (a change waiting for the server), kea.profileAsked { ask: email | null, done: [email] } (the card after the first
+// sign-in on this phone, once).
+const SEEN = 'kea.profileSeen';
+const QUEUE = 'kea.profileQueue';
+const ASKED = 'kea.profileAsked';
+const readJson = <T,>(k: string, empty: T): T => {
+  try {
+    const j = JSON.parse(localStorage.getItem(k) || 'null');
+    return j && typeof j === 'object' ? (j as T) : empty;
+  } catch {
+    return empty;
+  }
+};
+const writeJson = (k: string, v: unknown) => {
+  try {
+    localStorage.setItem(k, JSON.stringify(v));
+  } catch {}
+};
+async function seenProfile(email: string, me: any) {
+  if (!me?.account) return;
+  const all = readJson<Record<string, Profile>>(SEEN, {});
+  all[norm(email)] = profileOf(me);
+  writeJson(SEEN, all);
+}
+function setQueued(email: string, patch: ProfilePatch | null) {
+  const all = readJson<Record<string, { patch: ProfilePatch; at: number }>>(QUEUE, {});
+  if (patch) all[norm(email)] = { patch, at: Date.now() };
+  else delete all[norm(email)];
+  writeJson(QUEUE, all);
+}
+const queuedFor = (email: string) => readJson<Record<string, { patch: ProfilePatch }>>(QUEUE, {})[norm(email)]?.patch || null;
+const merged = (base: Profile, q: ProfilePatch | null): Profile => (q ? { name: q.name ?? base.name, phone: 'phone' in q ? (q.phone ?? null) : base.phone, phoneShare: { ...base.phoneShare, ...(q.phoneShare || {}) } } : base);
+/** A change that waited, sent now the server answers (refused: dropped, and said). The account after it. */
+let profileNote: string | null = null;
+async function flushProfile(email: string, me: any) {
+  const q = queuedFor(email);
+  if (!q) return me;
+  try {
+    const r = await hubCall<any>('PATCH', '/v1/me', q, { limit: 'status' });
+    setQueued(email, null);
+    return r?.account ? r : { ...me, ...q, phoneShare: { ...profileOf(me).phoneShare, ...(q.phoneShare || {}) } };
+  } catch (e: any) {
+    if (e?.status === 0 || e?.status === 401) return me;
+    setQueued(email, null);
+    profileNote = `Your earlier change to your name or phone wasn’t saved: ${errMsg(e)}`;
+    return me;
+  }
+}
+const errMsg = (e: any) => String(e?.message || e);
+export type ProfileHere = Profile & { queued: boolean; note: string | null };
+/** The name, phone and who sees it: from the server when it answers, else what the phone last saw; a waiting change on top. */
+export async function profile(): Promise<ProfileHere | null> {
+  const a = await accounts().active();
+  if (!a || !(await Kea.hubState().catch(() => null))?.signedIn) return null;
+  try {
+    const me = await flushProfile(a.email, await hubCall<any>('GET', '/v1/me', undefined, { limit: 'status' }));
+    await seenProfile(a.email, me);
+  } catch {}
+  const base = readJson<Record<string, Profile>>(SEEN, {})[norm(a.email)] || { name: a.name || '', phone: null, phoneShare: profileOf(null).phoneShare };
+  const q = queuedFor(a.email);
+  return { ...merged(base, q), queued: !!q, note: profileNote };
+}
+/**
+ * Saves the name, phone and who sees it (PATCH /v1/me; a 400 says what's wrong). The server not answering is no
+ * error: the change waits on the phone ({ queued }) and goes at the next check that reaches it.
+ */
+export async function saveProfile(patch: ProfilePatch): Promise<{ profile: ProfileHere; queued: boolean }> {
+  const a = await accounts().active();
+  if (!a || !(await Kea.hubState().catch(() => null))?.signedIn) throw fail('Sign in with Google to save your name and phone.', 401, { needsOnline: true });
+  let queued = false;
+  try {
+    const me = await hubCall<any>('PATCH', '/v1/me', patch, { limit: 'status' });
+    setQueued(a.email, null);
+    profileNote = null;
+    if (me?.account) await seenProfile(a.email, me);
+    else {
+      const all = readJson<Record<string, Profile>>(SEEN, {});
+      all[norm(a.email)] = merged(all[norm(a.email)] || { name: a.name || '', phone: null, phoneShare: profileOf(null).phoneShare }, patch);
+      writeJson(SEEN, all);
+    }
+  } catch (e: any) {
+    if (e?.status !== 0) throw e;
+    const was = queuedFor(a.email);
+    setQueued(a.email, { ...(was || {}), ...patch, ...(was?.phoneShare || patch.phoneShare ? { phoneShare: { ...(was?.phoneShare || {}), ...(patch.phoneShare || {}) } } : {}) });
+    queued = true;
+  }
+  if (patch.name) await accounts().setName(a.id, patch.name);
+  accountChanged();
+  return { profile: (await profile())!, queued };
+}
+function askProfileFor(email: string) {
+  const s = readJson<{ ask: string | null; done: string[] }>(ASKED, { ask: null, done: [] });
+  const e = norm(email);
+  if ((s.done || []).includes(e) || s.ask === e) return;
+  writeJson(ASKED, { ask: e, done: s.done || [] });
+}
+/** The "your name and phone" card is due for this account (once, after the first sign-in on this phone). */
+export function profileDue(email: string | null | undefined): boolean {
+  return !!email && readJson<{ ask: string | null }>(ASKED, { ask: null }).ask === norm(email);
+}
+/** The card was saved or skipped: it isn't shown again. */
+export function profileAsked() {
+  const s = readJson<{ ask: string | null; done: string[] }>(ASKED, { ask: null, done: [] });
+  if (s.ask) writeJson(ASKED, { ask: null, done: [...new Set([...(s.done || []), s.ask])].slice(-50) });
 }
 
 /** Plain words for a failed account action (offline is calm, never an error screen). */

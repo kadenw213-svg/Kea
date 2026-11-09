@@ -435,6 +435,23 @@ export interface HubAccount {
   phone?: { number: string | null; visibility: HubPhoneVisibility };
 }
 export type HubPhoneVisibility = 'nobody' | 'classes' | 'orgs' | 'both';
+/** Who sees the phone number: people in organizations I join, and classmates. */
+export interface HubPhoneShare {
+  orgs: boolean;
+  classmates: boolean;
+}
+/** The account's name and optional phone number (+15551234567), as GET /v1/me gives them. */
+export interface HubProfile {
+  name: string;
+  phone: string | null;
+  phoneShare: HubPhoneShare;
+  queued?: boolean;
+}
+export interface HubProfilePatch {
+  name?: string;
+  phone?: string | null;
+  phoneShare?: Partial<HubPhoneShare>;
+}
 /** A notice for this account from the Kea Hub (the owner changed something, an org was approved, a scan finished...). */
 export interface HubNotification {
   id: number;
@@ -484,6 +501,10 @@ export interface HubTermsStatus {
 }
 export interface HubMe {
   account: HubAccount;
+  /** The name and optional phone (the Kea account server; older servers keep them in account). */
+  name?: string;
+  phone?: string | null;
+  phoneShare?: HubPhoneShare;
   progress: { level: number; xp: number; floor: number; next: number; today: number; streak: number };
   terms: HubTermsStatus;
   /** over: using more than the limit (after it went down). Nothing is deleted; new files wait. */
@@ -525,6 +546,12 @@ export interface HubStatus {
    * went, reason: why). seen: the notice was shown.
    */
   moved?: { kind: 'moved' | 'unchecked'; from: string; to: string | null; reason: string | null; at: number; seen: boolean } | null;
+  /** The name, phone and who sees it (what Kea last saw; queued: a change that waits for the server). */
+  profile?: HubProfile | null;
+  /** A change to the name or phone that waited, and the server refused. */
+  profileNote?: string | null;
+  /** The small "your name and phone" card is due (once, after the first sign-in on this computer). */
+  askProfile?: boolean;
   /** What Kea last saw (shown while the Hub is offline). */
   cached: { id?: string; totpEnabled?: boolean; email: string; name: string; emailVerified: boolean; verifiedBy?: string | null; owner?: boolean; canHost?: boolean; leaderboard?: HubAccount['leaderboard'] | null; supporter?: HubAccount['supporter'] | null; progress?: HubMe['progress'] | null; terms: HubTermsStatus | null; at?: number } | null;
 }
@@ -663,8 +690,13 @@ export interface HubApi {
   onOpenAccount(cb: () => void): () => void;
   /** The account changed by itself (a background online sign-in, the session ended, the server came back). */
   onChanged(cb: () => void): () => void;
-  /** The optional phone number (null clears it) and who sees it. */
-  setPhone(a: { phone?: string | null; visibility?: HubPhoneVisibility }): Promise<HubResult<HubStatus>>;
+  /**
+   * The name, the optional phone number (null clears it) and who sees it (PATCH /v1/me). The server not answering:
+   * the change waits on this computer and goes once it answers (profileQueued).
+   */
+  saveProfile(a: HubProfilePatch): Promise<HubResult<HubStatus & { profileQueued?: boolean }>>;
+  /** The "your name and phone" card after the first sign-in was saved or skipped (it isn't shown again). */
+  profileAsked(): Promise<HubResult<HubStatus>>;
 }
 
 export type AiTier = 'light' | 'balanced' | 'best';

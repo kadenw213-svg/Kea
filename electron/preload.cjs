@@ -105,7 +105,9 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('hub:openAccount', h);
       return () => ipcRenderer.removeListener('hub:openAccount', h);
     },
-    setPhone: (a) => ipcRenderer.invoke('hub:setPhone', a)
+    // The name, phone and who sees it (saved later when the server can't be reached), and the first-sign-in card done.
+    saveProfile: (a) => ipcRenderer.invoke('hub:saveProfile', a),
+    profileAsked: () => ipcRenderer.invoke('hub:profileAsked')
   },
   // Kea Hub classes (electron/hubClasses.cjs): each call takes one object and resolves to { ok, value } or { ok: false, error }.
   hubClasses: {

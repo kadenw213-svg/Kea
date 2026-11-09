@@ -54,6 +54,8 @@ export async function signInWithGoogle() {
     return;
   }
   const provider = signInProvider(s);
+  // (No Google or Microsoft sign-in in this copy: say so where the click was, not only on the account page.)
+  if (s && !provider) toast('Sign-in isn’t available in this copy of Kea. Everything on this computer still works.', 'info');
   if (!provider || !s || s.state !== 'none') return openAccount();
   const r = await api.hub.oauthSignIn({ provider });
   if (r.ok) {

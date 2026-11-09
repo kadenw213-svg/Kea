@@ -5,7 +5,7 @@ import { HomeScreen } from './components/Home';
 import { Welcome } from './components/Welcome';
 import { useSetupDone, watchSchool } from './lib/areas';
 import { Overlays } from './components/Overlays';
-import { AccountWatch, MovedNotice, TermsGate } from './components/scholar/HubAccount';
+import { AccountWatch, MovedNotice, ProfileWelcome, TermsGate } from './components/scholar/HubAccount';
 import { ModePickerGate } from './components/ModePicker';
 import { loadWorkScreen } from './lib/modes';
 import { openScholar } from './components/scholar/scholarStore';
@@ -319,6 +319,7 @@ export function App() {
       <ControlChip />
       <TermsGate />
       <MovedNotice />
+      <ProfileWelcome />
       <ModePickerGate />
       <AccountWatch />
       <Overlays />

@@ -860,3 +860,55 @@
   color: var(--text-2);
   font-size: 13px;
 }
+
+/* The first sign-in for a new email: one line, one button. */
+.hub-onestep .hub-title {
+  font-size: 15px;
+}
+.hub-onestep-email {
+  font-weight: 400;
+  font-size: 13px;
+}
+.btn.link.hub-inline-link {
+  display: inline;
+  padding: 0;
+  height: auto;
+  min-height: 0;
+  font: inherit;
+  vertical-align: baseline;
+}
+
+/* Name and phone: the card after the first sign-in, and Settings → Kea account. */
+.hub-profile {
+  max-width: 440px;
+}
+.hub-share {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hub-share-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.hub-share-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hub-share-hint {
+  font-size: 12px;
+}
+.hub-profile .hub-warn,
+.hub-profile .acct-note {
+  margin: 0;
+}
+.dialog.hub-welcome {
+  width: min(440px, calc(100vw - 32px));
+}
+.dialog.hub-welcome h2 {
+  margin-bottom: 4px;
+}

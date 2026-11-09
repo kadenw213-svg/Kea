@@ -5,10 +5,11 @@
 // storage; the classes and textbooks then come through Kea cloud instead of a drive's files (from the folder Kea on the
 // computer writes them into, picked by itself). The account's address is under Advanced.
 import { useEffect, useState } from 'react';
-import { Bell, Check, CheckCircle2, ExternalLink, Heart, Loader2, LogIn, LogOut, RefreshCw, Smartphone, UserPlus } from 'lucide-react';
+import { Bell, Check, CheckCircle2, ExternalLink, Heart, Loader2, LogIn, LogOut, RefreshCw, Smartphone } from 'lucide-react';
 import { Kea } from './kea';
 import { HubError, HubInfo, HubMeSummary, HubNote, TermsGate, acceptTerms, hubInfo, hubMe, hubNotes, hubNotesRead, hubPickFolder, termsGate, termsUrl } from './hub';
-import { NOT_SET_UP, cancelSignIn, continueSignIn, currentTerms, link, oauthSignIn, openHere, setAdvancedUrl, signOut, status as accountStatus, type AccountStatus, type SignedIn } from './account';
+import { NOT_SET_UP, cancelSignIn, continueSignIn, currentTerms, link, oauthSignIn, openHere, profile as loadProfile, profileAsked, profileDue, saveProfile, setAdvancedUrl, signOut, status as accountStatus, type AccountStatus, type ProfileHere, type SignedIn } from './account';
+import { PHONE_HINT, SHARE_DEFAULTS, oneStepAgreement, profileSave, savedText, showPhone } from '../../src/lib/profile';
 import { PROVIDERS, SIGN_IN_WAITS, signInWaits, type Provider } from './accountCore';
 import { NeedsOnline, useAccount } from './NeedsOnline';
 
@@ -97,42 +98,35 @@ function useOnline(onDone: (s: AccountStatus) => void) {
   return { busy, step, msg, run, cancel: () => (setStep(null), run(() => cancelSignIn())) };
 }
 
-/** The first Google or Microsoft sign-in for an email: the terms and the age box make the online Kea account. */
+/**
+ * The first Google or Microsoft sign-in for an email makes the Kea account: one step, one button. "Agree and continue"
+ * agrees to every section of the current terms and confirms 13 or older (oneStepAgreement), as the server asks.
+ */
 function NewOnlineAccount({ s, o }: { s: AccountStatus; o: ReturnType<typeof useOnline> }) {
   const [terms, setTerms] = useState<{ version: number; sections: { id: string; title: string }[] } | null>(null);
-  const [agree, setAgree] = useState(false);
-  const [age13, setAge13] = useState(false);
   const [err, setErr] = useState('');
   useEffect(() => {
     currentTerms().then(setTerms, (e) => setErr(errText(e)));
   }, []);
   return (
     <>
-      <p className="small">
-        <b>Create your Kea account</b>
-        {s.pending?.email ? (
-          <>
-            {' '}
-            for <b>{s.pending.email}</b>
-          </>
-        ) : null}
-        . Agree to the terms to make it.
+      <p>
+        <b>One last step</b>
+        {s.pending?.email ? <span className="muted small block">{s.pending.email}</span> : null}
       </p>
-      <label className="toggle">
-        <input type="checkbox" checked={age13} onChange={(e) => setAge13(e.target.checked)} />
-        <span>I’m 13 or older</span>
-      </label>
-      <label className="toggle">
-        <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} disabled={!terms} />
-        <span>I agree to the Kea terms{terms ? ` (${terms.sections.length} sections)` : ''}</span>
-      </label>
-      {s.url && (
-        <button className="btn ghost" onClick={() => Kea.open({ url: termsUrl(s.url) })}>
-          <ExternalLink size={16} /> Read the Kea terms
-        </button>
-      )}
-      <button className="btn primary" disabled={o.busy || !agree || !age13 || !terms} onClick={() => o.run(() => continueSignIn({ termsVersion: terms!.version, termsSections: terms!.sections.map((x) => x.id), age13: true }))}>
-        {o.busy ? <Loader2 size={16} className="spin" /> : <UserPlus size={16} />} Create my account
+      <p className="small">
+        By continuing you agree to the{' '}
+        {s.url ? (
+          <a href={termsUrl(s.url)} onClick={(e) => (e.preventDefault(), Kea.open({ url: termsUrl(s.url) }))}>
+            Kea terms
+          </a>
+        ) : (
+          'Kea terms'
+        )}{' '}
+        and confirm you’re 13 or older.
+      </p>
+      <button className="btn primary" disabled={o.busy || !terms} onClick={() => o.run(() => continueSignIn(oneStepAgreement(terms!)))}>
+        {o.busy && <Loader2 size={16} className="spin" />} {terms ? 'Agree and continue' : 'Getting the terms…'}
       </button>
       <button className="btn ghost" disabled={o.busy} onClick={o.cancel}>
         Cancel
@@ -166,11 +160,11 @@ function Start({ s, compact, onDone }: { s: AccountStatus; compact: boolean; onD
   if (step === 'code') return <OwnerCode o={o} />;
   return (
     <>
-      {!compact && <p className="muted small">Sign in with Google to get your classes and textbooks from Kea on your computer. Everything on this phone works without an account, and stays when you sign in.</p>}
+      {!compact && <p className="muted small">One tap, and your classes and textbooks come from Kea on your computer. Everything on this phone stays.</p>}
       <ProviderButtons s={s} busy={o.busy} onPick={(p) => o.run(() => oauthSignIn({ provider: p }))} />
       {s.known.length > 0 && (
         <>
-          <p className="muted small">Or open an account already on this phone:</p>
+          <p className="muted small">Or open one used here before:</p>
           <div className="chips">
             {s.known.slice(0, 4).map((k) => (
               <button key={k.email} disabled={o.busy} onClick={() => o.run(() => openHere({ email: k.email }))}>
@@ -213,7 +207,7 @@ function OnPhone({ s, onDone }: { s: AccountStatus; onDone(s: AccountStatus): vo
           {(open || s.state === 'linked') && (
             <>
               <ProviderButtons s={s} busy={o.busy} onPick={(p) => o.run(() => link({ provider: p }))} />
-              {providerList(s).length > 0 && <p className="muted small">Sign in as {a.email}. A different email never links to this account, and nothing on this phone changes.</p>}
+              {providerList(s).length > 0 && <p className="muted small">Sign in as {a.email}. Everything on this phone stays.</p>}
             </>
           )}
         </>
@@ -349,6 +343,7 @@ function Online({ s, compact, onChange, onSignedOut }: { s: AccountStatus; compa
 
   const who = s.account?.email || info?.email;
   const unreachable = <NeedsOnline status={s} compact what="Your classes come from last time" />;
+  const [welcome, setWelcome] = useState(() => profileDue(s.account?.email));
 
   if (view === 'loading')
     return (
@@ -391,6 +386,18 @@ function Online({ s, compact, onChange, onSignedOut }: { s: AccountStatus; compa
     );
   }
 
+  // Right after the first sign-in on this phone: a small card for the name and phone (skippable, once).
+  if (welcome && view === 'ready')
+    return (
+      <div className="profile-card">
+        <p>
+          <b>You’re in</b>
+          <span className="muted small block">Add your name and, if you like, a phone number. You can change them any time here.</span>
+        </p>
+        <ProfileForm welcome onDone={() => (profileAsked(), setWelcome(false))} />
+      </div>
+    );
+
   return (
     <>
       <div className="set-row">
@@ -401,6 +408,7 @@ function Online({ s, compact, onChange, onSignedOut }: { s: AccountStatus; compa
         </span>
       </div>
       {unreachable}
+      {!compact && <ProfileForm />}
       {hasClasses === false && <p className="note">No classes in Kea cloud yet. Sign in to the same Kea account in Kea on your computer and keep it syncing through Kea cloud; your classes come here.</p>}
       {msg && <p className="note warn">{msg}</p>}
       {!compact && <AccountNotes />}
@@ -415,6 +423,86 @@ function Online({ s, compact, onChange, onSignedOut }: { s: AccountStatus; compa
         </button>
       </div>
     </>
+  );
+}
+
+/**
+ * Your name and phone number: the card after the first sign-in (`welcome`: Skip, everything sent), and the same form
+ * on the account screen (only what changed is sent, behind "Name and phone"). Saved later when offline.
+ */
+function ProfileForm({ welcome = false, onDone }: { welcome?: boolean; onDone?(): void }) {
+  const [p, setP] = useState<ProfileHere | null>(null);
+  const [open, setOpen] = useState(welcome);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [orgs, setOrgs] = useState<boolean>(SHARE_DEFAULTS.orgs);
+  const [classmates, setClassmates] = useState<boolean>(SHARE_DEFAULTS.classmates);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ warn: boolean; text: string } | null>(null);
+  const fill = (x: ProfileHere | null) => {
+    setP(x);
+    if (!x) return;
+    setName(x.name);
+    setPhone(x.phone ? showPhone(x.phone) : '');
+    setOrgs(x.phoneShare.orgs);
+    setClassmates(x.phoneShare.classmates);
+  };
+  useEffect(() => {
+    loadProfile().then(fill, () => {});
+  }, []);
+  const save = async () => {
+    const v = profileSave({ name, phone, phoneShare: { orgs, classmates } }, welcome ? null : p);
+    if (!v.ok) return setMsg({ warn: true, text: v.error });
+    if (!Object.keys(v.patch).length) return onDone?.();
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await saveProfile(v.patch);
+      fill(r.profile);
+      setMsg({ warn: false, text: savedText(r.queued) });
+      onDone?.();
+    } catch (e) {
+      setMsg({ warn: true, text: errText(e) });
+    }
+    setBusy(false);
+  };
+  if (!welcome && !open)
+    return (
+      <button className="set-row profile-row" onClick={() => setOpen(true)}>
+        <span>
+          <b>{p?.name || 'Your name'}</b>
+          <span className="muted small block">{p?.phone ? showPhone(p.phone) : 'Add a phone number (optional)'}{p?.queued ? ' · saves when you’re online' : ''}</span>
+        </span>
+      </button>
+    );
+  return (
+    <div className="profile-form">
+      <label className="muted small" htmlFor="kea-profile-name">
+        Name
+      </label>
+      <input id="kea-profile-name" className="input" value={name} onChange={(e) => (setMsg(null), setName(e.target.value))} maxLength={60} autoComplete="name" />
+      <label className="muted small" htmlFor="kea-profile-phone">
+        Phone number (optional)
+      </label>
+      <input id="kea-profile-phone" className="input" value={phone} onChange={(e) => (setMsg(null), setPhone(e.target.value))} type="tel" inputMode="tel" autoComplete="tel" placeholder="(555) 123-4567" />
+      <label className="toggle">
+        <input type="checkbox" role="switch" checked={orgs} onChange={(e) => setOrgs(e.target.checked)} />
+        <span>Share with organizations I join</span>
+      </label>
+      <label className="toggle">
+        <input type="checkbox" role="switch" checked={classmates} onChange={(e) => setClassmates(e.target.checked)} />
+        <span>Share with classmates</span>
+      </label>
+      {msg ? <p className={msg.warn ? 'note warn' : 'muted small'}>{msg.text}</p> : <p className="muted small">{p?.note || (phone.trim() ? 'Never public and never on leaderboards.' : PHONE_HINT)}</p>}
+      <div className="actions">
+        <button className="btn primary" disabled={busy} onClick={save}>
+          {busy ? <Loader2 size={16} className="spin" /> : <Check size={16} />} Save
+        </button>
+        <button className="btn ghost" disabled={busy} onClick={() => (welcome ? onDone?.() : (fill(p), setMsg(null), setOpen(false)))}>
+          {welcome ? 'Skip' : 'Close'}
+        </button>
+      </div>
+    </div>
   );
 }
 

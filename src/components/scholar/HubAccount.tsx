@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Bell, Check, Copy, ExternalLink, Heart, LogIn, LogOut, Pencil, Phone, Trash2, UserPlus } from 'lucide-react';
-import { api, HubConsent, HubNotification, HubNotifications, HubPhoneVisibility, HubQuestionChapter, HubResult, HubScanJob, HubSectionRequest, HubServing, HubStatus, HubTerms, HubTermsChanges, KeaSignInProvider, TermsSection } from '../../lib/api';
+import { BadgeCheck, Bell, Check, Copy, ExternalLink, Heart, LogIn, LogOut, Pencil, Phone, Trash2 } from 'lucide-react';
+import { api, HubConsent, HubNotification, HubNotifications, HubQuestionChapter, HubResult, HubScanJob, HubSectionRequest, HubServing, HubStatus, HubTerms, HubTermsChanges, KeaSignInProvider, TermsSection } from '../../lib/api';
 import { toast, ask } from '../../store';
 import { formatBytes } from '../../lib/util';
 import { useKeaModes } from '../../lib/modes';
 import { useKeaCloud, watchKeaCloud } from '../../lib/keaCloud';
-import { formatPhone } from '../../lib/phone';
+import { PHONE_HINT, SHARE_DEFAULTS, oneStepAgreement, profileSave, savedText, showPhone } from '../../lib/profile';
 import { SIGN_IN_WAITS, hubStatusNow, loadLocal, openAccount, refreshHub, refreshNotifications, run, setHubNotifications, setHubStatus, signInWaits, useHubNotifications, useHubStatus } from '../account/hubStore';
 import { NeedsOnline } from '../account/NeedsOnline';
 import { SignInSecurity, YourData } from '../account/Security';
@@ -195,44 +195,32 @@ function useOnlineSignIn(onDone: () => void) {
 }
 type OnlineSignIn = ReturnType<typeof useOnlineSignIn>;
 
-/** The first Google or Microsoft sign-in for an email: the terms and the age box make the online Kea account. */
+/**
+ * The first Google or Microsoft sign-in for an email makes the Kea account: one step, one button. "Agree and continue"
+ * agrees to every section of the current terms and confirms 13 or older (oneStepAgreement), as the server asks.
+ */
 function NewOnlineAccount({ s }: { s: OnlineSignIn }) {
   const status = useHubStatus();
   const [terms, setTerms] = useState<HubTerms | null>(null);
-  const [allAgreed, setAllAgreed] = useState(false);
-  const [age13, setAge13] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    api.hub.terms().then((r) => r.ok && setTerms(r.value));
+    api.hub.terms().then((r) => (r.ok ? setTerms(r.value) : setErr(r.error)));
   }, []);
   const email = status?.pending?.email;
   return (
-    <div className="acct-form">
-      <h3 className="hub-title">Create your Kea account</h3>
-      <p className="muted acct-note">{email ? `There’s no Kea account for ${email} yet. Agree to the terms to make it.` : 'Agree to the terms to make your Kea account.'}</p>
-      {terms ? (
-        <>
-          <div className="hub-terms-head">
-            <div>
-              <strong>{terms.terms.title}</strong>
-              <div className="muted">
-                Version {terms.terms.version} · {terms.terms.label}
-              </div>
-            </div>
-            <button className="btn sm" onClick={() => api.hub.openTerms()}>
-              <ExternalLink size={13} /> Open the full page
-            </button>
-          </div>
-          <TermsAgreement sections={terms.terms.sections} onChange={setAllAgreed} />
-        </>
-      ) : (
-        <p className="muted">Getting the terms…</p>
-      )}
-      <label className="hub-agree">
-        <input type="checkbox" checked={age13} onChange={(e) => setAge13(e.target.checked)} /> I’m 13 or older
-      </label>
+    <div className="acct-form hub-onestep">
+      <h3 className="hub-title">One last step{email ? <span className="muted hub-onestep-email"> · {email}</span> : null}</h3>
+      <p className="acct-note">
+        By continuing you agree to the{' '}
+        <button type="button" className="btn link hub-inline-link" onClick={() => api.hub.openTerms()}>
+          Kea terms
+        </button>{' '}
+        and confirm you’re 13 or older.
+      </p>
+      {err && <p className="hub-warn">{err}</p>}
       <div className="acct-actions">
-        <button className="btn primary" disabled={s.busy || !terms || !allAgreed || !age13} onClick={() => terms && s.finish({ age13: true, termsVersion: terms.terms.version, termsSections: terms.terms.sections.map((x) => x.id) })}>
-          <UserPlus size={14} /> Create my account
+        <button className="btn primary" disabled={s.busy || !terms} onClick={() => terms && s.finish(oneStepAgreement(terms.terms))}>
+          {terms ? 'Agree and continue' : 'Getting the terms…'}
         </button>
         <button className="btn" disabled={s.busy} onClick={s.cancel}>
           Cancel
@@ -283,12 +271,12 @@ function SignInStart({ onDone }: { onDone(): void }) {
   };
   return (
     <div className="acct-form">
-      <p className="muted acct-note">Sign in with Google to use Kea cloud, classes and organizations on all your devices. Everything on this computer works without an account, and stays when you sign in.</p>
+      <p className="muted acct-note">One click, and your classes, Kea cloud and organizations follow you to every device. Everything on this computer stays.</p>
       <ProviderButtons busy={s.busy} onPick={s.signIn} />
       {s.note && <p className="hub-warn">{s.note}</p>}
       {known.length > 0 && (
         <>
-          <div className="acct-or muted">or open an account already on this computer</div>
+          <div className="acct-or muted">or open one used here before</div>
           <div className="acct-known" aria-label="Accounts on this computer">
             {known.slice(0, 4).map((k) => (
               <button key={k.email} type="button" className="btn sm" disabled={busy || s.busy} onClick={() => reopen(k.email)} title={k.name || undefined}>
@@ -340,13 +328,13 @@ function GoOnline() {
   if (s.step === 'code') return <OwnerCode s={s} />;
   return (
     <div className="acct-form">
-      <h3 className="hub-title">{again ? 'Sign in online' : 'Take your account online'}</h3>
+      <h3 className="hub-title">{again ? 'Sign in again' : 'Take your account online'}</h3>
       <p className="muted acct-note">
         {status.moved?.kind === 'moved' && status.moved.to === status.url
           ? 'Your Kea account moved to a new address. Sign in once to continue.'
           : again
-            ? 'You’re signed in on this computer. Sign in with Google to use Kea cloud, classes and work; everything else already works.'
-            : `Online, your account gets Kea cloud, classes and organizations, Kea’s shared Claude and Work. Sign in with Google as ${status.account.email}: the same email links, and everything on this computer stays.`}
+            ? 'Sign in once more to get Kea cloud, classes and Work back. Everything else already works.'
+            : `Sign in as ${status.account.email}. Everything on this computer stays.`}
       </p>
       {s.note && <p className="hub-warn">{s.note}</p>}
       <ProviderButtons busy={s.busy} onPick={s.link} />
@@ -477,15 +465,17 @@ export function HubPanel() {
     <div className="acct-page">
       <div className="acct-card hub-card">
         {!status.reachable && status.checked && <p className="hub-warn">Can’t reach the Kea account server right now. You’re still signed in: Kea keeps working with what it last saw and catches up when it’s back.</p>}
+        {status.profileNote && <p className="hub-warn">{status.profileNote}</p>}
         {who && (
           <ProfileHead>
             <div className="acct-who">
-              {me ? (
-                <NameLine name={who.displayName} badges={<>{who.emailVerified && <VerifiedBadge account={account} size={16} />} {supporter?.active && <SupporterBadge />}</>} />
-              ) : (
-                <div className="acct-name">{who.displayName}</div>
-              )}
-              <div className="muted">{who.email}</div>
+              <div className="acct-name">
+                {status.profile?.name || who.displayName || <span className="muted">No name yet</span>} {who.emailVerified && <VerifiedBadge account={account} size={16} />} {supporter?.active && <SupporterBadge />}
+              </div>
+              <div className="muted">
+                {who.email}
+                {status.profile?.phone ? ` · ${showPhone(status.profile.phone)}` : ''}
+              </div>
               <div className={`acct-status ${who.emailVerified ? 'ok' : 'bad'}`}>{verifiedText}</div>
             </div>
           </ProfileHead>
@@ -531,9 +521,9 @@ export function HubPanel() {
           <NotificationList />
         </div>
       )}
-      {me && (
+      {status.signedIn && (
         <div className="acct-card">
-          <PhoneSetting status={status} />
+          <ProfileForm />
         </div>
       )}
       {me && (
@@ -604,61 +594,115 @@ export function AccountWatch() {
   return null;
 }
 
-/** The optional phone number, and who sees it. Never on leaderboards; nobody sees it unless chosen here. */
-function PhoneSetting({ status }: { status: HubStatus }) {
-  const modes = useKeaModes();
-  const cur = status.me?.account.phone ?? { number: null, visibility: 'nobody' as HubPhoneVisibility };
-  // (No number yet: who'd see one starts at the people it's usually for: coworkers in Work, classmates in School.)
-  const suggested: HubPhoneVisibility = cur.number ? cur.visibility : modes.work && modes.school ? 'both' : modes.work ? 'orgs' : modes.school ? 'classes' : 'nobody';
-  const [number, setNumber] = useState(cur.number || '');
-  const [visibility, setVisibility] = useState<HubPhoneVisibility>(suggested);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    setNumber(cur.number || '');
-    setVisibility(suggested);
-  }, [cur.number, cur.visibility]);
-  const save = async (patch: { phone?: string | null; visibility?: HubPhoneVisibility }, done: string) => {
-    setBusy(true);
-    const s = await run(api.hub.setPhone(patch));
-    setBusy(false);
-    if (s) (setHubStatus(s), toast(done, 'success'));
-  };
-  const changed = number.trim() !== (cur.number || '') || visibility !== cur.visibility;
+/** One switch with its words (the settings look). */
+function ShareSwitch({ on, set, label, hint }: { on: boolean; set(v: boolean): void; label: string; hint?: string }) {
   return (
-    <div className="acct-form hub-phone">
-      <h3 className="hub-title">
-        <Phone size={14} /> Phone number <span className="muted hub-optional">optional</span>
-      </h3>
-      {cur.number && (
-        <p className="acct-note">
-          Saved: <b>{formatPhone(cur.number)}</b>
-        </p>
+    <div className="hub-share-row">
+      <span className="hub-share-text">
+        {label}
+        {hint && <span className="muted hub-share-hint">{hint}</span>}
+      </span>
+      <button type="button" role="switch" aria-checked={on} aria-label={label} className={`switch ${on ? 'on' : ''}`} onClick={() => set(!on)}>
+        <span />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Your name and phone number: the small card after the first sign-in (`welcome`: Skip, and everything is sent), and
+ * the same form in Settings → Kea account (only what changed is sent). The phone is optional, checked lightly and kept
+ * as +15551234567. Saving while the server can't be reached keeps the change here and sends it once it's back.
+ */
+export function ProfileForm({ welcome = false, onDone }: { welcome?: boolean; onDone?(): void }) {
+  const status = useHubStatus();
+  const p = status?.profile ?? null;
+  const fallbackName = p?.name || status?.me?.account.displayName || status?.cached?.name || status?.account?.name || '';
+  const [name, setName] = useState(fallbackName);
+  const [phone, setPhone] = useState(p?.phone ? showPhone(p.phone) : '');
+  const [orgs, setOrgs] = useState(p?.phoneShare.orgs ?? SHARE_DEFAULTS.orgs);
+  const [classmates, setClassmates] = useState(p?.phoneShare.classmates ?? SHARE_DEFAULTS.classmates);
+  const [err, setErr] = useState<{ field: 'name' | 'phone' | null; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  // (What Kea knows changed, from elsewhere: the form follows, unless it's being typed in.)
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (touched || !p) return;
+    setName(p.name || fallbackName);
+    setPhone(p.phone ? showPhone(p.phone) : '');
+    setOrgs(p.phoneShare.orgs);
+    setClassmates(p.phoneShare.classmates);
+  }, [p?.name, p?.phone, p?.phoneShare.orgs, p?.phoneShare.classmates]);
+  const touch = <T,>(set: (v: T) => void) => (v: T) => (setTouched(true), setErr(null), set(v));
+  const save = async () => {
+    const v = profileSave({ name, phone, phoneShare: { orgs, classmates } }, welcome ? null : p);
+    if (!v.ok) return setErr({ field: v.field, text: v.error });
+    if (!Object.keys(v.patch).length) return onDone?.();
+    setBusy(true);
+    const r = await api.hub.saveProfile(v.patch);
+    setBusy(false);
+    if (!r.ok) return setErr({ field: r.data?.field ?? null, text: r.error });
+    setHubStatus(r.value);
+    setTouched(false);
+    toast(savedText(!!r.value.profileQueued), 'success');
+    onDone?.();
+  };
+  return (
+    <form className="acct-form hub-profile" onSubmit={(e) => (e.preventDefault(), save())}>
+      {!welcome && (
+        <h3 className="hub-title">
+          <Phone size={14} /> Name and phone
+        </h3>
       )}
-      <div className="hub-phone-row">
-        <label>
-          <span>Number</span>
-          <input value={number} onChange={(e) => setNumber(e.target.value)} type="tel" inputMode="tel" autoComplete="tel" placeholder="+1 719 555 0100" />
-        </label>
-        <label>
-          <span>Who sees it</span>
-          <select className="acct-select" value={visibility} onChange={(e) => setVisibility(e.target.value as HubPhoneVisibility)}>
-            <option value="nobody">Nobody</option>
-            <option value="classes">Classmates in my classes</option>
-            <option value="orgs">Coworkers in my organizations</option>
-            <option value="both">Classmates and coworkers</option>
-          </select>
-        </label>
+      <label>
+        <span>Name</span>
+        <input value={name} onChange={(e) => touch(setName)(e.target.value)} maxLength={60} autoComplete="name" aria-invalid={err?.field === 'name'} autoFocus={welcome} />
+      </label>
+      <label>
+        <span>
+          Phone number <span className="muted hub-optional">optional</span>
+        </span>
+        <input value={phone} onChange={(e) => touch(setPhone)(e.target.value)} type="tel" inputMode="tel" autoComplete="tel" placeholder="(555) 123-4567" aria-invalid={err?.field === 'phone'} />
+      </label>
+      <div className="hub-share">
+        <ShareSwitch on={orgs} set={touch(setOrgs)} label="Share with organizations I join" />
+        <ShareSwitch on={classmates} set={touch(setClassmates)} label="Share with classmates" />
       </div>
-      <p className="muted acct-note">It shows in class and organization member lists only for the people you pick, never on leaderboards and never publicly.</p>
+      {err ? <p className="hub-warn">{err.text}</p> : <p className="muted acct-note">{phone.trim() ? 'Never public and never on leaderboards.' : PHONE_HINT}</p>}
+      {p?.queued && !touched && <p className="muted acct-note">{savedText(true)}</p>}
       <div className="acct-actions">
-        <button className="btn sm primary" disabled={busy || !changed || !number.trim()} title={!number.trim() ? 'Type a number first' : !changed ? 'Nothing changed' : undefined} onClick={() => save({ phone: number.trim(), visibility }, 'Phone number saved.')}>
-          Save
+        <button className="btn primary" type="submit" disabled={busy}>
+          {busy ? 'Saving…' : 'Save'}
         </button>
-        {cur.number && (
-          <button className="btn sm" disabled={busy} onClick={() => save({ phone: null }, 'Phone number removed.')}>
-            Remove
+        {welcome && (
+          <button className="btn" type="button" disabled={busy} onClick={() => onDone?.()}>
+            Skip
           </button>
         )}
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Right after the first sign-in on this computer: a small card for your name and phone. Skippable; it shows once, and
+ * the same form is in Settings → Kea account.
+ */
+export function ProfileWelcome() {
+  const status = useHubStatus();
+  if (!status?.askProfile || !status.signedIn || status.pending) return null;
+  // (Agreeing to changed terms comes first.)
+  if (status.me?.terms.needsAgreement) return null;
+  const done = async () => {
+    const r = await api.hub.profileAsked();
+    if (r.ok) setHubStatus(r.value);
+  };
+  return (
+    <div className="scrim">
+      <div className="dialog hub-welcome">
+        <h2>You’re in</h2>
+        <p className="muted">Add your name and, if you like, a phone number. You can change them any time in Settings → Kea account.</p>
+        <ProfileForm welcome onDone={done} />
       </div>
     </div>
   );

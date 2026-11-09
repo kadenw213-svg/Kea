@@ -1899,3 +1899,27 @@ details.why .input {
   min-height: 40px;
   padding: 8px 10px;
 }
+
+/* The account's name and phone: the card after the first sign-in, and the row on the account screen. */
+.profile-card,
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.profile-card > p {
+  margin: 0;
+}
+.profile-form label.muted {
+  margin-bottom: -6px;
+}
+button.set-row.profile-row {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}

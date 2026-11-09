@@ -9,10 +9,10 @@
 // the server is checked in the background with time limits (status()). Not reaching it is normal.
 // (Email-only accounts made here by Kea 0.82 and older stay signed in and link on the same email; no new ones are made.)
 //
-// Settings: hub.url (where the server is, under Advanced), hub.googleClientId / hub.googleClientSecret and
-// hub.microsoftClientId (KEA_GOOGLE_CLIENT_ID, KEA_MICROSOFT_CLIENT_ID): the clients for "Sign in with Google" and
-// "Sign in with Microsoft" (openid, email and profile only). With neither set, sign-in isn't available in this copy of
-// Kea (the account page says so) and everything on this computer works without an account.
+// Settings: hub.url (where the server is, under Advanced). The clients for "Sign in with Google" and "Sign in with
+// Microsoft" (openid, email and profile only) are built in (oauthClients.cjs: settings, then the environment, then the
+// build's electron/buildConfig.json). With neither, sign-in isn't available in this copy of Kea (the account page says
+// so) and everything on this computer works without an account.
 const { app, ipcMain, shell, net, safeStorage, BrowserWindow } = require('electron');
 const http = require('http');
 const crypto = require('crypto');
@@ -64,7 +64,7 @@ function cached() {
 }
 // What this computer keeps about the signed-in account's work (shifts and org classes for the calendar): never shown
 // to the next person who signs in here.
-const accountFiles = () => [path.join(app.getPath('userData'), 'work-calendar.json')];
+const accountFiles = () => [path.join(app.getPath('userData'), 'work-calendar.json'), profileQueueFile()];
 function saveCache(me) {
   if (!me) {
     for (const f of [cacheFile(), ...accountFiles()]) fs.rmSync(f, { force: true });
@@ -72,8 +72,130 @@ function saveCache(me) {
   }
   const a = me.account;
   // (Another account's copies stay: each is kept for the account it was made for, and nobody else is shown it.)
-  fs.writeFileSync(cacheFile(), JSON.stringify({ id: a.id, email: a.email, name: a.displayName, emailVerified: a.emailVerified, verifiedBy: a.verifiedBy, owner: a.owner, canHost: a.canHost, identityVerified: a.identityVerified, totpEnabled: a.totpEnabled, leaderboard: a.leaderboard ?? null, supporter: a.supporter ?? null, progress: me.progress ?? null, terms: me.terms ?? null, at: Date.now() }, null, 1));
+  fs.writeFileSync(cacheFile(), JSON.stringify({ id: a.id, email: a.email, name: a.displayName, emailVerified: a.emailVerified, verifiedBy: a.verifiedBy, owner: a.owner, canHost: a.canHost, identityVerified: a.identityVerified, totpEnabled: a.totpEnabled, leaderboard: a.leaderboard ?? null, supporter: a.supporter ?? null, progress: me.progress ?? null, terms: me.terms ?? null, profile: profileOf(me), at: Date.now() }, null, 1));
 }
+
+// ---------- Name and phone ----------
+// GET /v1/me has { name, phone: string | null, phoneShare: { orgs, classmates } }; PATCH /v1/me changes them (400
+// { error } when something isn't right). An older server keeps them as account.displayName and account.phone
+// ({ number, visibility }). Who sees the number starts at: organizations I join yes, classmates no.
+const SHARE_DEFAULTS = { orgs: true, classmates: false };
+const VIS_SHARE = { nobody: { orgs: false, classmates: false }, orgs: { orgs: true, classmates: false }, classes: { orgs: false, classmates: true }, both: { orgs: true, classmates: true } };
+/** The account's name, phone and who sees it, from a /v1/me answer (either shape). */
+function profileOf(me) {
+  if (!me || typeof me !== 'object') return null;
+  const a = me.account || {};
+  const name = typeof me.name === 'string' ? me.name : String(a.displayName || '');
+  const phone = 'phone' in me && (typeof me.phone === 'string' || me.phone === null) ? me.phone || null : a.phone?.number || null;
+  const ps = me.phoneShare && typeof me.phoneShare === 'object' ? me.phoneShare : (a.phone?.visibility && VIS_SHARE[a.phone.visibility]) || null;
+  return { name, phone, phoneShare: { orgs: typeof ps?.orgs === 'boolean' ? ps.orgs : SHARE_DEFAULTS.orgs, classmates: typeof ps?.classmates === 'boolean' ? ps.classmates : SHARE_DEFAULTS.classmates } };
+}
+/** Only what PATCH /v1/me takes: name (text), phone (text, or null to clear), phoneShare.orgs / .classmates. */
+function profilePatch(a = {}) {
+  const out = {};
+  if (typeof a.name === 'string') out.name = a.name.trim().slice(0, 60);
+  if ('phone' in a) out.phone = a.phone == null || String(a.phone).trim() === '' ? null : String(a.phone).trim().slice(0, 20);
+  if (a.phoneShare && typeof a.phoneShare === 'object') {
+    const ps = {};
+    for (const k of ['orgs', 'classmates']) if (typeof a.phoneShare[k] === 'boolean') ps[k] = a.phoneShare[k];
+    if (Object.keys(ps).length) out.phoneShare = ps;
+  }
+  return out;
+}
+const mergePatch = (was, next) => ({ ...(was || {}), ...next, ...(was?.phoneShare || next.phoneShare ? { phoneShare: { ...(was?.phoneShare || {}), ...(next.phoneShare || {}) } } : {}) });
+/** The answer with what was saved in it (a server that answers PATCH with less than the whole account). */
+function withPatch(me, patch) {
+  if (!me) return me;
+  const p = profileOf(me) || {};
+  return { ...me, name: patch.name ?? p.name, phone: 'phone' in patch ? patch.phone : p.phone, phoneShare: { ...p.phoneShare, ...(patch.phoneShare || {}) }, account: { ...me.account, ...(patch.name ? { displayName: patch.name } : {}) } };
+}
+// Changes made while the server couldn't be reached (userData/hub-profile-queue.json: { [online id]: { patch, at } }),
+// sent at the next check that reaches it. Removed with the rest of the account's copies when it signs out here.
+const profileQueueFile = () => path.join(app.getPath('userData'), 'hub-profile-queue.json');
+function profileQueue() {
+  try {
+    const j = JSON.parse(fs.readFileSync(profileQueueFile(), 'utf8'));
+    return j && typeof j === 'object' && !Array.isArray(j) ? j : {};
+  } catch {
+    return {};
+  }
+}
+function setQueued(id, patch) {
+  if (!id) return;
+  const all = profileQueue();
+  if (patch) all[id] = { patch, at: Date.now() };
+  else delete all[id];
+  if (Object.keys(all).length) fs.writeFileSync(profileQueueFile(), JSON.stringify(all, null, 1));
+  else fs.rmSync(profileQueueFile(), { force: true });
+}
+// After the first sign-in on this computer, a small card asks for a name and phone once (skippable; editable later in
+// Settings → Kea account). userData/hub-profile-asked.json: { ask: <online id> | null, done: [<online id>] }.
+const askedFile = () => path.join(app.getPath('userData'), 'hub-profile-asked.json');
+function askedState() {
+  try {
+    const j = JSON.parse(fs.readFileSync(askedFile(), 'utf8'));
+    return { ask: typeof j?.ask === 'string' ? j.ask : null, done: Array.isArray(j?.done) ? j.done.filter((x) => typeof x === 'string') : [] };
+  } catch {
+    return { ask: null, done: [] };
+  }
+}
+function askProfileFor(id) {
+  const s = askedState();
+  if (!id || s.done.includes(id) || s.ask === id) return;
+  fs.writeFileSync(askedFile(), JSON.stringify({ ask: id, done: s.done }, null, 1));
+}
+function profileAsked() {
+  const s = askedState();
+  if (s.ask) fs.writeFileSync(askedFile(), JSON.stringify({ ask: null, done: [...new Set([...s.done, s.ask])].slice(-50) }, null, 1));
+  return local();
+}
+/**
+ * Saves the name, phone and who sees it (PATCH /v1/me). The name shows here at once. The server not answering is no
+ * error: the change waits on this computer ({ profileQueued }) and goes at the next check that reaches it.
+ */
+async function saveProfile(a) {
+  if (!isSignedIn()) throw new HubError('Sign in with Google to save your name and phone.', 401, { needsOnline: true });
+  const patch = profilePatch(a);
+  if (!Object.keys(patch).length) throw new HubError('Nothing to save.', 400);
+  if ('name' in patch && !patch.name) throw new HubError('Add your name.', 400, { field: 'name' });
+  const id = cached()?.id || lastMe?.account?.id || null;
+  const rec = accounts().active();
+  try {
+    const me = await req('PATCH', '/v1/me', patch);
+    setQueued(id, null);
+    profileNote = null;
+    if (patch.name && rec) accounts().setName(rec.id, patch.name);
+    const full = me?.account ? me : withPatch(lastMe, patch);
+    if (full?.account) {
+      saveCache(full);
+      lastMe = full;
+    }
+    return { ...local(), signedIn: true, reachable: true, me: lastMe };
+  } catch (e) {
+    if (e.status !== 0) throw e;
+    setQueued(id, mergePatch(profileQueue()[id]?.patch, patch));
+    if (patch.name && rec) accounts().setName(rec.id, patch.name);
+    return { ...local(), profileQueued: true };
+  }
+}
+/** A change that waited: sent now the server answers (one that it refuses is dropped, and the account page says so). */
+async function flushProfile(me, { timeout } = {}) {
+  const id = me?.account?.id;
+  const q = id && profileQueue()[id];
+  if (!q) return me;
+  try {
+    const r = await req('PATCH', '/v1/me', q.patch, { timeout });
+    setQueued(id, null);
+    return r?.account ? r : withPatch(me, q.patch);
+  } catch (e) {
+    if (e.status === 0 || e.status === 401) return me;
+    setQueued(id, null);
+    profileNote = `Your earlier change to your name or phone wasn’t saved: ${e.message}`;
+    return me;
+  }
+}
+// (A queued change the server refused, for the account page.)
+let profileNote = null;
 
 class HubError extends Error {
   constructor(message, status, data) {
@@ -272,12 +394,8 @@ let onlineNote = null;
 // (Off in the tests: no sync or notification polling started by a sign-in.)
 let background = true;
 
-const clientId = (provider) =>
-  String(
-    provider === 'microsoft'
-      ? settings.get('hub.microsoftClientId', '') || process.env.KEA_MICROSOFT_CLIENT_ID || ''
-      : settings.get('hub.googleClientId', '') || process.env.KEA_GOOGLE_CLIENT_ID || ''
-  ).trim();
+const oauthClients = require('./oauthClients.cjs');
+const clientId = (provider) => (provider === 'microsoft' ? oauthClients.clients().microsoft.id : oauthClients.clients().google.id);
 const providers = () => ({ google: !!clientId('google'), microsoft: !!clientId('microsoft') });
 
 /** The account signed in here, also for a sign-in from before Kea kept accounts on this computer (Kea 0.70). */
@@ -310,7 +428,20 @@ function local() {
     checked: reach.at > 0,
     me: token && reach.reachable ? lastMe : null,
     moved: movedNote(),
+    // The name, phone and who sees it (what Kea last saw, with a change that waits for the server on top), and whether
+    // the small "your name and phone" card is due (once, after the first sign-in here).
+    profile: token ? profileHere() : null,
+    profileNote: token ? profileNote : null,
+    askProfile: token && !!cached()?.id && askedState().ask === cached().id,
   };
+}
+function profileHere() {
+  const c = cached();
+  const base = (lastMe && profileOf(lastMe)) || c?.profile || (c ? { name: c.name || '', phone: null, phoneShare: { ...SHARE_DEFAULTS } } : null);
+  if (!base) return null;
+  const q = c?.id && profileQueue()[c.id]?.patch;
+  if (!q) return { ...base, queued: false };
+  return { name: q.name ?? base.name, phone: 'phone' in q ? q.phone : base.phone, phoneShare: { ...base.phoneShare, ...(q.phoneShare || {}) }, queued: true };
 }
 
 /** An online sign-in's answer (Hub 0.5: { token, account }; the Kea account server: { token, me }). */
@@ -328,6 +459,7 @@ async function signedIn(r, { provider = null } = {}) {
   // (Signed in at the address the server moved to: its notice has done its job.)
   if (movedNote()?.kind === 'moved' && movedNote().to === hubUrl()) fs.rmSync(movedFile(), { force: true });
   if (acc) accounts().attachOnline({ email: acc.email, name: acc.displayName, hubId: acc.id, url: hubUrl(), provider });
+  if (acc?.id) askProfileFor(acc.id);
   if (background) setTimeout(startSync, 1000);
   try {
     return await refresh();
@@ -338,7 +470,7 @@ async function signedIn(r, { provider = null } = {}) {
 }
 async function refresh({ timeout } = {}) {
   if (!readToken()) return status();
-  const me = await req('GET', '/v1/me', undefined, { timeout });
+  const me = await flushProfile(await req('GET', '/v1/me', undefined, { timeout }), { timeout });
   saveCache(me);
   lastMe = me;
   const a = accounts().active();
@@ -391,6 +523,7 @@ function dropSession() {
   saveCache(null);
   stopSync();
   lastMe = null;
+  profileNote = null;
 }
 
 // ---------- Signing in ----------
@@ -543,7 +676,7 @@ const googleIdToken = (loginHint) => idTokenFor('google', loginHint);
 function oauthIdToken(provider, loginHint) {
   const P = core.PROVIDERS[provider];
   const id = clientId(provider);
-  const secret = provider === 'google' ? String(settings.get('hub.googleClientSecret', '') || process.env.KEA_GOOGLE_CLIENT_SECRET || '').trim() : '';
+  const secret = provider === 'google' ? oauthClients.clients().google.secret : '';
   if (!P || !id) return Promise.reject(new HubError(NOT_SET_UP, 503, { notSetUp: true }));
   if (pendingOauth) pendingOauth.cancel();
   return new Promise((resolve, reject) => {
@@ -1106,14 +1239,10 @@ function register() {
   // Under 18: the birth year, and a parent's or guardian's sign-off before Kea's shared Claude.
   handleApp(ipcMain, 'hub:birthYear', wrap(async (a) => (await req('POST', '/v1/me/birth-year', { birthYear: Number(a.birthYear) }), refresh())));
   handleApp(ipcMain, 'hub:consent', wrap(() => req('GET', '/v1/me/consent')));
-  // The optional phone number and who sees it (classmates, coworkers, both, nobody).
-  handleApp(ipcMain, 'hub:setPhone', wrap(async (a) => {
-    const body = {};
-    if ('phone' in a) body.phone = a.phone == null || a.phone === '' ? null : String(a.phone);
-    if (a.visibility) body.visibility = a.visibility;
-    await req('POST', '/v1/me/phone', body);
-    return refresh();
-  }));
+  // The name, the optional phone number and who sees it (PATCH /v1/me; saved later when the server can't be reached),
+  // and the "your name and phone" card after the first sign-in, done (saved or skipped).
+  handleApp(ipcMain, 'hub:saveProfile', wrap((a) => saveProfile(a)));
+  handleApp(ipcMain, 'hub:profileAsked', wrap(() => profileAsked()));
   handleApp(ipcMain, 'hub:consentRequest', wrap((a) => req('POST', '/v1/me/consent', { parentEmail: a.parentEmail })));
   handleApp(ipcMain, 'hub:consentGoogle', wrap(async () => {
     const c = await req('GET', '/v1/me/consent');
@@ -1197,11 +1326,11 @@ module.exports = {
   _exportData: exportData,
   // (For the tests: the account flows without IPC, and stand-ins for fetch and the browser sign-in.)
   _account: {
-    local, status, openHere, link, oauthSignIn, continueSignIn, movedSeen, logout: () => (dropSession(), accounts().signOut(), local()),
+    local, status, openHere, link, oauthSignIn, continueSignIn, movedSeen, saveProfile, profileAsked, profileOf, logout: () => (dropSession(), accounts().signOut(), local()),
     signOutOthers: async (a) => req('POST', '/v1/me/sessions/sign-out-others', await freshProof(a?.provider), { reauth: true }),
     setFetch: (f) => (fetchFn = f),
     setIdTokens: (f) => (idTokenFn = f),
-    reset: () => ((store = null), (lastMe = null), (onlineNote = null), (pending = null), moveTried.clear(), Object.assign(reach, { reachable: false, at: 0 })),
+    reset: () => ((store = null), (lastMe = null), (onlineNote = null), (profileNote = null), (pending = null), moveTried.clear(), Object.assign(reach, { reachable: false, at: 0 })),
     setLimits: (l) => Object.assign(LIMITS, l),
     setBackground: (on) => (background = on),
   },

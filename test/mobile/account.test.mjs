@@ -34,6 +34,7 @@ const server = {
   up: true,
   online: new Map(), // email -> { id, email, password, displayName }
   calls: [],
+  patches: [],
   terms: { version: 7, sections: [{ id: 'a', title: 'A', body: 'x' }, { id: 'b', title: 'B', body: 'y' }] },
   sessions: new Map(),
   handle(method, p, body, token) {
@@ -65,7 +66,15 @@ const server = {
     if (p === '/v1/me') {
       const e = this.sessions.get(token);
       if (!e) return [401, { error: 'Signed out.' }];
-      return [200, { account: acct(this.online.get(e)) }];
+      const a = this.online.get(e);
+      if (method === 'PATCH') {
+        if ('phone' in body && body.phone !== null && !/^\+[1-9]\d{7,14}$/.test(body.phone)) return [400, { error: 'That phone number isn’t valid.' }];
+        if ('name' in body) a.displayName = body.name;
+        if ('phone' in body) a.phone = body.phone;
+        if (body.phoneShare) a.phoneShare = { ...(a.phoneShare || { orgs: true, classmates: false }), ...body.phoneShare };
+        this.patches.push(body);
+      }
+      return [200, { account: acct(a), name: a.displayName, phone: a.phone ?? null, phoneShare: a.phoneShare || { orgs: true, classmates: false } }];
     }
     if (p === '/v1/auth/logout') return this.sessions.delete(token), [200, { ok: true }];
     return [404, { error: 'Not found.' }];
@@ -481,4 +490,44 @@ test('flows: a phone signed in before accounts were kept here becomes a linked a
   assert.equal(phone.token, 'tok-old', 'the sign-in is kept');
   phone.token = '';
   assert.equal((await A.local()).state, 'linked');
+});
+
+// ---------- name and phone ----------
+test('profile on the phone: the card is due once after the first sign-in; saving sends PATCH /v1/me; offline it waits and goes later', async () => {
+  await reset();
+  server.patches.length = 0;
+  await assert.rejects(() => A.oauthSignIn({ provider: 'google' }), (e) => e.data?.needsAccount === true);
+  const terms = await A.currentTerms();
+  const s = await A.continueSignIn({ termsVersion: terms.version, termsSections: terms.sections.map((x) => x.id), age13: true });
+  assert.equal(s.state, 'online');
+  assert.equal(A.profileDue('sam@example.com'), true, 'the card shows after the first sign-in');
+  // The defaults until changed: organizations yes, classmates no.
+  const p0 = await A.profile();
+  assert.deepEqual(p0.phoneShare, { orgs: true, classmates: false });
+  assert.equal(p0.phone, null);
+  // Saved online.
+  const r = await A.saveProfile({ name: 'Sam Lee', phone: '+15551234567', phoneShare: { orgs: true, classmates: false } });
+  assert.equal(r.queued, false);
+  assert.equal(r.profile.name, 'Sam Lee');
+  assert.equal(r.profile.phone, '+15551234567');
+  assert.deepEqual(server.patches.at(-1), { name: 'Sam Lee', phone: '+15551234567', phoneShare: { orgs: true, classmates: false } });
+  A.profileAsked();
+  assert.equal(A.profileDue('sam@example.com'), false, 'shown once');
+  // The server says what's wrong.
+  await assert.rejects(() => A.saveProfile({ phone: '12' }), (e) => e.status === 400 && /isn’t valid/.test(e.message));
+  // Offline: kept on the phone, shown, and sent once the server answers.
+  server.up = false;
+  const q = await A.saveProfile({ phoneShare: { classmates: true } });
+  assert.equal(q.queued, true);
+  assert.equal(q.profile.queued, true);
+  assert.deepEqual(q.profile.phoneShare, { orgs: true, classmates: true });
+  assert.equal(q.profile.phone, '+15551234567', 'what Kea last saw stays');
+  const sent = server.patches.length;
+  server.up = true;
+  await A.status();
+  assert.deepEqual(server.patches.slice(sent), [{ phoneShare: { classmates: true } }], 'the waiting change went');
+  const after = await A.profile();
+  assert.equal(after.queued, false);
+  assert.deepEqual(after.phoneShare, { orgs: true, classmates: true });
+  await A.signOut();
 });
