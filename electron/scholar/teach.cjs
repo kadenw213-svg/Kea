@@ -167,9 +167,7 @@ async function turnApi(id, message, onText, lock, { apiKey, fetch: fetchImpl = n
     system: systemFor(checks),
     messages: [{ role: 'user', content: message }],
     ...(lock.effort ? { output_config: { effort: lock.effort } } : {}),
-    // A refusal is re-run on another model inside the same request (the API's own routing), instead of no lesson.
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    // (No model fallback on the shared Claude: the owner locks lessons to Sonnet. A refusal is just a refusal.)
   };
   let text = '';
   let stream = null;
