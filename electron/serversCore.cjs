@@ -128,7 +128,9 @@ function checkIdentity(answer, nonce, expectId = null) {
  *   account:     { key() -> this Kea account's id here or null, req(method, path, body, opts) -> the account server }
  *   fetchFn:     fetch (timedFetch from accountCore wraps it with a time limit)
  */
-function createServers({ file, secretsFile, seal = (s) => Buffer.from(s), unseal = (b) => b.toString('utf8'), fetchFn, timedFetch, account, now = () => Date.now(), onChange = () => {} }) {
+// client: what Kea says it is (`X-Kea-Client: Kea/<version>`, docs/protocol.md section 0); versions: Kea's update
+// health (updateHealth.cjs), told when a server turns this Kea away as too old (426) and when it serves it again.
+function createServers({ file, secretsFile, seal = (s) => Buffer.from(s), unseal = (b) => b.toString('utf8'), fetchFn, timedFetch, account, now = () => Date.now(), onChange = () => {}, client = null, versions = null }) {
   const readList = () => {
     try {
       const j = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -188,7 +190,7 @@ function createServers({ file, secretsFile, seal = (s) => Buffer.from(s), unseal
     try {
       res = await timedFetch(fetchFn, url + p, {
         method,
-        headers: { 'content-type': 'application/json', 'x-kea': '1', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        headers: { 'content-type': 'application/json', 'x-kea': '1', ...(client ? { 'x-kea-client': client } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) },
         body: body === undefined ? undefined : JSON.stringify(body),
       }, LIMITS.req);
     } catch {
@@ -199,6 +201,13 @@ function createServers({ file, secretsFile, seal = (s) => Buffer.from(s), unseal
       data = res.json();
     } catch {}
     if (!data || typeof data !== 'object') data = {};
+    // Too old for this server: said plainly with where to update (the page offers Update), not a broken organization.
+    const from = `org:${url}`;
+    if (res.status === 426) {
+      versions?.tooOld(from, data);
+      throw new ServerError(data.error || 'Update Kea to keep using this organization’s server.', 426, { ...data, upgradeRequired: true });
+    }
+    if (res.status < 500) versions?.served(from);
     if (!res.ok) throw new ServerError(data.error || `The server said ${res.status}.`, res.status, data);
     return data;
   }

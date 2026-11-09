@@ -242,7 +242,7 @@ async function snapshotSite() {
   return {
     // The theme (Settings → Appearance), so Kea on the phone looks the same; the newer choice wins either way.
     look: { theme: settings.get('appearance.theme', 'dark'), at: settings.get('appearance.themeAt', ''), classColors: settings.get('scholar.classColors', {}) },
-    ...fix({ kea: 1, synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, platform: browser.schoolInfo().platform, courses, items, details, grades, inbox, inboxDeleted, mail, doneLog, withdrawn: require('./withdrawn.cjs').read(P.dir).log }),
+    ...fix({ kea: 1, keaVersion: require('electron').app.getVersion(), synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, platform: browser.schoolInfo().platform, courses, items, details, grades, inbox, inboxDeleted, mail, doneLog, withdrawn: require('./withdrawn.cjs').read(P.dir).log }),
     // The study folder as it is here (sets, saved questions, progress), for the phone to study from; its pictures are in
     // the library zip. A set still being written stays out until it's ready.
     study: studyFiles()

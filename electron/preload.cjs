@@ -409,6 +409,12 @@ contextBridge.exposeInMainWorld('api', {
   getVersion: () => ipcRenderer.invoke('app:version'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   updateStatus: () => ipcRenderer.invoke('update:status'),
+  updateHealth: () => ipcRenderer.invoke('update:health'),
+  onUpdateHealth: (cb) => {
+    const fn = (_e, h) => cb(h);
+    ipcRenderer.on('update:health', fn);
+    return () => ipcRenderer.removeListener('update:health', fn);
+  },
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.send('update:install'),
   ai: {

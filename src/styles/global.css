@@ -1150,6 +1150,45 @@ body.col-resizing * {
   cursor: pointer;
   flex-shrink: 0;
 }
+.update-pill.stale,
+.update-pill.required {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--text);
+}
+.update-pill.required {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+.update-notice {
+  margin: 4px 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  font-size: 13px;
+  text-align: left;
+}
+.update-notice.required {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.update-notice.available {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.update-required {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface, transparent));
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+}
+.update-required-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  font-size: 13px;
+}
 .update-pill.ready {
   background: var(--accent);
   color: var(--bg);

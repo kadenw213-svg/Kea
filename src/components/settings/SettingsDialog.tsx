@@ -15,7 +15,7 @@ import { toast, ask, useTabs, editorRegistry } from '../../store';
 import { formatBytes } from '../../lib/util';
 import { SHORTCUTS } from './shortcuts';
 import { GooglePanel } from './GooglePanel';
-import { useUpdates, openUpdates } from '../Updates';
+import { useUpdates, openUpdates, UpdateStatusCard } from '../Updates';
 import { useKeaModes } from '../../lib/modes';
 import { VoiceSettingsExtras } from '../VoiceTyping';
 import { FeedbackPanel } from './FeedbackPanel';
@@ -251,6 +251,7 @@ function AboutPanel() {
           <div className="muted">A study app and office suite in one. Free and open source under the MIT license.</div>
         </div>
       </div>
+      <UpdateStatusCard />
       <div className="about-card">
         <div className="about-title">Built with Llama</div>
         <p>

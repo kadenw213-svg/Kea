@@ -773,16 +773,21 @@ function getUpdater() {
     lastUpdate = state;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:state', state);
   };
-  autoUpdater.on('checking-for-update', () => send({ status: 'checking' }));
-  autoUpdater.on('update-available', (info) => send({ status: 'available', version: info.version, notes: info.releaseNotes || '' }));
-  autoUpdater.on('update-not-available', () => send({ status: 'latest' }));
+  // (Every check and its answer also go to update-health.json, so a feed that keeps failing or an update that keeps
+  // waiting is said in the title bar and Settings > About instead of Kea going quietly stale: updateHealth.cjs.)
+  const H = require('./updateHealth.cjs').health();
+  autoUpdater.on('checking-for-update', () => (H.checking(), send({ status: 'checking' })));
+  autoUpdater.on('update-available', (info) => (H.found(info.version), send({ status: 'available', version: info.version, notes: info.releaseNotes || '' })));
+  autoUpdater.on('update-not-available', () => (H.ok(), send({ status: 'latest' })));
   autoUpdater.on('download-progress', (p) => send({ status: 'downloading', percent: Math.round(p.percent) }));
   autoUpdater.on('update-downloaded', (info) => {
     downloaded = info.version;
+    H.downloaded(info.version);
     send({ status: 'ready', version: info.version });
   });
   autoUpdater.on('error', (err) => {
     log('updater error', err);
+    H.failed(friendlyUpdateError(err));
     send({ status: 'error', message: friendlyUpdateError(err) });
   });
   updater = autoUpdater;
@@ -811,6 +816,12 @@ function friendlyUpdateError(err) {
 }
 
 handleApp(ipcMain, 'app:version', () => app.getVersion());
+// Whether Kea is staying up to date (updateHealth.cjs): the last checks, failures, a waiting update, and what the
+// servers say (the newest Kea, or that this one is too old). Sent again whenever it changes.
+handleApp(ipcMain, 'update:health', () => ({ ...require('./updateHealth.cjs').health().get(), canSelfUpdate: canSelfUpdate(), packaged: app.isPackaged }));
+require('./updateHealth.cjs').health.onChange((h) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:health', { ...h, canSelfUpdate: canSelfUpdate(), packaged: app.isPackaged });
+});
 // (A downloaded update is always reported as ready, whatever was said after it.)
 handleApp(ipcMain, 'update:status', () => (downloaded ? { status: 'ready', version: downloaded } : lastUpdate));
 handleApp(ipcMain, 'update:check', async () => {

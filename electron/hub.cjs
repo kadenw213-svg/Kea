@@ -207,6 +207,8 @@ class HubError extends Error {
 
 // (Tests swap in their own fetch.)
 let fetchFn = (...a) => net.fetch(...a);
+// Kea's update health (what servers say about versions; tests swap in their own).
+let versions = () => require('./updateHealth.cjs').health();
 /**
  * One request to the Kea account server, never longer than `timeout` (8 s; the whole request, connecting included).
  * Not reaching it is status 0, a normal answer: callers show "offline", never an error screen.
@@ -231,6 +233,14 @@ async function req(method, p, body, { auth = true, reauth = false, timeout, afte
   } catch {}
   if (!data || typeof data !== 'object') data = {};
   seen(true);
+  // Too old for this server (docs/protocol.md section 0): said plainly, with an Update button (updateHealth.cjs), never a
+  // half-working account. Any normal answer means it's over.
+  if (res.status === 426) {
+    versions().tooOld('account', data);
+    throw new HubError(data.error || 'Update Kea to keep using your Kea account.', 426, { ...data, upgradeRequired: true });
+  }
+  if (res.status < 500) versions().served('account');
+  if (p === '/v1/health' && res.ok) versions().serverSays('account', data);
   if (res.status === 401 && auth && token && !data.totpRequired && !reauth) {
     // The online session ended (signed out elsewhere, suspended). The account stays signed in on
     // this computer; only what needs it online waits for "Sign in online".
@@ -433,7 +443,17 @@ function local() {
     profile: token ? profileHere() : null,
     profileNote: token ? profileNote : null,
     askProfile: token && !!cached()?.id && askedState().ask === cached().id,
+    // The Kea account server said this Kea is too old (426): { error, minVersion, updateUrl }; the page offers Update.
+    tooOld: accountTooOld(),
   };
+}
+function accountTooOld() {
+  try {
+    const t = versions().get().tooOld;
+    return t && t.from === 'account' ? { error: t.error, minVersion: t.minVersion, updateUrl: t.updateUrl } : null;
+  } catch {
+    return null;
+  }
 }
 function profileHere() {
   const c = cached();
@@ -495,6 +515,7 @@ async function answers(origin) {
     return false;
   }
 }
+let healthAt = 0;
 /** What local() says, after checking the server in the background (4 s at most). */
 async function status({ again = true } = {}) {
   if (!readToken()) {
@@ -506,13 +527,19 @@ async function status({ again = true } = {}) {
     if (h && 'movedTo' in h && (await followMove(h)) && again) return status({ again: false });
     return local();
   }
+  // The newest Kea the server knows of (at most hourly; an older server doesn't say), for "Update available" when
+  // GitHub can't be reached from here.
+  if (Date.now() - healthAt > 3600e3) {
+    healthAt = Date.now();
+    req('GET', '/v1/health', undefined, { auth: false, timeout: LIMITS.status }).catch(() => {});
+  }
   try {
     return await refresh({ timeout: LIMITS.status });
   } catch (e) {
     if (e.data?.moved && again) return status({ again: false });
     // Offline, the session ended, or the server moved somewhere Kea couldn't check: still signed in here, working from
     // what Kea last knew.
-    if (e.status === 0 || e.status === 401 || e.status === 410) return local();
+    if (e.status === 0 || e.status === 401 || e.status === 410 || e.status === 426) return local();
     throw e;
   }
 }
@@ -1321,6 +1348,7 @@ module.exports = {
     local, status, openHere, link, oauthSignIn, continueSignIn, movedSeen, saveProfile, profileAsked, profileOf, logout: () => (dropSession(), accounts().signOut(), local()),
     signOutOthers: async (a) => req('POST', '/v1/me/sessions/sign-out-others', await freshProof(a?.provider), { reauth: true }),
     setFetch: (f) => (fetchFn = f),
+    setVersions: (v) => (versions = () => v),
     setIdTokens: (f) => (idTokenFn = f),
     reset: () => ((store = null), (lastMe = null), (onlineNote = null), (profileNote = null), (pending = null), moveTried.clear(), Object.assign(reach, { reachable: false, at: 0 })),
     setLimits: (l) => Object.assign(LIMITS, l),

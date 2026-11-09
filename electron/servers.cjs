@@ -32,6 +32,8 @@ function store() {
     onChange: () => {
       for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('servers:changed');
     },
+    client: `Kea/${app.getVersion()}`,
+    versions: require('./updateHealth.cjs').health(),
   });
   return S;
 }

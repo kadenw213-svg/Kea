@@ -385,6 +385,9 @@ export interface KeaApi {
   checkForUpdates(): Promise<{ status: string; message?: string }>;
   /** The updater's last state (a downloaded update is always "ready"), for a window opened after it spoke. */
   updateStatus(): Promise<UpdateState>;
+  /** Whether Kea is staying up to date (electron/updateHealth.cjs); older builds of the bridge don't have it. */
+  updateHealth?(): Promise<UpdateHealth>;
+  onUpdateHealth?(cb: (h: UpdateHealth) => void): () => void;
   downloadUpdate(): Promise<boolean>;
   installUpdate(): void;
   onUpdateState(cb: (s: UpdateState) => void): () => void;
@@ -783,6 +786,25 @@ export interface AiApi {
   benchmark(): Promise<{ loadMs: number; tokensPerSecond: number }>;
   onEvent(cb: (e: AiEvent) => void): () => void;
   onDownload(cb: (m: AiModelState) => void): () => void;
+}
+
+/** electron/updateHealth.cjs: Kea's own update checks, and what the servers say about versions. Times are ms. */
+export interface UpdateHealth {
+  version: string;
+  lastCheckAt: number | null;
+  lastOkAt: number | null;
+  /** Checks failed in a row (0 after one works). */
+  failures: number;
+  lastError: string | null;
+  /** A newer version found (and since when), and one downloaded and waiting to install (since when). */
+  available: { version: string; at: number } | null;
+  downloaded: { version: string; at: number } | null;
+  /** The newest Kea a server knows of, when it's newer than this one (from: 'account' or 'org:<address>'). */
+  latest: { version: string; from: string; at: number } | null;
+  /** A server turned this Kea away as too old (426). */
+  tooOld: { error: string; minVersion: string | null; updateUrl: string | null; from: string; at: number } | null;
+  canSelfUpdate?: boolean;
+  packaged?: boolean;
 }
 
 export interface UpdateState {

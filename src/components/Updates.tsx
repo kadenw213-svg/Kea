@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { Download, RefreshCw, CheckCircle2, AlertCircle, Sparkles, X } from 'lucide-react';
-import { api, UpdateState } from '../lib/api';
+import { api, UpdateHealth, UpdateState } from '../lib/api';
 import { useTabs } from '../store';
 import { requestCloseTab } from '../lib/closing';
-import { nextUpdateState, updateHeadline, updateIndicator } from '../lib/updateState';
+import { nextUpdateState, staleness, updateHeadline, updateIndicator, when } from '../lib/updateState';
 
 interface UpdateStore {
   state: UpdateState;
   version: string;
   open: boolean;
+  /** Whether Kea is keeping up (electron/updateHealth.cjs): checks, failures, a waiting update, what servers say. */
+  health: UpdateHealth | null;
   set(s: Partial<UpdateStore>): void;
 }
 
@@ -17,6 +19,7 @@ export const useUpdates = create<UpdateStore>((set) => ({
   state: { status: 'idle' },
   version: '',
   open: false,
+  health: null,
   set: (s) => set(s)
 }));
 
@@ -40,6 +43,82 @@ export function initUpdates() {
   api.getVersion().then((version) => useUpdates.getState().set({ version }));
   api.onUpdateState(apply);
   api.updateStatus?.().then(apply, () => {});
+  api.updateHealth?.().then((health) => useUpdates.getState().set({ health }), () => {});
+  api.onUpdateHealth?.((health) => useUpdates.getState().set({ health }));
+}
+
+/**
+ * The Update button wherever Kea says it must or should update: restart into a downloaded update, download a found
+ * one, otherwise check now (which downloads what it finds). A copy that can't update itself opens the download page.
+ */
+export function updateNow() {
+  const { state, health } = useUpdates.getState();
+  if (state.status === 'ready') return void installNow();
+  if (state.status === 'available') return void (download(), useUpdates.getState().set({ open: true }));
+  if (health && health.packaged && health.canSelfUpdate === false) return void window.open(health.tooOld?.updateUrl || RELEASES);
+  openUpdates(true);
+}
+
+/** "Update Kea to keep using your Kea account", with an Update button: shown where a server turned this Kea away. */
+export function UpdateRequired({ from = 'account' }: { from?: 'account' | 'org' | 'any' }) {
+  const health = useUpdates((s) => s.health);
+  const t = health?.tooOld;
+  if (!health || !t || (from === 'account' && t.from !== 'account') || (from === 'org' && !t.from.startsWith('org:'))) return null;
+  return (
+    <div className="update-required" role="alert">
+      <AlertCircle size={18} />
+      <div className="update-required-text">
+        <strong>{t.error}</strong>
+        <span className="muted">
+          {t.minVersion ? `It needs Kea ${t.minVersion} or newer; this is ${health.version}. ` : ''}Everything on this computer is kept.
+        </span>
+      </div>
+      <button className="btn primary sm" onClick={updateNow}>
+        <Download size={14} /> Update
+      </button>
+    </div>
+  );
+}
+
+/** Settings > About: the version, how updates are going, when Kea last checked, and the button for what's next. */
+export function UpdateStatusCard() {
+  const { state, version, health } = useUpdates();
+  const st = staleness(health);
+  const ind = updateIndicator(state, health);
+  const headline =
+    st?.kind === 'required'
+      ? 'Kea needs an update'
+      : ind?.kind === 'ready'
+        ? 'Restart to update'
+        : ind?.kind === 'downloading'
+          ? ind.label
+          : ind?.kind === 'available'
+            ? 'An update is available'
+            : st?.kind === 'stale'
+              ? st.label
+              : state.status === 'error'
+                ? updateHeadline(state)
+                : 'Kea is up to date';
+  return (
+    <div className="about-card">
+      <div className="about-title">Updates</div>
+      <p>
+        <strong>{headline}</strong> · Kea {version}
+      </p>
+      {st && <p className={st.kind === 'available' ? 'muted' : 'hub-warn'}>{st.detail}</p>}
+      <p className="muted">
+        Last checked {when(health?.lastCheckAt)}
+        {health?.lastOkAt && health.lastOkAt !== health.lastCheckAt ? ` · last worked ${when(health.lastOkAt)}` : ''}
+        {health && health.failures > 0 ? ` · ${health.failures} failed in a row${health.lastError ? `: ${health.lastError}` : ''}` : ''}
+      </p>
+      <div className="about-links">
+        <button className="btn sm primary" onClick={() => (ind?.kind === 'ready' ? installNow() : st || ind ? updateNow() : openUpdates(true))}>
+          {ind?.kind === 'ready' ? <RefreshCw size={14} /> : <Download size={14} />}
+          {ind?.kind === 'ready' ? 'Restart to update' : st?.kind === 'required' || ind ? 'Update now' : 'Check for updates'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export function openUpdates(check = true) {
@@ -65,11 +144,15 @@ function download() {
 /** In the title bar, on every screen: an update downloaded and waiting ("Restart to update"), on its way, or found. */
 export function UpdatePill() {
   const state = useUpdates((s) => s.state);
-  const ind = updateIndicator(state);
+  const health = useUpdates((s) => s.health);
+  const ind = updateIndicator(state, health);
   if (!ind) return null;
+  // (Found or downloading: the dialog shows it. Must update, failing checks, or a newer Kea a server knows of: the
+  // dialog checks again and says what's wrong, with Update.)
+  const click = () => (ind.kind === 'ready' ? installNow() : state.status === 'available' || state.status === 'downloading' ? openUpdates(false) : openUpdates(true));
   return (
-    <button className={`update-pill ${ind.kind}`} title={ind.title} onClick={() => (ind.kind === 'ready' ? installNow() : openUpdates(false))}>
-      {ind.kind === 'ready' ? <RefreshCw size={14} /> : <Download size={14} />}
+    <button className={`update-pill ${ind.kind}`} title={ind.title} onClick={click}>
+      {ind.kind === 'ready' ? <RefreshCw size={14} /> : ind.kind === 'stale' || ind.kind === 'required' ? <AlertCircle size={14} /> : <Download size={14} />}
       {ind.label}
     </button>
   );
@@ -84,7 +167,8 @@ export async function installNow() {
 }
 
 export function UpdateDialog() {
-  const { state, version, open, set } = useUpdates();
+  const { state, version, open, set, health } = useUpdates();
+  const st = staleness(health);
   const [notesOpen, setNotesOpen] = useState(false);
   useEffect(() => setNotesOpen(false), [state.version]);
   if (!open) return null;
@@ -211,9 +295,19 @@ export function UpdateDialog() {
         </button>
         <div className="update-icon">{icon}</div>
         <h2>{title}</h2>
+        {st && !['downloading', 'ready'].includes(state.status) && <div className={`update-notice ${st.kind}`}>{st.detail}</div>}
         <div className="update-body">{body}</div>
-        <div className="dialog-actions">{actions}</div>
-        <div className="update-foot">Current version {version}</div>
+        <div className="dialog-actions">
+          {actions}
+          {st?.kind === 'required' && !['available', 'checking', 'downloading', 'ready'].includes(state.status) && (
+            <button className="btn primary" onClick={updateNow}>
+              <Download size={16} /> Update
+            </button>
+          )}
+        </div>
+        <div className="update-foot">
+          Current version {version} · last checked {when(health?.lastCheckAt)}
+        </div>
       </div>
     </div>
   );

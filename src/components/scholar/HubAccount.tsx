@@ -10,6 +10,7 @@ import { SIGN_IN_WAITS, hubStatusNow, loadLocal, openAccount, refreshHub, refres
 import { NeedsOnline } from '../account/NeedsOnline';
 import { SignInSecurity, YourData } from '../account/Security';
 import { ProfileHead, VerifiedBadge, useAccount } from './Account';
+import { UpdateRequired } from '../Updates';
 
 // The Kea account: one sign-in for Kea and KeaS, made with Google or Microsoft once the Kea account server answers.
 // Without one everything on this computer works. Its state lives in account/hubStore.ts (shared with the title bar,
@@ -415,6 +416,7 @@ export function HubPanel() {
   if (status.state === 'none')
     return (
       <div className="acct-page">
+        <UpdateRequired />
         <div className="acct-card hub-card">
           <h3 className="hub-title">Your Kea account</h3>
           <SignInStart onDone={() => {}} />
@@ -427,6 +429,7 @@ export function HubPanel() {
     const a = status.account!;
     return (
       <div className="acct-page">
+        <UpdateRequired />
         <div className="acct-card hub-card">
           <ProfileHead>
             <div className="acct-who">
@@ -458,6 +461,7 @@ export function HubPanel() {
   const games = modes.school || modes.personal;
   return (
     <div className="acct-page">
+        <UpdateRequired />
       <div className="acct-card hub-card">
         {!status.reachable && status.checked && <p className="hub-warn">Can’t reach the Kea account server right now. You’re still signed in: Kea keeps working with what it last saw and catches up when it’s back.</p>}
         {status.profileNote && <p className="hub-warn">{status.profileNote}</p>}
