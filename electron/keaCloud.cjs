@@ -205,14 +205,6 @@ function register() {
     hub().syncNow();
     return true;
   }));
-  handleApp(ipcMain, 'keaCloud:newFolder', wrap(({ parent, name }) => {
-    const dir = parent || root();
-    if (path.resolve(dir) !== path.resolve(root())) guard(dir);
-    if (!validName(name)) throw new Error('That name can’t be used for a folder.');
-    const to = path.join(dir, String(name).trim());
-    fs.mkdirSync(to, { recursive: true });
-    return to;
-  }));
   handleApp(ipcMain, 'keaCloud:syncNow', wrap(async () => {
     await hub().startSync();
     await hub().syncNow();

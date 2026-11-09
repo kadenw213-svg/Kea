@@ -392,7 +392,6 @@ function register({ log, getWindow }) {
     const r = await dialog.showOpenDialog(getWindow(), { title: 'Add a folder to Home', properties: ['openDirectory'] });
     return r.canceled ? null : r.filePaths[0] || null;
   });
-  handleApp(ipcMain, 'fs:is-dir', (_e, p) => isDir(p));
   ipcMain.handle('shell:open-path', appOnly((_e, p) => shell.openPath(p)));
 
   handleApp(ipcMain, 'preview:get', (_e, p) => getPreview(p));

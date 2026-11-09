@@ -6,7 +6,7 @@
 // calls org routes as if there were one server; each call goes to the server that holds that organization, and the
 // lists (organizations, to-dos, the calendar) are put together from all of them. Only org routes and applications
 // pass; payroll (the pay feed, SSNs, pay runs) never goes through here.
-const { app, ipcMain, dialog, BrowserWindow, shell } = require('electron');
+const { app, ipcMain, dialog, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const hub = require('./hub.cjs');
@@ -260,7 +260,6 @@ function register() {
     if (!list.length) return null;
     return saveAs('Work schedule.ics', [{ name: 'Calendar', extensions: ['ics'] }], toIcs(list));
   }));
-  handleApp(ipcMain, 'hubOrg:showFile', wrap(({ file }) => (file ? shell.showItemInFolder(String(file)) : null)));
 }
 
 const pad = (n) => String(n).padStart(2, '0');

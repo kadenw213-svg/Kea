@@ -19,7 +19,7 @@ test('making a site adds it after the others and changes what Kea works on nowhe
   const profiles = require('../../electron/scholar/profiles.cjs');
   assert.equal(profiles.active(), 'school');
   profiles.create('Personal');
-  profiles.create('Another', { select: true });
+  profiles.create('Another');
   assert.deepEqual(profiles.ids(), ['school', 'personal', 'another']);
   assert.equal(profiles.home(), 'school');
   assert.equal(profiles.active(), 'school');

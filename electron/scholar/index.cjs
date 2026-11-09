@@ -636,11 +636,6 @@ function register() {
   const p = () => profiles.paths();
   // (A class site named by the window: one Kea has, or the first.)
   const at = (site, fn) => profiles.within(typeof site === 'string' && profiles.exists(site) ? site : profiles.home(), fn);
-  // Kept for older windows: the list of class sites. Nothing is switched any more; every site is always shown.
-  handleApp(ipcMain, 'scholar:profiles', () => ({ ...profiles.all(), active: profiles.home() }));
-  handleApp(ipcMain, 'scholar:createProfile', (_e, name) => (profiles.create(name), watch(), { ...profiles.all(), active: profiles.home() }));
-  handleApp(ipcMain, 'scholar:selectProfile', () => ({ ...profiles.all(), active: profiles.home() }));
-  handleApp(ipcMain, 'scholar:renameProfile', (_e, id, name) => profiles.rename(id, name));
   // The connected class sites, each with its own status (Scans → Class sites).
   handleApp(ipcMain, 'scholar:sites', () => sitesNow());
   // Another class site: a new folder of its own (its engine, database and sign-in), set up from Add a class.
@@ -779,11 +774,6 @@ function register() {
     (await sites.each(() => runner.activity(), [])).flatMap(({ ws, value }) => (value || []).map((e) => ({ ...e, site: ws }))).sort((a, b) => String(b.start).localeCompare(String(a.start)))
   );
   handleApp(ipcMain, 'scholar:news', () => sites.union(() => runner.news()));
-  handleApp(ipcMain, 'scholar:markNewsRead', (_e, ids) => {
-    if (!ids) for (const ws of profiles.ids()) profiles.within(ws, () => runner.markNewsRead(null));
-    else for (const [ws, list] of sites.bySite(ids)) profiles.within(ws, () => runner.markNewsRead(list));
-    return true;
-  });
   // Runs set aside to continue later: the first site's that has any.
   handleApp(ipcMain, 'scholar:pending', async () => (await sites.each(() => runner.pending())).map((x) => x.value).find(Boolean) || null);
 
@@ -870,16 +860,6 @@ function register() {
     curriculumCache.set(`${ws}|${k}`, { at: Date.now(), value });
     return value;
   });
-  const rulesCache = new Map();
-  handleApp(ipcMain, 'scholar:courseRules', async (_e, code) => {
-    const k = String(code).replace(/[^\w]/g, '');
-    const ws = await siteOfCode(k);
-    const hit = rulesCache.get(`${ws}|${k}`);
-    if (hit && Date.now() - hit.at < 10 * 60e3) return hit.value;
-    const value = await profiles.within(ws, () => engineJson(['course-rules', '--course', k, '--json']));
-    rulesCache.set(`${ws}|${k}`, { at: Date.now(), value });
-    return value;
-  });
   handleApp(ipcMain, 'scholar:itemHistory', (_e, id) => {
     const { ws, id: raw } = profiles.split(String(id));
     return profiles.within(ws, () => engineJson(['item-history', raw.replace(/[^\w-]/g, ''), '--json']));
@@ -921,12 +901,6 @@ function register() {
     withdrawnChanged();
     return withdrawnNow();
   });
-  handleApp(ipcMain, 'scholar:replyMessage', async (_e, url, course) =>
-    profiles.within(await siteOfCode(course), async () => {
-      const ou = course ? (await db.watchList(p().db)).find((c) => c.code === course)?.ou : null;
-      return browser.reply(typeof url === 'string' ? url : '', ou);
-    })
-  );
   handleApp(ipcMain, 'scholar:openLink', (_e, url) => {
     if (!/^https?:\/\//i.test(String(url))) return false;
     // (A class-site page opens signed in to the site it's on.)
@@ -1106,7 +1080,6 @@ function register() {
       profiles.within(ws, () => runner.adoptStopped());
     } catch {}
   app.on('before-quit', () => runner.shutdown());
-  handleApp(ipcMain, 'scholar:cloudDrives', () => ({ drives: cloud.drives(), target: cloud.target() }));
   handleApp(ipcMain, 'scholar:syncNow', async () => {
     await devices.step();
     return devices.publishes() ? cloud.sync(snapshot) : null;

@@ -172,11 +172,10 @@ test('the phone copy has every site’s classes and items, ids as Kea’s window
   assert.deepEqual(snap.sites.map((s) => s.id), ['school', 'personal', 'second-school']);
 });
 
-test('the old profile switch changes nothing anyone sees', async () => {
-  await call('scholar:selectProfile', 'personal');
+test('there is no profile switch: every class site shows together', async () => {
+  for (const name of ['scholar:profiles', 'scholar:createProfile', 'scholar:selectProfile', 'scholar:renameProfile']) assert.equal(handlers[name], undefined, name);
   const courses = await call('scholar:courses');
   assert.equal(courses.length, 2);
-  assert.equal((await call('scholar:profiles')).active, 'school');
 });
 
 test('“How do you use Kea?” only turns parts of Kea on or off: it never makes, picks or hides class sites', () => {

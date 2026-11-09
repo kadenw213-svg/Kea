@@ -173,21 +173,13 @@ function split(key) {
   return { ws: home(), id: s };
 }
 
-/** Add a workspace (another class site). `select` is kept for older callers and changes nothing anyone sees. */
-function create(name, { select = false } = {}) {
+/** Add a workspace (another class site). */
+function create(name) {
   const j = all();
   const clean = String(name || '').trim().slice(0, 40) || 'Profile';
   let id = clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'profile';
   for (let n = 2; j.list.some((p) => p.id === id); n++) id = `${id.replace(/-\d+$/, '')}-${n}`;
   j.list.push({ id, name: clean, created: new Date().toISOString() });
-  if (select) j.active = id;
-  write(j);
-  return j;
-}
-
-function select(id) {
-  const j = all();
-  if (j.list.some((p) => p.id === id)) j.active = id;
   write(j);
   return j;
 }
@@ -215,4 +207,4 @@ function paths(id = active()) {
   };
 }
 
-module.exports = { all, active, ids, home, exists, within, nameOf, qualify, split, create, select, rename, paths, readJsonSafe, writeJsonSafe };
+module.exports = { all, active, ids, home, exists, within, nameOf, qualify, split, create, rename, paths, readJsonSafe, writeJsonSafe };

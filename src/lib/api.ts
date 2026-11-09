@@ -116,10 +116,6 @@ export interface KeaApi {
     onClosed(cb: () => void): () => void;
   };
   scholar: {
-    profiles(): Promise<ProfileList>;
-    createProfile(name: string): Promise<ProfileList>;
-    selectProfile(id: string): Promise<ProfileList>;
-    renameProfile(id: string, name: string): Promise<ProfileList>;
     status(): Promise<{ hasData: boolean; paths: { dir: string; workspace: string; db: string; textbooks: string } }>;
     courses(): Promise<ScholarCourse[]>;
     courseImages(): Promise<number>;
@@ -165,12 +161,8 @@ export interface KeaApi {
     studyList(): Promise<StudySet[]>;
     /** One set with its questions or cards. */
     studyGet(id: string): Promise<StudySetFull | null>;
-    /** Open a class-site message with its Reply pressed (the student writes and sends it). */
-    replyMessage(url: string, course: string): Promise<{ replied: boolean }>;
     /** One item's history: created, each change (old → new), replaced or cancelled, with the scan and the reason. */
     itemHistory(id: string): Promise<{ id: string; title: string; sources: { title: string; source_type: string; url: string | null; retrieved_at: string }[]; events: HistoryEvent[] }>;
-    /** The rules a class grades by (late work, required uploads, exam environment), with where each was found. */
-    courseRules(code: string): Promise<{ course: string; rules: { text: string; where: string; strength: number }[] }>;
     curriculum(code: string, fresh?: boolean): Promise<ScholarCurriculum | null>;
     /** What changed on the calendar since a date (default a week ago). */
     changes(opts: { since?: string; course?: string }): Promise<{ since: string; events: (HistoryEvent & { title: string | null; course: string | null })[] }>;
@@ -231,15 +223,12 @@ export interface KeaApi {
     runStatus(): Promise<{ running: ScholarRun | null; queued: QueuedRun[] }>;
     activity(): Promise<ScholarRun[]>;
     news(): Promise<ScholarNews[]>;
-    markNewsRead(ids?: string[]): Promise<boolean>;
     /** Announcements (straight from the class site) and what scans found, newest first. */
     inbox(): Promise<ScholarInboxItem[]>;
     markInboxRead(ids?: string[]): Promise<boolean>;
     deleteInbox(ids: string[]): Promise<boolean>;
     /** Look for new announcements now (no Claude). False when Kea isn't signed in. */
     checkInbox(): Promise<boolean>;
-    /** Cloud drives on this computer, and the folder Kea keeps the phone's copy in. */
-    cloudDrives(): Promise<{ drives: { id: string; label: string; path: string }[]; target: string | null }>;
     /** Update the phone's copy now. */
     syncNow(): Promise<{ dir: string; hash: string } | null>;
     /** Every class's assignment folders a file can be handed in to (`peek`: only what is known already, no class-site look). */
@@ -371,7 +360,6 @@ export interface KeaApi {
   statMany(paths: string[]): Promise<{ path: string; exists: boolean; size?: number; mtime?: number }[]>;
   knownFolders(): Promise<KnownFolder[]>;
   openFolderDialog(): Promise<string | null>;
-  isDir(p: string): Promise<boolean>;
   openPath(p: string): Promise<string>;
   getPreview(p: string): Promise<FilePreview | null>;
   clearPreviews(): Promise<boolean>;
@@ -643,7 +631,6 @@ export interface HubApi {
   continueSignIn(a: ({ age13: boolean; name?: string } & Agreement) | { code: string }): Promise<HubResult<HubStatus>>;
   cancelSignIn(): Promise<HubResult<HubStatus>>;
   accept(a: Agreement): Promise<HubResult<HubStatus>>;
-  googleVerify(): Promise<HubResult<HubStatus>>;
   setName(name: string): Promise<HubResult<HubStatus>>;
   sessions(): Promise<HubResult<{ sessions: HubSession[] }>>;
   /** Signs out every other device, after a fresh Google or Microsoft sign-in with this account's email. */
@@ -652,8 +639,6 @@ export interface HubApi {
   exportData(): Promise<HubResult<string | null>>;
   deleteAccount(a: { confirm: 'DELETE'; provider: KeaSignInProvider }): Promise<HubResult<HubStatus>>;
   logout(): Promise<HubResult<HubStatus>>;
-  /** Syncing through the Hub: on, when it last finished, the last error, and what moved. */
-  syncStatus(): Promise<HubResult<HubSyncState>>;
   syncNow(): Promise<HubResult<HubSyncState>>;
   /** Ask Kea's shared Claude to set up this profile's classes (queued; runs through this Kea while it's open). */
   requestScan(): Promise<HubResult<HubScanAnswer>>;
@@ -1006,10 +991,6 @@ export interface ScholarNews {
   course: string;
   title: string;
   body: string;
-}
-export interface ProfileList {
-  active: string;
-  list: { id: string; name: string; created: string }[];
 }
 /** A connected class site (each school's own scans and classes; all of them show together). */
 export interface ScholarSite {
@@ -1477,7 +1458,6 @@ export interface HubOrgApi {
   saveCsv(orgId: string, formId: string, format?: 'sheets' | 'long'): Promise<HubResult<string | null>>;
   events(from?: string, to?: string): Promise<HubResult<{ events: WorkEvent[]; offline: boolean; at?: number }>>;
   saveIcs(from?: string, to?: string): Promise<HubResult<string | null>>;
-  showFile(file: string): Promise<HubResult<void>>;
 }
 export interface KeaApi {
   hubOrg: HubOrgApi;
@@ -1574,7 +1554,6 @@ export interface KeaCloudApi {
   newPath(name: string): Promise<HubResult<string>>;
   rename(path: string, name: string): Promise<HubResult<string>>;
   remove(path: string): Promise<HubResult<boolean>>;
-  newFolder(parent: string | null, name: string): Promise<HubResult<string>>;
   syncNow(): Promise<HubResult<KeaCloudStatus>>;
   open(): Promise<HubResult<string>>;
 }

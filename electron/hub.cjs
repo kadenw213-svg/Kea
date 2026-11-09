@@ -40,7 +40,7 @@ const originOf = (u) => {
   }
 };
 const tokenFile = () => path.join(app.getPath('userData'), 'hub-session.bin');
-// What the rest of Kea needs to know without asking the Hub (school mode's verified check, the badge): no secrets.
+// What the rest of Kea needs to know without asking the server (the badge, the owner's launcher): no secrets.
 const cacheFile = () => path.join(app.getPath('userData'), 'hub-account.json');
 
 function readToken() {
@@ -1213,7 +1213,6 @@ function register() {
   // This person's shared-Claude jobs (answering a running one's calls), and on the owner's PC, the launcher.
   watchJobs(8000);
   setInterval(launcherTick, 60_000);
-  handleApp(ipcMain, 'hub:syncStatus', wrap(() => ({ ...syncState })));
   handleApp(ipcMain, 'hub:syncNow', wrap(async () => (await startSync(), await syncNow(), { ...syncState })));
   // Who's signed in, from this computer alone (at once), and after a background check of the server (4 s at most).
   handleApp(ipcMain, 'hub:local', wrap(() => local()));
@@ -1223,7 +1222,6 @@ function register() {
   // waits for the terms or the owner's code.
   handleApp(ipcMain, 'hub:openHere', wrap((a) => openHere(a)));
   handleApp(ipcMain, 'hub:oauthSignIn', wrap((a) => oauthSignIn({ provider: a.provider })));
-  handleApp(ipcMain, 'hub:googleSignIn', wrap(() => oauthSignIn({ provider: 'google' })));
   handleApp(ipcMain, 'hub:link', wrap((a) => link(a)));
   handleApp(ipcMain, 'hub:continueSignIn', wrap((a) => continueSignIn(a)));
   handleApp(ipcMain, 'hub:cancelSignIn', wrap(() => ((pending = null), local())));
@@ -1251,23 +1249,17 @@ function register() {
     return refresh();
   }));
   handleApp(ipcMain, 'hub:accept', wrap(async (a) => (await req('POST', '/v1/terms/accept', { termsVersion: a.termsVersion, termsSections: a.termsSections }), refresh())));
-  handleApp(ipcMain, 'hub:googleVerify', wrap(async () => (await req('POST', '/v1/me/verify/google', { idToken: await googleIdToken(cached()?.email) }), refresh())));
-  // The account page: name, signed-in devices, the data download, deleting the account (those two ask for a fresh
-  // Google or Microsoft sign-in with the account's email). Without an online session, an email-only account from an
-  // older Kea changes its name here.
+  // The account page: signed-in devices, the data download, deleting the account (those two ask for a fresh Google or
+  // Microsoft sign-in with the account's email). The name of an email-only account from an older Kea, not online yet,
+  // changes here (online, the name goes with hub:saveProfile).
   handleApp(ipcMain, 'hub:setName', wrap(async (a) => {
     const name = String(a.name ?? '').trim();
     const rec = accounts().active();
-    if (!isSignedIn()) {
-      if (!rec) throw new HubError('Sign in first.', 401);
-      if (rec.hub) throw new HubError('Sign in with Google to change your name.', 401, { needsOnline: true });
-      if (!name) throw new HubError('Add your name.', 400);
-      accounts().setName(rec.id, name);
-      return local();
-    }
-    await req('POST', '/v1/me', { displayName: name });
-    if (rec) accounts().setName(rec.id, name);
-    return refresh();
+    if (!rec) throw new HubError('Sign in first.', 401);
+    if (isSignedIn() || rec.hub) throw new HubError('Sign in with Google to change your name.', 401, { needsOnline: true });
+    if (!name) throw new HubError('Add your name.', 400);
+    accounts().setName(rec.id, name);
+    return local();
   }));
   handleApp(ipcMain, 'hub:sessions', wrap(() => req('GET', '/v1/me/sessions')));
   handleApp(ipcMain, 'hub:signOutOthers', wrap(async (a) => req('POST', '/v1/me/sessions/sign-out-others', await freshProof(a?.provider), { reauth: true })));

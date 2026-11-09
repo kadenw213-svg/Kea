@@ -65,14 +65,12 @@ contextBridge.exposeInMainWorld('api', {
     continueSignIn: (a) => ipcRenderer.invoke('hub:continueSignIn', a),
     cancelSignIn: () => ipcRenderer.invoke('hub:cancelSignIn'),
     accept: (a) => ipcRenderer.invoke('hub:accept', a),
-    googleVerify: () => ipcRenderer.invoke('hub:googleVerify'),
     setName: (name) => ipcRenderer.invoke('hub:setName', { name }),
     sessions: () => ipcRenderer.invoke('hub:sessions'),
     signOutOthers: (a) => ipcRenderer.invoke('hub:signOutOthers', a),
     exportData: () => ipcRenderer.invoke('hub:exportData'),
     deleteAccount: (a) => ipcRenderer.invoke('hub:deleteAccount', a),
     logout: () => ipcRenderer.invoke('hub:logout'),
-    syncStatus: () => ipcRenderer.invoke('hub:syncStatus'),
     syncNow: () => ipcRenderer.invoke('hub:syncNow'),
     requestScan: () => ipcRenderer.invoke('hub:requestScan'),
     questionChapters: () => ipcRenderer.invoke('hub:questionChapters'),
@@ -127,10 +125,6 @@ contextBridge.exposeInMainWorld('api', {
     }
   },
   scholar: {
-    profiles: () => ipcRenderer.invoke('scholar:profiles'),
-    createProfile: (name) => ipcRenderer.invoke('scholar:createProfile', name),
-    selectProfile: (id) => ipcRenderer.invoke('scholar:selectProfile', id),
-    renameProfile: (id, name) => ipcRenderer.invoke('scholar:renameProfile', id, name),
     status: () => ipcRenderer.invoke('scholar:status'),
     courses: () => ipcRenderer.invoke('scholar:courses'),
     courseImages: () => ipcRenderer.invoke('scholar:courseImages'),
@@ -164,7 +158,6 @@ contextBridge.exposeInMainWorld('api', {
     runStatus: () => ipcRenderer.invoke('scholar:runStatus'),
     activity: () => ipcRenderer.invoke('scholar:activity'),
     news: () => ipcRenderer.invoke('scholar:news'),
-    markNewsRead: (ids) => ipcRenderer.invoke('scholar:markNewsRead', ids),
     pending: () => ipcRenderer.invoke('scholar:pending'),
     inbox: () => ipcRenderer.invoke('scholar:inbox'),
     markInboxRead: (ids) => ipcRenderer.invoke('scholar:markInboxRead', ids),
@@ -172,13 +165,10 @@ contextBridge.exposeInMainWorld('api', {
     checkInbox: () => ipcRenderer.invoke('scholar:checkInbox'),
     grades: (courseId, code) => ipcRenderer.invoke('scholar:grades', courseId, code),
     handInTargets: (opts) => ipcRenderer.invoke('scholar:handInTargets', opts),
-    cloudDrives: () => ipcRenderer.invoke('scholar:cloudDrives'),
     syncNow: () => ipcRenderer.invoke('scholar:syncNow'),
     handIn: (ou, folderId, file) => ipcRenderer.invoke('scholar:handIn', ou, folderId, file),
     openLink: (url) => ipcRenderer.invoke('scholar:openLink', url),
-    replyMessage: (url, course) => ipcRenderer.invoke('scholar:replyMessage', url, course),
     itemHistory: (id) => ipcRenderer.invoke('scholar:itemHistory', id),
-    courseRules: (code) => ipcRenderer.invoke('scholar:courseRules', code),
     curriculum: (code, fresh) => ipcRenderer.invoke('scholar:curriculum', code, !!fresh),
     changes: (opts) => ipcRenderer.invoke('scholar:changes', opts),
     mailList: () => ipcRenderer.invoke('scholar:mailList'),
@@ -377,7 +367,6 @@ contextBridge.exposeInMainWorld('api', {
   statMany: (paths) => ipcRenderer.invoke('fs:stat-many', paths),
   knownFolders: () => ipcRenderer.invoke('fs:known-folders'),
   openFolderDialog: () => ipcRenderer.invoke('dialog:open-folder'),
-  isDir: (p) => ipcRenderer.invoke('fs:is-dir', p),
   openPath: (p) => ipcRenderer.invoke('shell:open-path', p),
   clearPreviews: () => ipcRenderer.invoke('preview:clear'),
   clearMeta: () => ipcRenderer.invoke('meta:clear'),
@@ -456,7 +445,6 @@ contextBridge.exposeInMainWorld('api', {
     newPath: (name) => ipcRenderer.invoke('keaCloud:newPath', { name }),
     rename: (path, name) => ipcRenderer.invoke('keaCloud:rename', { path, name }),
     remove: (path) => ipcRenderer.invoke('keaCloud:remove', { path }),
-    newFolder: (parent, name) => ipcRenderer.invoke('keaCloud:newFolder', { parent, name }),
     syncNow: () => ipcRenderer.invoke('keaCloud:syncNow'),
     open: () => ipcRenderer.invoke('keaCloud:open')
   },
@@ -465,8 +453,7 @@ contextBridge.exposeInMainWorld('api', {
     call: (method, path, body) => ipcRenderer.invoke('hubOrg:call', { method, path, body }),
     saveCsv: (orgId, formId, format) => ipcRenderer.invoke('hubOrg:saveCsv', { orgId, formId, format }),
     events: (from, to) => ipcRenderer.invoke('hubOrg:events', { from, to }),
-    saveIcs: (from, to) => ipcRenderer.invoke('hubOrg:saveIcs', { from, to }),
-    showFile: (file) => ipcRenderer.invoke('hubOrg:showFile', { file })
+    saveIcs: (from, to) => ipcRenderer.invoke('hubOrg:saveIcs', { from, to })
   },
   // KeaS servers joined with a server pass (electron/servers.cjs), and where things sync (electron/syncChoice.cjs).
   servers: {
