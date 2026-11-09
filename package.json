@@ -15,6 +15,7 @@
     "dist": "node scripts/engine-vendor.cjs && node scripts/oauth-clients.cjs && vite build && electron-builder --win",
     "dist:mac": "node scripts/engine-vendor.cjs && node scripts/oauth-clients.cjs && vite build && electron-builder --mac",
     "release": "node scripts/release.cjs",
+    "test:compat": "node --test test/compat/compat.test.mjs test/compat/protocol.test.mjs",
     "postinstall": "node scripts/keep-out-of-onedrive.cjs && node scripts/engine-vendor.cjs"
   },
   "dependencies": {
