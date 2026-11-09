@@ -9,7 +9,7 @@ import { PHONE_HINT, SHARE_DEFAULTS, oneStepAgreement, profileSave, savedText, s
 import { SIGN_IN_WAITS, hubStatusNow, loadLocal, openAccount, refreshHub, refreshNotifications, run, setHubNotifications, setHubStatus, signInWaits, useHubNotifications, useHubStatus } from '../account/hubStore';
 import { NeedsOnline } from '../account/NeedsOnline';
 import { SignInSecurity, YourData } from '../account/Security';
-import { ProfileHead, VerifiedBadge, VerifyEmail, useAccount } from './Account';
+import { ProfileHead, VerifiedBadge, useAccount } from './Account';
 
 // The Kea account: one sign-in for Kea and KeaS, made with Google or Microsoft once the Kea account server answers.
 // Without one everything on this computer works. Its state lives in account/hubStore.ts (shared with the title bar,
@@ -393,7 +393,7 @@ export async function signOutAsked() {
 
 /**
  * The account page (Settings → Kea account, and School's "Your account"): who you are, taking the account online,
- * verifying your email, storage, notifications, the phone number, sign-in and security, your data, signing out, and
+ * storage, notifications, the phone number, sign-in and security, your data, signing out, and
  * (under Advanced) the server's address.
  */
 export function HubPanel() {
@@ -453,14 +453,9 @@ export function HubPanel() {
   // Offline: what Kea last saw.
   const c = status.cached;
   const supporter = me?.account.supporter ?? c?.supporter ?? null;
-  const who = me?.account ?? (c ? { displayName: c.name, email: c.email, emailVerified: c.emailVerified, verifiedBy: c.verifiedBy ?? null, owner: !!c.owner } : status.account ? { displayName: status.account.name, email: status.account.email, emailVerified: false, verifiedBy: null, owner: false } : null);
+  const who = me?.account ?? (c ? { displayName: c.name, email: c.email, owner: !!c.owner } : status.account ? { displayName: status.account.name, email: status.account.email, owner: false } : null);
   const storage = me ? { used: kc?.storage?.used ?? me.storage.used, quota: kc?.storage?.quota ?? me.storage.quota } : null;
   const games = modes.school || modes.personal;
-  const how = (by: string | null) => {
-    const b = (by ?? '').toLowerCase();
-    return b === 'google' ? 'with Google' : b === 'microsoft' ? 'with Microsoft' : b === 'owner' ? 'by Kea’s creator' : b === 'manager' ? 'by a manager' : by ? `(${by})` : '';
-  };
-  const verifiedText = who?.owner ? 'Kea’s creator' : who?.emailVerified ? `Email verified ${how(who.verifiedBy)}` : 'Email not verified yet';
   return (
     <div className="acct-page">
       <div className="acct-card hub-card">
@@ -470,17 +465,16 @@ export function HubPanel() {
           <ProfileHead>
             <div className="acct-who">
               <div className="acct-name">
-                {status.profile?.name || who.displayName || <span className="muted">No name yet</span>} {who.emailVerified && <VerifiedBadge account={account} size={16} />} {supporter?.active && <SupporterBadge />}
+                {status.profile?.name || who.displayName || <span className="muted">No name yet</span>} <VerifiedBadge account={account} size={16} /> {supporter?.active && <SupporterBadge />}
               </div>
               <div className="muted">
                 {who.email}
                 {status.profile?.phone ? ` · ${showPhone(status.profile.phone)}` : ''}
               </div>
-              <div className={`acct-status ${who.emailVerified ? 'ok' : 'bad'}`}>{verifiedText}</div>
+              {who.owner && <div className="acct-status ok">Kea’s creator</div>}
             </div>
           </ProfileHead>
         )}
-        {me && !me.account.emailVerified && <VerifyEmail />}
         {me && (
           <div className="hub-stats">
             {games && (
@@ -491,7 +485,7 @@ export function HubPanel() {
               </>
             )}
             {storage && (
-              <span title={me.account.emailVerified ? undefined : 'Storage grows once your email is verified'}>
+              <span>
                 Kea storage: {formatBytes(storage.used)} of {formatBytes(storage.quota)} used
               </span>
             )}
@@ -1034,9 +1028,7 @@ export function SharedClaude() {
       </p>
       {!status?.signedIn || !status.reachable ? (
         <NeedsOnline what="Kea’s shared Claude" />
-      ) : !status.me?.account.emailVerified ? (
-        <div className="hub-warn">Verify your email first. <VerifyEmail compact /></div>
-      ) : status.me.account.birthYear == null || status.me.account.parentSignOff === 'needed' || status.me.account.parentSignOff === 'pending' ? (
+      ) : !status.me ? null : status.me.account.birthYear == null || status.me.account.parentSignOff === 'needed' || status.me.account.parentSignOff === 'pending' ? (
         <ParentSignOff status={status} />
       ) : open ? (
         <p className="hub-warn">
@@ -1084,7 +1076,7 @@ export function SharedClaude() {
         </div>
       )}
       {status?.signedIn && <SectionRequests />}
-      {status?.signedIn && status.me?.account.emailVerified && status.me.account.birthYear != null && (status.me.account.parentSignOff === 'approved' || status.me.account.parentSignOff === 'not_needed') && (
+      {status?.signedIn && status.me && status.me.account.birthYear != null && (status.me.account.parentSignOff === 'approved' || status.me.account.parentSignOff === 'not_needed') && (
         <MoreQuestions jobs={jobs} onAsked={load} />
       )}
     </div>

@@ -548,9 +548,6 @@
 .acct-status.ok {
   color: var(--info);
 }
-.acct-status.bad {
-  color: var(--danger, #e5534b);
-}
 .acct-pic-col {
   display: flex;
   flex-direction: column;
@@ -755,14 +752,6 @@
   justify-content: space-between;
   gap: 12px;
 }
-.acct-verify {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.acct-verify.compact .acct-actions {
-  flex-wrap: nowrap;
-}
 .hub-advanced-card {
   gap: 10px;
   padding: 12px 20px;
@@ -797,10 +786,6 @@
   gap: 4px;
   color: var(--text);
   font-weight: 600;
-}
-.acct-tb-warn {
-  color: var(--danger, #e5534b);
-  font-size: 12px;
 }
 /* No account yet: a quiet "Sign in with Google" in its place (dimmer while the server can't be reached). */
 .acct-tb-signin {

@@ -1472,27 +1472,6 @@ select.input {
   width: auto;
 }
 
-/* Verifying your email before joining or making an organization. */
-.wk-verify {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 8px 0 12px;
-  padding: 10px 14px;
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-  font-size: 13px;
-  text-align: left;
-}
-.wk-verify p {
-  margin: 0;
-}
-.wk-empty .wk-verify {
-  max-width: 560px;
-  margin: 8px auto 12px;
-}
-
 /* A policy's text, opened before "I've read it". */
 .wk-policy-body {
   margin: 4px 0 10px 26px;

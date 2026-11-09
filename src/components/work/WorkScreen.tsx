@@ -2,16 +2,16 @@
 // box sits on top; below it, the chosen organization: schedule, time (with My pay), availability and certs for
 // everyone, and forms, scheduling, people (with pay codes), training, structure, budgets and settings for those whose
 // roles allow them (the abilities the server sends; on a KeaS 0.5 Hub, the fixed role's). Making an organization on
-// the Kea account server is an application the owner approves (ApplyHosting); an organization can also run its own KeaS.
+// the Kea account server is an application the owner approves (ApplyHosting); an organization can also run its own KeaS
+// (made in the KeaS app).
 import { useEffect, useState } from 'react';
 import { Building2, Clock3, KeyRound, LogIn, Plus, ServerOff, Trash2 } from 'lucide-react';
 import { api, JoinedServer } from '../../lib/api';
 import { ask, toast } from '../../store';
 import { refreshHub, useHubStatus } from '../scholar/HubAccount';
-import { VerifyEmail } from '../scholar/Account';
 import { accountOf } from '../account/hubStore';
 import { NeedsOnline } from '../account/NeedsOnline';
-import { get, localTz, post, useMyId, useWork, Tab } from './workStore';
+import { get, post, useMyId, useWork, Tab } from './workStore';
 import { can, canAny } from './types';
 import type { Org } from './types';
 import { Advanced, Card, Empty, Field, Loading } from './ui';
@@ -86,8 +86,9 @@ export function WorkScreen() {
   const tabs = org && org.memberStatus === 'active' ? TABS.filter((t) => t.show(org)) : [];
   const several = new Set((orgs ?? []).map((o) => o.server?.id ?? '')).size > 1;
   const current = tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id ?? 'schedule';
-  const verified = !!me?.emailVerified;
   const hasOrgs = !!orgs?.length;
+  // (Making an organization is an application to the Kea account server; one on a KeaS server is made in the KeaS app.)
+  const canCreate = status.signedIn && !!account?.hostedOrgs;
 
   return (
     <div className="work">
@@ -110,7 +111,7 @@ export function WorkScreen() {
               <button className="btn sm" onClick={() => setAdding(adding === 'join' ? null : 'join')}>
                 <KeyRound size={14} /> Join
               </button>
-              {status.signedIn && (
+              {canCreate && (
                 <button className="btn sm" onClick={() => setAdding(adding === 'create' ? null : 'create')}>
                   <Plus size={14} /> Create an organization
                 </button>
@@ -119,8 +120,8 @@ export function WorkScreen() {
           )}
         </header>
         <ServerNotes servers={servers} />
-        {adding === 'join' && <JoinOrg onDone={() => setAdding(null)} verified={verified} />}
-        {adding === 'create' && (account?.hostedOrgs ? <ApplyHosting onDone={() => setAdding(null)} /> : <CreateOrg onDone={() => setAdding(null)} verified={verified} />)}
+        {adding === 'join' && <JoinOrg onDone={() => setAdding(null)} />}
+        {adding === 'create' && canCreate && <ApplyHosting onDone={() => setAdding(null)} />}
 
         {hasOrgs && <TodoBox orgId={orgId} />}
 
@@ -134,7 +135,7 @@ export function WorkScreen() {
                 <button className="btn primary" onClick={() => setAdding('join')}>
                   <KeyRound size={15} /> Join an organization
                 </button>
-                {status.signedIn && (
+                {canCreate && (
                   <button className="btn" onClick={() => setAdding('create')}>
                     <Building2 size={15} /> Create an organization
                   </button>
@@ -143,14 +144,14 @@ export function WorkScreen() {
             </Empty>
           )
         ) : org ? (
-          <OrgBody org={org} tabs={tabs} current={current} verified={verified} />
+          <OrgBody org={org} tabs={tabs} current={current} />
         ) : null}
       </div>
     </div>
   );
 }
 
-function OrgBody({ org, tabs, current, verified }: { org: Org; tabs: typeof TABS; current: Tab; verified: boolean }) {
+function OrgBody({ org, tabs, current }: { org: Org; tabs: typeof TABS; current: Tab }) {
   const go = useWork((s) => s.go);
   const me = useMyId();
   if (org.memberStatus === 'pending')
@@ -159,7 +160,6 @@ function OrgBody({ org, tabs, current, verified }: { org: Org; tabs: typeof TABS
         <p>
           <Clock3 size={14} /> Request sent. Your manager approves it.
         </p>
-        {!verified && <p className="muted af-small">Your email isn’t verified yet. Your manager can verify it when they approve, or you can verify it with Google in Settings → Kea account.</p>}
         <div className="wk-actions">
           <LeaveButton org={org} label="Cancel request" />
         </div>
@@ -229,13 +229,9 @@ function LeaveButton({ org, label = 'Leave' }: { org: Org; label?: string }) {
   );
 }
 
-/** The Hub's "verify first" answer names a place that isn't in Kea; say where it is. (An older Hub says it on joining too.) */
-const VERIFY_FIRST = /^Verify your email first/;
-const verifyText = (what: string) => `Verify your email first (Settings → Kea account → Verify with Google), then ${what}.`;
-
 /** A join link: kea://join?s=<server address>&c=<code> (what an organization's server gives out). */
 const isLink = (t: string) => /^kea:/i.test(t.trim());
-function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
+function JoinOrg({ onDone }: { onDone(): void }) {
   const [code, setCode] = useState(() => {
     const l = useWork.getState().joinLink;
     if (l) useWork.setState({ joinLink: null });
@@ -243,8 +239,6 @@ function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
   });
   const [address, setAddress] = useState('');
   const [busy, setBusy] = useState(false);
-  // A KeaS 0.5 Hub still refuses an unverified email: then the old way, verifying first, shows here.
-  const [needVerify, setNeedVerify] = useState(false);
   const link = isLink(code);
   const ready = link ? code.includes('c=') : code.replace(/[^A-Za-z0-9]/g, '').length >= 4 && (!!address.trim() || code.replace(/[^A-Za-z0-9]/g, '').length >= 10);
   const join = async () => {
@@ -266,21 +260,14 @@ function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
       useWork.getState().go(r.org.id, 'schedule');
       onDone();
     } catch (e: any) {
-      if (VERIFY_FIRST.test(e.message)) setNeedVerify(true);
-      toast(VERIFY_FIRST.test(e.message) ? verifyText('join the organization') : e.message, 'error');
+      toast(e.message, 'error');
     } finally {
       setBusy(false);
     }
   };
   return (
     <Card title="Join an organization" className="wk-narrow">
-      {needVerify && !verified && (
-        <div className="wk-verify">
-          <p>This server needs a verified email to join.</p>
-          <VerifyEmail compact />
-        </div>
-      )}
-      <Field label="Join link or code" hint={link ? 'Kea checks the organization’s server before signing you in.' : verified || needVerify ? 'From your organization. Dashes and spaces don’t matter.' : 'From your organization. Your email isn’t verified, so your manager approves your request first.'}>
+      <Field label="Join link or code" hint={link ? 'Kea checks the organization’s server before signing you in.' : 'From your organization. Dashes and spaces don’t matter.'}>
         <input className={`input ${link ? '' : 'wk-codein'}`} autoFocus value={code} placeholder="kea://join… or ABCD-EFGH-JKMN" onChange={(e) => setCode(isLink(e.target.value) ? e.target.value : e.target.value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && ready && !busy && join()} />
       </Field>
       {!link && (
@@ -295,68 +282,7 @@ function JoinOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
           Cancel
         </button>
         <button className="btn primary" disabled={busy || !ready} title={!ready ? 'Paste the join link, or enter the whole code' : undefined} onClick={join}>
-          {verified || link || address.trim() ? 'Join' : 'Ask to join'}
-        </button>
-      </div>
-    </Card>
-  );
-}
-
-function CreateOrg({ onDone, verified }: { onDone(): void; verified: boolean }) {
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState('nonprofit');
-  const [tz, setTz] = useState(localTz());
-  const [state, setState] = useState('');
-  const [busy, setBusy] = useState(false);
-  const make = async () => {
-    setBusy(true);
-    try {
-      const r = await post<{ org: Org }>('/v1/orgs', { name, kind, tz, state: state || null });
-      toast(r.org.status === 'pending' ? `${r.org.name} is made. It’s waiting for approval; you can set it up meanwhile.` : `${r.org.name} is ready.`);
-      await refreshOrgs();
-      useWork.getState().go(r.org.id, 'structure');
-      onDone();
-    } catch (e: any) {
-      toast(VERIFY_FIRST.test(e.message) ? verifyText('make the organization') : e.message, 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Card title="New organization" className="wk-narrow">
-      {!verified && (
-        <div className="wk-verify">
-          <p>Making an organization needs a verified email first.</p>
-          <VerifyEmail compact />
-        </div>
-      )}
-      <div className="wk-form-grid">
-        <Field label="Name">
-          <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="For example Westside Pool" />
-        </Field>
-        <Field label="Kind">
-          <select className="input" value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="nonprofit">Nonprofit</option>
-            <option value="government">Government</option>
-            <option value="private">Business</option>
-            <option value="school">School</option>
-            <option value="other">Other</option>
-          </select>
-        </Field>
-        <Field label="Time zone">
-          <input className="input" value={tz} onChange={(e) => setTz(e.target.value)} />
-        </Field>
-        <Field label="State" hint="Two letters, for the labor rules.">
-          <input className="input" value={state} maxLength={2} onChange={(e) => setState(e.target.value.toUpperCase())} placeholder="CO" />
-        </Field>
-      </div>
-      <p className="muted af-small">Payroll (SSNs, bank accounts, pay runs) stays in the KeaS app.</p>
-      <div className="wk-actions">
-        <button className="btn" onClick={onDone}>
-          Cancel
-        </button>
-        <button className="btn primary" disabled={busy || name.trim().length < 2 || !verified} title={!verified ? 'Verify your email first' : name.trim().length < 2 ? 'Give it a name' : undefined} onClick={make}>
-          Make organization
+          Join
         </button>
       </div>
     </Card>

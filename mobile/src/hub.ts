@@ -70,8 +70,8 @@ const parse = (text: string) => {
 
 /**
  * One API call; throws HubError (with the server's own message) for anything but 2xx. `limit`: how long it may take
- * (LIMITS; files keep the native default). `reauth`: the route asks for the password again, so a 401 means a wrong
- * password, not that the sign-in ended.
+ * (LIMITS; files keep the native default). `reauth`: the route asks for a fresh Google or Microsoft sign-in, so a 401
+ * is about that, not that the sign-in ended.
  */
 export async function hubCall<T = any>(method: string, path: string, body?: unknown, opts: { auth?: boolean; keepToken?: boolean; limit?: keyof typeof LIMITS; reauth?: boolean } = {}): Promise<T> {
   let r: { status: number; body: string };
@@ -86,7 +86,7 @@ export async function hubCall<T = any>(method: string, path: string, body?: unkn
   const data = parse(r.body);
   if (r.status >= 200 && r.status < 300) return data as T;
   if (r.status === 401 && auth && !data.totpRequired && !opts.reauth && (await Kea.hubState().catch(() => null))?.signedIn) {
-    // The online session ended (signed out elsewhere, password changed, suspended). The account stays signed in on
+    // The online session ended (signed out elsewhere, suspended). The account stays signed in on
     // this phone; only what needs it online waits for "Sign in online".
     await hubDropSession({ keepProfile: true });
     accountChanged();

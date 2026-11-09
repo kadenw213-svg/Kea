@@ -1,12 +1,12 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Camera, Check, Move, ShieldCheck, Trash2 } from 'lucide-react';
+import { BadgeCheck, Camera, Check, Move, Trash2 } from 'lucide-react';
 import { create } from 'zustand';
 import { api, AvatarCrop, KeaAccount } from '../../lib/api';
 import { toast } from '../../store';
-import { accountOf, run, setHubStatus, useHubStatus } from '../account/hubStore';
+import { accountOf, useHubStatus } from '../account/hubStore';
 
-// The Kea account as Kea shows it (name, picture, verified): the account signed in on this computer. Its email and
-// name are kept here, verified comes from the online account; the picture is kept on this computer
+// The Kea account as Kea shows it (name, picture, the creator's badge): the account signed in on this computer. Its
+// email and name are kept here; the picture is kept on this computer
 // (electron/account.cjs). Reloaded whenever the status says something about the account changed, so every view agrees
 // right after signing in or out.
 const useAccountStore = create<{ account: KeaAccount | null | undefined; set(a: KeaAccount | null): void }>((set) => ({ account: undefined, set: (account) => set({ account }) }));
@@ -171,33 +171,6 @@ export function ProfileHead({ children }: { children: ReactNode }) {
         )}
       </div>
       {children}
-    </div>
-  );
-}
-
-/** Verifying the online Kea account's email with Google (joining an organization and Kea's shared Claude need it). */
-export function VerifyEmail({ compact = false }: { compact?: boolean }) {
-  const status = useHubStatus();
-  const [account] = useAccount();
-  const [busy, setBusy] = useState(false);
-  if (!account || account.verified || !status?.signedIn) return null;
-  return (
-    <div className={`acct-verify ${compact ? 'compact' : ''}`}>
-      {!compact && <p className="muted acct-note">Verify {account.email} by signing in to Google with it. Joining an organization and Kea’s shared Claude need this.</p>}
-      <div className="acct-actions">
-        <button
-          className="btn primary sm"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            const s = await run(api.hub.googleVerify());
-            setBusy(false);
-            if (s) (setHubStatus(s), toast('Email verified with Google.', 'success'));
-          }}
-        >
-          <ShieldCheck size={14} /> Verify with Google
-        </button>
-      </div>
     </div>
   );
 }
