@@ -58,6 +58,9 @@ export interface AiHooks {
   addComment?(quote: string, text: string): boolean;
   /** Called before each of Claude's tool calls, so each is its own undo step. */
   beginStep?(): void;
+  /** Called when the person sends Claude a request (remember where they are: Claude's "here") and when it's done. */
+  beginRun?(): void;
+  endRun?(): void;
   insertLabel?: string;
   /** What the editor looks like right now, for Claude to see (an image, a slide, a video frame). */
   getImage?(): Promise<{ dataUrl: string; width: number; height: number; note?: string } | null>;
@@ -101,7 +104,9 @@ export function proxyAi(ref: { current: AiHooks }): AiHooks {
     ...(c.replaceQuote ? { replaceQuote: (q: string, r: string) => ref.current.replaceQuote?.(q, r) ?? false } : {}),
     ...(c.addComment ? { addComment: (q: string, t: string) => ref.current.addComment?.(q, t) ?? false } : {}),
     ...(c.track ? { track: <T,>(fn: () => T) => (ref.current.track ? ref.current.track(fn) : fn()) } : {}),
-    ...(c.beginStep ? { beginStep: () => ref.current.beginStep?.() } : {})
+    ...(c.beginStep ? { beginStep: () => ref.current.beginStep?.() } : {}),
+    ...(c.beginRun ? { beginRun: () => ref.current.beginRun?.() } : {}),
+    ...(c.endRun ? { endRun: () => ref.current.endRun?.() } : {})
   };
 }
 

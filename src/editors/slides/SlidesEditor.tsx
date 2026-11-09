@@ -62,6 +62,8 @@ import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
 import { slidesDesignTools } from './ai';
+import { indexOfView, touchesElement, changedParts } from './slideTrack';
+import { setting } from '../../lib/settings';
 
 function useHistory<T>(initial: T) {
   const state = useRef(initial);
@@ -143,7 +145,21 @@ const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
 function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; initial: Deck }) {
   const h = useHistory<Deck>(initial);
   const deck = h.get();
-  const [idx, setIdx] = useState(0);
+  // The slide on screen is followed by its id, so slides Claude adds, moves or deletes elsewhere never move the person.
+  const [view, setView] = useState<{ id: string | null; at: number }>(() => ({ id: initial.slides[0]?.id ?? null, at: 0 }));
+  const idx = indexOfView(deck.slides, view.id, view.at);
+  const setIdx = useCallback(
+    (v: number | ((i: number) => number)) =>
+      setView((prev) => {
+        const slides = h.get().slides;
+        const cur = indexOfView(slides, prev.id, prev.at);
+        const n = Math.max(0, Math.min(typeof v === 'function' ? v(cur) : v, slides.length - 1));
+        return { id: slides[n]?.id ?? null, at: n };
+      }),
+    [h]
+  );
+  const idxRef = useRef(idx);
+  idxRef.current = idx;
   const slide = deck.slides[Math.min(idx, deck.slides.length - 1)];
   const [selId, setSelId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -547,8 +563,73 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
     }
     return { ...sl, els, ...(p.notes !== undefined ? { notes: p.notes } : {}) };
   };
+  // ---------- Claude's edits, in the background (slideTrack.ts) ----------
+  // The person stays on their slide with their selection; Claude's change shows as a brief glow on the slide's
+  // thumbnail and on the changed boxes. The box they're typing in (or dragging) is never changed under them.
+  const editingRef = useRef<string | null>(null);
+  editingRef.current = editingId;
+  const lastUser = useRef(0);
+  const userBusy = () => Date.now() - lastUser.current < 4000 || !!editingRef.current || !!drag.current;
+  const claudeHere = useRef<string | null>(null);
+  const hereIdx = () => {
+    const slides = h.get().slides;
+    const i = claudeHere.current ? slides.findIndex((x) => x.id === claudeHere.current) : -1;
+    return i >= 0 ? i : Math.min(idxRef.current, slides.length - 1);
+  };
+  const setHere = (i: number) => {
+    claudeHere.current = h.get().slides[i]?.id ?? null;
+  };
+  const [flash, setFlash] = useState<{ slides: Set<string>; els: Set<string> } | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+  const glow = (parts: { slides: string[]; els: string[] }, secs: number) => {
+    if (!secs || (!parts.slides.length && !parts.els.length)) return;
+    setFlash((prev) => ({ slides: new Set([...(prev?.slides || []), ...parts.slides]), els: new Set([...(prev?.els || []), ...parts.els]) }));
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), secs * 1000);
+  };
+  const flashSecs = () => (setting('assistant.flashEdits') === false ? 0 : Math.max(0, Number(setting('assistant.flashSeconds')) || 2.4));
+  const claudeCommit = (d: Deck) => {
+    const before = h.get();
+    const busyEl = editingRef.current || drag.current?.orig?.id || null;
+    if (touchesElement(before.slides, d.slides, busyEl)) throw new Error('The student is working in that box right now. Change something else, or try it again in a moment.');
+    h.commit(d);
+    markDirty();
+    const parts = changedParts(before.slides, d.slides);
+    glow(parts, flashSecs());
+    // Off by default: follow Claude to the slide it changed, only while the person isn't busy.
+    if (setting('assistant.followEdits') && parts.slides.length && !userBusy()) {
+      const j = d.slides.findIndex((x) => x.id === parts.slides[0]);
+      if (j >= 0) setIdx(j);
+    }
+  };
+  const ch = { get: () => h.get(), commit: claudeCommit };
+  // A slide drawn out of sight for check_design to measure (only while it measures).
+  const [probe, setProbe] = useState<{ i: number; n: number } | null>(null);
+  const probeRef = useRef<HTMLDivElement>(null);
+  const probeWait = useRef<((el: HTMLElement | null) => void) | null>(null);
+  const probeSlide = (i: number | null) =>
+    new Promise<HTMLElement | null>((res) => {
+      if (i === null) {
+        setProbe(null);
+        return res(null);
+      }
+      probeWait.current = res;
+      setProbe((p) => ({ i, n: (p?.n || 0) + 1 }));
+    });
+  useEffect(() => {
+    const done = probeWait.current;
+    if (!probe || !done) return;
+    probeWait.current = null;
+    // (Two frames and a moment for fonts and pictures to lay out.)
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => done(probeRef.current), 60)));
+  }, [probe]);
+
   aiRef.current = {
     noun: 'presentation',
+    beginRun() {
+      claudeHere.current = null;
+    },
     insertLabel: 'Add to slide',
     tools: [
       {
@@ -567,13 +648,12 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
         },
         run: ({ layout, title, body, notes, after }) => {
           const d = h.get();
-          const at = after === undefined ? idx : slideAt(after);
+          const at = after === undefined ? hereIdx() : slideAt(after);
           const made = fill(layoutSlide(layout, themeFromSlide(d.slides[at] || slide), deck.w, deck.h), { title, body, notes });
           const slides = [...d.slides];
           slides.splice(at + 1, 0, made);
-          h.commit({ ...d, slides });
-          markDirty();
-          setIdx(at + 1);
+          claudeCommit({ ...d, slides });
+          setHere(at + 1);
           return `Added slide ${at + 2}.`;
         }
       },
@@ -590,9 +670,8 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
           const d = h.get();
           const slides = [...d.slides];
           slides[i] = fill(slides[i], { title, body, notes });
-          h.commit({ ...d, slides });
-          markDirty();
-          setIdx(i);
+          claudeCommit({ ...d, slides });
+          setHere(i);
           return `Updated slide ${n}.`;
         }
       },
@@ -604,9 +683,8 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
           const i = slideAt(n);
           const d = h.get();
           if (d.slides.length === 1) throw new Error('A deck needs at least one slide.');
-          h.commit({ ...d, slides: d.slides.filter((_, j) => j !== i) });
-          markDirty();
-          setIdx(Math.max(0, Math.min(i, d.slides.length - 2)));
+          claudeCommit({ ...d, slides: d.slides.filter((_, j) => j !== i) });
+          setHere(Math.max(0, Math.min(i, d.slides.length - 2)));
           return `Deleted slide ${n}.`;
         }
       },
@@ -621,9 +699,8 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
           const slides = [...d.slides];
           const [moved] = slides.splice(i, 1);
           slides.splice(j, 0, moved);
-          h.commit({ ...d, slides });
-          markDirty();
-          setIdx(j);
+          claudeCommit({ ...d, slides });
+          setHere(j);
           return `Moved slide ${n} to ${to}.`;
         }
       },
@@ -632,11 +709,16 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
         description: 'Show a slide to the student (and to yourself, with look).',
         input_schema: { type: 'object', properties: { slide: { type: 'integer' } }, required: ['slide'] },
         run: ({ slide: n }) => {
-          setIdx(slideAt(n));
+          const i = slideAt(n);
+          setHere(i);
+          // Only when the person isn't in the middle of something: Claude never pulls them off their work.
+          if (i === idxRef.current) return `Slide ${n} is on screen.`;
+          if (userBusy()) return `The student is working on slide ${idxRef.current + 1}, so it stays on screen; the tools still act on slide ${n} (check_design measures it without showing it).`;
+          setIdx(i);
           return `Showing slide ${n}.`;
         }
       },
-      ...slidesDesignTools({ h, idx, setIdx, select: setSelId, markDirty })
+      ...slidesDesignTools({ h: ch, here: hereIdx, setHere, probe: probeSlide, markDirty })
     ],
     async getDocument() {
       const d = h.get();
@@ -648,18 +730,17 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
     },
     insertText(text) {
       const plain = text.replace(/\*\*/g, '');
-      if (editingId && textNode.current) {
-        textNode.current.focus();
-        document.execCommand('insertText', false, plain);
-        return true;
-      }
       const lines = plain.split('\n').filter((l) => l.trim());
       const isList = lines.length > 1 && lines.every((l) => /^\s*([-*•]|\d+[.)])\s+/.test(l));
       const html = isList
         ? `<ul>${lines.map((l) => `<li>${escapeHtml(l.replace(/^\s*([-*•]|\d+[.)])\s+/, ''))}</li>`).join('')}</ul>`
         : lines.map((l) => `<p>${escapeHtml(l)}</p>`).join('');
-      const el = textEl({ x: deck.w * 0.1, y: deck.h * 0.25, w: deck.w * 0.8, h: deck.h * 0.6, size: 20, color: guessTextColor(slide.bg), html });
-      addEl(el);
+      // A new box on the slide Claude is working on; the person's caret and selection stay where they are.
+      const i = hereIdx();
+      const d = h.get();
+      const target = d.slides[i];
+      const el = textEl({ x: d.w * 0.1, y: d.h * 0.25, w: d.w * 0.8, h: d.h * 0.6, size: 20, color: guessTextColor(target.bg), html });
+      claudeCommit({ ...d, slides: d.slides.map((x, j) => (j === i ? { ...x, els: [...x.els, el] } : x)) });
       return true;
     },
     replaceSelection(text) {
@@ -670,7 +751,9 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
         return true;
       }
       if (sel && sel.html !== undefined) {
-        updateEl(sel.id, { html: plain.split('\n').filter((l) => l.trim()).map((l) => `<p>${escapeHtml(l)}</p>`).join('') });
+        const d = h.get();
+        const html = plain.split('\n').filter((l) => l.trim()).map((l) => `<p>${escapeHtml(l)}</p>`).join('');
+        claudeCommit({ ...d, slides: d.slides.map((x, j) => (j === idx ? { ...x, els: x.els.map((e) => (e.id === sel.id ? { ...e, html } : e)) } : x)) });
         return true;
       }
       return false;
@@ -679,7 +762,10 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
       const q = quote.replace(/[“”"]/g, '').trim().toLowerCase().slice(0, 40);
       const i = h.get().slides.findIndex((s) => s.els.some((e) => e.html && htmlText(e.html).toLowerCase().includes(q)) || s.notes.toLowerCase().includes(q));
       if (i < 0) return false;
-      setIdx(i);
+      setHere(i);
+      // Shown (and glowing briefly) unless the person is busy on their own slide.
+      if (!userBusy()) setIdx(i);
+      glow({ slides: [h.get().slides[i].id], els: [] }, 2.4);
       return true;
     }
   };
@@ -783,7 +869,7 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
   const thumbScale = thumbW / deck.w;
 
   return (
-    <div className="slides-editor">
+    <div className="slides-editor" onPointerDownCapture={() => (lastUser.current = Date.now())} onKeyDownCapture={() => (lastUser.current = Date.now())}>
       <div className="toolbar">
         <B title="Undo (Ctrl+Z)" onClick={() => h.undo() && markDirty()} disabled={!h.canUndo()}>
           <Undo2 size={18} />
@@ -1010,7 +1096,7 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
           {deck.slides.map((s, i) => (
             <div
               key={s.id}
-              className={`slide-thumb ${i === idx ? 'active' : ''} ${dropAt === i ? 'drop-before' : ''} ${dropAt === i + 1 && i === deck.slides.length - 1 ? 'drop-after' : ''}`}
+              className={`slide-thumb ${i === idx ? 'active' : ''} ${flash?.slides.has(s.id) ? 'claude-glow' : ''} ${dropAt === i ? 'drop-before' : ''} ${dropAt === i + 1 && i === deck.slides.length - 1 ? 'drop-after' : ''}`}
               draggable
               onDragStart={() => (dragSlide.current = i)}
               onDragOver={(e) => {
@@ -1057,7 +1143,7 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
           <div className="slide-stage" ref={stageRef} onMouseDown={onStageDown}>
             <div className="slide-frame" style={{ width: deck.w * scale, height: deck.h * scale }}>
               <div ref={slideRef} className="slide-scaled" style={{ transform: `scale(${scale})` }}>
-                <SlideView slide={slide} w={deck.w} h={deck.h} font={deck.font} editingId={editingId} textRef={textRef} interactive />
+                <SlideView slide={slide} w={deck.w} h={deck.h} font={deck.font} editingId={editingId} textRef={textRef} interactive flashIds={flash?.els} />
                 {sel && (
                   <div className={`el-sel ${editingId === sel.id ? 'editing' : ''}`} style={{ left: sel.x, top: sel.y, width: sel.w, height: Math.max(sel.h, 1), transform: sel.rot ? `rotate(${sel.rot}deg)` : undefined, borderWidth: 1.5 / scale }}>
                     {editingId !== sel.id &&
@@ -1103,6 +1189,11 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
         <span>Click text to edit · drag to move · F5 to present</span>
       </div>
 
+      {probe && deck.slides[probe.i] && (
+        <div className="slide-probe" ref={probeRef} aria-hidden>
+          <SlideView slide={deck.slides[probe.i]} w={deck.w} h={deck.h} font={deck.font} interactive />
+        </div>
+      )}
       {presenting !== null && <Presenter deck={deck} start={presenting} onExit={(i) => (setPresenting(null), setIdx(i))} />}
     </div>
   );

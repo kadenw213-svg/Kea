@@ -7,6 +7,8 @@ import type { CommentThread, DocMeta } from './docMeta';
 import { docTools } from './aiTools';
 import { AI_AUTHOR } from './ReviewRail';
 import { annotatedText, docReviewTools, leafText } from './aiReview';
+import { asClaude, claudeAnchor, setClaudeAnchor, showRange } from './claudeEditsExt';
+import type { AssistantTool } from '../../store';
 
 const norm = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -47,10 +49,33 @@ export function findQuote(editor: Editor, quote: string): { from: number; to: nu
   return null;
 }
 
+/**
+ * Claude's tools run as Claude's edits (claudeEdits.ts): the person's cursor, selection, scroll and focus stay put. An
+ * async tool's later part (after it loads a picture) wraps itself again when it settles.
+ */
+export function inBackground(get: () => Editor | null, tools: AssistantTool[]): AssistantTool[] {
+  return tools.map((t) => ({ ...t, run: (input: any) => asClaude(get(), () => t.run(input)) }));
+}
+
+/** Claude's "here": where the person was when they asked (mapped through every edit since), else their selection now. */
+function hereOf(ed: Editor): { from: number; to: number } {
+  const a = claudeAnchor(ed);
+  const size = ed.state.doc.content.size;
+  if (a && a.from <= size && a.to <= size) return a;
+  const { from, to } = ed.state.selection;
+  return { from, to };
+}
+
 export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThread) => void, meta?: { get(): DocMeta; set(m: DocMeta): void }): AiHooks {
   return {
     noun: 'document',
-    tools: [...docTools(get, meta), ...docReviewTools(get, meta)],
+    tools: inBackground(get, [...docTools(get, meta, hereOf), ...docReviewTools(get, meta)]),
+    beginRun() {
+      setClaudeAnchor(get(), true);
+    },
+    endRun() {
+      setClaudeAnchor(get(), false);
+    },
     insertLabel: 'Insert below',
     beginStep() {
       // Edits made moments apart would otherwise merge into one Ctrl+Z step.
@@ -70,24 +95,25 @@ export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThre
     replaceSelection(text) {
       const ed = get();
       if (!ed) return false;
-      const { from, to } = ed.state.selection;
+      // The passage the person had selected when they asked, wherever it has moved to since.
+      const { from, to } = hereOf(ed);
       if (from === to) return false;
-      if (!text.includes('\n')) return ed.chain().focus().insertContentAt({ from, to }, text).run();
-      return ed.chain().focus().insertContentAt({ from, to }, markdownToHtml(text)).run();
+      return asClaude(ed, () => ed.chain().insertContentAt({ from, to }, text.includes('\n') ? markdownToHtml(text) : text).run());
     },
     insertText(md) {
       const ed = get();
       if (!ed) return false;
-      const $to = ed.state.selection.$to;
+      const $to = ed.state.doc.resolve(hereOf(ed).to);
       const pos = $to.depth >= 1 ? $to.after(1) : ed.state.doc.content.size;
-      return ed.chain().focus().insertContentAt(pos, markdownToHtml(md)).run();
+      return asClaude(ed, () => ed.chain().insertContentAt(pos, markdownToHtml(md)).run());
     },
     reveal(quote) {
       const ed = get();
       if (!ed) return false;
       const r = findQuote(ed, quote);
       if (!r) return false;
-      ed.chain().focus().setTextSelection(r).scrollIntoView().run();
+      // A brief highlight; the cursor and focus stay with the person.
+      showRange(ed, r);
       return true;
     },
     ...(addThread
@@ -129,7 +155,7 @@ export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThre
       // If the rewrite ends with punctuation that already follows the match, replace that too.
       const last = replacement.trim().slice(-1);
       if (/[.!?;:,]/.test(last) && ed.state.doc.textBetween(r.to, Math.min(r.to + 1, ed.state.doc.content.size)) === last) r.to += 1;
-      return ed.chain().focus().insertContentAt(r, replacement.trim()).run();
+      return asClaude(ed, () => ed.chain().insertContentAt(r, replacement.trim()).run());
     }
   };
 }

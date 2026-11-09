@@ -123,6 +123,7 @@ import { HIGHLIGHT_SWATCHES } from '../../lib/highlightInk';
 import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
 import { docAiHooks } from './aiHooks';
+import { ClaudeEdits } from './claudeEditsExt';
 import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
 import { HandInButton } from '../../components/scholar/HandIn';
@@ -309,7 +310,8 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
       Deletion,
       Review,
       Grammar,
-      MathNode
+      MathNode,
+      ClaudeEdits
     ],
     content: initialHtml,
     autofocus: initialHtml ? false : 'start',
