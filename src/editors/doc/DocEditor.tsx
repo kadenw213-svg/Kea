@@ -123,6 +123,8 @@ import { HIGHLIGHT_SWATCHES } from '../../lib/highlightInk';
 import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
 import { docAiHooks } from './aiHooks';
+import { AssignmentBar, AssignmentMenuItem } from '../../components/assistant/AssignmentBar';
+import { namedAfterAssignment } from '../../lib/assignmentLink';
 import { ClaudeEdits } from './claudeEditsExt';
 import { ToolbarFit } from '../../components/ToolbarFit';
 import { LookupButton } from '../../components/lookup/LookupButton';
@@ -463,7 +465,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
   };
   const loss = useOfficeLossGuard(tab);
   const save = (saveAs: boolean) =>
-    loss.save(saveAs, (as, opts) => saveTabFile(tab.id, formats(), as, { suggestedName: !tab.path ? firstLine() : undefined, ...opts }));
+    loss.save(saveAs, (as, opts) => saveTabFile(tab.id, formats(), as, { suggestedName: !tab.path ? (namedAfterAssignment(tab.id) ? useTabs.getState().tabs.find((t) => t.id === tab.id)?.name : firstLine()) : undefined, ...opts }));
 
   const exportPdf = () =>
     exportFile(`${baseName(tab.name)}.pdf`, {
@@ -665,6 +667,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     <div className={`doc-editor ${focusMode ? 'focus-mode' : ''}`}>
       <Toolbar
         editor={editor}
+        tabId={tab.id}
         handIn={tab.path ? <HandInButton path={tab.path} dirty={tab.dirty} /> : null}
         zoom={zoom}
         setZoom={setZoom}
@@ -698,6 +701,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
           toast('Focus mode. Press Esc to exit.');
         }}
       />
+      <AssignmentBar tabId={tab.id} active={active} />
       {mathEdit && (
         <MathDialog
           initial={mathEdit.latex}
@@ -867,6 +871,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
 // ---------- Toolbar ----------
 function Toolbar(p: {
   editor: Editor;
+  tabId: string;
   /** Hand in to a class (shown only in School mode with an open assignment folder). */
   handIn: React.ReactNode;
   zoom: number;
@@ -1226,6 +1231,7 @@ function Toolbar(p: {
             <button className="menu-item" onClick={() => (p.onPrint(), close())}>
               <Printer size={16} /> Print… <span className="kbd">Ctrl+P</span>
             </button>
+            <AssignmentMenuItem tabId={p.tabId} close={close} />
             <div className="menu-sep" />
             <button className="menu-item" onClick={() => (p.onPageSetup(), close())}>
               <FileCog size={16} /> Page setup

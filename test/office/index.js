@@ -7,3 +7,4 @@ import('./highlightInk.test.mjs');
 import('./claudeEdits.test.mjs');
 import('./slideTrack.test.mjs');
 import('./assignmentName.test.mjs');
+import('./gradeEstimate.test.mjs');

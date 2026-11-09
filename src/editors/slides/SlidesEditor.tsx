@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { Presenter } from './Presenter';
 import type { Tab } from '../../store';
-import { editorRegistry, setDirty, toast } from '../../store';
+import { editorRegistry, setDirty, toast, useTabs } from '../../store';
 import { Deck, El, Slide, Transition, THEMES, Theme, layoutSlide, newDeck, cloneSlide, textEl } from './model';
 import { SlideView, SLIDE_CSS } from './SlideView';
 import { readPptx } from './pptxImport';
@@ -62,6 +62,8 @@ import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
 import { slidesDesignTools } from './ai';
+import { AssignmentBar, AssignmentMenuItem } from '../../components/assistant/AssignmentBar';
+import { namedAfterAssignment } from '../../lib/assignmentLink';
 import { indexOfView, touchesElement, changedParts } from './slideTrack';
 import { setting } from '../../lib/settings';
 
@@ -530,7 +532,7 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
     if (editingId) finishEditing();
     return loss.save(saveAs, (as, opts) =>
       saveTabFile(tab.id, [{ name: 'PowerPoint presentation', ext: 'pptx', build: () => writePptx(h.get()) }], as || (!!tab.path && extOf(tab.path) !== 'pptx'), {
-        suggestedName: !tab.path ? firstTitle() : undefined,
+        suggestedName: !tab.path ? (namedAfterAssignment(tab.id) ? useTabs.getState().tabs.find((t) => t.id === tab.id)?.name : firstTitle()) : undefined,
         ...opts
       })
     );
@@ -1085,12 +1087,14 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
               <button className="menu-item" onClick={() => (print(), close())}>
                 <Printer size={16} /> Print… <span className="kbd">Ctrl+P</span>
               </button>
+              <AssignmentMenuItem tabId={tab.id} close={close} />
             </>
           )}
         </MenuButton>
         </div>
       </div>
 
+      <AssignmentBar tabId={tab.id} active={active} />
       <div className="slides-body">
         <div className="slide-list" onDragLeave={(e) => e.currentTarget === e.target && setDropAt(null)}>
           {deck.slides.map((s, i) => (

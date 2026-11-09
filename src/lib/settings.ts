@@ -839,7 +839,40 @@ export const SECTIONS: Section[] = [
       { key: 'assistant.web', label: 'Let Claude search the web (to find and check sources)', type: 'toggle', default: true, help: 'On your Claude plan, Claude can look things up and open web pages, for example to verify a source before citing it. Searches count toward your plan’s usage.' },
       { key: 'assistant.showThinking', label: 'Show Claude’s reasoning (folded)', type: 'toggle', default: false, advanced: true },
       { key: 'assistant.showSteps', label: 'List every step Claude takes', type: 'toggle', default: false, advanced: true, help: 'Off: the steps fold into one line you can open. On: each step is listed as it happens.' },
-      { key: 'assistant.showUsage', label: 'Show tokens used under the conversation', type: 'toggle', default: true, advanced: true }
+      { key: 'assistant.showUsage', label: 'Show tokens used under the conversation', type: 'toggle', default: true, advanced: true },
+      { key: 'assistant.assignmentBar', group: 'Assignments', label: 'Show the assignment bar in documents and presentations', type: 'toggle', default: true, help: 'Only on a file linked to an assignment: what it’s for, an estimated grade, and Check against rubric. Link a file from its menu or the Claude tab.' },
+      { key: 'assistant.gradeEstimate', label: 'Show an estimated grade', type: 'toggle', default: true, when: (v) => v['assistant.assignmentBar'] !== false, help: 'Claude compares the rubric with your file when you press Refresh, on your own Claude. It’s a draft estimate, not a grade.' },
+      { key: 'assistant.gradeAutoFirst', label: 'Estimate once when the bar first appears', type: 'toggle', default: false, advanced: true, when: (v) => v['assistant.assignmentBar'] !== false && v['assistant.gradeEstimate'] !== false, help: 'Off: only when you press Refresh.' },
+      { key: 'assistant.gradeFromInstructions', label: 'Without a rubric, offer a rough estimate from the instructions', type: 'toggle', default: true, advanced: true, when: (v) => v['assistant.assignmentBar'] !== false && v['assistant.gradeEstimate'] !== false },
+      {
+        key: 'assistant.gradeModel',
+        label: 'Model for grade estimates',
+        type: 'select',
+        default: '',
+        advanced: true,
+        when: (v) => v['assistant.assignmentBar'] !== false && v['assistant.gradeEstimate'] !== false,
+        options: [
+          { value: '', label: 'The same as above' },
+          { value: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
+          { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
+          { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (quickest)' },
+          { value: 'claude-fable-5-1', label: 'Claude Fable 5.1' }
+        ]
+      },
+      {
+        key: 'assistant.gradeEffort',
+        label: 'How hard Claude thinks about grade estimates',
+        type: 'select',
+        default: 'low',
+        advanced: true,
+        when: (v) => v['assistant.assignmentBar'] !== false && v['assistant.gradeEstimate'] !== false,
+        options: [
+          { value: 'low', label: 'Low (quickest)' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'high', label: 'High (most careful)' }
+        ]
+      },
+      { key: 'assistant.nameFromAssignment', label: 'Name a new, empty file after the assignment it’s for', type: 'toggle', default: true, help: 'Only an untitled document or presentation with nothing in it yet. Files with a name or content keep theirs, and an existing file is never overwritten.' },
     ]
   },
   {
