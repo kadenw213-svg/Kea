@@ -10,7 +10,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import net from 'node:net';
 import { createRequire } from 'node:module';
+import { legacyOffline } from './legacyAccount.mjs';
 
 const require = createRequire(import.meta.url);
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'kea-passwordless-'));
@@ -89,8 +91,11 @@ const fresh = () => {
 };
 const signInPaths = () => calls.filter((c) => c.path.startsWith('/v1/auth/')).map((c) => c.path);
 
-test('the first Google sign-in for an email asks for the terms, then the same sign-in makes the account', async () => {
+test('the first Google sign-in for an email asks for the terms, then the same sign-in makes the account; this computer’s things stay', async () => {
   fresh();
+  // A brand-new computer, used without an account: its things are there before the account is.
+  fs.writeFileSync(path.join(userData, 'before-account.txt'), 'kept');
+  assert.equal(A.local().state, 'none');
   A.setIdTokens(async () => idToken('new@x.org'));
   await assert.rejects(A.oauthSignIn({ provider: 'google' }), (e) => e.status === 404 && e.data?.needsAccount === true && e.data.email === 'new@x.org');
   assert.deepEqual(A.local().pending, { email: 'new@x.org', name: 'From Google', provider: 'google' }, 'the page can show the terms step');
@@ -105,34 +110,73 @@ test('the first Google sign-in for an email asks for the terms, then the same si
   assert.equal(emailOf(sent.body.idToken), 'new@x.org');
   assert.equal(sent.body.idToken, calls.find((c) => c.path === '/v1/auth/google').body.idToken, 'the same ID token, sent again with the terms');
   assert.equal(A.local().pending, null);
+  assert.equal(s.account.linked, true);
+  assert.equal(hub.current().hub.id, 'k-1', 'the account kept here is the new online one');
+  assert.equal(fs.readFileSync(path.join(userData, 'before-account.txt'), 'utf8'), 'kept', 'everything already here stays');
   assert.ok(!signInPaths().includes('/v1/auth/login') && !signInPaths().includes('/v1/auth/register'), 'no password routes');
   // Nothing waiting: continuing says so.
   await assert.rejects(A.continueSignIn({ termsVersion: 3, termsSections: ['a'], age13: true }), (e) => e.data?.expired === true);
 });
 
-test('an offline account with the same email links on its first online sign-in; nothing here is lost', async () => {
+test('an email-only account from an older Kea stays signed in, and links on the same email; nothing here is lost', async () => {
   fresh();
-  const off = A.openOffline({ email: 'ola@x.org', name: 'Ola' });
+  const id = legacyOffline(userData, 'ola@x.org', { name: 'Ola' });
   fs.writeFileSync(path.join(userData, 'ola.txt'), 'kept');
+  assert.equal(A.local().state, 'offline', 'still signed in');
+  assert.equal((await A.status()).state, 'offline');
   A.setIdTokens(async () => idToken('ola@x.org'));
   await assert.rejects(A.link({ provider: 'google' }), (e) => e.data?.needsAccount === true);
   const s = await A.continueSignIn({ termsVersion: 3, termsSections: ['a'], age13: true });
   assert.equal(s.state, 'online');
-  assert.equal(s.account.id, off.account.id, 'the same account here, now linked');
+  assert.equal(s.account.id, id, 'the same account here, now linked');
   assert.equal(s.account.linked, true);
   assert.equal(fs.readFileSync(path.join(userData, 'ola.txt'), 'utf8'), 'kept');
 });
 
-test('a different verified email never links: nothing is sent and the offline account stays as it was', async () => {
+test('a different verified email never links: nothing is sent and the older account stays as it was', async () => {
   fresh();
-  const off = A.openOffline({ email: 'ola@x.org' });
+  const id = legacyOffline(userData, 'ola@x.org');
   A.setIdTokens(async () => idToken('someone@else.org'));
   await assert.rejects(A.link({ provider: 'google' }), (e) => e.status === 409 && e.data?.mismatch === true && e.data.reason === 'differentEmail');
   assert.deepEqual(signInPaths(), [], 'the sign-in never went to the server');
   const s = A.local();
   assert.equal(s.state, 'offline');
-  assert.equal(s.account.id, off.account.id);
+  assert.equal(s.account.id, id);
+  assert.equal(s.account.linked, false);
   assert.equal(s.pending, null);
+});
+
+test('signed in with Google, the server goes away: Kea stays signed in; only what needs it waits', async () => {
+  fresh();
+  accounts.set('stay@x.org', { id: 'k-stay', email: 'stay@x.org', name: 'Stay', ev: true });
+  A.setIdTokens(async () => idToken('stay@x.org'));
+  const on = await A.oauthSignIn({ provider: 'google' });
+  assert.equal(on.state, 'online');
+  const url = settings.get('hub.url');
+  const dead = await new Promise((r) => {
+    const s = net.createServer().listen(0, '127.0.0.1', () => {
+      const p = s.address().port;
+      s.close(() => r(p));
+    });
+  });
+  settings.set({ 'hub.url': `http://127.0.0.1:${dead}` });
+  try {
+    // Kea restarts with the server down.
+    A.reset();
+    let s = A.local();
+    assert.equal(s.state, 'online');
+    assert.equal(s.account.id, on.account.id);
+    s = await A.status();
+    assert.equal(s.state, 'online', 'still signed in');
+    assert.equal(s.signedIn, true);
+    assert.equal(s.reachable, false);
+    assert.equal(s.account.email, 'stay@x.org');
+    await assert.rejects(hub.req('GET', '/v1/me'), (e) => e.status === 0 && /Can’t reach the Kea account server/.test(e.message));
+    assert.equal(A.local().state, 'online', 'a failed request signs nobody out');
+  } finally {
+    settings.set({ 'hub.url': url });
+  }
+  assert.equal((await A.status()).state, 'online');
 });
 
 test('an account moved from the old Hub (a password, email not verified yet) signs in with Google on the same email', async () => {
@@ -144,9 +188,9 @@ test('an account moved from the old Hub (a password, email not verified yet) sig
   assert.equal(s.me.account.id, 'k-moved', 'the existing account, not a new one');
   assert.equal(s.me.account.emailVerified, true, 'the sign-in verified its email');
   assert.equal(hub.current().hub.id, 'k-moved');
-  // Signed out, then the same email offline: this computer's things for it open again.
+  // Signed out, then opened again here: this computer's things for it are there.
   A.logout();
-  const again = A.openOffline({ email: 'moved@x.org' });
+  const again = A.openHere({ email: 'moved@x.org' });
   assert.equal(again.state, 'linked');
   assert.equal(again.account.id, s.account.id);
 });
@@ -178,8 +222,7 @@ test('signing out other devices sends a fresh Google sign-in, never a password',
 
 test('an older Kea account server that still wants a password is never sent one', async () => {
   fresh();
-  A.openOffline({ email: 'ola@x.org' });
-  for (const k of ['login', 'create']) assert.equal(A[k], undefined, `no ${k} with a password`);
+  for (const k of ['login', 'create', 'openOffline']) assert.equal(A[k], undefined, `no ${k}`);
   const src = fs.readFileSync(require.resolve('../../electron/hub.cjs'), 'utf8');
   assert.ok(!/\/v1\/auth\/login|\/v1\/auth\/register|\/v1\/me\/password|totp\/setup/.test(src), 'no password or two-step routes in Kea');
 });

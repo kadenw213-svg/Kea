@@ -73,7 +73,7 @@ function register() {
   handleApp(ipcMain, 'account:get', () => get());
   handleApp(ipcMain, 'account:avatar', async (e, clear) => {
     const w = who();
-    if (!w?.id) throw new Error('Sign in to your Kea account first.');
+    if (!w?.id) throw new Error('Sign in with Google to use this.');
     const { a, mine } = local(w);
     const dir = app.getPath('userData');
     const drop = () => mine && a.avatar && fs.rmSync(path.join(dir, a.avatar), { force: true });

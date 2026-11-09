@@ -1,17 +1,25 @@
 // The account in the title bar, in every mode: your picture, and a menu with who's signed in, the account page,
-// notifications, checking for updates and signing out.
-import { Bell, LogOut, RefreshCw, UserCircle } from 'lucide-react';
+// notifications, checking for updates and signing out. With no account yet, a quiet "Sign in with Google" instead.
+import { Bell, LogIn, LogOut, RefreshCw, UserCircle } from 'lucide-react';
 import { installNow, openUpdates, useUpdates } from '../Updates';
 import { MenuButton } from '../Popover';
 import { Avatar, VerifiedBadge, useAccount } from '../scholar/Account';
 import { signOutAsked } from '../scholar/HubAccount';
-import { openAccount, useHubNotifications, useHubStatus } from './hubStore';
+import { SIGN_IN_WAITS, openAccount, signInWaits, signInWithGoogle, useHubNotifications, useHubStatus } from './hubStore';
 
 export function AccountButton() {
   const status = useHubStatus();
   const [account] = useAccount();
   const notes = useHubNotifications();
   const update = useUpdates((s) => s.state.status);
+  if (status && status.state === 'none') {
+    const waits = signInWaits(status);
+    return (
+      <button className={`btn sm acct-tb-signin ${waits ? 'waits' : ''}`} title={waits ? `${SIGN_IN_WAITS} Kea tries again by itself.` : 'Sign in with Google to use Kea cloud, classes and organizations. Everything on this computer works without it.'} onClick={() => signInWithGoogle()}>
+        <LogIn size={14} /> Sign in with Google
+      </button>
+    );
+  }
   if (!status?.account || !account) return null;
   const unread = notes?.unread ?? status.me?.notifications?.unread ?? 0;
   return (
@@ -32,7 +40,7 @@ export function AccountButton() {
               {account.name || account.email} <VerifiedBadge account={account} size={13} />
             </span>
             <span className="muted">{account.email}</span>
-            {status.state === 'online' ? !account.verified && <span className="acct-tb-warn">Email not verified</span> : <span className="muted">{status.state === 'offline' ? 'On this computer only' : 'Not online right now'}</span>}
+            {status.state === 'online' ? !account.verified && <span className="acct-tb-warn">Email not verified</span> : <span className="muted">{status.state === 'offline' ? 'On this computer only' : 'Not signed in online right now'}</span>}
           </div>
           <button className="menu-item" onClick={() => (close(), openAccount())}>
             <UserCircle size={16} /> Your account

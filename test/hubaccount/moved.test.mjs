@@ -90,8 +90,7 @@ const fresh = () => {
 /** Ana's account on this computer, signed in online on the old Hub. */
 async function anaOnline(old) {
   process.env.KEA_HUB_URL = old.url;
-  A.openOffline({ email: 'ana@x.org', name: 'Ana' });
-  const s = await A.link({ provider: 'google' });
+  const s = await A.oauthSignIn({ provider: 'google' });
   assert.equal(s.state, 'online');
   return s;
 }
@@ -120,11 +119,11 @@ test('moved, with the same signing key: Kea switches, the online sign-in ends, t
   // The notice is shown once.
   assert.equal(A.movedSeen().moved.seen, true);
   assert.equal(A.local().moved.seen, true);
-  // Signed out with no connection: the same email opens the account here again.
+  // Signed out with no connection: the account here opens again.
   A.logout();
   process.env.KEA_HUB_URL = 'http://127.0.0.1:9';
   settings.set({ 'hub.url': 'http://127.0.0.1:9' });
-  assert.equal(A.openOffline({ email: 'ana@x.org' }).state, 'linked');
+  assert.equal(A.openHere({ email: 'ana@x.org' }).state, 'linked');
   // Signing in once on the new server.
   settings.set({ 'hub.url': keac.url });
   s = await A.link({ provider: 'google' });

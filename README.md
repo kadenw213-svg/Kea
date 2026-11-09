@@ -53,9 +53,10 @@ than overwritten.
 ## Accounts and sync
 
 A free Kea account keeps everything together: one calendar and one class list, whichever of Personal, School and
-Work you turn on. You sign in with **Continue with Google** or **Continue with Microsoft**; there's no Kea password.
-With no connection, just your email opens Kea on that device at once, and continuing with Google or Microsoft on the
-same email later links it without losing anything.
+Work you turn on. You sign in with **Sign in with Google** (or Microsoft); there's no Kea password. The first sign-in
+makes your account, so it needs Kea to reach the Kea account server. Until then Kea works without an account:
+classes with your own Claude, documents, PDFs and everything else on the device. When you sign in, everything already
+there stays. Once signed in, you stay signed in on that device, offline too, until you sign out.
 
 You choose one place for your things to sync: Kea cloud (the default), Google Drive, OneDrive, Dropbox, any synced
 folder, or your organization's server. Organizations run on servers made with [KeaS](https://github.com/kadenw213-svg/KeaS),

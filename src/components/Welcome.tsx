@@ -49,7 +49,7 @@ export function Welcome() {
         <ModeChoices value={picked} onChange={setPicked} />
         <div className="welcome-sync">
           <h2>Where your things sync</h2>
-          <p className="welcome-sub">Your classes, Kea cloud documents and your phone’s files go here. Kea cloud needs your Kea account online; you can change this any time.</p>
+          <p className="welcome-sub">Your classes, Kea cloud documents and your phone’s files go here. Kea cloud needs a Kea account; you can change this any time.</p>
           <SyncPicker compact />
         </div>
         <button className="btn primary welcome-go" disabled={busy} onClick={start}>

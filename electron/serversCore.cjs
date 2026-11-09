@@ -155,7 +155,7 @@ function createServers({ file, secretsFile, seal = (s) => Buffer.from(s), unseal
   const skey = (acct, id) => `${acct}|${id}`;
   const me = () => {
     const k = account.key();
-    if (!k) throw new ServerError('Sign in to your Kea account first.', 401, { needsAccount: true });
+    if (!k) throw new ServerError('Sign in with Google to use this.', 401, { needsAccount: true });
     return k;
   };
   const mine = () => {

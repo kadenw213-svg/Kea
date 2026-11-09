@@ -335,7 +335,7 @@ export function createOrgClient({ native, account, store, now = () => Date.now()
     if (!account.online()) {
       // (Signed in on this phone only: the pass kept keeps working until it ends.)
       if (have) return;
-      throw new OrgError('Sign in to your Kea account online to connect to this organization.', 401, { needsOnline: true });
+      throw new OrgError('Sign in with Google to connect to this organization.', 401, { needsOnline: true });
     }
     let r;
     try {
@@ -343,7 +343,7 @@ export function createOrgClient({ native, account, store, now = () => Date.now()
     } catch {
       // The account server is down or the phone is offline: keep going on the pass kept (protocol 2.7).
       if (have) return;
-      throw new OrgError('Can’t reach your Kea account online right now, so Kea can’t connect to this organization yet. It tries again by itself.', 0, { unreachable: true, account: true });
+      throw new OrgError('Can’t reach the Kea account server right now, so Kea can’t connect to this organization yet. It tries again by itself.', 0, { unreachable: true, account: true });
     }
     if (r.status >= 200 && r.status < 300) return;
     if (r.status === 404 || r.status === 405) throw new OrgError('Your Kea account server can’t sign you in to other servers yet. It needs an update.', 501, { noPasses: true });
@@ -416,13 +416,13 @@ export function createOrgClient({ native, account, store, now = () => Date.now()
     const { url, code } = parseJoin(input);
     const acct = me();
     if (!url) {
-      if (!account.online()) throw new OrgError('Sign in to your Kea account online to join with a code.', 401, { needsOnline: true });
+      if (!account.online()) throw new OrgError('Sign in with Google to join with a code.', 401, { needsOnline: true });
       if (!(await account.hosted().catch(() => false))) throw new OrgError('That code doesn’t say which server it’s for. Use the join link, or enter the server’s address under Advanced.', 400, { needsServer: true });
       const r = await account.req('POST', '/v1/orgs/join', { code });
       return { ...r, server: null };
     }
     const known = (await servers()).find((s) => s.url === url) ?? null;
-    if (!known && !account.online()) throw new OrgError('Sign in to your Kea account online to join an organization.', 401, { needsOnline: true });
+    if (!known && !account.online()) throw new OrgError('Sign in with Google to join an organization.', 401, { needsOnline: true });
     const id = await identity(url, known?.serverId ?? null);
     if (!known) await native.orgAdd({ account: acct, url, serverId: id.serverId, name: id.name });
     else if (known.signedOut) await native.orgUpdate({ account: acct, serverId: known.serverId, signedOut: false, message: null });

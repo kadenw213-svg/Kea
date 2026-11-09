@@ -1,9 +1,9 @@
-// Offline-first Kea accounts (electron/accountCore.cjs, electron/hub.cjs), with no passwords: on this computer an
-// account is just its email (typing it opens that account's things here at once, made the first time, no connection
-// needed); online, a Kea account signs in with Google or Microsoft; after an online sign-in Kea stays signed in here;
-// the start screen decides from this computer alone; every request to the server has a time limit and "can't reach
-// it" is a normal answer; a Google or Microsoft sign-in links only the same email, and linking never deletes anything
-// here. The real-Hub parts use KeaS/hub next to this repo (or KEAS_DIR).
+// Kea accounts on this computer (electron/accountCore.cjs, electron/hub.cjs), with no passwords: an account is made
+// only by a Google or Microsoft sign-in, which waits for the Kea account server; with no account (and the server
+// down) Kea opens at once and nothing tries to make one; after a sign-in Kea stays signed in here, offline too;
+// email-only accounts left by Kea 0.82 and older stay signed in and link only on the same email; every request to the
+// server has a time limit and "can't reach it" is a normal answer; linking never deletes anything here. The real-Hub
+// parts use KeaS/hub next to this repo (or KEAS_DIR).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -15,6 +15,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { registerAndSignIn } from '../hubRegister.mjs';
+import { legacyOffline } from './legacyAccount.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -26,44 +27,47 @@ const dirs = [];
 const scratch = (n) => (dirs.push(tmp(n)), dirs[dirs.length - 1]);
 
 // ---------- Accounts on this computer ----------
-test('using Kea offline with just an email: made at once and signed in; no password anywhere', () => {
+test('nothing on this computer makes an account: reopen opens only one already here; an unknown email is refused, nothing written', () => {
   const d = scratch('store');
   const S = core.createStore(d);
   assert.equal(S.active(), null);
-  const r = S.open({ email: ' Ana@X.org ', name: 'Ana' });
-  assert.equal(r.created, true);
-  assert.equal(r.account.email, 'ana@x.org');
-  assert.equal(r.account.name, 'Ana');
-  assert.equal(r.account.hub, null);
-  assert.equal(S.active().id, r.account.id);
+  assert.equal(S.open, undefined, 'no way to make an account with just an email');
+  assert.throws(() => S.reopen({ email: 'ana@x.org' }), (e) => e.noAccount === true && /Sign in with Google/.test(e.message));
+  assert.throws(() => S.reopen({ email: 'not-an-email' }), (e) => e.field === 'email');
+  assert.equal(fs.existsSync(path.join(d, core.FILE)), false, 'nothing was written');
+  assert.deepEqual(S.list(), []);
+  // Only a Google or Microsoft sign-in keeps an account here.
+  const a = S.attachOnline({ email: ' Ana@X.org ', name: 'Ana', hubId: 'h1', url: 'http://hub', provider: 'google' });
+  assert.equal(a.email, 'ana@x.org');
+  assert.deepEqual(a.hub, { id: 'h1', url: 'http://hub', provider: 'google' });
   const raw = JSON.parse(fs.readFileSync(path.join(d, core.FILE), 'utf8'));
   assert.equal(raw.v, 2);
-  assert.deepEqual(Object.keys(raw.accounts[r.account.id]).sort(), ['createdAt', 'email', 'hub', 'id', 'lastSignIn', 'name']);
-  // The name is optional; a bad email is said plainly.
-  assert.equal(S.open({ email: 'ben@x.org' }).account.name, '');
-  assert.throws(() => S.open({ email: 'not-an-email' }), /email/);
+  assert.deepEqual(Object.keys(raw.accounts[a.id]).sort(), ['createdAt', 'email', 'hub', 'id', 'lastSignIn', 'name']);
   assert.equal(core.makeVerifier, undefined, 'no password verifier any more');
   assert.equal(core.passwordProblem, undefined);
+  assert.equal(core.gateOpen, undefined, 'no start screen in front of Kea');
 });
 
-test('signing out and back in with the same email reopens that account here; one at a time, the others kept', () => {
-  const S = core.createStore(scratch('signin'));
-  const ana = S.open({ email: 'ana@x.org', name: 'Ana' }).account;
+test('an email-only account from an older Kea stays signed in; signed out, it opens again here; the others kept', () => {
+  const d = scratch('signin');
+  const anaId = legacyOffline(d, 'ana@x.org', { name: 'Ana' });
+  const S = core.createStore(d);
+  assert.equal(S.active().id, anaId, 'still signed in, as the older Kea left it');
+  assert.equal(S.active().hub, null);
   S.signOut();
   assert.equal(S.active(), null);
   assert.equal(S.list().length, 1, 'signing out keeps the account here');
-  const again = S.open({ email: 'ANA@x.org' });
-  assert.equal(again.created, false);
-  assert.equal(again.account.id, ana.id, 'the same account, with what it has here');
-  assert.equal(again.account.name, 'Ana');
-  const ben = S.open({ email: 'ben@x.org' }).account;
+  const again = S.reopen({ email: 'ANA@x.org' });
+  assert.equal(again.id, anaId, 'the same account, with what it has here');
+  assert.equal(again.name, 'Ana');
+  const ben = S.attachOnline({ email: 'ben@x.org', hubId: 'h2', url: 'http://hub' });
   assert.equal(S.active().id, ben.id, 'the new one is the one signed in');
   assert.deepEqual(S.list().map((x) => x.email).sort(), ['ana@x.org', 'ben@x.org']);
   // A linked account opens the same way (Kea stays signed in here without a password).
   S.attachOnline({ email: 'ana@x.org', hubId: 'h1', url: 'http://hub', provider: 'google' });
   S.signOut();
-  const linked = S.open({ email: 'ana@x.org' }).account;
-  assert.equal(linked.id, ana.id);
+  const linked = S.reopen({ email: 'ana@x.org' });
+  assert.equal(linked.id, anaId);
   assert.deepEqual(linked.hub, { id: 'h1', url: 'http://hub', provider: 'google' });
 });
 
@@ -89,12 +93,14 @@ test('an older file (scrypt verifiers): its accounts and emails stay, the verifi
   assert.deepEqual(S.get('loc_b').hub, { id: 'h-b', url: 'http://hub', provider: 'google' });
   // Its email opens it again, with its id (so everything kept for it here is its own).
   S.signOut();
-  assert.equal(S.open({ email: 'ana@x.org' }).account.id, 'loc_a');
+  assert.equal(S.reopen({ email: 'ana@x.org' }).id, 'loc_a');
 });
 
 test('after an online sign-in the account here is linked and kept; nothing else about it changes', () => {
-  const S = core.createStore(scratch('online'));
-  const off = S.open({ email: 'ana@x.org', name: 'Ana' }).account;
+  const d = scratch('online');
+  legacyOffline(d, 'ana@x.org', { name: 'Ana' });
+  const S = core.createStore(d);
+  const off = S.active();
   const linked = S.attachOnline({ email: 'ana@x.org', name: 'Ana Online', hubId: 'h1', url: 'http://hub', provider: 'google' });
   assert.equal(linked.id, off.id, 'the same account, now linked');
   assert.equal(linked.name, 'Ana', 'nothing else about it changes');
@@ -121,16 +127,14 @@ test('linking: the same email links, a different one never does', () => {
   assert.equal(core.idTokenEmail('garbage').email, '');
 });
 
-// ---------- The start screen ----------
-test('the start screen decides from this computer alone', () => {
+// ---------- The account state ----------
+test('the account state comes from this computer alone', () => {
   const S = (active, hasToken) => core.accountState({ active, hasToken });
   assert.equal(S(null, false), 'none');
   assert.equal(S({ hub: null }, false), 'offline');
   assert.equal(S({ hub: { id: 'h1' } }, false), 'linked');
   assert.equal(S({ hub: { id: 'h1' } }, true), 'online');
   assert.equal(S(null, true), 'online', 'a sign-in from before accounts were kept here');
-  assert.equal(core.gateOpen('none'), true);
-  for (const s of ['offline', 'linked', 'online']) assert.equal(core.gateOpen(s), false, s);
 });
 
 // ---------- Google and Microsoft sign-in addresses ----------
@@ -210,46 +214,79 @@ const wipe = () => {
   A.reset();
 };
 
-test('offline: just an email, sign out, the same email again, start Kea again: never waiting on the network', async () => {
+test('a brand-new computer with the server down: Kea opens with no account at once, and nothing tries to make one', async () => {
   wipe();
   setHub(`http://127.0.0.1:${deadPort}`);
   A.setLimits({ req: 1500, status: 800 });
-  // The start screen's first answer is from this computer alone.
+  let browser = 0;
+  A.setIdTokens(async () => (browser++, 'x.e30.y'));
+  // The first answer is from this computer alone: no account, and nothing in front of Kea.
   let t0 = Date.now();
   let s = A.local();
   assert.ok(Date.now() - t0 < 100);
   assert.equal(s.state, 'none');
+  assert.equal(s.account, null);
   assert.equal(s.reachable, false);
   assert.equal(s.checked, false);
-  s = A.openOffline({ email: 'ana@x.org', name: 'Ana' });
-  assert.equal(s.created, true);
-  assert.equal(s.state, 'offline');
-  assert.equal(s.account.email, 'ana@x.org');
-  assert.equal(s.signedIn, false);
-  const id = s.account.id;
-  fs.writeFileSync(path.join(userData, 'ana-notes.txt'), 'kept');
-  // The server can't be reached: a normal answer, quickly.
+  // The server can't be reached: a normal answer, quickly, and still no account.
   t0 = Date.now();
   s = await A.status();
   assert.ok(Date.now() - t0 < 1500);
-  assert.equal(s.state, 'offline');
+  assert.equal(s.state, 'none');
   assert.equal(s.reachable, false);
   assert.equal(s.checked, true);
+  // Sign in with Google waits for the server: no browser opens, nothing is made.
+  await assert.rejects(A.oauthSignIn({ provider: 'google' }), (e) => e.status === 0 && e.data?.unreachable === true && /Sign-in is available once Kea can reach the Kea account server/.test(e.message));
+  assert.equal(browser, 0, 'no Google sign-in was started');
+  // There is no way to make one with just an email any more; opening one by email only finds one already here.
+  assert.equal(A.openOffline, undefined);
+  assert.throws(() => A.openHere({ email: 'ana@x.org' }), (e) => e.status === 404 && e.data?.noAccount === true);
+  assert.equal(fs.existsSync(path.join(userData, core.FILE)), false, 'no account file was written');
+  assert.equal(fs.existsSync(tokenFile), false);
+  // "Restart": the same.
+  A.reset();
+  assert.equal(A.local().state, 'none');
+  A.setIdTokens(null);
+});
+
+test('the offline-create IPC and API are gone: nothing in Kea makes an account with just an email', () => {
+  const read = (f) => fs.readFileSync(require.resolve(f), 'utf8');
+  const hubSrc = read('../../electron/hub.cjs');
+  assert.ok(!/hub:openOffline|openOffline/.test(hubSrc), 'no hub:openOffline handler');
+  assert.ok(hubSrc.includes("'hub:openHere'"), 'only reopening an account already here');
+  assert.ok(!/openOffline/.test(read('../../electron/preload.cjs')), 'not exposed to the page');
+  assert.ok(!/\.open\(\{/.test(read('../../electron/accountCore.cjs')), 'the store has no open-or-make');
+  const page = fs.readFileSync(path.resolve(here, '../../src/components/scholar/HubAccount.tsx'), 'utf8');
+  assert.ok(!/Use offline|openOffline|AccountGate/.test(page), 'no "Use offline" and no start screen in front of Kea');
+  const api = fs.readFileSync(path.resolve(here, '../../src/lib/api.ts'), 'utf8');
+  assert.ok(!/openOffline/.test(api));
+});
+
+test('an email-only account from an older Kea: still signed in with the server down, signs out, opens again; nothing lost', async () => {
+  wipe();
+  setHub(`http://127.0.0.1:${deadPort}`);
+  A.setLimits({ req: 1500, status: 800 });
+  const id = legacyOffline(userData, 'ana@x.org', { name: 'Ana' });
+  fs.writeFileSync(path.join(userData, 'ana-notes.txt'), 'kept');
+  let s = A.local();
+  assert.equal(s.state, 'offline', 'signed in as before');
+  assert.equal(s.account.id, id);
+  s = await A.status();
+  assert.equal(s.state, 'offline', 'the server being down changes nothing');
+  assert.equal(s.checked, true);
   assert.equal(A.logout().state, 'none');
-  s = A.openOffline({ email: 'ANA@x.org' });
-  assert.equal(s.created, false);
+  s = A.openHere({ email: 'ANA@x.org' });
   assert.equal(s.state, 'offline');
   assert.equal(s.account.id, id, 'the same account here');
   assert.equal(fs.readFileSync(path.join(userData, 'ana-notes.txt'), 'utf8'), 'kept');
   assert.deepEqual(s.known.map((k) => k.email), ['ana@x.org']);
-  // "Restart": a fresh read of this computer's files says the same.
   A.reset();
   assert.equal(A.local().state, 'offline');
   assert.equal(A.local().account.email, 'ana@x.org');
-  assert.throws(() => A.openOffline({ email: 'nope' }), /email/);
+  assert.throws(() => A.openHere({ email: 'nope' }), /email/);
 });
 
-test('no Google or Microsoft client in this copy of Kea: online sign-in says so plainly; offline still works', async () => {
+test('no Google or Microsoft client in this copy of Kea: sign-in says so plainly; an account here still works', async () => {
   wipe();
   setHub(`http://127.0.0.1:${deadPort}`);
   A.setIdTokens(null);
@@ -257,8 +294,9 @@ test('no Google or Microsoft client in this copy of Kea: online sign-in says so 
   delete process.env.KEA_MICROSOFT_CLIENT_ID;
   const s = A.local();
   assert.deepEqual(s.providers, { google: false, microsoft: false });
-  await assert.rejects(A.oauthSignIn({ provider: 'google' }), (e) => e.status === 503 && e.data?.notSetUp === true && /isn’t available in this copy of Kea yet/.test(e.message));
-  assert.equal(A.openOffline({ email: 'ana@x.org' }).state, 'offline');
+  await assert.rejects(A.oauthSignIn({ provider: 'google' }), (e) => e.status === 503 && e.data?.notSetUp === true && /isn’t available in this copy of Kea\./.test(e.message));
+  legacyOffline(userData, 'ana@x.org');
+  assert.equal(A.local().state, 'offline');
   await assert.rejects(A.link({ provider: 'google' }), (e) => e.data?.notSetUp === true);
   assert.equal(A.local().state, 'offline', 'nothing changed');
 });
@@ -268,7 +306,7 @@ test('a server that takes the connection and never answers: status gives up with
   const srv = await slowServer('silent');
   setHub(srv.url);
   A.setLimits({ req: 600, status: 300 });
-  A.openOffline({ email: 'ana@x.org' });
+  legacyOffline(userData, 'ana@x.org');
   const t0 = Date.now();
   const s = await A.status();
   assert.ok(Date.now() - t0 < 1500, 'gave up in time');
@@ -298,9 +336,9 @@ test('an older offline-account.json (Kea 0.80, with a password verifier) keeps i
   assert.equal(s.state, 'none');
   assert.deepEqual(s.known.map((k) => k.email), ['ola@x.org']);
   assert.ok(!fs.readFileSync(path.join(userData, core.FILE), 'utf8').includes('verifier'));
-  const o = A.openOffline({ email: 'ola@x.org' });
+  const o = A.openHere({ email: 'ola@x.org' });
   assert.equal(o.account.id, 'loc_old');
-  assert.equal(o.created, false);
+  assert.equal(o.state, 'offline');
 });
 
 // ---------- With a real Kea Hub (0.5) ----------
@@ -353,9 +391,9 @@ test('an account that had a password (Hub 0.5) signs in with Google on the same 
   s = await A.status();
   assert.equal(s.state, 'online');
   assert.equal(s.account.id, id);
-  // Signed out, offline: the same email opens this computer's things again (linked, signs in online with Google later).
+  // Signed out, offline: the account opens again here (linked, signs in online with Google later).
   A.logout();
-  s = A.openOffline({ email: 'sam@example.com' });
+  s = A.openHere({ email: 'sam@example.com' });
   assert.equal(s.state, 'linked');
   assert.equal(s.account.id, id);
 });
@@ -365,8 +403,9 @@ test('going online with Google: the same email links and keeps everything here; 
   setHub(hubBase);
   A.setLimits({ req: 8000, status: 4000 });
   await hubAccount('lin@example.com', 'quiet harbor lamp');
-  let s = A.openOffline({ email: 'lin@example.com', name: 'Lin' });
-  const localId = s.account.id;
+  const localId = legacyOffline(userData, 'lin@example.com', { name: 'Lin' });
+  let s = A.local();
+  assert.equal(s.state, 'offline');
   // Something of this account's on this computer.
   fs.writeFileSync(path.join(userData, 'my-notes.txt'), 'kept');
   // A different email: nothing is sent, nothing changes.
@@ -394,7 +433,7 @@ test('an older server with no account for that email: said plainly; nothing here
   wipe();
   setHub(hubBase);
   A.setLimits({ req: 8000, status: 4000 });
-  A.openOffline({ email: 'nobody@example.com' });
+  legacyOffline(userData, 'nobody@example.com');
   A.setIdTokens(async () => googleToken({ email: 'nobody@example.com' }));
   await assert.rejects(A.link({ provider: 'google' }), (e) => e.status === 404 && e.data?.noAccount === true);
   assert.equal(A.local().state, 'offline');

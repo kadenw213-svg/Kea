@@ -203,7 +203,7 @@ test('passes renew about once a day; while the account server is down the pass a
   clock.add(8 * 86400e3);
   w.keas.state.sessions.clear();
   const o = await w.client.orgs();
-  assert.match(o.servers[0].error || '', /online/);
+  assert.match(o.servers[0].error || '', /Sign in with Google/);
   w.account.on = true;
   clock.add(-8 * 86400e3);
 });

@@ -6,13 +6,13 @@ import { formatBytes } from '../../lib/util';
 import { useKeaModes } from '../../lib/modes';
 import { useKeaCloud, watchKeaCloud } from '../../lib/keaCloud';
 import { formatPhone } from '../../lib/phone';
-import { useSettings } from '../../lib/settings';
-import { hubStatusNow, loadLocal, openAccount, refreshHub, refreshNotifications, run, setHubNotifications, setHubStatus, useHubNotifications, useHubStatus } from '../account/hubStore';
+import { SIGN_IN_WAITS, hubStatusNow, loadLocal, openAccount, refreshHub, refreshNotifications, run, setHubNotifications, setHubStatus, signInWaits, useHubNotifications, useHubStatus } from '../account/hubStore';
 import { NeedsOnline } from '../account/NeedsOnline';
 import { SignInSecurity, YourData } from '../account/Security';
 import { ProfileHead, VerifiedBadge, VerifyEmail, useAccount } from './Account';
 
-// The Kea account: one sign-in for Kea and KeaS, made on this computer and taken online when wanted. Its state lives in account/hubStore.ts (shared with the title bar,
+// The Kea account: one sign-in for Kea and KeaS, made with Google or Microsoft once the Kea account server answers.
+// Without one everything on this computer works. Its state lives in account/hubStore.ts (shared with the title bar,
 // Work and School); these are re-exported for the screens that import them from here.
 export { refreshHub, refreshNotifications, useHubStatus, useHubNotifications };
 
@@ -40,8 +40,6 @@ function agoText(ms: number) {
   if (m < 24 * 60) return `${Math.round(m / 60)} h ago`;
   return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 /** Section text: lines starting "- " are a list, other lines are paragraphs. */
 function SectionBody({ body }: { body: string }) {
   const blocks: JSX.Element[] = [];
@@ -114,26 +112,33 @@ function CodeBox({ code, setCode }: { code: string; setCode(c: string): void }) 
 }
 
 const providerLabel = (p: KeaSignInProvider) => (p === 'microsoft' ? 'Microsoft' : 'Google');
-const NOT_SET_UP = 'Online sign-in isn’t available in this copy of Kea yet. You can still use Kea on this computer with just your email.';
-/** The Continue with Google / Microsoft buttons this copy of Kea is set up for (none: a plain sentence instead). */
+const NOT_SET_UP = 'Sign-in isn’t available in this copy of Kea. Everything on this computer still works.';
+/**
+ * The Sign in with Google / Microsoft buttons this copy of Kea is set up for (none: a plain sentence instead). While
+ * the Kea account server can't be reached they wait, and say so; Kea checks again by itself.
+ */
 function ProviderButtons({ busy, onPick, primary = true }: { busy: boolean; onPick(p: KeaSignInProvider): void; primary?: boolean }) {
   const status = useHubStatus();
   const list: KeaSignInProvider[] = (['google', 'microsoft'] as KeaSignInProvider[]).filter((p) => status?.providers[p]);
   if (!list.length) return <p className="muted acct-note">{NOT_SET_UP}</p>;
+  const waits = signInWaits(status);
   return (
-    <div className="acct-actions">
-      {list.map((p) => (
-        <button key={p} type="button" className={`btn ${primary ? 'primary' : ''}`} disabled={busy} onClick={() => onPick(p)}>
-          <LogIn size={14} /> Continue with {providerLabel(p)}
-        </button>
-      ))}
-    </div>
+    <>
+      <div className="acct-actions">
+        {list.map((p) => (
+          <button key={p} type="button" className={`btn ${primary ? 'primary' : ''}`} disabled={busy || waits} onClick={() => onPick(p)}>
+            <LogIn size={14} /> Sign in with {providerLabel(p)}
+          </button>
+        ))}
+      </div>
+      {waits && <p className="muted acct-note">{SIGN_IN_WAITS} Kea tries again by itself.</p>}
+    </>
   );
 }
 
 /**
- * Continue with Google or Microsoft, and what it may still need: the terms (the first sign-in makes the online account)
- * or the owner's two-step code. signIn starts it from the start screen; link takes the account here online.
+ * Sign in with Google or Microsoft, and what it may still need: the terms (the first sign-in makes the account) or the
+ * owner's two-step code. signIn starts it with no account here; link takes an account here online.
  */
 function useOnlineSignIn(onDone: () => void) {
   const status = useHubStatus();
@@ -143,7 +148,7 @@ function useOnlineSignIn(onDone: () => void) {
   const [note, setNote] = useState<string | null>(null);
   // (A sign-in still waiting for the terms after the page reloaded.)
   useEffect(() => {
-    if (status?.pending && !step) setStep('terms');
+    if (status?.pending && !step) setStep(status.pending.code ? 'code' : 'terms');
   }, [!!status?.pending]);
   const handle = (r: HubResult<HubStatus>, provider?: KeaSignInProvider) => {
     setNote(null);
@@ -162,6 +167,7 @@ function useOnlineSignIn(onDone: () => void) {
     }
     setStep(null);
     if (r.data?.mismatch && r.data.reason === 'differentEmail' && provider) return void setMismatch({ provider, providerEmail: r.data.providerEmail, accountEmail: r.data.accountEmail });
+    if (r.status === 0) refreshHub();
     if (r.status === 0 || r.data?.noAccount || r.data?.notSetUp || r.data?.expired) return void setNote(r.error);
     toast(r.error, 'error');
   };
@@ -255,66 +261,49 @@ function OwnerCode({ s }: { s: OnlineSignIn }) {
 }
 
 /**
- * The start screen: Continue with Google or Microsoft (signs in, or makes the online account), or with no connection
- * just an email, which opens that account on this computer at once (made the first time).
+ * No account signed in here: Sign in with Google or Microsoft makes the account or signs in to it, once the Kea account
+ * server answers. Everything already on this computer stays. An account used here before (signed out) opens again from
+ * its email, with no connection needed; nothing here makes a new one.
  */
 function SignInStart({ onDone }: { onDone(): void }) {
   const status = useHubStatus();
   const s = useOnlineSignIn(onDone);
-  const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   if (s.step === 'terms') return <NewOnlineAccount s={s} />;
   if (s.step === 'code') return <OwnerCode s={s} />;
   const known = status?.known || [];
-  const offline = async (e?: string) => {
-    const mail = (e ?? email).trim();
-    if (!EMAIL.test(mail)) return void toast('Add your email address.', 'error');
+  const reopen = async (email: string) => {
     setBusy(true);
-    const r = await api.hub.openOffline({ email: mail });
+    const r = await api.hub.openHere({ email });
     setBusy(false);
     if (!r.ok) return void toast(r.error, 'error');
     setHubStatus(r.value);
-    toast(r.value.created ? 'Your Kea account is ready on this computer.' : 'Signed in.', 'success');
+    toast('Signed in.', 'success');
     onDone();
   };
   return (
     <div className="acct-form">
+      <p className="muted acct-note">Sign in with Google to use Kea cloud, classes and organizations on all your devices. Everything on this computer works without an account, and stays when you sign in.</p>
       <ProviderButtons busy={s.busy} onPick={s.signIn} />
       {s.note && <p className="hub-warn">{s.note}</p>}
-      <div className="acct-or muted">or use Kea on this computer</div>
-      <form
-        className="acct-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          offline();
-        }}
-      >
-        {known.length > 0 && (
-          <div className="acct-known" aria-label="Accounts used on this computer">
+      {known.length > 0 && (
+        <>
+          <div className="acct-or muted">or open an account already on this computer</div>
+          <div className="acct-known" aria-label="Accounts on this computer">
             {known.slice(0, 4).map((k) => (
-              <button key={k.email} type="button" className="btn sm" disabled={busy} onClick={() => offline(k.email)} title={k.name || undefined}>
+              <button key={k.email} type="button" className="btn sm" disabled={busy || s.busy} onClick={() => reopen(k.email)} title={k.name || undefined}>
                 {k.email}
               </button>
             ))}
           </div>
-        )}
-        <label>
-          <span>Email</span>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" />
-        </label>
-        <div className="acct-actions">
-          <button className="btn" type="submit" disabled={busy || !EMAIL.test(email.trim())}>
-            Use offline
-          </button>
-        </div>
-        <p className="muted acct-note">No connection needed. Your things stay on this computer; continue with Google or Microsoft later for Kea cloud, classes and work.</p>
-      </form>
+        </>
+      )}
     </div>
   );
 }
 
 /**
- * Taking the account on this computer online (or signing in online again): Continue with Google or Microsoft with the
+ * Taking the account on this computer online (or signing in online again): Sign in with Google or Microsoft with the
  * same email. The same email links (the online account is made then, with the terms, or signed in to); a different
  * email never links. Nothing on this computer is deleted either way.
  */
@@ -323,9 +312,9 @@ function GoOnline() {
   const s = useOnlineSignIn(() => {});
   const reachable = !!status?.reachable;
   useEffect(() => {
-    // (Not reachable: checked again every half minute while this is open.)
+    // (Not reachable: checked again every 20 seconds while this is open.)
     if (reachable) return;
-    const t = setInterval(() => refreshHub(), 30_000);
+    const t = setInterval(() => refreshHub(), 20_000);
     return () => clearInterval(t);
   }, [reachable]);
   if (!status?.account) return null;
@@ -342,7 +331,7 @@ function GoOnline() {
             Use a different account
           </button>
           <button className="btn primary" onClick={s.clearMismatch}>
-            Keep using this account offline
+            Keep this account as it is
           </button>
         </div>
       </div>
@@ -356,10 +345,9 @@ function GoOnline() {
         {status.moved?.kind === 'moved' && status.moved.to === status.url
           ? 'Your Kea account moved to a new address. Sign in once to continue.'
           : again
-            ? 'You’re signed in on this computer. Continue with Google or Microsoft to use Kea cloud, classes and work; everything else already works.'
-            : `Online, your account gets Kea cloud, classes and organizations, Kea’s shared Claude and Work. Continue as ${status.account.email}: the same email links, and everything on this computer stays.`}
+            ? 'You’re signed in on this computer. Sign in with Google to use Kea cloud, classes and work; everything else already works.'
+            : `Online, your account gets Kea cloud, classes and organizations, Kea’s shared Claude and Work. Sign in with Google as ${status.account.email}: the same email links, and everything on this computer stays.`}
       </p>
-      {!reachable && status.checked && <p className="hub-warn">Kea can’t reach your Kea account online right now. Try again once you’re online.</p>}
       {s.note && <p className="hub-warn">{s.note}</p>}
       <ProviderButtons busy={s.busy} onPick={s.link} />
     </div>
@@ -408,8 +396,8 @@ export async function signOutAsked() {
   const who = s?.account?.email ?? s?.me?.account.email ?? s?.cached?.email;
   const online = !!s?.signedIn;
   const body = online
-    ? 'Kea goes back to its start screen. Your account stays on this computer, so you can sign in again, also offline. Kea cloud, classes and your organizations stop syncing here, and the copy of your shifts on this computer is removed. Documents saved on this computer stay.'
-    : 'Kea goes back to its start screen. Your account and everything on this computer stay, so you can sign in again any time.';
+    ? 'Kea keeps working on this computer without an account. Kea cloud, classes and your organizations stop syncing here, and the copy of your shifts on this computer is removed. Documents saved on this computer stay, and you can sign in again any time.'
+    : 'Kea keeps working on this computer without an account. Your account and everything on this computer stay, so you can open it again any time under Settings → Kea account.';
   if ((await ask(`Sign out${who ? ` of ${who}` : ''}?`, body, [{ id: 'cancel', label: 'Cancel' }, { id: 'out', label: 'Sign out', primary: true }])) !== 'out') return;
   const r = await run(api.hub.logout());
   if (r) setHubStatus(r);
@@ -438,9 +426,12 @@ export function HubPanel() {
 
   if (status.state === 'none')
     return (
-      <div className="acct-card hub-card">
-        <h3 className="hub-title">Your Kea account</h3>
-        <SignInStart onDone={() => {}} />
+      <div className="acct-page">
+        <div className="acct-card hub-card">
+          <h3 className="hub-title">Your Kea account</h3>
+          <SignInStart onDone={() => {}} />
+        </div>
+        <HubAddressBox />
       </div>
     );
 
@@ -485,7 +476,7 @@ export function HubPanel() {
   return (
     <div className="acct-page">
       <div className="acct-card hub-card">
-        {!status.reachable && status.checked && <p className="hub-warn">Can’t reach your Kea account online right now. You’re still signed in: Kea keeps working with what it last saw and catches up when it’s back.</p>}
+        {!status.reachable && status.checked && <p className="hub-warn">Can’t reach the Kea account server right now. You’re still signed in: Kea keeps working with what it last saw and catches up when it’s back.</p>}
         {who && (
           <ProfileHead>
             <div className="acct-who">
@@ -593,39 +584,24 @@ function HubAddressBox() {
 }
 
 /**
- * Kea starts with the Kea account: Continue with Google or Microsoft, or just an email to use Kea on this computer,
- * before anything else. This is decided from this computer alone, at once: it never waits on the network. Once signed
- * in, Kea stays signed in here (offline too). Signing out brings this back.
+ * Kea opens at once, with or without an account: nothing waits for the account or the network. This only loads who's
+ * signed in (this computer first, then a background check of the server), and while there's no account and the Kea
+ * account server can't be reached, checks again every 20 seconds so "Sign in with Google" is ready once it answers.
+ * Once signed in, Kea stays signed in here (offline too) until the person signs out.
  */
-export function AccountGate() {
+export function AccountWatch() {
   const status = useHubStatus();
   useEffect(() => {
     loadLocal();
     refreshHub();
   }, []);
-  const open = !!status && status.state === 'none';
-  // (Signed out: the start screen is the one place to sign in, so Settings, open on the account page, closes.)
+  const waiting = !!status && status.state === 'none' && signInWaits(status);
   useEffect(() => {
-    if (open) useSettings.getState().ui({ open: false });
-  }, [open]);
-  // (Before this computer's answer, a few milliseconds: an empty cover, so nothing flashes.)
-  if (!status) return <div className="account-gate" />;
-  if (!open) return null;
-  return (
-    <div className="account-gate">
-      <div className="account-gate-inner">
-        <h1>Sign in to Kea</h1>
-        <p className="welcome-sub">One Kea account for everything, with Google or Microsoft. No connection? Type your email and Kea opens on this computer right away.</p>
-        <div className="acct-card hub-card">
-          <SignInStart onDone={() => refreshHub()} />
-          <details className="gate-advanced">
-            <summary>Advanced</summary>
-            <HubAddress />
-          </details>
-        </div>
-      </div>
-    </div>
-  );
+    if (!waiting) return;
+    const t = setInterval(() => refreshHub(), 20_000);
+    return () => clearInterval(t);
+  }, [waiting]);
+  return null;
 }
 
 /** The optional phone number, and who sees it. Never on leaderboards; nobody sees it unless chosen here. */

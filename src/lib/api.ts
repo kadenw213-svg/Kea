@@ -492,7 +492,8 @@ export interface HubMe {
 }
 /**
  * The account on this computer, from its files alone (never the network):
- *   none: nobody signed in (the start screen shows); offline: made on this computer, not online yet;
+ *   none: nobody signed in (everything on this computer works; Sign in with Google makes the account);
+ *   offline: an email-only account from Kea 0.82 or older, not online yet;
  *   linked: linked to an online Kea account, signed in here without an online session; online: signed in online.
  */
 export type KeaAccountState = 'none' | 'offline' | 'linked' | 'online';
@@ -507,7 +508,8 @@ export interface HubStatus {
   /** Which of Continue with Google / Microsoft this copy of Kea is set up for. */
   providers: { google: boolean; microsoft: boolean };
   /** A Google or Microsoft sign-in waiting for the terms (a new account) or the owner's two-step code. */
-  pending?: { email: string; name: string | null; provider: KeaSignInProvider } | null;
+  /** code: the owner's two-step code is next (otherwise the terms, for a new account). */
+  pending?: { email: string; name: string | null; provider: KeaSignInProvider; code?: boolean } | null;
   onlineNote?: string | null;
   /** Whether the server has been checked yet since Kea started. */
   checked?: boolean;
@@ -604,9 +606,9 @@ export interface HubApi {
   openSupport(): Promise<HubResult<boolean>>;
   changes(): Promise<HubResult<HubTermsChanges>>;
   openTerms(since?: number): Promise<HubResult<void>>;
-  /** Kea on this computer with just an email, at once, no connection needed: that account opens here (made the first time). */
-  openOffline(a: { email: string; name?: string }): Promise<HubResult<HubStatus & { created?: boolean }>>;
-  /** Continue with Google or Microsoft from the start screen: signs in, or (data.needsAccount) asks for the terms first. */
+  /** Opens an account already on this computer again (no connection needed). Never makes one (404 data.noAccount). */
+  openHere(a: { email: string }): Promise<HubResult<HubStatus>>;
+  /** Sign in with Google or Microsoft: signs in, or (data.needsAccount) asks for the terms first. Waits for the server (data.unreachable). */
   oauthSignIn(a: { provider: KeaSignInProvider }): Promise<HubResult<HubStatus>>;
   /** Takes the account on this computer online with Google or Microsoft (the same email only). */
   link(a: { provider: KeaSignInProvider }): Promise<HubResult<HubStatus>>;

@@ -275,7 +275,7 @@ function JoinSheet({ initial, online, servers, onClose, onJoined }: { initial: s
   };
   return (
     <Sheet title="Join an organization" onClose={onClose}>
-      {!online && <p className="note">Joining needs your Kea account online. Sign in online under Settings → Kea account.</p>}
+      {!online && <p className="note">Sign in with Google to join an organization (Settings → Kea account).</p>}
       {!adv ? (
         <label className="field">
           Join link or code

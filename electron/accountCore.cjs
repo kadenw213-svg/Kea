@@ -1,16 +1,17 @@
 // The Kea account on this computer, without Electron: the accounts kept here, which one is signed in, whether a sign-in
-// with Google or Microsoft links to it, and what the start screen shows. hub.cjs uses this with the files in Kea's
-// userData folder; the tests use it with a scratch folder.
+// with Google or Microsoft links to it, and the account state. hub.cjs uses this with the files in Kea's userData
+// folder; the tests use it with a scratch folder.
 //
-// There are no passwords. Online, a Kea account signs in with Google or Microsoft only. On this computer an account is
-// just its email: typing it opens that account's things here at once (made the first time), with no connection. Once
-// signed in, Kea stays signed in here (offline too) until the person signs out.
+// There are no passwords. A Kea account is made and signed in to with Google or Microsoft only, which needs the Kea
+// account server to answer. Without an account, everything on this computer still works. Once signed in, Kea stays
+// signed in here (offline too) until the person signs out.
 //
 // offline-account.json:
 //   { v: 2, active: <local id> | null,
 //     accounts: { <local id>: { id, email, name, createdAt, lastSignIn, hub: { id, url, provider?, at } | null } } }
-// An account made here is "offline" until a Google or Microsoft sign-in with the same email links it to the online
-// Kea account (hub set). Accounts used before stay in the file: signing out only clears `active`.
+// Kea up to 0.82 could also make an account here with just an email ("offline", hub null). Those stay and keep
+// working; a Google or Microsoft sign-in with the same email links one to the online Kea account (hub set). No new
+// ones are made. Accounts used before stay in the file: signing out only clears `active`.
 // (Version 1 kept a scrypt verifier of a password with each account. Reading the file drops it, once; the accounts,
 // their emails and everything kept for them stay.)
 const crypto = require('crypto');
@@ -18,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 
 const FILE = 'offline-account.json';
+const NOT_HERE = 'There’s no Kea account for that email on this computer. Sign in with Google to make one.';
 const norm = (e) => String(e || '').trim().toLowerCase();
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** The record as kept now: only these fields (an older file's verifier is left behind). */
@@ -82,22 +84,18 @@ function createStore(dir, { now = Date.now } = {}) {
         .map(pub);
     },
     /**
-     * Using Kea on this computer with just an email: the account kept here for it is signed in (its things here open
-     * again), or one is made, at once. No connection needed. Returns { account, created }.
+     * An account already kept on this computer, signed in again (its things here open), with no connection needed.
+     * Never makes one: an email with no account here is refused ({ noAccount }) and nothing is written.
      */
-    open({ email, name }) {
+    reopen({ email }) {
       const e = norm(email);
       if (!EMAIL.test(e)) throw Object.assign(new Error('Add your email address.'), { field: 'email' });
+      if (!byEmail(read(), e)) throw Object.assign(new Error(NOT_HERE), { noAccount: true });
       return update((s) => {
-        let a = byEmail(s, e);
-        const created = !a;
-        if (!a) {
-          a = { id: newId(), email: e, name: String(name || '').trim().slice(0, 60), createdAt: now(), lastSignIn: null, hub: null };
-          s.accounts[a.id] = a;
-        }
+        const a = byEmail(s, e);
         a.lastSignIn = now();
         s.active = a.id;
-        return { account: pub(a), created };
+        return pub(a);
       });
     },
     activate(id) {
@@ -108,7 +106,7 @@ function createStore(dir, { now = Date.now } = {}) {
         return pub(s.accounts[id]);
       });
     },
-    /** Signed out here: the account stays, so typing its email opens it again (also offline). */
+    /** Signed out here: the account stays, so it can be opened again here (also offline). */
     signOut() {
       update((s) => void (s.active = null));
     },
@@ -168,14 +166,15 @@ function linkDecision(account, providerEmail) {
   return { link: true, reason: account.hub ? 'relink' : 'link' };
 }
 
-// ---------- What the start screen and the rest of Kea show ----------
+// ---------- What Kea shows ----------
 /**
- * The account state, from what's on this computer only (never the network):
- *   none    no account signed in here: the start screen (sign in, or make an account) shows;
- *   offline an account made on this computer, not linked to an online Kea account: everything on this computer works,
- *           cloud features show "Needs your Kea account online";
- *   linked  an account linked to an online Kea account, signed in here without an online session (opened offline by
- *           its email, or the session ended): the same, with "Continue with Google" to sign in online again;
+ * The account state, from what's on this computer only (never the network). Kea opens at once in every state; only
+ * what needs the account online (Kea cloud, organizations, shared Claude) waits.
+ *   none    no account signed in here: everything on this computer works, and "Sign in with Google" makes or signs
+ *           in to the account once the Kea account server answers;
+ *   offline an email-only account from Kea 0.82 or older, not linked yet: the same, signed in;
+ *   linked  an account linked to an online Kea account, signed in here without an online session (the session ended):
+ *           the same, with "Sign in with Google" to sign in online again;
  *   online  signed in to the online Kea account here (whether or not it can be reached right now).
  */
 function accountState({ active, hasToken }) {
@@ -183,8 +182,6 @@ function accountState({ active, hasToken }) {
   if (!active) return 'none';
   return active.hub ? 'linked' : 'offline';
 }
-/** The start screen shows only while no account is signed in; it never waits for the network. */
-const gateOpen = (state) => state === 'none';
 
 // ---------- Talking to a server, never waiting forever ----------
 /** fetch with a time limit (the whole request, connecting included). A timeout throws { timeout: true }. */
@@ -270,4 +267,4 @@ function tokenRequest(provider, { clientId, clientSecret, code, verifier, port }
   };
 }
 
-module.exports = { FILE, EMAIL, createStore, idTokenEmail, linkDecision, accountState, gateOpen, timedFetch, pkcePair, authorizeUrl, tokenRequest, PROVIDERS, norm };
+module.exports = { FILE, EMAIL, createStore, idTokenEmail, linkDecision, accountState, timedFetch, pkcePair, authorizeUrl, tokenRequest, PROVIDERS, norm };

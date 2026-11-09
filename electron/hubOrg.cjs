@@ -63,7 +63,7 @@ const all = (method, p, body) => Promise.all(sources().map((src) => send(src, me
 /** The first error worth showing when nothing answered (offline over anything else, so the calendar falls back). */
 function noneAnswered(results) {
   const errs = results.filter((r) => !r.ok).map((r) => r.error);
-  return errs.find((e) => e.status !== 0) ?? errs[0] ?? Object.assign(new Error('Sign in to your Kea account to use Work.'), { status: 401 });
+  return errs.find((e) => e.status !== 0) ?? errs[0] ?? Object.assign(new Error('Sign in with Google to use Work.'), { status: 401 });
 }
 const sortTodo = (items) =>
   items.sort((a, b) => Number(!!b.overdue) - Number(!!a.overdue) || (b.urgency ?? 0) - (a.urgency ?? 0) || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity));

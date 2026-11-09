@@ -657,7 +657,7 @@ function SetRow({ s, teacher, offline, reload }: { s: HubSetInfo; teacher: boole
           {!s.leaderboard && ' · practice only'}
         </div>
       </div>
-      <button className="btn sm primary" disabled={offline} onClick={() => useScholar.getState().set({ study: hubSetId(s.id) })} title={offline ? 'Needs your Kea account online (answers are checked there)' : ''}>
+      <button className="btn sm primary" disabled={offline} onClick={() => useScholar.getState().set({ study: hubSetId(s.id) })} title={offline ? 'Needs your Kea account (answers are checked there)' : ''}>
         {s.due ? 'Study' : 'Practice'} <ArrowRight size={13} />
       </button>
       {teacher && (

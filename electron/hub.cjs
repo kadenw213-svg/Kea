@@ -1,16 +1,18 @@
-// The Kea account. It lives on this computer first (accountCore.cjs: opened offline with just its email, no password),
-// and online on the Kea account server, which adds Kea cloud, hosted classes and organizations, shared Claude and Work.
-// Online, a Kea account signs in with Google or Microsoft only (the system browser, loopback + PKCE); there are no Kea
-// passwords or two-step codes (only the owner's account still has a two-step code). Kea talks to the server here, in
-// the main process. The online sign-in (a session token) is encrypted with the OS keychain and never shown to the page.
+// The Kea account. It is made and signed in to with Google or Microsoft only (the system browser, loopback + PKCE),
+// which needs the Kea account server to answer; there are no Kea passwords or two-step codes (only the owner's account
+// still has a two-step code). The server adds Kea cloud, hosted classes and organizations, shared Claude and Work.
+// Without an account everything on this computer works, and once signed in Kea stays signed in here (accountCore.cjs),
+// offline too, until the person signs out. Kea talks to the server here, in the main process. The online sign-in (a
+// session token) is encrypted with the OS keychain and never shown to the page.
 //
-// Nothing here waits on the network to decide who's signed in: the start screen reads this computer's files at once
-// (local()), and the server is checked in the background with time limits (status()). Not reaching it is normal.
+// Nothing here waits on the network to decide who's signed in: Kea reads this computer's files at once (local()), and
+// the server is checked in the background with time limits (status()). Not reaching it is normal.
+// (Email-only accounts made here by Kea 0.82 and older stay signed in and link on the same email; no new ones are made.)
 //
 // Settings: hub.url (where the server is, under Advanced), hub.googleClientId / hub.googleClientSecret and
-// hub.microsoftClientId (KEA_GOOGLE_CLIENT_ID, KEA_MICROSOFT_CLIENT_ID): the clients for "Continue with Google" and
-// "Continue with Microsoft" (openid, email and profile only). With neither set, online sign-in isn't available in this
-// copy of Kea (the start screen says so) and everything on this computer works as an offline account.
+// hub.microsoftClientId (KEA_GOOGLE_CLIENT_ID, KEA_MICROSOFT_CLIENT_ID): the clients for "Sign in with Google" and
+// "Sign in with Microsoft" (openid, email and profile only). With neither set, sign-in isn't available in this copy of
+// Kea (the account page says so) and everything on this computer works without an account.
 const { app, ipcMain, shell, net, safeStorage, BrowserWindow } = require('electron');
 const http = require('http');
 const crypto = require('crypto');
@@ -26,7 +28,9 @@ const core = require('./accountCore.cjs');
 const DEFAULT_HUB_URL = 'https://kadensdesktop.tailc64e1d.ts.net';
 // How long Kea waits for the server: any request, and the background "is it there" checks.
 const LIMITS = { req: 8000, status: 4000 };
-const OFFLINE_MSG = 'Can’t reach your Kea account online right now. Everything on this computer still works; Kea tries again by itself.';
+const OFFLINE_MSG = 'Can’t reach the Kea account server right now. Everything on this computer still works; Kea tries again by itself.';
+// (Signing in, or making the account, while the server can't be reached: nothing is opened or made.)
+const SIGNIN_WAITS = 'Sign-in is available once Kea can reach the Kea account server. Kea tries again by itself.';
 const hubUrl = () => String(settings.get('hub.url', '') || process.env.KEA_HUB_URL || DEFAULT_HUB_URL).replace(/\/+$/, '');
 const originOf = (u) => {
   try {
@@ -299,7 +303,7 @@ function local() {
     known: accounts().list().map((x) => ({ email: x.email, name: x.name })),
     providers: providers(),
     // (A sign-in waiting for the terms or the owner's code: the page shows that step again after a reload.)
-    pending: pending && Date.now() - pending.at < PENDING_MS ? { email: pending.email, name: pending.name || null, provider: pending.provider } : null,
+    pending: pending && Date.now() - pending.at < PENDING_MS ? { email: pending.email, name: pending.name || null, provider: pending.provider, ...(pending.code ? { code: true } : {}) } : null,
     onlineNote: state === 'linked' ? onlineNote : null,
     signedIn: token,
     reachable: reach.reachable,
@@ -390,20 +394,30 @@ function dropSession() {
 }
 
 // ---------- Signing in ----------
-// No passwords: on this computer an account is its email, and online a Kea account signs in with Google or Microsoft.
-/** Using Kea on this computer with just an email, no connection needed: that account's things here open, or it's made. */
-function openOffline({ email, name }) {
-  let r;
+// No passwords: a Kea account signs in with Google or Microsoft, and only then is it made. Nothing makes one here.
+/**
+ * An account already on this computer (signed out here before), opened again with no connection needed. Never makes
+ * one: an email with no account here is refused.
+ */
+function openHere({ email }) {
   try {
     pending = null;
     const was = accounts().active();
     if (readToken() && (!was || core.norm(was.email) !== core.norm(email))) dropSession();
-    r = accounts().open({ email, name });
+    accounts().reopen({ email });
   } catch (e) {
-    throw new HubError(e.message, 400, { field: e.field || null });
+    throw new HubError(e.message, e.noAccount ? 404 : 400, { field: e.field || null, noAccount: !!e.noAccount });
   }
   onlineNote = null;
-  return { ...local(), created: r.created };
+  return local();
+}
+/** Before a Google or Microsoft sign-in: the Kea account server must answer (a few seconds at most), or nothing starts. */
+async function serverAnswers() {
+  try {
+    await req('GET', '/v1/health', undefined, { auth: false, timeout: LIMITS.status });
+  } catch (e) {
+    if (e.status === 0) throw new HubError(SIGNIN_WAITS, 0, { unreachable: true });
+  }
 }
 
 // A Google or Microsoft sign-in waiting for one more thing: the terms (the first sign-in makes the account) or, for the
@@ -427,7 +441,7 @@ async function trySignIn(p, extra = {}) {
       throw new HubError(`Create your Kea account for ${pending.email}: agree to the terms first.`, 404, { needsAccount: true, email: pending.email, name: pending.name });
     }
     if (e.data?.totpRequired) {
-      pending = { ...p, at: Date.now() };
+      pending = { ...p, code: true, at: Date.now() };
       throw e;
     }
     pending = null;
@@ -439,15 +453,18 @@ async function trySignIn(p, extra = {}) {
   return signedIn(r, { provider: p.provider });
 }
 /**
- * Continue with Google or Microsoft: signs in to the online Kea account for that email, made now if there's none (the
- * page then shows the terms, and continueSignIn finishes). The account on this computer with the same email is linked
- * (made if there's none); nothing here is deleted. `expect`: the email of the account signed in here, going online: a
- * different email never links, and then nothing is sent and nothing here changes.
+ * Sign in with Google or Microsoft: signs in to the online Kea account for that email, made now if there's none (the
+ * page then shows the terms, and continueSignIn finishes). Only once the Kea account server answers: otherwise nothing
+ * opens and nothing is made. The account on this computer with the same email is linked (kept here when it's new);
+ * nothing here is deleted, and everything already on this computer stays. `expect`: the email of the account signed
+ * in here, going online: a different email never links, and then nothing is sent and nothing here changes.
  */
 async function oauthSignIn({ provider = 'google', expect = null } = {}) {
   const label = core.PROVIDERS[provider]?.label;
   if (!label) throw new HubError('Pick Google or Microsoft.', 400);
   pending = null;
+  if (!idTokenFn && !clientId(provider)) throw new HubError(NOT_SET_UP, 503, { notSetUp: true });
+  await serverAnswers();
   const idToken = await idTokenFor(provider, expect || undefined);
   const who = core.idTokenEmail(idToken);
   if (expect) {
@@ -472,7 +489,7 @@ async function continueSignIn({ code, termsVersion, termsSections, age13, name }
   const p = pending;
   if (!p || Date.now() - p.at > PENDING_MS) {
     pending = null;
-    throw new HubError('That sign-in timed out. Continue with Google or Microsoft again.', 408, { expired: true });
+    throw new HubError('That sign-in timed out. Sign in with Google again.', 408, { expired: true });
   }
   if (code) {
     try {
@@ -517,7 +534,7 @@ async function defaultSave(name, text) {
 }
 
 // ---------- Google and Microsoft sign-in: an ID token from the desktop flow (loopback + PKCE; openid, email, profile) ----------
-const NOT_SET_UP = 'Online sign-in isn’t available in this copy of Kea yet. Everything on this computer still works with just your email.';
+const NOT_SET_UP = 'Sign-in isn’t available in this copy of Kea. Everything on this computer still works.';
 let pendingOauth = null;
 // (Tests answer with their own ID tokens instead of opening a browser.)
 let idTokenFn = null;
@@ -612,7 +629,7 @@ async function requestScan() {
   const info = browser.schoolInfo();
   if (!info.home) throw new HubError('Set up your class site first (Add a class → From your school), then sign in to it.', 400);
   const me = cached();
-  if (!me || !isSignedIn()) throw new HubError('Kea’s shared Claude needs your Kea account online. Your own Claude works without it.', 401, { needsOnline: true });
+  if (!me || !isSignedIn()) throw new HubError('Sign in with Google to use Kea’s shared Claude. Your own Claude works without an account.', 401, { needsOnline: true });
   const profile = profiles.all().list.find((p) => p.id === profiles.active())?.name || 'School';
   const course = { school: info.host, code: 'all-classes', term: new Date().toISOString().slice(0, 7), section: me.id };
   const r = await req('POST', '/v1/scan', { kind: 'initial_scan', course, ...targetArg() });
@@ -656,7 +673,7 @@ async function questionChapters() {
  */
 async function requestQuestions({ courseId, chapter, joinCode }) {
   const me = cached();
-  if (!me || !isSignedIn()) throw new HubError('Kea’s shared Claude needs your Kea account online. Your own Claude works without it.', 401, { needsOnline: true });
+  if (!me || !isSignedIn()) throw new HubError('Sign in with Google to use Kea’s shared Claude. Your own Claude works without an account.', 401, { needsOnline: true });
   const c = (await questionChapters()).find((x) => x.courseId === courseId && x.label === chapter);
   if (!c) throw new HubError('Pick a chapter that has a textbook in Kea.', 400);
   const browser = require('./scholar/browser.cjs');
@@ -1068,9 +1085,10 @@ function register() {
   // Who's signed in, from this computer alone (at once), and after a background check of the server (4 s at most).
   handleApp(ipcMain, 'hub:local', wrap(() => local()));
   handleApp(ipcMain, 'hub:status', wrap(() => status()));
-  // Using Kea with just an email (on this computer, no connection needed), Continue with Google or Microsoft (the start
-  // screen), taking the account here online, and finishing a sign-in that waits for the terms or the owner's code.
-  handleApp(ipcMain, 'hub:openOffline', wrap((a) => openOffline(a)));
+  // Opening an account already on this computer again (no connection needed; never makes one), Sign in with Google or
+  // Microsoft (makes the account, or signs in to it), taking an account here online, and finishing a sign-in that
+  // waits for the terms or the owner's code.
+  handleApp(ipcMain, 'hub:openHere', wrap((a) => openHere(a)));
   handleApp(ipcMain, 'hub:oauthSignIn', wrap((a) => oauthSignIn({ provider: a.provider })));
   handleApp(ipcMain, 'hub:googleSignIn', wrap(() => oauthSignIn({ provider: 'google' })));
   handleApp(ipcMain, 'hub:link', wrap((a) => link(a)));
@@ -1106,14 +1124,14 @@ function register() {
   handleApp(ipcMain, 'hub:accept', wrap(async (a) => (await req('POST', '/v1/terms/accept', { termsVersion: a.termsVersion, termsSections: a.termsSections }), refresh())));
   handleApp(ipcMain, 'hub:googleVerify', wrap(async () => (await req('POST', '/v1/me/verify/google', { idToken: await googleIdToken(cached()?.email) }), refresh())));
   // The account page: name, signed-in devices, the data download, deleting the account (those two ask for a fresh
-  // Google or Microsoft sign-in with the account's email). Without an online session, an account made on this computer
-  // changes its name here.
+  // Google or Microsoft sign-in with the account's email). Without an online session, an email-only account from an
+  // older Kea changes its name here.
   handleApp(ipcMain, 'hub:setName', wrap(async (a) => {
     const name = String(a.name ?? '').trim();
     const rec = accounts().active();
     if (!isSignedIn()) {
       if (!rec) throw new HubError('Sign in first.', 401);
-      if (rec.hub) throw new HubError('Sign in online to change your name.', 401, { needsOnline: true });
+      if (rec.hub) throw new HubError('Sign in with Google to change your name.', 401, { needsOnline: true });
       if (!name) throw new HubError('Add your name.', 400);
       accounts().setName(rec.id, name);
       return local();
@@ -1136,8 +1154,8 @@ function register() {
     require('./account.cjs').forget(id, rec?.id);
     return local();
   }));
-  // Signing out: back to the start screen. The online session ends; the account stays on this computer, so its email
-  // opens it again, also offline. Nothing else on this computer is removed.
+  // Signing out: Kea goes on without an account. The online session ends; the account stays on this computer, so it
+  // can be opened again here, also offline. Nothing else on this computer is removed.
   handleApp(ipcMain, 'hub:logout', wrap(async () => {
     pending = null;
     if (isSignedIn()) {
@@ -1179,7 +1197,7 @@ module.exports = {
   _exportData: exportData,
   // (For the tests: the account flows without IPC, and stand-ins for fetch and the browser sign-in.)
   _account: {
-    local, status, openOffline, link, oauthSignIn, continueSignIn, movedSeen, logout: () => (dropSession(), accounts().signOut(), local()),
+    local, status, openHere, link, oauthSignIn, continueSignIn, movedSeen, logout: () => (dropSession(), accounts().signOut(), local()),
     signOutOthers: async (a) => req('POST', '/v1/me/sessions/sign-out-others', await freshProof(a?.provider), { reauth: true }),
     setFetch: (f) => (fetchFn = f),
     setIdTokens: (f) => (idTokenFn = f),

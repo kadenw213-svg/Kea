@@ -28,11 +28,45 @@ export function loadLocal() {
     return r;
   });
 }
-/** The account page's lock for cloud features: what's missing, in words. */
+/** The account page's lock for cloud features: what's missing. The server not answering comes first. */
 export function onlineNeed(s: HubStatus | null): 'none' | 'offline' | 'linked' | 'unreachable' | null {
   if (!s) return null;
+  if (s.checked && !s.reachable) return 'unreachable';
   if (s.state === 'none' || s.state === 'offline' || s.state === 'linked') return s.state;
-  return s.reachable || !s.checked ? null : 'unreachable';
+  return null;
+}
+/** Signing in waits for the Kea account server: checked, and not answering. */
+export const signInWaits = (s: HubStatus | null) => !!s && s.checked && !s.reachable;
+export const SIGN_IN_WAITS = 'Sign-in is available once Kea can reach the Kea account server.';
+/** The provider "Sign in with Google" uses: Google, or Microsoft when only it is set up here. null: neither is. */
+export const signInProvider = (s: HubStatus | null) => (s?.providers.google ? 'google' : s?.providers.microsoft ? 'microsoft' : null);
+
+/**
+ * Sign in with Google with no account here yet (the title bar, a locked cloud feature): one sign-in makes the account
+ * or signs in to it. When it needs one more step (the terms for a new account, the owner's code), or this copy of Kea
+ * has no sign-in set up, or an account is already here (linking checks its email), the account page opens instead.
+ */
+export async function signInWithGoogle() {
+  const s = useHub.getState().status;
+  if (signInWaits(s)) {
+    toast(`${SIGN_IN_WAITS} Kea tries again by itself.`, 'info');
+    refreshHub();
+    return;
+  }
+  const provider = signInProvider(s);
+  if (!provider || !s || s.state !== 'none') return openAccount();
+  const r = await api.hub.oauthSignIn({ provider });
+  if (r.ok) {
+    useHub.getState().set(r.value);
+    toast('Signed in to your Kea account.', 'success');
+    return;
+  }
+  if (r.data?.needsAccount || r.data?.totpRequired) {
+    await refreshHub();
+    return openAccount();
+  }
+  if (r.status === 0) refreshHub();
+  toast(r.error, r.status === 0 ? 'info' : 'error');
 }
 
 // Notifications for this account: kept here so the account page and the global listener agree.

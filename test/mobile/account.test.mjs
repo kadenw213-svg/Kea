@@ -1,6 +1,7 @@
 // The Kea account on the phone (mobile/src/accountCore.ts and account.ts), with no passwords: the accounts kept on the
-// phone (just an email offline), the states, linking by the same email only, Google and Microsoft sign-in addresses
-// (PKCE), the first sign-in making the online account after the terms, and the flows
+// phone (made only by a Google or Microsoft sign-in; email-only ones from older Kea kept working), the states, linking
+// by the same email only, Google and Microsoft sign-in addresses (PKCE), the first sign-in making the online account
+// after the terms and waiting for the server, and the flows
 // against a stand-in phone (encrypted storage, the browser coming back) and a stand-in account server (the Kea account
 // server, or a Kea Hub 0.5). No real Google, Microsoft or server is reached.
 //   node --test test/mobile/account.test.mjs
@@ -153,29 +154,33 @@ const memIO = () => {
   return { io: { read: async () => text, write: async (t) => void (text = t) }, text: () => text };
 };
 
+/** An email-only account as Kea 0.82 and older left it on the phone (Kea no longer makes these), signed in. */
+const legacyRecord = (email, name = '') => JSON.stringify({ v: 2, active: 'loc_old', accounts: { loc_old: { id: 'loc_old', email, name, createdAt: 1, lastSignIn: 2, hub: null } } });
+
 // ---------- the accounts on the phone ----------
-test('accounts on the phone: just an email, made at once; the same email opens it again; online sign-ins link by email', async () => {
+test('accounts on the phone: nothing makes one with just an email; an older one opens again; online sign-ins link by email', async () => {
   const m = memIO();
   let t = 1000;
   const S = C.createStore(m.io, { now: () => ++t });
   assert.equal(await S.active(), null);
-  const r = await S.open({ email: ' Sam@Example.com ', name: 'Sam' });
-  const a = r.account;
-  assert.equal(r.created, true);
-  assert.equal(a.email, 'sam@example.com');
-  assert.equal(a.hub, null);
-  assert.equal((await S.active()).id, a.id);
-  assert.deepEqual(Object.keys(JSON.parse(m.text()).accounts[a.id]).sort(), ['createdAt', 'email', 'hub', 'id', 'lastSignIn', 'name']);
-  await assert.rejects(() => S.open({ email: 'nope' }), (e) => e.field === 'email');
+  assert.equal(S.open, undefined, 'no way to make an account with just an email');
+  await assert.rejects(() => S.reopen({ email: 'sam@example.com' }), (e) => e.noAccount === true && /Sign in with Google/.test(e.message));
+  await assert.rejects(() => S.reopen({ email: 'nope' }), (e) => e.field === 'email');
+  assert.equal(m.text(), null, 'nothing was written');
   assert.equal(C.makeVerifier, undefined, 'no password verifier any more');
   assert.equal(C.passwordProblem, undefined);
+  assert.equal(C.gateOpen, undefined, 'no sign-in screen in front of Kea');
 
+  // An email-only account an older Kea made: still signed in; signed out, it opens again here.
+  await m.io.write(legacyRecord('sam@example.com', 'Sam'));
+  const a = await S.active();
+  assert.equal(a.id, 'loc_old');
+  assert.equal(a.hub, null);
   await S.signOut();
   assert.equal(await S.active(), null);
   assert.equal((await S.list()).length, 1, 'signing out keeps the account here');
-  const again = await S.open({ email: 'SAM@example.com' });
-  assert.equal(again.created, false);
-  assert.equal(again.account.id, a.id, 'the same account, with what it has here');
+  const again = await S.reopen({ email: 'SAM@example.com' });
+  assert.equal(again.id, a.id, 'the same account, with what it has here');
 
   // An online sign-in for the same email links this account (nothing else changes); another email gets its own.
   const linked = await S.attachOnline({ email: 'sam@example.com', name: 'Sam Online', hubId: 'acc_1', url: 'https://k.example', provider: 'google' });
@@ -203,7 +208,7 @@ test('an older phone record (PBKDF2 verifiers): its accounts and emails stay, th
   assert.ok(!m.text().includes('verifier') && !m.text().includes('pbkdf2'));
   assert.equal(JSON.parse(m.text()).v, 2);
   await S.signOut();
-  assert.equal((await S.open({ email: 'sam@example.com' })).account.id, 'loc_a');
+  assert.equal((await S.reopen({ email: 'sam@example.com' })).id, 'loc_a');
 });
 
 // ---------- states and the locked wording ----------
@@ -212,23 +217,24 @@ test('states come from the phone alone, and cloud features say what they need', 
   assert.equal(C.accountState({ active: { hub: null }, hasToken: false }), 'offline');
   assert.equal(C.accountState({ active: { hub: { id: 'x' } }, hasToken: false }), 'linked');
   assert.equal(C.accountState({ active: null, hasToken: true }), 'online');
-  assert.equal(C.gateOpen('none'), true);
-  assert.equal(C.gateOpen('offline'), false);
   const s = (state, o = {}) => ({ state, reachable: false, checked: false, url: 'https://k.example', ...o });
+  assert.equal(C.onlineNeed(s('none')), 'none');
   assert.equal(C.onlineNeed(s('offline')), 'offline');
   assert.equal(C.onlineNeed(s('linked')), 'linked');
   assert.equal(C.onlineNeed(s('online')), null, 'not checked yet: nothing is locked');
   assert.equal(C.onlineNeed(s('online', { checked: true })), 'unreachable');
+  assert.equal(C.onlineNeed(s('none', { checked: true })), 'unreachable', 'the server not answering comes first');
   assert.equal(C.onlineNeed(s('online', { checked: true, reachable: true })), null);
   assert.equal(C.onlineNeed(s('offline', { url: '' })), 'noAddress');
-  // The same words as Kea on the computer (src/components/account/NeedsOnline.tsx), with "phone" for "computer".
-  assert.equal(C.needsOnlineText('offline').title, 'Needs your Kea account online');
-  assert.equal(C.needsOnlineText('offline').text, 'Take your account online with Google or Microsoft to use it. Everything on this phone works without it.');
-  assert.equal(C.needsOnlineText('offline').action, 'Go online');
-  assert.equal(C.needsOnlineText('linked').text, 'Sign in online to use it.');
-
-  assert.equal(C.needsOnlineText('linked').action, 'Sign in online');
-  assert.equal(C.needsOnlineText('unreachable').text, 'Kea can’t reach it right now, and tries again by itself.');
+  assert.equal(C.signInWaits({ checked: true, reachable: false }), true);
+  assert.equal(C.signInWaits({ checked: false, reachable: false }), false);
+  // The same words as Kea on the computer (src/components/account/NeedsOnline.tsx).
+  for (const need of ['none', 'offline', 'linked']) {
+    assert.equal(C.needsOnlineText(need).title, 'Needs your Kea account');
+    assert.equal(C.needsOnlineText(need).text, 'Sign in with Google to use this.');
+    assert.equal(C.needsOnlineText(need).action, 'Sign in with Google');
+  }
+  assert.equal(C.needsOnlineText('unreachable').text, 'Can’t reach the Kea account server right now. Kea tries again by itself.');
   assert.equal(C.needsOnlineText('unreachable').action, null);
 });
 
@@ -316,28 +322,43 @@ const reset = async ({ kind = 'keac', up = true, url = 'https://keac.example' } 
 };
 const auth = () => server.calls.filter((c) => c.path.startsWith('/v1/auth/') && c.path !== '/v1/auth/logout');
 
-test('flows: just an email opens Kea on the phone with no connection; the server unreachable is a normal state', async () => {
+test('flows: a brand-new phone with the server down opens with no account, and nothing tries to make one', async () => {
   await reset({ up: false });
   const s0 = await A.status();
   assert.equal(s0.state, 'none');
+  assert.equal(s0.account, null);
   assert.equal(s0.checked, true);
   assert.equal(s0.reachable, false);
   // The background check is short.
   assert.deepEqual(server.calls.map((c) => [c.path, c.connectMs, c.readMs]), [['/v1/health', 4000, 4000]]);
-  server.calls = [];
-  const s = await A.openOffline({ email: 'sam@example.com', name: 'Sam' });
-  assert.equal(s.state, 'offline');
-  assert.equal(s.created, true);
-  assert.equal(server.calls.length, 0, 'no connection needed');
-  await A.signOut();
-  assert.equal((await A.local()).state, 'none');
-  const back = await A.openOffline({ email: 'SAM@example.com' });
-  assert.equal(back.state, 'offline');
-  assert.equal(back.created, false);
-  assert.equal(back.account.id, s.account.id, 'the same account on this phone');
+  // Sign in with Google waits for the server: no browser opens, nothing is made.
+  await assert.rejects(() => A.oauthSignIn({ provider: 'google' }), (e) => e.status === 0 && e.data?.unreachable === true && /Sign-in is available once Kea can reach the Kea account server/.test(e.message));
+  assert.equal(phone.opened.length, 0, 'no Google sign-in was started');
   assert.equal(auth().length, 0);
+  // No way to make one with just an email; opening one by email only finds one already here.
+  assert.equal(A.openOffline, undefined);
+  await assert.rejects(() => A.openHere({ email: 'sam@example.com' }), (e) => e.status === 404 && e.data?.noAccount === true);
+  assert.equal(phone.accounts, '', 'nothing was written');
+  assert.equal((await A.local()).state, 'none');
   assert.equal(A.login, undefined);
   assert.equal(A.create, undefined);
+  // The sign-in screen has no "Use offline".
+  const ui = fs.readFileSync(path.join(src, 'HubAccount.tsx'), 'utf8');
+  assert.ok(!/Use offline|openOffline/.test(ui));
+});
+
+test('flows: an email-only account from an older Kea stays signed in with the server down; signed out, it opens again', async () => {
+  await reset({ up: false });
+  phone.accounts = legacyRecord('sam@example.com', 'Sam');
+  const s = await A.status();
+  assert.equal(s.state, 'offline', 'still signed in');
+  assert.equal(s.account.id, 'loc_old');
+  await A.signOut();
+  assert.equal((await A.local()).state, 'none');
+  const back = await A.openHere({ email: 'SAM@example.com' });
+  assert.equal(back.state, 'offline');
+  assert.equal(back.account.id, 'loc_old', 'the same account on this phone');
+  assert.equal(auth().length, 0, 'no connection needed');
 });
 
 test('flows: the first Google sign-in asks for the terms, then the same sign-in makes the online account; it stays signed in', async () => {
@@ -356,10 +377,13 @@ test('flows: the first Google sign-in asks for the terms, then the same sign-in 
   assert.deepEqual(tokens, ['/v1/auth/oauth', '/v1/auth/oauth']);
   assert.equal((await A.local()).pending, null);
   assert.equal(storage.get('kea.hubOn'), '1');
-  // Stays signed in; signed out with no connection, the same email opens it again (linked).
-  await A.signOut();
+  // Stays signed in while the server is down; signed out with no connection, it opens again here (linked).
   server.up = false;
-  const off = await A.openOffline({ email: 'sam@example.com' });
+  const still = await A.status();
+  assert.equal(still.state, 'online', 'still signed in with the server down');
+  assert.equal(still.account.id, s.account.id);
+  await A.signOut();
+  const off = await A.openHere({ email: 'sam@example.com' });
   assert.equal(off.state, 'linked');
   server.up = true;
   // The session ending online leaves the account signed in here, linked.
@@ -373,7 +397,8 @@ test('flows: the first Google sign-in asks for the terms, then the same sign-in 
 
 test('flows: going online links only the same email; an existing (moved) account with that email is signed in to', async () => {
   await reset();
-  await A.openOffline({ email: 'sam@example.com' });
+  phone.accounts = legacyRecord('sam@example.com');
+  await A.status();
   phone.providerEmail = 'someone.else@example.com';
   await assert.rejects(
     () => A.link({ provider: 'google' }),
@@ -435,7 +460,8 @@ test('flows: with no address under Advanced, the built-in one is used, and the a
   await reset({ url: '' });
   const s = await A.status();
   assert.equal(s.url, C.DEFAULT_ACCOUNT_URL);
-  assert.equal((await A.openOffline({ email: 'sam@example.com' })).state, 'offline');
+  phone.accounts = legacyRecord('sam@example.com');
+  assert.equal((await A.local()).state, 'offline');
   // Setting one under Advanced: https only.
   await assert.rejects(() => A.setAdvancedUrl('http://k.example'), /https/);
   const a = await A.setAdvancedUrl('keac.example');

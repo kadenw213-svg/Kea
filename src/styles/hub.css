@@ -802,8 +802,16 @@
   color: var(--danger, #e5534b);
   font-size: 12px;
 }
+/* No account yet: a quiet "Sign in with Google" in its place (dimmer while the server can't be reached). */
+.acct-tb-signin {
+  -webkit-app-region: no-drag;
+  white-space: nowrap;
+}
+.acct-tb-signin.waits {
+  opacity: 0.7;
+}
 
-/* "Needs your Kea account online": a calm locked state for cloud features (never an error). */
+/* "Needs your Kea account": a calm locked state for cloud features (never an error). */
 .needs-online {
   display: flex;
   align-items: center;

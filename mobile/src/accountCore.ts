@@ -3,15 +3,16 @@
 // account.ts uses this with the phone's encrypted storage; the tests use it with a stand-in. The same model as Kea on
 // the computer (electron/accountCore.cjs).
 //
-// There are no passwords. Online, a Kea account signs in with Google or Microsoft only. On this phone an account is
-// just its email: typing it opens that account's things here at once (made the first time), with no connection. Once
-// signed in, Kea stays signed in here (offline too) until the person signs out.
+// There are no passwords. A Kea account is made and signed in to with Google or Microsoft only, which needs the Kea
+// account server to answer. Without an account, everything on this phone still works. Once signed in, Kea stays
+// signed in here (offline too) until the person signs out.
 //
 // The stored record (kept by native code in Android's encrypted storage):
 //   { v: 2, active: <local id> | null,
 //     accounts: { <local id>: { id, email, name, createdAt, lastSignIn, hub: { id, url, provider?, at } | null } } }
-// An account made here is "offline" until a Google or Microsoft sign-in with the same email links it to the online
-// Kea account (hub set). Accounts used before stay: signing out only clears `active`.
+// Kea up to 0.82 could also make an account here with just an email ("offline", hub null). Those stay and keep
+// working; a Google or Microsoft sign-in with the same email links one to the online Kea account (hub set). No new
+// ones are made. Accounts used before stay: signing out only clears `active`.
 // (Version 1 kept a PBKDF2 verifier of a password with each account. Reading the record drops it, once; the accounts,
 // their emails and everything kept for them stay.)
 //
@@ -83,12 +84,15 @@ export interface StoreIO {
 /** A problem with what was typed: `field` says where. */
 export class AccountError extends Error {
   field: string | null;
-  constructor(message: string, o: { field?: string | null } = {}) {
+  noAccount: boolean;
+  constructor(message: string, o: { field?: string | null; noAccount?: boolean } = {}) {
     super(message);
     this.field = o.field ?? null;
+    this.noAccount = !!o.noAccount;
   }
 }
 const NOT_HERE = 'That account isn’t on this phone.';
+const NO_ACCOUNT_HERE = 'There’s no Kea account for that email on this phone. Sign in with Google to make one.';
 const name60 = (n: unknown) => String(n || '').trim().slice(0, 60);
 /** The record as kept now: only these fields (an older record's verifier is left behind). */
 const clean = (id: string, a: any): Rec => ({
@@ -160,22 +164,19 @@ export function createStore(io: StoreIO, { now = Date.now }: { now?: () => numbe
         .map((a) => pub(a)!);
     },
     /**
-     * Using Kea on this phone with just an email: the account kept here for it is signed in (its things here open
-     * again), or one is made, at once. No connection needed.
+     * An account already kept on this phone, signed in again (its things here open), with no connection needed. Never
+     * makes one: an email with no account here is refused (noAccount) and nothing is written.
      */
-    open({ email, name }: { email: string; name?: string }): Promise<{ account: LocalAccount; created: boolean }> {
+    async reopen({ email }: { email: string }): Promise<LocalAccount> {
       const e = norm(email);
-      if (!EMAIL.test(e)) return Promise.reject(new AccountError('Add your email address.', { field: 'email' }));
+      if (!EMAIL.test(e)) throw new AccountError('Add your email address.', { field: 'email' });
+      if (!byEmail(await read(), e)) throw new AccountError(NO_ACCOUNT_HERE, { noAccount: true });
       return update((s) => {
-        let a = byEmail(s, e);
-        const created = !a;
-        if (!a) {
-          a = { id: newId(), email: e, name: name60(name), createdAt: now(), lastSignIn: null, hub: null };
-          s.accounts[a.id] = a;
-        }
+        const a = byEmail(s, e);
+        if (!a) throw new AccountError(NO_ACCOUNT_HERE, { noAccount: true });
         a.lastSignIn = now();
         s.active = a.id;
-        return { account: pub(a)!, created };
+        return pub(a)!;
       });
     },
     activate(id: string) {
@@ -186,7 +187,7 @@ export function createStore(io: StoreIO, { now = Date.now }: { now?: () => numbe
         return pub(s.accounts[id])!;
       });
     },
-    /** Signed out here: the account stays, so typing its email opens it again (also offline). */
+    /** Signed out here: the account stays, so it can be opened again here (also offline). */
     signOut() {
       return update((s) => void (s.active = null));
     },
@@ -257,11 +258,12 @@ export function linkRefusal(d: LinkDecision, label: string): string {
 // ---------- The account state ----------
 export type AccountState = 'none' | 'offline' | 'linked' | 'online';
 /**
- * From what's on this phone only (never the network):
- *   none    no account signed in here;
- *   offline an account made on this phone, not linked to an online Kea account: everything on the phone works, cloud
- *           features show "Needs your Kea account online";
- *   linked  linked to an online Kea account, signed in here without an online session: the same, with "Sign in online";
+ * From what's on this phone only (never the network). Kea opens at once in every state; only what needs the account
+ * online waits.
+ *   none    no account signed in here: everything on the phone works; "Sign in with Google" makes the account or signs
+ *           in to it once the Kea account server answers;
+ *   offline an email-only account from Kea 0.82 or older, not linked yet: the same, signed in;
+ *   linked  linked to an online Kea account, signed in here without an online session: the same;
  *   online  signed in to the online Kea account here (whether or not it can be reached right now).
  */
 export function accountState({ active, hasToken }: { active: { hub?: unknown } | null; hasToken: boolean }): AccountState {
@@ -269,22 +271,23 @@ export function accountState({ active, hasToken }: { active: { hub?: unknown } |
   if (!active) return 'none';
   return active.hub ? 'linked' : 'offline';
 }
-/** The sign-in screen shows only while no account is signed in; it never waits for the network. */
-export const gateOpen = (state: AccountState) => state === 'none';
-/** What a cloud feature shows in its place: null when it can be used now. */
+/** What a cloud feature shows in its place: null when it can be used now. The server not answering comes first. */
 export type OnlineNeed = 'none' | 'offline' | 'linked' | 'unreachable' | 'noAddress';
 export function onlineNeed(s: { state: AccountState; reachable: boolean; checked: boolean; url?: string } | null): OnlineNeed | null {
   if (!s) return null;
-  if (s.state === 'none' || s.state === 'offline' || s.state === 'linked') return s.url === '' && s.state !== 'linked' ? 'noAddress' : s.state;
-  return s.reachable || !s.checked ? null : 'unreachable';
+  if ((s.state === 'none' || s.state === 'offline') && s.url === '') return 'noAddress';
+  if (s.checked && !s.reachable) return 'unreachable';
+  return s.state === 'online' ? null : s.state;
 }
+/** Signing in waits while the Kea account server can't be reached (checked, and not answering). */
+export const signInWaits = (s: { reachable: boolean; checked: boolean } | null) => !!s && s.checked && !s.reachable;
+export const SIGN_IN_WAITS = 'Sign-in is available once Kea can reach the Kea account server. Kea tries again by itself.';
 /** The calm words cloud features show while the account isn't online (as Kea on the computer says them). */
-export function needsOnlineText(need: OnlineNeed, onlineNote: string | null = null): { title: string; text: string; action: string | null } {
-  const title = 'Needs your Kea account online';
-  if (need === 'linked') return { title, text: 'Sign in online to use it.', action: 'Sign in online' };
-  if (need === 'unreachable') return { title, text: 'Kea can’t reach it right now, and tries again by itself.', action: null };
-  if (need === 'noAddress') return { title, text: 'This copy of Kea has no Kea account address yet. Add it under Settings → Kea account → Advanced. Everything on this phone works without it.', action: null };
-  return { title, text: 'Take your account online with Google or Microsoft to use it. Everything on this phone works without it.', action: 'Go online' };
+export function needsOnlineText(need: OnlineNeed): { title: string; text: string; action: string | null } {
+  const title = 'Needs your Kea account';
+  if (need === 'unreachable') return { title, text: 'Can’t reach the Kea account server right now. Kea tries again by itself.', action: null };
+  if (need === 'noAddress') return { title, text: 'This copy of Kea has no Kea account address. Add it under Settings → Kea account → Advanced. Everything on this phone works without it.', action: null };
+  return { title, text: 'Sign in with Google to use this.', action: 'Sign in with Google' };
 }
 
 // ---------- The account server's address ----------

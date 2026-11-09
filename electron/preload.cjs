@@ -59,7 +59,7 @@ contextBridge.exposeInMainWorld('api', {
     openSupport: () => ipcRenderer.invoke('hub:openSupport'),
     changes: () => ipcRenderer.invoke('hub:changes'),
     openTerms: (since) => ipcRenderer.invoke('hub:openTerms', { since }),
-    openOffline: (a) => ipcRenderer.invoke('hub:openOffline', a),
+    openHere: (a) => ipcRenderer.invoke('hub:openHere', a),
     oauthSignIn: (a) => ipcRenderer.invoke('hub:oauthSignIn', a),
     link: (a) => ipcRenderer.invoke('hub:link', a),
     continueSignIn: (a) => ipcRenderer.invoke('hub:continueSignIn', a),

@@ -192,7 +192,7 @@ async function live(key, fn, put) {
     if (e.status !== 0) throw e;
     const was = typeof key === 'function' ? key(s) : s[key];
     if (was) return { ...was, offline: true };
-    throw new OfflineError("Can’t reach your Kea account online right now. Try again in a bit.");
+    throw new OfflineError("Can’t reach the Kea account server right now. Try again in a bit.");
   }
 }
 

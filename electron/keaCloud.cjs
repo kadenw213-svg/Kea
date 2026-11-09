@@ -158,7 +158,7 @@ function status() {
   };
 }
 
-const notReady = () => (placeNow().kind === 'kea' ? 'Sign in to your Kea account to use Kea cloud.' : `${placeNow().label} isn’t on this computer right now.`);
+const notReady = () => (placeNow().kind === 'kea' ? 'Sign in with Google to use Kea cloud.' : `${placeNow().label} isn’t on this computer right now.`);
 function guard(p) {
   if (!ready()) throw new Error(notReady());
   if (!isInside(root(), p) || path.resolve(p) === path.resolve(root())) throw new Error('That isn’t in Kea cloud.');

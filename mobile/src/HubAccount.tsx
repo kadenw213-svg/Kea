@@ -1,14 +1,15 @@
-// The Kea account on the phone. Continue with Google or Microsoft signs in (the first time it makes the online account,
-// after the terms); with no connection, just an email opens that account on the phone at once. An account on the phone
-// goes online later with the same email. There are no passwords. Online, the account's terms, its notifications and
+// The Kea account on the phone. Sign in with Google or Microsoft makes the account (after the terms) or signs in to it,
+// once the Kea account server answers; until then everything on the phone works without one, and Kea checks again by
+// itself. An email-only account from an older Kea goes online with the same email. There are no passwords. Online, the
+// account's terms, its notifications and
 // storage; the classes and textbooks then come through Kea cloud instead of a drive's files (from the folder Kea on the
 // computer writes them into, picked by itself). The account's address is under Advanced.
 import { useEffect, useState } from 'react';
 import { Bell, Check, CheckCircle2, ExternalLink, Heart, Loader2, LogIn, LogOut, RefreshCw, Smartphone, UserPlus } from 'lucide-react';
 import { Kea } from './kea';
 import { HubError, HubInfo, HubMeSummary, HubNote, TermsGate, acceptTerms, hubInfo, hubMe, hubNotes, hubNotesRead, hubPickFolder, termsGate, termsUrl } from './hub';
-import { NOT_SET_UP, cancelSignIn, continueSignIn, currentTerms, link, oauthSignIn, openOffline, setAdvancedUrl, signOut, status as accountStatus, type AccountStatus, type SignedIn } from './account';
-import { EMAIL, PROVIDERS, type Provider } from './accountCore';
+import { NOT_SET_UP, cancelSignIn, continueSignIn, currentTerms, link, oauthSignIn, openHere, setAdvancedUrl, signOut, status as accountStatus, type AccountStatus, type SignedIn } from './account';
+import { PROVIDERS, SIGN_IN_WAITS, signInWaits, type Provider } from './accountCore';
 import { NeedsOnline, useAccount } from './NeedsOnline';
 
 /** `onChange`: signed in or out, or Kea's folder in Kea cloud changed (the app reads the classes again). */
@@ -18,6 +19,14 @@ export function HubAccount({ onChange, compact = false }: { onChange(): void; co
     setS(n);
     onChange();
   };
+  // (Not signed in online and the server isn't answering: checked again every 20 seconds while this shows, so
+  // Sign in with Google is ready once it answers.)
+  const waits = !!s && !s.signedIn && signInWaits(s);
+  useEffect(() => {
+    if (!waits) return;
+    const t = setInterval(() => void accountStatus().then(setS, () => {}), 20_000);
+    return () => clearInterval(t);
+  }, [waits]);
   if (!s)
     return (
       <p className="muted small">
@@ -37,24 +46,29 @@ export function HubAccount({ onChange, compact = false }: { onChange(): void; co
 const errText = (e: any) => String(e?.message || e);
 const providerList = (s: AccountStatus): Provider[] => (['google', 'microsoft'] as Provider[]).filter((p) => s.providers[p] && !(p === 'microsoft' && s.microsoftOnServer === false));
 
-/** Continue with Google / Microsoft (only the ones this copy of Kea is set up for; none: a plain sentence). */
+/**
+ * Sign in with Google / Microsoft (only the ones this copy of Kea is set up for; none: a plain sentence). While the
+ * Kea account server can't be reached they wait, and say so.
+ */
 function ProviderButtons({ s, busy, onPick }: { s: AccountStatus; busy: boolean; onPick(p: Provider): void }) {
   const list = providerList(s);
   if (!list.length) return <p className="muted small">{NOT_SET_UP}</p>;
   if (!s.url) return null;
+  const waits = signInWaits(s);
   return (
     <>
       {list.map((p) => (
-        <button key={p} className="btn primary" disabled={busy} onClick={() => onPick(p)}>
-          <LogIn size={16} /> Continue with {PROVIDERS[p].label}
+        <button key={p} className="btn primary" disabled={busy || waits} onClick={() => onPick(p)}>
+          <LogIn size={16} /> Sign in with {PROVIDERS[p].label}
         </button>
       ))}
+      {waits && <p className="muted small">{SIGN_IN_WAITS}</p>}
     </>
   );
 }
 
 /**
- * Continue with Google or Microsoft and what it may still need: the terms (the first sign-in makes the online account)
+ * Sign in with Google or Microsoft and what it may still need: the terms (the first sign-in makes the account)
  * or the owner's two-step code.
  */
 function useOnline(onDone: (s: AccountStatus) => void) {
@@ -144,31 +158,28 @@ function OwnerCode({ o }: { o: ReturnType<typeof useOnline> }) {
   );
 }
 
-// ---------- No account signed in on this phone: Continue with Google or Microsoft, or just an email ----------
+// ---------- No account signed in on this phone: Sign in with Google (everything on the phone works without it) ----------
 function Start({ s, compact, onDone }: { s: AccountStatus; compact: boolean; onDone(s: AccountStatus): void }) {
-  const [email, setEmail] = useState('');
   const o = useOnline(onDone);
   const step = o.step || (s.pending ? 'terms' : null);
   if (step === 'terms') return <NewOnlineAccount s={s} o={o} />;
   if (step === 'code') return <OwnerCode o={o} />;
   return (
     <>
-      {!compact && <p className="muted small">Sign in with Google or Microsoft to get your classes and textbooks from Kea on your computer. No connection? Your email alone opens Kea on this phone.</p>}
+      {!compact && <p className="muted small">Sign in with Google to get your classes and textbooks from Kea on your computer. Everything on this phone works without an account, and stays when you sign in.</p>}
       <ProviderButtons s={s} busy={o.busy} onPick={(p) => o.run(() => oauthSignIn({ provider: p }))} />
-      <p className="muted small">Or use Kea on this phone:</p>
       {s.known.length > 0 && (
-        <div className="chips">
-          {s.known.slice(0, 4).map((k) => (
-            <button key={k.email} disabled={o.busy} onClick={() => o.run(() => openOffline({ email: k.email }))}>
-              {k.email}
-            </button>
-          ))}
-        </div>
+        <>
+          <p className="muted small">Or open an account already on this phone:</p>
+          <div className="chips">
+            {s.known.slice(0, 4).map((k) => (
+              <button key={k.email} disabled={o.busy} onClick={() => o.run(() => openHere({ email: k.email }))}>
+                {k.email}
+              </button>
+            ))}
+          </div>
+        </>
       )}
-      <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" autoCapitalize="none" autoComplete="username" inputMode="email" />
-      <button className="btn" disabled={o.busy || !EMAIL.test(email.trim())} onClick={() => o.run(() => openOffline({ email }))}>
-        {o.busy ? <Loader2 size={16} className="spin" /> : <Smartphone size={16} />} Use offline
-      </button>
       {o.msg && <p className="note warn">{o.msg}</p>}
     </>
   );
@@ -188,7 +199,7 @@ function OnPhone({ s, onDone }: { s: AccountStatus; onDone(s: AccountStatus): vo
           <b>{a.name || a.email}</b>
           <span className="muted small block">
             {a.name ? `${a.email} · ` : ''}
-            {s.state === 'linked' ? 'Signed in on this phone; your Kea account online isn’t signed in right now' : 'On this phone only'}
+            {s.state === 'linked' ? 'Signed in on this phone · not signed in online right now' : 'On this phone only'}
           </span>
         </span>
       </div>
@@ -202,7 +213,7 @@ function OnPhone({ s, onDone }: { s: AccountStatus; onDone(s: AccountStatus): vo
           {(open || s.state === 'linked') && (
             <>
               <ProviderButtons s={s} busy={o.busy} onPick={(p) => o.run(() => link({ provider: p }))} />
-              {providerList(s).length > 0 && <p className="muted small">Use the account with {a.email}. A different email never links to this account, and nothing on this phone changes.</p>}
+              {providerList(s).length > 0 && <p className="muted small">Sign in as {a.email}. A different email never links to this account, and nothing on this phone changes.</p>}
             </>
           )}
         </>

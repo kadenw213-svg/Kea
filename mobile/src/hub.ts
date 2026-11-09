@@ -33,7 +33,7 @@ export function normalizeHubUrl(input: string): string {
 }
 
 /** Not reaching the server is a normal answer (status 0): the app shows "offline", never an error screen. */
-export const OFFLINE_MSG = 'Can’t reach your Kea account online right now. Everything on this phone still works; Kea tries again by itself.';
+export const OFFLINE_MSG = 'Can’t reach the Kea account server right now. Everything on this phone still works; Kea tries again by itself.';
 /** How long a request may take (connecting, then reading): background checks are short, files may be big. */
 export const LIMITS = { status: { connectMs: 4000, readMs: 4000 }, auth: { connectMs: 8000, readMs: 20000 } } as const;
 
@@ -99,7 +99,7 @@ export function hubProblem(e: any): string {
   const s = e?.status;
   if (s === 401) return 'Your Kea account sign-in ended. Sign in again under Settings → Kea account.';
   if (s === 428) return 'The Kea terms have changed. Open Settings → Kea account to read what changed and agree.';
-  if (s === 0) return 'Couldn’t reach your Kea account online. Check your connection; your classes from last time are shown.';
+  if (s === 0) return 'Couldn’t reach the Kea account server. Check your connection; your classes from last time are shown.';
   return String(e?.message || e);
 }
 
