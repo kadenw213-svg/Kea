@@ -43,3 +43,28 @@ src/lib/legacy.ts    names Kea's files used before 0.45, still recognized when r
 mobile/              the Android app (Capacitor): it runs Scholar's study screens and study.cjs from this repo
 scripts/             release, licences, bundled assets, icon (build/logo.svg → build/icon.png), Android build
 ```
+
+## Built-in sign-in clients (Google, Microsoft)
+
+"Sign in with Google / Microsoft" and Google Drive (Docs, Sheets, Slides) use Kea's own OAuth clients. Their ids are
+never in this repo. The build reads them from a file on the owner's PC, outside the repo:
+
+`%LOCALAPPDATA%\KeaBuild\oauth-clients.json` (or the path in `KEA_OAUTH_CLIENTS`)
+
+```json
+{ "google": { "desktopClientId": "…", "desktopClientSecret": "…", "androidClientId": "…" }, "microsoft": { "clientId": "…" } }
+```
+
+- `npm run build`, `npm start`, `npm run dist` and `npm run release` run `scripts/oauth-clients.cjs` first. It writes
+  `electron/buildConfig.json` (git-ignored, packaged with the app) with the desktop Google client and Microsoft's.
+- The phone app's build (`mobile/vite.config.mjs`, so also `scripts/mobile-apk.cjs`) gets `VITE_KEA_GOOGLE_CLIENT_ID`
+  (the Android client) and `VITE_KEA_MICROSOFT_CLIENT_ID` from the same file. Ones already in the environment win.
+- At run time Kea on the computer uses, first found: `hub.googleClientId` / `hub.googleClientSecret` /
+  `hub.microsoftClientId` in settings.json, then `KEA_GOOGLE_CLIENT_ID` / `KEA_GOOGLE_CLIENT_SECRET` /
+  `KEA_MICROSOFT_CLIENT_ID`, then `electron/buildConfig.json`.
+- Without the file the build still works and prints a warning: that build has no sign-in (Kea says so plainly) and
+  Google files open in the browser.
+- A Google "Desktop app" client secret isn't confidential for installed apps (Google says so), but it still never goes
+  in this public repo.
+- Until Google reviews Kea for the Drive scope, only the test users listed on the OAuth consent screen can connect
+  Drive; everyone else is told plainly and offered "Open in browser instead".

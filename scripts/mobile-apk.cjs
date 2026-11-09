@@ -73,6 +73,16 @@ const tools = (() => {
 })();
 
 fs.writeFileSync(path.join(mobile, 'android', 'local.properties'), `sdk.dir=${env.ANDROID_HOME.replace(/\\/g, '\\\\')}\n`);
+// The built-in sign-in clients (the Android Google client and Microsoft's), from the owner's file outside the repo:
+// they go into the phone app's build as VITE_KEA_* (a warning without it; sign-in isn't available in that build).
+// Ones already in the environment win.
+{
+  const { readOwnerFile, mobileEnv } = require('./oauth-clients.cjs');
+  const { config, warning } = readOwnerFile();
+  if (warning) console.warn(`\nWarning: ${warning}\n`);
+  for (const [k, v] of Object.entries(mobileEnv(config))) if (!env[k]) env[k] = v;
+  env.KEA_OAUTH_CHECKED = '1';
+}
 run('npx vite build', mobile);
 run('npx cap sync android', mobile);
 // Kea's colours for class sites: the desktop's own script, injected by the phone's class-site screen.

@@ -7,6 +7,7 @@ import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import path from 'path';
+import { createRequire } from 'module';
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -18,6 +19,17 @@ const pdfAssets = () => ({
     if (fs.existsSync(from)) fs.cpSync(from, path.join(here('./dist'), 'pdfjs'), { recursive: true });
   }
 });
+
+// The built-in sign-in clients (VITE_KEA_GOOGLE_CLIENT_ID, VITE_KEA_MICROSOFT_CLIENT_ID), from the owner's file outside
+// the repo (scripts/oauth-clients.cjs). Ones already in the environment win; without either, sign-in isn't available
+// in this build and the phone says so.
+{
+  const require = createRequire(import.meta.url);
+  const { readOwnerFile, mobileEnv } = require('../scripts/oauth-clients.cjs');
+  const { config, warning } = readOwnerFile();
+  for (const [k, v] of Object.entries(mobileEnv(config))) if (!process.env[k]) process.env[k] = v;
+  if (!process.env.VITE_KEA_GOOGLE_CLIENT_ID && !process.env.VITE_KEA_MICROSOFT_CLIENT_ID && !process.env.KEA_OAUTH_CHECKED) console.warn(`Warning: ${warning || 'no built-in sign-in client for the phone app'}`);
+}
 
 export default defineConfig({
   root: here('.'),

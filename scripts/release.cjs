@@ -29,6 +29,8 @@ console.log(`\nReleasing Kea v${pkg.version}\n`);
 run('node scripts/licenses.cjs');
 run('node scripts/assets.cjs');
 run('node scripts/engine-vendor.cjs');
+// The built-in sign-in clients (electron/buildConfig.json, from the owner's file outside the repo; a warning without it).
+run('node scripts/oauth-clients.cjs');
 run('npx vite build');
 run(`npx electron-builder --win --x64 --publish always -c.directories.output="${OUT}"`, { GH_TOKEN: token });
 // Kea for Android rides along on every release, so ".../releases/latest/download/Kea-Android.apk" always works.
