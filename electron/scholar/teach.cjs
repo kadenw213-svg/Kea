@@ -6,10 +6,19 @@
 //
 // Lean on purpose: no tools, no MCP, no project settings, a short system prompt, and only the one question's words.
 // The check questions are practice inside the lesson: their answers are never saved, so they don't count as learned.
+//
+// Without a Claude of its own (Claude Code not on this PC), Kea asks Kea's shared Claude instead (the Kea owner's
+// plan, through the Kea account: hub.cjs requestTeach), when the account server offers it (features: sharedTeach).
+// Settings → Teach → Where lessons are written (study.teach.via): auto (own Claude first), own, or shared. Through
+// the shared Claude a lesson always runs on Sonnet with effort medium and no tools, within the account's daily limits;
+// a follow-up sends the lesson it follows (there's no conversation to continue on someone else's PC).
+// On the Kea owner's PC, writeShared() is the other end: it writes those lessons for others (hub.cjs teachLoop).
 const { spawn } = require('child_process');
 const settings = require('../settings.cjs');
 const plan = require('../assistantPlan.cjs');
 const study = require('./study.cjs');
+const { usageOf, checkJob, lockedFor } = require('./usage.cjs');
+const { fallbackOn, fallbackReason, noteFor } = require('./claudeRoute.cjs');
 
 const SYSTEM = `You are Kea's tutor. A college student has just answered one practice question and wants to understand the concept behind it. Teach it so they could answer any question on it, not only this one.
 
@@ -64,20 +73,25 @@ function lessonPrompt(w, req) {
   return lines.join('\n');
 }
 
-/** Run one turn: streams the text as it comes (onText), resolves { text, session } or { error }. */
-async function turn(id, message, session, onText) {
-  const claude = await plan.findClaude();
+/**
+ * Run one turn: streams the text as it comes (onText), resolves { text, session, usage } or { error }. `lock` (a lesson
+ * for someone else through the shared Claude) fixes the model, effort and check count instead of this Kea's settings.
+ */
+async function turn(id, message, session, onText, lock = null) {
+  const claude = lock?.claude || (await plan.findClaude());
   if (!claude) return { error: 'Teach uses Claude Code on this PC, which isn’t installed. Sign in to Claude in Settings → Claude Assistant.' };
-  const model = settings.get('study.teach.model', 'claude-sonnet-5-5');
-  const effort = settings.get('study.teach.effort', 'medium');
-  const checks = Math.max(0, Math.min(5, Number(settings.get('study.teach.checks', 2)) || 0));
+  const model = lock ? lock.model : settings.get('study.teach.model', 'claude-sonnet-5-5');
+  const effort = lock ? lock.effort : settings.get('study.teach.effort', 'medium');
+  const checks = Math.max(0, Math.min(5, Number(lock ? lock.checks : settings.get('study.teach.checks', 2)) || 0));
   const system = SYSTEM.replace('CHECKS', String(checks || 2)) + (checks ? '' : '\nWrite no check block.');
   const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--strict-mcp-config', '--tools', '', '--permission-mode', 'dontAsk', '--setting-sources', 'project', '--system-prompt', system, '--model', model, '--effort', effort];
   if (session) args.push('--resume', session);
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(claude, args, { cwd: plan.workDir(), windowsHide: true, env: plan.planEnv() });
+      // (claude may be [program, ...its own arguments]: a stand-in under test.)
+      const [cmd, ...pre] = Array.isArray(claude) ? claude : [claude];
+      child = spawn(cmd, [...pre, ...args], { cwd: lock?.cwd || plan.workDir(), windowsHide: true, env: lock?.env || plan.planEnv() });
     } catch (err) {
       return resolve({ error: `Claude Code couldn’t start: ${err.message}` });
     }
@@ -120,10 +134,12 @@ async function turn(id, message, session, onText) {
     child.on('close', (code) => {
       if (buf.trim()) line(buf);
       running.delete(id);
-      if (child.killedByUser) return resolve({ text, session: sess, stopped: true });
-      if (result?.is_error) return resolve({ error: plan.explain(result.result || errText), session: sess });
-      if (!text && code !== 0) return resolve({ error: plan.explain(errText || `Claude Code exited (${code}).`), session: sess });
-      resolve({ text, session: sess });
+      const usage = usageOf(result, model);
+      if (child.killedByUser) return resolve({ text, session: sess, stopped: true, usage });
+      // (raw: Claude Code's own words, to tell a usage limit or a signed-out Claude from other failures.)
+      if (result?.is_error) return resolve({ error: plan.explain(result.result || errText), raw: `${result.result || ''}\n${errText}`, session: sess, usage });
+      if (!text && code !== 0) return resolve({ error: plan.explain(errText || `Claude Code exited (${code}).`), raw: errText, session: sess, usage });
+      resolve({ text, session: sess, usage });
     });
     child.stdin.end(`${JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: message }] } })}\n`);
   });
@@ -152,13 +168,24 @@ const bodyOf = (text) => String(text).replace(/```check[\s\S]*?(```|$)/, '').tri
 async function teach(id, req, onText = () => {}) {
   const k = String(req?.k || '');
   if (!k) return { error: 'Kea doesn’t know which question this is.' };
+  const way = await route();
+  if (way.via === 'shared') return teachShared(id, k, req, onText);
+  if (way.via === 'none' && way.error) return { error: way.error };
+  // Their own Claude couldn't (signed out, or at its plan's limit): Kea's shared Claude instead, with a note saying so.
+  // Never after an ordinary failure or a lesson they stopped.
+  const fallback = async (r) => {
+    const why = r.error ? fallbackReason(r.raw || r.error, { stopped: r.stopped }) : null;
+    if (!why || !way.sharedOk || !(await sharedAvailable())) return r;
+    const s = await teachShared(id, k, req, onText);
+    return s.error ? { error: `${r.error} ${s.error}` } : { ...s, note: noteFor(why) };
+  };
   if (req.lessonId) {
     const lesson = study.lessons(k).find((l) => l.id === req.lessonId);
     if (!lesson) return { error: 'That lesson isn’t saved any more. Ask for a new one.' };
     const ask = String(req.ask || '').trim().slice(0, 2000);
     if (!ask) return { error: 'Type a question first.' };
     const r = await turn(id, ask, lesson.session, onText);
-    if (r.error || r.stopped) return r;
+    if (r.error || r.stopped) return fallback(r);
     const next = { ...lesson, session: r.session || lesson.session, followups: [...(lesson.followups || []), { ask, text: bodyOf(r.text), checks: checksOf(r.text), at: new Date().toISOString() }] };
     study.saveLesson(k, next);
     return { lesson: next };
@@ -166,7 +193,7 @@ async function teach(id, req, onText = () => {}) {
   const w = study.questionOf(k) || (req.question ? { item: req.question, courseCode: req.courseCode || '', chapter: req.question.chapter || null } : null);
   if (!w) return { error: 'Kea couldn’t find this question.' };
   const r = await turn(id, lessonPrompt(w, req), null, onText);
-  if (r.error || r.stopped) return r;
+  if (r.error || r.stopped) return fallback(r);
   const lesson = { id: `t${Date.now().toString(36)}`, focus: req.focus ? String(req.focus).slice(0, 300) : '', model: settings.get('study.teach.model', 'claude-sonnet-5-5'), at: new Date().toISOString(), session: r.session, text: bodyOf(r.text), checks: checksOf(r.text), followups: [] };
   study.saveLesson(k, lesson);
   return { lesson };
@@ -175,7 +202,127 @@ async function teach(id, req, onText = () => {}) {
 function stop(id) {
   const c = running.get(id);
   if (c) (c.killedByUser = true), c.kill();
+  else stopped.add(id); // (a lesson being written through the shared Claude: its request loop sees this)
   return true;
 }
 
-module.exports = { teach, stop, _test: { SYSTEM, checksOf, bodyOf, lessonPrompt, given, correct } };
+// ---------- Through Kea's shared Claude ----------
+const stopped = new Set(); // request ids stopped while a shared lesson was being written
+const hub = () => require('../hub.cjs');
+/**
+ * Where a lesson is written now: { via: 'own' | 'shared' | 'none', model, error? }. auto (the default) is this PC's
+ * Claude Code when it's here, else Kea's shared Claude when the Kea account is online and its server offers it.
+ */
+async function route() {
+  const want = String(settings.get('study.teach.via', 'auto'));
+  // (auto: Kea's shared Claude only as the fallback, when that's on; own: never; shared: always.)
+  const sharedOk = want === 'shared' || (want === 'auto' && fallbackOn());
+  const own = want !== 'shared' && !!(await plan.findClaude().catch(() => null));
+  if (own) return { via: 'own', model: settings.get('study.teach.model', 'claude-sonnet-5-5'), sharedOk };
+  const shared = sharedOk && (await sharedAvailable());
+  if (shared) return { via: 'shared', model: lockedFor('explain').model };
+  if (want === 'own') return { via: 'none', error: 'Teach uses Claude Code on this PC, which isn’t installed. Sign in to Claude in Settings → Claude Assistant.' };
+  if (want === 'shared') return { via: 'none', error: hub().signedIn() ? 'Kea’s shared Claude doesn’t write lessons through your Kea account server. Use your own Claude: Settings → Claude Assistant.' : 'Sign in to your Kea account to use Kea’s shared Claude, or use your own Claude: Settings → Claude Assistant.' };
+  // (auto with neither: the usual message about installing Claude Code.)
+  return { via: 'none', error: null };
+}
+
+/** Whether Kea's shared Claude can write lessons now: signed in online, and the account server offers it. */
+async function sharedAvailable() {
+  try {
+    return hub().signedIn() && (await require('../hubOrg.cjs').accountFeatures()).includes('sharedTeach');
+  } catch {
+    return false;
+  }
+}
+
+/** What the shared Claude needs for this lesson: the question, the answers, and for a follow-up the lesson it follows. */
+function sharedRequest(k, req) {
+  const w = study.questionOf(k) || (req.question ? { item: req.question, courseCode: req.courseCode || '', chapter: req.question.chapter || null } : null);
+  if (!w) return { error: 'Kea couldn’t find this question.' };
+  const base = { question: w.item, courseCode: w.courseCode || '', chapter: w.chapter || null, answer: req.answer ?? null, right: typeof req.right === 'boolean' ? req.right : null, dunno: !!req.dunno };
+  if (!req.lessonId) return { body: { ...base, focus: req.focus ? String(req.focus).slice(0, 300) : '', again: !!req.again } };
+  const lesson = study.lessons(k).find((l) => l.id === req.lessonId);
+  if (!lesson) return { error: 'That lesson isn’t saved any more. Ask for a new one.' };
+  const ask = String(req.ask || '').trim().slice(0, 2000);
+  if (!ask) return { error: 'Type a question first.' };
+  return { lesson, ask, body: { ...base, followup: { ask, lesson: String(lesson.text || '').slice(0, 8000), earlier: (lesson.followups || []).slice(-4).map((f) => ({ ask: f.ask, text: String(f.text || '').slice(0, 3000) })) } } };
+}
+
+async function teachShared(id, k, req, onText) {
+  const r = sharedRequest(k, req);
+  if (r.error) return { error: r.error };
+  stopped.delete(id);
+  let out;
+  try {
+    out = await hub().requestTeach(r.body, onText, { stopped: () => stopped.has(id) });
+  } catch (e) {
+    return { error: hub().sharedClaudeMessage(e), limit: e.data?.limit || null };
+  } finally {
+    stopped.delete(id);
+  }
+  if (out.stopped) return { text: out.text, stopped: true };
+  const model = out.model || lockedFor('explain').model;
+  if (r.lesson) {
+    const next = { ...r.lesson, followups: [...(r.lesson.followups || []), { ask: r.ask, text: bodyOf(out.text), checks: checksOf(out.text), at: new Date().toISOString(), via: 'shared' }] };
+    study.saveLesson(k, next);
+    return { lesson: next };
+  }
+  const lesson = { id: `t${Date.now().toString(36)}`, focus: req.focus ? String(req.focus).slice(0, 300) : '', model, via: 'shared', at: new Date().toISOString(), session: null, text: bodyOf(out.text), checks: checksOf(out.text), followups: [] };
+  study.saveLesson(k, lesson);
+  return { lesson };
+}
+
+/** The message for a follow-up written for someone else: the lesson and earlier follow-ups, then the new question. */
+function followupPrompt(f) {
+  const lines = ['Here is the lesson you wrote for this student earlier:', '', String(f.lesson || '').slice(0, 8000)];
+  for (const e of f.earlier || []) lines.push('', `The student asked: ${e.ask}`, '', `You answered: ${e.text}`);
+  lines.push('', `The student's follow-up: ${f.ask}`);
+  return lines.join('\n');
+}
+
+/**
+ * On the Kea owner's PC: write one lesson for someone else (a job from /owner/teach/next). Locked to Sonnet, effort
+ * medium, no tools (usage.cjs); a job naming another model is refused. progress(piece) posts text as it comes (a few
+ * times a second at most) and answers { cancelled } when the person stopped it. Resolves { ok, text, error, usage }.
+ */
+async function writeShared(job, { progress = async () => ({}), claude = null, cwd = null, env = null, flushMs = 400 } = {}) {
+  let lock;
+  try {
+    if (job?.kind !== 'explain') throw new Error(`Not a lesson: ${job?.kind}`);
+    lock = checkJob(job);
+  } catch (e) {
+    return { ok: false, error: e.message, usage: null };
+  }
+  const rq = job.request || {};
+  const q = rq.question;
+  if (!q || typeof q.q !== 'string') return { ok: false, error: 'The lesson request had no question.', usage: null };
+  const message = rq.followup ? followupPrompt(rq.followup) : lessonPrompt({ item: q, courseCode: rq.courseCode || '', chapter: rq.chapter || null }, rq);
+  const id = `shared-${job.id}`;
+  let buf = '';
+  let timer = null;
+  let cancelled = false;
+  let posting = Promise.resolve();
+  const flush = () => {
+    timer = null;
+    if (!buf) return posting;
+    const piece = buf;
+    buf = '';
+    posting = posting.then(() => progress(piece)).then((a) => {
+      if (a?.cancelled && !cancelled) (cancelled = true), stop(id);
+    }, () => {});
+    return posting;
+  };
+  const r = await turn(id, message, null, (t) => {
+    buf += t;
+    if (!timer) timer = setTimeout(flush, flushMs);
+  }, { model: lock.model, effort: lock.effort, checks: Math.max(0, Math.min(5, Number(job.checks ?? 2))), claude, cwd, env });
+  clearTimeout(timer);
+  await flush();
+  stopped.delete(id);
+  if (cancelled || r.stopped) return { ok: false, error: 'Stopped.', text: r.text || '', usage: r.usage || null, cancelled: true };
+  if (r.error) return { ok: false, error: r.error, usage: r.usage || null };
+  return { ok: true, text: r.text, usage: r.usage || null };
+}
+
+module.exports = { teach, stop, route, writeShared, _test: { SYSTEM, checksOf, bodyOf, lessonPrompt, given, correct, sharedRequest, followupPrompt } };

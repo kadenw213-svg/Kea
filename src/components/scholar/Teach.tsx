@@ -135,8 +135,15 @@ export function TeachPane({ subject, ask }: { subject: TeachSubject | null; ask:
   const [run, setRun] = useState<{ id: string; text: string; ask?: string; focus?: string } | null>(null);
   const [error, setError] = useState('');
   const [queued, setQueued] = useState('');
+  // Said when Kea's shared Claude wrote it because this PC's own Claude couldn't (at its limit, signed out).
+  const [note, setNote] = useState('');
   const [draft, setDraft] = useState('');
   const [older, setOlder] = useState(false);
+  // Where lessons are written now (own Claude or Kea's shared Claude), for the line under the button.
+  const [via, setVia] = useState<'own' | 'shared' | 'none'>('own');
+  useEffect(() => {
+    api.scholar.teachRoute?.().then((r) => r && setVia(r.via)).catch(() => {});
+  }, []);
   const scroller = useRef<HTMLDivElement>(null);
   const k = subject?.k || '';
   const handled = useRef(0);
@@ -181,6 +188,7 @@ export function TeachPane({ subject, ask }: { subject: TeachSubject | null; ask:
     const id = uid();
     setError('');
     setQueued('');
+    setNote('');
     setRun({ id, text: '', ask: req.ask, focus: req.focus });
     if (req.ask) setDraft('');
     try {
@@ -189,6 +197,7 @@ export function TeachPane({ subject, ask }: { subject: TeachSubject | null; ask:
       else if (r.error) setError(r.error);
       else if (r.lesson) {
         const l = r.lesson;
+        if (r.note) setNote(r.note);
         setLessons((ls) => [...(ls || []).filter((x) => x.id !== l.id), l]);
         if (!req.lessonId) scroller.current?.scrollTo({ top: 0 });
       }
@@ -209,7 +218,9 @@ export function TeachPane({ subject, ask }: { subject: TeachSubject | null; ask:
   }, [ask?.at, lessons === null, k]);
 
   if (!subject) return <div className="tc-empty muted">Answer the question first.</div>;
-  const model = modelName(setting('study.teach.model') || 'claude-sonnet-5-5');
+  // (Kea's shared Claude always writes lessons with Sonnet.)
+  const model = via === 'shared' ? 'Sonnet' : modelName(setting('study.teach.model') || 'claude-sonnet-5-5');
+  const plan = via === 'shared' ? 'On Kea’s shared Claude' : 'On your Claude plan';
   return (
     <div className="st-teach" ref={scroller}>
       {lessons === null ? (
@@ -228,7 +239,9 @@ export function TeachPane({ subject, ask }: { subject: TeachSubject | null; ask:
           <button className="btn primary" onClick={() => start({})}>
             <GraduationCap size={15} /> Teach me this
           </button>
-          <div className="muted small">On your Claude plan · {model}</div>
+          <div className="muted small">
+            {plan} · {model}
+          </div>
         </div>
       ) : (
         <>
@@ -257,6 +270,7 @@ export function TeachPane({ subject, ask }: { subject: TeachSubject | null; ask:
       )}
       {error && <div className="tc-error">{error}</div>}
       {queued && latest && <div className="tc-queued muted">{queued}</div>}
+      {note && <div className="tc-queued muted">{note}</div>}
       {latest && !run && (
         <div className="tc-more">
           <form

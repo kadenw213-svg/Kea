@@ -318,4 +318,4 @@ function calendarItems({ from, to } = {}) {
     .filter((i) => i.date <= (to || '9999-99-99') && (i.dateEnd || i.date) >= (from || '0000-00-00'));
 }
 
-module.exports = { register, events, toIcs, calendarItems, route, listOrgs, accountInfo, _resetFeatures: () => (feats = { at: 0, list: null }) };
+module.exports = { register, events, toIcs, calendarItems, route, listOrgs, accountInfo, accountFeatures, _resetFeatures: () => (feats = { at: 0, list: null }) };

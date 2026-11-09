@@ -640,8 +640,10 @@ export const SECTIONS: Section[] = [
       { key: 'scholar.weekStart', group: 'Calendar', label: 'Weeks start on', type: 'select', default: '0', options: [['0', 'Sunday'], ['1', 'Monday'], ['2', 'Tuesday'], ['3', 'Wednesday'], ['4', 'Thursday'], ['5', 'Friday'], ['6', 'Saturday']].map(([value, label]) => ({ value, label })), help: 'The first day of each week in the calendar. Kea on your phone has its own setting (Settings → Calendar).' },
       { key: 'scholar.parallelRuns', group: 'Practice questions', label: 'Question sets written at once', type: 'number', default: 3, min: 1, max: 20, step: 1, help: 'When you write questions for several chapters, this many are written at the same time (each chapter is its own Claude run). More is faster and uses your Claude plan’s limit sooner; the same total either way. Class checks and textbooks still run one at a time.' },
       { key: 'scholar.maxTurns', label: 'Most steps in one Claude run', type: 'number', default: 400, min: 10, max: 2000, step: 10, unit: 'steps', advanced: true, help: 'A run that takes more steps than this stops (each page read, file saved or command is a step), so a run that goes in circles can’t use up your Claude plan. A big class’s first scan takes a few hundred.' },
-      { key: 'hub.relayMinutes', group: 'Kea’s shared Claude', label: 'Let a shared-Claude scan read my class site for at most', type: 'number', default: 60, min: 10, max: 480, step: 5, unit: 'minutes', advanced: true, help: 'While a scan you asked for runs on Kea’s shared Claude, it reads your class site through this Kea (read-only), and Kea shows a notification. After this long, Kea stops answering it, and the scan ends.' },
+      { key: 'claude.sharedFallback', group: 'Kea’s shared Claude', label: 'Use Kea’s shared Claude when yours can’t', type: 'toggle', default: true, advanced: true, help: 'Your own Claude always goes first. When this PC has no Claude, or yours is signed out or at its plan’s usage limit, Kea asks Kea’s shared Claude instead for class scans, practice questions and Teach lessons, within your Kea account’s limits, and says so.' },
+      { key: 'hub.relayMinutes', label: 'Let a shared-Claude scan read my class site for at most', type: 'number', default: 60, min: 10, max: 480, step: 5, unit: 'minutes', advanced: true, help: 'While a scan you asked for runs on Kea’s shared Claude, it reads your class site through this Kea (read-only), and Kea shows a notification. After this long, Kea stops answering it, and the scan ends.' },
       { key: 'hub.workerMinutes', label: 'Kea owner: longest a shared-Claude job may take', type: 'number', default: 45, min: 10, max: 240, step: 5, unit: 'minutes', advanced: true, help: 'Only on the Kea owner’s computer. A job still running then is stopped, with Claude and everything it started, and reported as over time.' },
+      { key: 'hub.teachWorker', label: 'Kea owner: write Teach lessons for others', type: 'toggle', default: true, advanced: true, help: 'Only on the Kea owner’s computer. While Kea runs, it writes the lessons other Kea accounts ask Kea’s shared Claude for, on your Claude plan (Sonnet, within each account’s daily limits).' },
       { key: 'hub.workerMaxTurns', label: 'Kea owner: most steps in one shared-Claude job', type: 'number', default: 200, min: 10, max: 2000, step: 10, unit: 'steps', advanced: true, help: 'Only on the Kea owner’s computer. Each Claude run in a shared job stops after this many steps.' },
       { key: 'study.mix.mc', group: 'Mix of question kinds', label: 'Multiple choice', type: 'range', default: 5, min: 0, max: 10, advanced: true, help: 'How often each kind of question comes up in a practice exam, compared with the others (0 leaves it out). Kea uses what each chapter has: when there aren’t enough of one kind, the others fill in.' },
       { key: 'study.mix.blank', label: 'Fill in the blank', type: 'range', default: 3, min: 0, max: 10, advanced: true },
@@ -665,6 +667,19 @@ export const SECTIONS: Section[] = [
           { value: 'claude-opus-5-5', label: 'Opus 5.5 (deepest, slower, uses more of your plan)' }
         ],
         help: 'After you answer a question, Teach me has Claude teach the idea behind it step by step, on your Claude plan (Claude Code on this PC). Lessons are saved with the question, so opening one again costs nothing.'
+      },
+      {
+        key: 'study.teach.via',
+        label: 'Where lessons are written',
+        type: 'select',
+        default: 'auto',
+        options: [
+          { value: 'auto', label: 'Your own Claude, else Kea’s shared Claude' },
+          { value: 'own', label: 'Only your own Claude' },
+          { value: 'shared', label: 'Kea’s shared Claude' }
+        ],
+        advanced: true,
+        help: 'Kea’s shared Claude writes lessons through your Kea account when this PC has no Claude of its own: always Sonnet, within your Kea account’s daily limits.'
       },
       { key: 'study.teach.effort', label: 'How hard Claude thinks before teaching', type: 'select', default: 'medium', options: [['low', 'Light (fastest)'], ['medium', 'Medium'], ['high', 'Hard (slowest)']].map(([value, label]) => ({ value, label })), advanced: true, help: 'More thinking is slower and uses more of your plan; the lesson is written the same way either way.' },
       { key: 'study.teach.checks', label: 'Check questions after each lesson', type: 'number', default: 2, min: 0, max: 5, step: 1, advanced: true, help: 'New questions on the same idea, to check you understood. Practice only: they never count towards what you’ve learned.' },

@@ -792,7 +792,7 @@ async function requestScan() {
   if (!me || !isSignedIn()) throw new HubError('Sign in with Google to use Kea’s shared Claude. Your own Claude works without an account.', 401, { needsOnline: true });
   const profile = profiles.all().list.find((p) => p.id === profiles.active())?.name || 'School';
   const course = { school: info.host, code: 'all-classes', term: new Date().toISOString().slice(0, 7), section: me.id };
-  const r = await req('POST', '/v1/scan', { kind: 'initial_scan', course, ...targetArg() });
+  const r = await req('POST', '/v1/scan', { kind: 'initial_scan', course, ...targetArg() }).catch(limitError);
   if (r.status === 'queued' && r.uploadTo) {
     await putFile(`${r.uploadTo}job.json`, JSON.stringify({ home: info.home, platform: info.platform, profile }));
     await req('POST', `/v1/scan/${r.job.id}/ready`, {});
@@ -853,7 +853,7 @@ async function requestQuestions({ courseId, chapter, joinCode }) {
     ...t,
     detail: { courseCode: c.code, chapter, profile },
     ...(joinCode ? { joinCode: String(joinCode).trim() } : {}),
-  });
+  }).catch(limitError);
   if (r.job?.id) myJobs.add(r.job.id, r.job.kind || 'more_questions');
   watchJobs();
   return r;
@@ -869,6 +869,73 @@ async function sectionOf(courseId) {
   const P = profiles.paths();
   const term = (await db.courses(P.db, P.textbooks, {}).catch(() => [])).find((x) => x.id === courseId)?.term || '';
   return { school: host, code: c.code, term: term || 'current' };
+}
+
+// ---------- When the shared Claude says no: which limit, when it opens again, and the person's own Claude ----------
+/** A refusal's sentence for the person: the server's words, with the reset time in this PC's time, and a pointer to their own Claude. */
+function sharedClaudeMessage(e) {
+  const d = e?.data || {};
+  let msg = String(e?.message || 'Kea’s shared Claude couldn’t do that.');
+  if (!(e?.status === 429 || (e?.status === 503 && d.code))) return msg;
+  const at = Number(d.retryAt);
+  if (Number.isFinite(at) && at > Date.now()) {
+    const when = new Date(at);
+    const sameDay = when.toDateString() === new Date().toDateString();
+    const t = when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const label = sameDay ? `at ${t}` : `${when.toLocaleDateString([], { weekday: 'long' })} at ${t}`;
+    if (/at midnight UTC/.test(msg)) msg = msg.replace(/at midnight UTC/, label);
+    else msg = `${msg} It opens again ${label}.`;
+  }
+  if (!/own Claude/.test(msg)) msg = `${msg} Or use your own Claude: Settings → Claude Assistant.`;
+  return msg;
+}
+/** Re-throws a shared-Claude refusal with the person's sentence (the limit's name stays in data.limit). */
+function limitError(e) {
+  if (e instanceof HubError && (e.status === 429 || (e.status === 503 && e.data?.code))) throw new HubError(sharedClaudeMessage(e), e.status, e.data);
+  throw e;
+}
+
+// ---------- Teach lessons through Kea's shared Claude (scholar/teach.cjs) ----------
+/**
+ * Asks for a lesson (or a follow-up) and reads it as it's written: onText(piece) for each new piece. Resolves
+ * { text, model } when it's done, or { text, stopped: true } when stopped() turned true (it's cancelled on the server).
+ * A refusal throws a HubError (status 429 or 503, data.limit names the limit).
+ */
+async function requestTeach(body, onText = () => {}, { stopped = () => false, waitMs = 15_000 } = {}) {
+  const me = cached();
+  if (!me || !isSignedIn()) throw new HubError('Sign in to your Kea account to use Kea’s shared Claude, or use your own Claude: Settings → Claude Assistant.', 401, { needsOnline: true });
+  const started = await req('POST', '/v1/teach', body);
+  const id = encodeURIComponent(started.job.id);
+  let text = '';
+  let offlineSince = 0;
+  for (;;) {
+    if (stopped()) {
+      await req('POST', `/v1/teach/${id}/cancel`, {}).catch(() => {});
+      return { text, stopped: true };
+    }
+    let j;
+    try {
+      j = (await req('GET', `/v1/teach/${id}?since=${text.length}&wait=${waitMs}`, undefined, { timeout: waitMs + 10_000 })).job;
+      offlineSince = 0;
+    } catch (e) {
+      if (e.status !== 0) throw e;
+      offlineSince ||= Date.now();
+      if (Date.now() - offlineSince > 120_000) throw new HubError('Kea lost the connection to your Kea account while the lesson was being written. Try again.', 0);
+      await sleep(2000);
+      continue;
+    }
+    if (j.text) {
+      text += j.text;
+      onText(j.text);
+    }
+    if (j.status === 'done') {
+      // (The finished lesson, whole, when what came in pieces differs from it.)
+      if (j.length !== text.length) text = (await req('GET', `/v1/teach/${id}?since=0`)).job.text;
+      return { text, model: j.model };
+    }
+    if (j.status === 'failed') throw new HubError(j.error || 'Kea’s shared Claude couldn’t write this lesson. Try again.', 502);
+    if (j.status === 'cancelled') return { text, stopped: true };
+  }
 }
 
 // While one of this person's jobs runs, the worker's calls come here and are answered with this Kea's own signed-in
@@ -1096,7 +1163,13 @@ async function launcherTick() {
   }
   if (!job) return;
   const task = { initial_scan: 'import', update_scan: 'sync', more_questions: 'more_questions' }[job.kind];
-  if (!task) return void call(`/owner/scan/${job.id}/finish`, { ok: false, note: `Kea can't run "${job.kind}" jobs yet.` });
+  if (!task) return void call(`/owner/scan/${job.id}/finish`, { ok: false, note: `This Kea doesn’t run "${job.kind}" jobs for Kea’s shared Claude.` });
+  // Only on the locked model for its kind (scholar/usage.cjs): a job naming another model is refused, never run.
+  try {
+    require('./scholar/usage.cjs').checkJob(job);
+  } catch (e) {
+    return void call(`/owner/scan/${job.id}/finish`, { ok: false, note: e.message });
+  }
   // (The Hub makes job ids; one that isn't a plain name never becomes a folder.)
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(job.id))) return void call(`/owner/scan/${encodeURIComponent(job.id)}/finish`, { ok: false, note: 'Bad job id.' });
   const dir = path.join(workersDir(), job.id);
@@ -1128,6 +1201,66 @@ async function launcherTick() {
     const mins = Math.round((Date.now() - startedAt) / 60e3);
     await endWorkerFolder(dir, `${new Date().toISOString()} job ${job.id} ${job.kind}: ${code === 0 ? 'done' : killedForTime ? 'ended at the time limit' : `ended (code ${code})`} after ${mins} min`);
   });
+}
+
+// ---------- The owner's Kea writes Teach lessons for others (scholar/teach.cjs writeShared) ----------
+// Only on the Kea owner's PC (signed in as the owner, with the owner key from KeaS's setup), while this Kea runs. It
+// asks the account server for a lesson (waiting up to 15 s at a time, so one is taken within moments), writes it with
+// Sonnet and no tools, posts the text as it comes, and reports what it used. Lessons run beside a scan: they're small.
+// Settings → Kea's shared Claude → Kea owner: write Teach lessons for others (hub.teachWorker) turns it off.
+/** The owner console's caller, or null when this isn't the owner's PC. */
+function ownerCaller() {
+  const keyFile = ownerKeyFile();
+  if (!keyFile) return null;
+  const port = Number(settings.get('hub.ownerPort', 4861)) || 4861;
+  const key = fs.readFileSync(keyFile, 'utf8').trim();
+  return (p, body) => require('./ownerauth.cjs').ownerFetch(`http://127.0.0.1:${port}`, key, 'POST', p, { body: JSON.stringify(body || {}), headers: { 'content-type': 'application/json' }, fetchFn: net.fetch }).then((r) => r.json());
+}
+const teachState = { running: null, last: null, written: 0 };
+/**
+ * One turn of the lesson writer: takes the next lesson (waiting up to `wait` ms) and writes it. Answers the job, null
+ * when there was none, or 'unsupported' when the account server doesn't hand out lessons (an older one).
+ */
+async function teachOnce(call, { wait = 15_000, ...opts } = {}) {
+  const r = await call('/owner/teach/next', { wait });
+  if (!r || !('job' in r)) return 'unsupported';
+  const job = r.job;
+  if (!job) return null;
+  const id = encodeURIComponent(job.id);
+  teachState.running = { id: job.id, startedAt: Date.now() };
+  try {
+    const out = await require('./scholar/teach.cjs').writeShared(job, { ...opts, progress: (text) => call(`/owner/teach/${id}/progress`, { text }) });
+    await call(`/owner/teach/${id}/finish`, { ok: out.ok, ...(out.ok ? { text: out.text } : { error: out.error }), ...(out.usage ? { usage: out.usage } : {}) });
+    teachState.last = { id: job.id, ok: out.ok, at: Date.now() };
+    if (out.ok) teachState.written++;
+  } finally {
+    teachState.running = null;
+  }
+  return job;
+}
+let teachLooping = false;
+async function teachLoop() {
+  if (teachLooping || process.env.KEA_WORKER_JOB) return;
+  teachLooping = true;
+  try {
+    for (;;) {
+      const call = cached()?.owner && settings.get('hub.teachWorker', true) !== false ? ownerCaller() : null;
+      if (!call) {
+        await sleep(60_000);
+        continue;
+      }
+      let r;
+      try {
+        r = await teachOnce(call);
+      } catch {
+        r = 'error'; // (the account server isn't running here, or a lesson failed to report)
+      }
+      if (r === 'unsupported') await sleep(10 * 60_000);
+      else if (r === 'error') await sleep(30_000);
+    }
+  } finally {
+    teachLooping = false;
+  }
 }
 
 // ---------- Sync through a server (scholar/hubsync.cjs): the Kea account's storage, or a joined KeaS's ----------
@@ -1240,6 +1373,7 @@ function register() {
   // This person's shared-Claude jobs (answering a running one's calls), and on the owner's PC, the launcher.
   watchJobs(8000);
   setInterval(launcherTick, 60_000);
+  setTimeout(teachLoop, 20_000);
   handleApp(ipcMain, 'hub:syncNow', wrap(async () => (await startSync(), await syncNow(), { ...syncState })));
   // Who's signed in, from this computer alone (at once), and after a background check of the server (4 s at most).
   handleApp(ipcMain, 'hub:local', wrap(() => local()));
@@ -1342,6 +1476,8 @@ function register() {
 
 module.exports = {
   _relay: { relayOp, answerCalls, myJobs, servingNow, RELAY_OPS, endWorkerFolder },
+  _teach: { teachOnce, teachState },
+  requestTeach, sharedClaudeMessage,
   _exportData: exportData,
   // (For the tests: the account flows without IPC, and stand-ins for fetch and the browser sign-in.)
   _account: {

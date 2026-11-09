@@ -1421,4 +1421,7 @@ function saveGuides(patch) {
   writeJson(guidesFile(), all);
 }
 
-module.exports = { addSet, classFiles, guidesAll, saveGuides, questionOf, lessons, saveLesson, addHint, hints, applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, stepLine, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark, teacherContext, isStream, _test: { pick, historyFrom, strongTopics } };
+/** A set request whose questions went to Kea's shared Claude instead (runner.cjs sharedInstead): it ends with that note. */
+const handedOff = (id, note) => update(String(id), { status: 'failed', error: String(note || '').slice(0, 500) });
+
+module.exports = { handedOff, addSet, classFiles, guidesAll, saveGuides, questionOf, lessons, saveLesson, addHint, hints, applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, stepLine, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark, teacherContext, isStream, _test: { pick, historyFrom, strongTopics } };

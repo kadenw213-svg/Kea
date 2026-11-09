@@ -193,8 +193,10 @@ export interface KeaApi {
     studyImage(rel: string): Promise<string | null>;
     studyStepsFor(k: string): Promise<{ queued: boolean; courseCode: string; chapter: string }>;
     /** Teach: a new lesson on an answered question, or a follow-up to one (`lessonId` + `ask`). The text streams to onTeach. On the phone: asked of the PC ({ queued }). */
-    teach(id: string, req: TeachRequest): Promise<{ lesson?: Lesson; error?: string; stopped?: boolean; queued?: boolean }>;
+    teach(id: string, req: TeachRequest): Promise<{ lesson?: Lesson; error?: string; stopped?: boolean; queued?: boolean; /** Kea's shared Claude wrote it because this PC's own couldn't. */ note?: string }>;
     teachStop(id: string): Promise<boolean>;
+    /** Where a lesson is written now: this PC's own Claude, Kea's shared Claude (Kea account), or neither. (PC only.) */
+    teachRoute?(): Promise<{ via: 'own' | 'shared' | 'none'; model?: string; error: string | null }>;
     /** The saved lessons on a question, oldest first. */
     lessons(k: string): Promise<Lesson[]>;
     onTeach(cb: (m: { id: string; text: string }) => void): () => void;
@@ -1154,7 +1156,9 @@ export interface Lesson {
   session?: string;
   text: string;
   checks: TeachCheck[];
-  followups: { ask: string; text: string; checks: TeachCheck[]; at: string }[];
+  followups: { ask: string; text: string; checks: TeachCheck[]; at: string; via?: 'shared' }[];
+  /** Written by Kea's shared Claude (through the Kea account) instead of this PC's own Claude. */
+  via?: 'shared';
 }
 /** A new lesson (the answer in the question's own choice numbers), or a follow-up (lessonId + ask). */
 export interface TeachRequest {

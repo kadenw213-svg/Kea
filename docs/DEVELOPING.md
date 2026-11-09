@@ -44,6 +44,12 @@ versions still in use (`docs/protocol.md` section 0 in KeaS and KeaC is the cont
   (the previous releases are read with `git show` from the sibling repos: Kea 0.84.0, KeaS 0.8.0, KeaC 0.3.0 and
   0.2.0). When you release, move the pinned "previous" commits in `test/compat/harness.mjs` forward in all three
   repos.
+- **Shared Claude across versions** (Kea and KeaC only): `test/compat/shared-claude.test.mjs` with its cell
+  `shared-claude-cell.mjs` (the same two files in both repos) runs current Kea x current KeaC, current Kea x KeaC
+  0.4.0, and Kea 0.85.0 x current KeaC: Teach lessons through the Kea account (offered only when `/v1/health`
+  `features` has `sharedTeach`; an older Kea never asks, and with no Kea writing lessons the server says 503
+  `no_worker`), the locked models, and the worker's usage report (`usageTracking`; an older worker's finish counts as
+  one untracked job). Its pinned previous releases are at the top of that file: move them forward when you release.
 - **Kea itself never goes stale quietly** (`electron/updateHealth.cjs`, shown by `src/lib/updateState.ts`
   `staleness`): update checks failing 3 times in a row for 2 days, or an update found or downloaded and not installed
   after 3 days, show in the title-bar pill and Settings → About with the last check time. A server's `latest.kea`

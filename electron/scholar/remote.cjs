@@ -84,7 +84,8 @@ const jobInfo = async () => (await owner('GET', '')).json();
 const courseFiles = async (prefix = '') => (await (await owner('GET', `/course-files?prefix=${encodeURIComponent(prefix)}`)).json()).files;
 const courseFile = async (p) => Buffer.from(await (await owner('GET', `/course-file?path=${encodeURIComponent(p)}`)).arrayBuffer());
 const putCourseFile = async (p, data) => (await owner('PUT', `/course-file?path=${encodeURIComponent(p)}`, { raw: data })).json();
-const finish = (ok, note) => owner('POST', '/finish', { body: { ok, note: String(note || '').slice(0, 1900) } });
+/** Done or failed, with the job's Claude usage ({ byModel }, usage.cjs) when there is any. */
+const finish = (ok, note, usage = null) => owner('POST', '/finish', { body: { ok, note: String(note || '').slice(0, 1900), ...(usage ? { usage } : {}) } });
 const syncRoot = () => path.join(require('electron').app.getPath('userData'), 'hub-sync');
 
 module.exports = { active, JOB, request, open, click, status, job, jobInfo, courseFiles, courseFile, putCourseFile, syncClient, finish, syncRoot };

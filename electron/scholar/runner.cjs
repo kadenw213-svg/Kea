@@ -54,6 +54,8 @@ const DENY = [
   'Bash(regsvr32:*)', 'Bash(schtasks:*)', 'Bash(reg:*)', 'Bash(sc:*)', 'Bash(claude:*)'
 ];
 const inWorker = () => !!process.env.KEA_WORKER_JOB;
+// A worker job's Claude usage, added up over all its runs (usage.cjs): sent with the job's finish (worker.cjs).
+const workerTally = require('./usage.cjs').tally(require('./usage.cjs').OPUS);
 /**
  * How Claude Code is started for every run, so only Kea's own rules apply: only the workspace's project settings load
  * (its skills and CLAUDE.md, written by Kea), never the computer owner's own ~/.claude settings (their allow rules,
@@ -139,6 +141,36 @@ const TASKS = {
 // Publishers' contents pages, colleges' sites (published course outlines and master syllabi) and the course-catalog
 // services colleges publish them through.
 const PUBLISHERS = [...fetchFrom(['mheducation.com', 'mheducation.ca', 'pearson.com', 'cengage.com', 'wiley.com', 'macmillanlearning.com', 'norton.com', 'smartcatalogiq.com', 'acalog.com', 'coursedog.com', 'courseleaf.com']), 'WebFetch(domain:*.edu)'];
+
+// ---------- Kea's shared Claude as the fallback (claudeRoute.cjs) ----------
+// Only a class scan and a question batch: what Kea's shared Claude does for an account. Never in a worker copy.
+const FALLBACK_TASKS = ['import', 'practice'];
+const { fallbackOn, fallbackReason, noteFor } = require('./claudeRoute.cjs');
+/**
+ * Asks Kea's shared Claude for this run's work ('none': no Claude here; 'limit' or 'signedOut': their own couldn't).
+ * Resolves { ok: true, note } when it took it, or { ok: false, error? } (the setting is off, not signed in to the Kea
+ * account, or the shared Claude said no, with its sentence).
+ */
+async function sharedInstead(job, reason, hub = require('../hub.cjs')) {
+  if (inWorker() || !FALLBACK_TASKS.includes(job.task) || !fallbackOn()) return { ok: false };
+  try {
+    if (!hub.signedIn()) return { ok: false };
+    if (job.task === 'import') {
+      const r = await hub.requestScan();
+      return { ok: true, note: `${noteFor(reason)} ${r.message || 'Your class scan is in its queue; your classes come in with a later sync.'}`, shared: r };
+    }
+    // A question set: one batch of new questions on its first chapter.
+    const e = require('./study.cjs').list().find((x) => x.id === String(job.arg || '').trim().split(/\s+/)[0]);
+    const chapter = e?.chapters?.[0];
+    if (!e?.courseId || !chapter) return { ok: false };
+    const r = await hub.requestQuestions({ courseId: e.courseId, chapter });
+    const note = `${noteFor(reason)} New practice questions for ${chapter} come in with a later sync.`;
+    require('./study.cjs').handedOff(e.id, note);
+    return { ok: true, note, shared: r };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
 
 // ---------- Plain-code steps before a run (no Claude usage) ----------
 // Each may answer { skip: summary } (nothing for Claude to do), { prompt, after(ok) } (run Claude with this prompt),
@@ -1102,6 +1134,11 @@ async function begin(job) {
   try {
     const claude = await workspace.findClaude();
     const uv = await workspace.findUv();
+    // No Claude on this PC: Kea's shared Claude does a scan or a question batch instead (claudeRoute.cjs).
+    if (!claude) {
+      const fb = await sharedInstead(job, 'none');
+      if (fb.ok) return finish(true, fb.note);
+    }
     if (!claude || !uv) return finish(false, 'Class scans aren’t set up yet (Claude Code and uv are needed).');
     const cwd = workspace.prepare();
     // Check folders and run logs older than two weeks go (at most once a day).
@@ -1215,6 +1252,7 @@ async function begin(job) {
           if (ev.type === 'assistant') for (const c of ev.message?.content || []) if (c.type === 'text' && c.text) lastText = String(c.text).slice(-2000);
           if (ev.type === 'result') {
             result = ev;
+            if (inWorker()) workerTally.add(ev);
             if (ev.num_turns) entry.turns = ev.num_turns;
           } else if (ev.type === 'assistant') {
             entry.turns++;
@@ -1240,6 +1278,11 @@ async function begin(job) {
       } catch {}
       finish(false, `Couldn’t start Claude Code: ${err.message}`);
     });
+    // The run's work went to Kea's shared Claude instead: said in the run's summary and a notification.
+    const fellBack = (note) => {
+      if (Notification.isSupported()) new Notification({ title: 'Kea’s shared Claude', body: note }).show();
+      finish(true, note);
+    };
     child.on('close', (code) => {
       if (!out.writableEnded) {
         out.write(`\n=== exit ${code} ===\n`);
@@ -1263,11 +1306,26 @@ async function begin(job) {
         finish(false, 'Stopped.');
       } else if (LIMIT.test(text) || (failed && LIMIT.test(said))) {
         // Out of Claude usage: everything saved so far stays; continue once the limit resets.
-        const until = resetTime(LIMIT.test(text) ? text : said);
-        entry.paused = until.toISOString();
-        pause(until, 'limit', stoppedRun(job.tries || 0));
-        if (Notification.isSupported()) new Notification({ title: 'Class scan paused', body: `Your Claude usage limit was reached. Kea continues where it stopped at ${atTime(until)}.` }).show();
-        finish(false, `Paused: your Claude usage limit was reached. Everything found so far is saved, and Kea continues where it stopped at ${atTime(until)}.`);
+        const pauseIt = (also = '') => {
+          const until = resetTime(LIMIT.test(text) ? text : said);
+          entry.paused = until.toISOString();
+          pause(until, 'limit', stoppedRun(job.tries || 0));
+          if (Notification.isSupported()) new Notification({ title: 'Class scan paused', body: `Your Claude usage limit was reached. Kea continues where it stopped at ${atTime(until)}.` }).show();
+          finish(false, `Paused: your Claude usage limit was reached. Everything found so far is saved, and Kea continues where it stopped at ${atTime(until)}.${also ? ` ${also}` : ''}`);
+        };
+        // A class scan or a question batch: Kea's shared Claude takes it instead, if it can (its limits apply).
+        if (FALLBACK_TASKS.includes(job.task)) {
+          sharedInstead(job, 'limit').then((fb) => (fb.ok ? fellBack(fb.note) : pauseIt(fb.error)), () => pauseIt());
+          return;
+        }
+        pauseIt();
+      } else if (failed && FALLBACK_TASKS.includes(job.task) && fallbackReason(said) === 'signedOut') {
+        // Claude Code is signed out: Kea's shared Claude instead, if it can; else the usual message.
+        const msg = result?.result ? String(result.result).slice(0, 2000) : `The scan ended early (code ${code}). Details are in the scan log.`;
+        try {
+          after?.(false);
+        } catch {}
+        sharedInstead(job, 'signedOut').then((fb) => (fb.ok ? fellBack(fb.note) : finish(false, fb.error ? `${msg} ${fb.error}` : msg)), () => finish(false, msg));
       } else if (job.session && failed && /no conversation found|session.{0,40}not found|could not (?:find|resume)/i.test(said)) {
         // The stopped conversation couldn't be reopened (Claude Code cleared it): continue from what's saved instead.
         queue.unshift({ ...job, session: null, resolve: () => {}, started: true, arg: resumeArg(job.arg) });
@@ -1304,7 +1362,10 @@ async function begin(job) {
 
 /** Claude Code's command line for a run (isolated, its own tools only, no prompts). */
 function claudeArgs(how, task, t, extraTools, cfg) {
-  return [...how, '--model', t.model ? t.model() : 'opus', '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', ...isolationArgs(), '--permission-mode', 'dontAsk', '--allowedTools', ...allowedTools(task, t, extraTools), '--disallowedTools', ...DENY];
+  // A worker run (the owner's Claude, for someone else) runs only on the locked model for shared jobs, whatever this
+  // task or anyone's settings would pick: Opus (usage.cjs). Never Fable or another model.
+  const model = inWorker() ? require('./usage.cjs').lockedFor('initial_scan').model : t.model ? t.model() : 'opus';
+  return [...how, '--model', model, '--output-format', 'stream-json', '--verbose', '--mcp-config', cfg, '--strict-mcp-config', ...isolationArgs(), '--permission-mode', 'dontAsk', '--allowedTools', ...allowedTools(task, t, extraTools), '--disallowedTools', ...DENY];
 }
 /**
  * A run's environment: the engine's minimal one (no tokens, keys or Kea's own variables, and uv tied to the workspace's
@@ -1351,4 +1412,4 @@ function deleteNews(ids = [], keys = []) {
   return gone.map((n) => inboxKey({ course: n.course || '', title: n.title, body: n.body }));
 }
 
-module.exports = { run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS, _test: { claudeArgs, runEnv, allowedTools, COMMANDS, DENY, depthRows, transientError, eachOnce, queue: () => queue, current: () => current, side: () => side } };
+module.exports = { workerUsage: () => workerTally.get(), run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS, _test: { sharedInstead, FALLBACK_TASKS, claudeArgs, runEnv, allowedTools, COMMANDS, DENY, depthRows, transientError, eachOnce, queue: () => queue, current: () => current, side: () => side } };

@@ -191,6 +191,7 @@ contextBridge.exposeInMainWorld('api', {
     studyStepsFor: (k) => ipcRenderer.invoke('scholar:studyStepsFor', k),
     teach: (id, req) => ipcRenderer.invoke('scholar:teach', id, req),
     teachStop: (id) => ipcRenderer.invoke('scholar:teachStop', id),
+    teachRoute: () => ipcRenderer.invoke('scholar:teachRoute'),
     lessons: (k) => ipcRenderer.invoke('scholar:lessons', k),
     guides: () => ipcRenderer.invoke('scholar:guides'),
     assignments: () => ipcRenderer.invoke('scholar:assignments'),

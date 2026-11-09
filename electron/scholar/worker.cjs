@@ -17,6 +17,9 @@
 //    already have and from the course section's shared pool.
 // 3. Put the batch in the section's pool (material/questions/). When the job finishes, the Hub copies it into the Kea
 //    folder of everyone who asked for it, and their Kea takes it in on its next sync (sharedMaterial.cjs).
+//
+// Every job runs only on its locked model (usage.cjs: Opus for scans and questions; a job naming another model is
+// refused), and its finish carries the tokens Claude used (every run's stream-json result, added up in runner.cjs).
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
@@ -231,11 +234,13 @@ async function run() {
     // comes back), report it and quit anyway; Claude's process tree is already gone.
     backstop = setTimeout(() => {
       log('still running a minute after the time limit: quitting');
-      remote.finish(false, OVER_TIME).catch(() => {}).finally(() => app.exit(2));
+      remote.finish(false, OVER_TIME, require('./runner.cjs').workerUsage()).catch(() => {}).finally(() => app.exit(2));
     }, 60_000);
   }, LIMIT_MS);
   try {
     const info = await remote.jobInfo();
+    // Only the locked model for this kind (usage.cjs): a job naming another is refused, never run.
+    require('./usage.cjs').checkJob(info.job);
     if (overTime) throw new Error(OVER_TIME);
     note = TASK === 'more_questions' ? await moreQuestions(info) : await scan(info);
     if (overTime) throw new Error(OVER_TIME);
@@ -247,7 +252,8 @@ async function run() {
     clearTimeout(deadline);
   }
   try {
-    await remote.finish(ok, note);
+    // With what Claude used for it (every run's tokens, from Claude Code's result events).
+    await remote.finish(ok, note, require('./runner.cjs').workerUsage());
   } catch (e) {
     log('finish failed:', e.message);
   }
