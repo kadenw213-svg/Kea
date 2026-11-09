@@ -5,7 +5,6 @@ import Underline from '@tiptap/extension-underline';
 import TextStyle from '@tiptap/extension-text-style';
 import Color from '@tiptap/extension-color';
 import FontFamily from '@tiptap/extension-font-family';
-import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -119,6 +118,8 @@ import { bytesToText, textToBytes, bytesToDataUrl, escapeHtml, modKey, clamp } f
 import { api } from '../../lib/api';
 import { MenuButton } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
+import { DocHighlight, defaultHighlight } from './highlight';
+import { HIGHLIGHT_SWATCHES } from '../../lib/highlightInk';
 import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
 import { docAiHooks } from './aiHooks';
@@ -282,7 +283,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
       Color,
       FontFamily,
       FontSize,
-      Highlight.configure({ multicolor: true }),
+      DocHighlight,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener noreferrer', target: null } }),
       Placeholder.configure({ placeholder: 'Start typing…' }),
@@ -996,6 +997,8 @@ function Toolbar(p: {
         icon={<Highlighter size={18} />}
         value={editor.getAttributes('highlight').color || null}
         allowNone
+        palette={HIGHLIGHT_SWATCHES}
+        preset={{ color: defaultHighlight(), label: 'Default highlight' }}
         onChange={(c) => (c ? chain().setHighlight({ color: c }).run() : chain().unsetHighlight().run())}
       />
       <div className="tb-sep" />
@@ -1546,6 +1549,7 @@ del.sg-del { color: #a50e0e; text-decoration: line-through; }
 .toc-entry { display: flex; align-items: baseline; gap: 4px; margin: 0 0 2pt; }
 .toc-dots { flex: 1; border-bottom: 1px dotted #5f6368; transform: translateY(-3px); }
 mark { color: inherit; }
+mark[data-ink='light'], mark[data-ink='light'] * { color: #fff !important; }
 </style></head><body>${body}</body></html>`;
 }
 

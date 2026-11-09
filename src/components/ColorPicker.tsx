@@ -17,9 +17,13 @@ interface Props {
   title: string;
   allowNone?: boolean;
   noneLabel?: string;
+  /** Swatches to offer instead of the text palette. */
+  palette?: string[];
+  /** A first choice above the swatches, e.g. the default highlight colour. */
+  preset?: { color: string; label: string };
 }
 
-export function ColorPicker({ icon, value, onChange, title, allowNone, noneLabel = 'None' }: Props) {
+export function ColorPicker({ icon, value, onChange, title, allowNone, noneLabel = 'None', palette = PALETTE, preset }: Props) {
   return (
     <MenuButton
       title={title}
@@ -47,8 +51,13 @@ export function ColorPicker({ icon, value, onChange, title, allowNone, noneLabel
               <span className="swatch none" style={{ width: 16, height: 16 }} /> {noneLabel}
             </button>
           )}
+          {preset && (
+            <button className="menu-item" onClick={() => (onChange(preset.color), close())}>
+              <span className="swatch" style={{ width: 16, height: 16, background: preset.color }} /> {preset.label}
+            </button>
+          )}
           <div className="swatches">
-            {PALETTE.map((c) => (
+            {palette.map((c) => (
               <button
                 key={c}
                 className="swatch"
