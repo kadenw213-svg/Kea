@@ -20,6 +20,12 @@
 //
 // Every job runs only on its locked model (usage.cjs: Opus for scans and questions; a job naming another model is
 // refused), and its finish carries the tokens Claude used (every run's stream-json result, added up in runner.cjs).
+//
+// And on the backend the account server sent with it (backend.cjs): the owner's API credits (the Agent SDK with the
+// owner's API key, asked for over the owner console for this job only), or the owner's plan (the claude command). An
+// auto job the API says the credit balance is too low for runs again on the plan, and the finish says so. A job this
+// PC can't run on its backend is refused with the reason (the owner's; the person hears only that the shared Claude
+// isn't available right now). Which backend ran it is never in anything the person sees.
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
@@ -38,7 +44,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const LIMIT_MS = Number(process.env.KEA_WORKER_LIMIT_MS) || 45 * 60e3;
 const TASK = process.env.KEA_WORKER_TASK || 'import';
 const OVER_TIME = 'The job ran over its time limit.';
+// What the person hears when a run on the owner's API credits fails (the details are the owner's: ownerNote).
+const RUN_FAILED = 'Kea’s shared Claude couldn’t finish this job. You can ask again.';
 let overTime = false;
+// Where this job runs (backend.cjs): what it ran on in the end, whether it was auto, and why it moved to the plan.
+const how = { ranOn: 'plan', auto: false, fallback: null, told: false };
 
 /** This copy's account and profile, and a sync of their Kea folder through the owner console. */
 function setUp(profileName) {
@@ -60,7 +70,18 @@ async function runTask(task, arg) {
   }
   if (overTime) throw new Error(OVER_TIME);
   const last = runner.activity?.()?.[0];
-  if (last && last.ok === false) throw new Error(last.error || 'The run didn’t finish.');
+  if (last && last.ok === false) {
+    // The API said the credit balance is too low: an auto job runs again on the owner's plan (never for any other
+    // error, and never for a job on API credits only).
+    if (last.billing && how.ranOn === 'api' && how.auto) {
+      log('the API said the credit balance is too low: running this job on the plan');
+      how.fallback = { reason: require('./backend.cjs').BILLING_REASON, at: Date.now() };
+      how.ranOn = 'plan';
+      runner.useBackend({ run: 'plan' });
+      return runTask(task, arg);
+    }
+    throw Object.assign(new Error(last.error || last.summary || 'The run didn’t finish.'), { fromRun: true });
+  }
 }
 
 /** The profile name from the Hub's "kea/Kea/<profile>/" (their Kea says where its folder is), else the fallback. */
@@ -234,26 +255,47 @@ async function run() {
     // comes back), report it and quit anyway; Claude's process tree is already gone.
     backstop = setTimeout(() => {
       log('still running a minute after the time limit: quitting');
-      remote.finish(false, OVER_TIME, require('./runner.cjs').workerUsage()).catch(() => {}).finally(() => app.exit(2));
+      remote.finish(false, OVER_TIME, require('./runner.cjs').workerUsage(), extras()).catch(() => {}).finally(() => app.exit(2));
     }, 60_000);
   }, LIMIT_MS);
+  let refused = false;
+  let ownerNote = null;
   try {
     const info = await remote.jobInfo();
     // Only the locked model for this kind (usage.cjs): a job naming another is refused, never run.
     require('./usage.cjs').checkJob(info.job);
+    // Where it runs (backend.cjs). The key is asked for only when the job may use it, and kept in memory only.
+    const B = require('./backend.cjs');
+    how.told = info.job?.backend != null;
+    const key = B.wantsKey(info.job) ? await remote.apiKey().catch((e) => (log('no API key:', e.message), null)) : null;
+    const choice = B.choose(info.job, { hasKey: !!key });
+    if (choice.refuse) {
+      refused = true;
+      throw new Error(choice.refuse);
+    }
+    how.ranOn = choice.run;
+    how.auto = choice.auto;
+    require('./runner.cjs').useBackend({ run: choice.run, apiKey: key });
+    log('runs on', choice.run === 'api' ? 'the API credits' : 'the plan', choice.auto ? '(auto)' : '', choice.noKey ? '(no API key set)' : '');
     if (overTime) throw new Error(OVER_TIME);
     note = TASK === 'more_questions' ? await moreQuestions(info) : await scan(info);
     if (overTime) throw new Error(OVER_TIME);
     ok = true;
   } catch (e) {
     note = overTime ? OVER_TIME : e.message;
-    log('failed:', note);
+    // A run on the API credits that failed: the details are the owner's, the person hears that it didn't finish.
+    if (!overTime && !refused && e.fromRun && how.ranOn === 'api') {
+      ownerNote = note;
+      note = RUN_FAILED;
+    }
+    log('failed:', refused ? `refused: ${note}` : ownerNote || note);
   } finally {
     clearTimeout(deadline);
+    require('./runner.cjs').useBackend(null);
   }
   try {
-    // With what Claude used for it (every run's tokens, from Claude Code's result events).
-    await remote.finish(ok, note, require('./runner.cjs').workerUsage());
+    // With what Claude used for it (every run's tokens, from Claude Code's result events), and where it ran.
+    await remote.finish(ok, note, require('./runner.cjs').workerUsage(), extras({ refused, ownerNote }));
   } catch (e) {
     log('finish failed:', e.message);
   }
@@ -262,4 +304,17 @@ async function run() {
   app.exit(ok ? 0 : 1);
 }
 
-module.exports = { run, _test: { profileFromTarget, qText, freshQuestions } };
+/** What the finish says about where the job ran (only to an account server that sent a backend). */
+function extras({ refused = false, ownerNote = null } = {}) {
+  if (!how.told) return {};
+  if (refused) return { refused: 'backend' };
+  const by = require('./runner.cjs').workerUsageByBackend();
+  return {
+    backend: how.ranOn,
+    ...(how.fallback ? { fallback: { reason: how.fallback.reason } } : {}),
+    ...(ownerNote ? { ownerNote } : {}),
+    usageByBackend: { ...(by.api ? { api: by.api } : {}), ...(by.plan ? { plan: by.plan } : {}) },
+  };
+}
+
+module.exports = { run, _test: { profileFromTarget, qText, freshQuestions, extras, how, runTask } };

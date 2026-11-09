@@ -54,8 +54,17 @@ const DENY = [
   'Bash(regsvr32:*)', 'Bash(schtasks:*)', 'Bash(reg:*)', 'Bash(sc:*)', 'Bash(claude:*)'
 ];
 const inWorker = () => !!process.env.KEA_WORKER_JOB;
-// A worker job's Claude usage, added up over all its runs (usage.cjs): sent with the job's finish (worker.cjs).
+// A worker job's Claude usage, added up over all its runs (usage.cjs): sent with the job's finish (worker.cjs), in all
+// and per backend (the owner's API credits or plan: backend.cjs).
 const workerTally = require('./usage.cjs').tally(require('./usage.cjs').OPUS);
+const backendTally = { api: require('./usage.cjs').tally(require('./usage.cjs').OPUS), plan: require('./usage.cjs').tally(require('./usage.cjs').OPUS) };
+// Where a worker's runs go (worker.cjs sets it for its job): the plan (the claude command), or the API credits (the
+// Agent SDK with the owner's key, agentRun.cjs). The key is only ever held here, in memory, for the job.
+let workerBackend = { run: 'plan', apiKey: null };
+function useBackend(b) {
+  workerBackend = b?.run === 'api' && b.apiKey ? { run: 'api', apiKey: String(b.apiKey) } : { run: 'plan', apiKey: null };
+}
+const viaApi = () => inWorker() && workerBackend.run === 'api';
 /**
  * How Claude Code is started for every run, so only Kea's own rules apply: only the workspace's project settings load
  * (its skills and CLAUDE.md, written by Kea), never the computer owner's own ~/.claude settings (their allow rules,
@@ -1134,12 +1143,14 @@ async function begin(job) {
   try {
     const claude = await workspace.findClaude();
     const uv = await workspace.findUv();
+    // (A worker run on the owner's API credits doesn't need the claude command: the Agent SDK brings its own.)
+    const api = viaApi();
     // No Claude on this PC: Kea's shared Claude does a scan or a question batch instead (claudeRoute.cjs).
-    if (!claude) {
+    if (!claude && !api) {
       const fb = await sharedInstead(job, 'none');
       if (fb.ok) return finish(true, fb.note);
     }
-    if (!claude || !uv) return finish(false, 'Class scans aren’t set up yet (Claude Code and uv are needed).');
+    if ((!claude && !api) || !uv) return finish(false, 'Class scans aren’t set up yet (Claude Code and uv are needed).');
     const cwd = workspace.prepare();
     // Check folders and run logs older than two weeks go (at most once a day).
     try {
@@ -1228,7 +1239,10 @@ async function begin(job) {
     };
     inflight();
     step(`${job.session ? 'Continuing: ' : ''}${t.label}…`);
-    const child = spawn(claude, args, { cwd, env: runEnv(uv, entry.id, job.task), windowsHide: true });
+    const child = api
+      ? require('./agentRun.cjs').start(args, { cwd, env: runEnv(uv, entry.id, job.task), apiKey: workerBackend.apiKey })
+      : spawn(claude, args, { cwd, env: runEnv(uv, entry.id, job.task), windowsHide: true });
+    const ranOn = api ? 'api' : 'plan';
     slot.child = child;
     let buf = '';
     let result = null;
@@ -1252,7 +1266,10 @@ async function begin(job) {
           if (ev.type === 'assistant') for (const c of ev.message?.content || []) if (c.type === 'text' && c.text) lastText = String(c.text).slice(-2000);
           if (ev.type === 'result') {
             result = ev;
-            if (inWorker()) workerTally.add(ev);
+            if (inWorker()) {
+              workerTally.add(ev);
+              backendTally[ranOn].add(ev);
+            }
             if (ev.num_turns) entry.turns = ev.num_turns;
           } else if (ev.type === 'assistant') {
             entry.turns++;
@@ -1304,6 +1321,14 @@ async function begin(job) {
           after?.(false);
         } catch {}
         finish(false, 'Stopped.');
+      } else if (child.billing) {
+        // On the owner's API credits, and the API said the credit balance is too low: the worker decides what's next
+        // (backend.cjs: an auto job runs again on the plan; an API-only one fails).
+        try {
+          after?.(false);
+        } catch {}
+        entry.billing = true;
+        finish(false, require('./backend.cjs').BILLING_REASON);
       } else if (LIMIT.test(text) || (failed && LIMIT.test(said))) {
         // Out of Claude usage: everything saved so far stays; continue once the limit resets.
         const pauseIt = (also = '') => {
@@ -1412,4 +1437,4 @@ function deleteNews(ids = [], keys = []) {
   return gone.map((n) => inboxKey({ course: n.course || '', title: n.title, body: n.body }));
 }
 
-module.exports = { workerUsage: () => workerTally.get(), run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS, _test: { sharedInstead, FALLBACK_TASKS, claudeArgs, runEnv, allowedTools, COMMANDS, DENY, depthRows, transientError, eachOnce, queue: () => queue, current: () => current, side: () => side } };
+module.exports = { workerUsage: () => workerTally.get(), workerUsageByBackend: () => ({ api: backendTally.api.get(), plan: backendTally.plan.get() }), useBackend, run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS, _test: { sharedInstead, FALLBACK_TASKS, claudeArgs, runEnv, allowedTools, COMMANDS, DENY, depthRows, transientError, eachOnce, queue: () => queue, current: () => current, side: () => side } };

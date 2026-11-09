@@ -113,11 +113,17 @@ async function signIn(pc, google, email) {
   return s;
 }
 
+// (Made up here: shaped like a Claude API key, never a real one. An older KeaC ignores the apiKey option.)
+const API_KEY = `sk-ant-api03-${'c'.repeat(24)}COMPATONLY`;
+const NOT_AVAILABLE = /shared Claude isn’t available right now/;
+
 async function main(spec) {
   const google = fakeGoogle();
   const { createKeaC } = await import(pathToFileURL(path.join(spec.keac.dir, 'server', 'index.mjs')).href);
   const { ownerFetch } = await import(pathToFileURL(path.join(spec.keac.dir, 'server', 'lib', 'ownerauth.mjs')).href);
-  const keac = createKeaC({ dataDir: mk('keac'), log: false, minFreeBytes: 0, fileOverheadBytes: 0, ...google.keacOptions });
+  let apiKey = API_KEY;
+  const keacData = mk('keac');
+  const keac = createKeaC({ dataDir: keacData, log: false, minFreeBytes: 0, fileOverheadBytes: 0, ...google.keacOptions, apiKey: () => apiKey });
   const ports = await keac.listen({ port: 0, ownerPort: 0 });
   const base = `http://127.0.0.1:${ports.port}`, ownerBase = `http://127.0.0.1:${ports.ownerPort}`;
   const owner = async (method, p, body) => {
@@ -129,7 +135,10 @@ async function main(spec) {
     const features = ok(await call(base, 'GET', '/v1/health')).features || [];
     const sharedTeach = features.includes('sharedTeach');
     const usageTracking = features.includes('usageTracking');
-    await step('health: shared-Claude features', async () => ({ sharedTeach, usageTracking }));
+    const apiBackend = features.includes('apiBackend');
+    await step('health: shared-Claude features', async () => ({ sharedTeach, usageTracking, apiBackend }));
+    // (The steps before the backends' own run on the owner's plan, as they always did; those set what they test.)
+    if (apiBackend) ok(await owner('POST', '/owner/settings', { api: { backend: 'plan' } }));
 
     const pc = loadKea(spec.kea.dir, base);
     await step('Kea signs in to its Kea account', async () => (await signIn(pc, google, 'sc-person@compat.test')).state);
@@ -239,6 +248,126 @@ async function main(spec) {
       }
       return 'older server: finish accepted';
     });
+
+    // ---- Where jobs run: the owner's API credits or plan (KeaC apiBackend, Kea's scholar/backend.cjs) ----
+    const backendsKea = has('scholar/backend.cjs');
+    const FAKE = [process.execPath, path.join(spec.keaDir, 'test', 'sharedclaude', 'fake-claude.cjs')];
+    const api = createRequire(path.join(spec.keaDir, 'test', 'x.cjs'))('./sharedclaude/fake-api.cjs');
+    const worker = pc.hub._teach;
+    // (This Kea's account: a fresh sign-in token, and its id from the owner console.)
+    const token = async () => ok(await call(base, 'POST', '/v1/auth/google', { body: { idToken: google.token('sc-person@compat.test') } })).token;
+    const personId = async () => ok(await owner('GET', '/owner/accounts?q=sc-person%40compat.test')).accounts[0].id;
+    // (The lesson limit from the steps above, lifted for these.)
+    if (sharedTeach) ok(await owner('POST', '/owner/settings', { limits: { explainersPerDay: 100 } }));
+    if (apiBackend) ok(await owner('POST', '/owner/settings', { api: { backend: 'auto' } }));
+    /** One lesson asked for by this Kea and written by the owner's Kea with `opts` (a stand-in API fetch, claude). */
+    const lesson = async (opts) => {
+      check((await worker.teachOnce(ownerCall, { wait: 0 })) === null, 'nothing waiting yet');
+      const asking = pc.hub.requestTeach({ question: { type: 'mc', q: 'What is the pH of pure water?', choices: ['5', '7'], answer: 1 }, courseCode: 'CHEM 1010', answer: 0, right: false }, () => {}, { waitMs: 3000 });
+      asking.catch(() => {});
+      const job = await worker.teachOnce(ownerCall, { wait: 5000, cwd: os.tmpdir(), env: { ...process.env }, flushMs: 5, ...opts });
+      let got = null, err = null;
+      try {
+        got = await asking;
+      } catch (e) {
+        err = e;
+      }
+      return { job, got, err };
+    };
+    const byBackend = async () => ok(await owner('GET', '/owner/usage?days=1')).totals.byBackend || {};
+    if (apiBackend && backendsKea && sharedTeach && newKea) {
+      await step('a lesson on API credits: handed out as auto to a Kea that runs both, written through the Messages API (a stand-in), counted as API', async () => {
+        const f = api.lessonFetch();
+        const before = (await byBackend()).api?.output || 0;
+        const { job, got, err } = await lesson({ fetch: f, claude: FAKE });
+        check(!err, `lesson failed: ${err?.message}`);
+        check(job.backend === 'auto', `backend ${job.backend}`);
+        check(/pH is 7/.test(got.text), `text ${JSON.stringify(got?.text)}`);
+        check(f.calls.length === 1 && f.calls[0].headers.get('x-api-key') === API_KEY && f.calls[0].body.model === 'claude-sonnet-5-5', 'one Messages API call with the key, on Sonnet');
+        const now = (await byBackend()).api?.output || 0;
+        check(now - before === api.USAGE.output, `api output ${before} -> ${now}`);
+        return { backend: job.backend };
+      });
+      await step('auto: the API’s billing error writes the lesson on the plan instead, and the owner sees when it moved', async () => {
+        const f = api.billingFetch();
+        const log = path.join(mk('claude'), 'runs.log');
+        const { got, err } = await lesson({ fetch: f, claude: FAKE, env: { ...process.env, FAKE_CLAUDE_LOG: log } });
+        check(!err, `lesson failed: ${err?.message}`);
+        check(/pH is 7/.test(got.text), 'written');
+        check(fs.existsSync(log), 'written on the plan');
+        const cr = ok(await owner('GET', '/owner/settings')).api.credits;
+        check(cr.out === true && Number.isFinite(cr.at) && /credit balance/.test(cr.reason), `credits ${JSON.stringify(cr)}`);
+        ok(await owner('POST', '/owner/claude/api-retry', {}));
+        return { movedAt: new Date(cr.at).toISOString() };
+      });
+      await step('API credits only with no key set: the owner’s Kea refuses it; the person hears only that it isn’t available', async () => {
+        const id = await personId();
+        ok(await owner('POST', `/owner/accounts/${id}/claude`, { backend: 'api' }));
+        apiKey = null;
+        const f = api.lessonFetch();
+        const { job, err } = await lesson({ fetch: f, claude: FAKE });
+        apiKey = API_KEY;
+        ok(await owner('POST', `/owner/accounts/${id}/claude`, { backend: null }));
+        check(job.backend === 'api', `backend ${job.backend}`);
+        check(err && NOT_AVAILABLE.test(err.message), `the person saw: ${err?.message}`);
+        check(!/API|KeaC|key/.test(err.message), `nothing about the backend: ${err.message}`);
+        check(f.calls.length === 0, 'nothing sent to the API');
+        return err.message;
+      });
+      await step('a scan job on API credits: the worker reads its backend, gets the key over the owner console, and reports where it ran', async () => {
+        const t = await token();
+        const q = ok(await call(base, 'POST', '/v1/scan', { token: t, body: { kind: 'more_questions', course: { school: 'UCCS', code: 'BIO 1010', term: 'Fall 2026' }, chapter: 'Ch 2', detail: { courseCode: 'BIO 1010', chapter: 'Ch 2' } } }));
+        const job = ok(await owner('POST', '/owner/scan/next', { backends: ['api', 'plan'] })).job;
+        check(job?.id === q.job.id && job.backend === 'auto', `job ${JSON.stringify(job)}`);
+        const keyFile = path.join(mk('key'), 'owner.key');
+        fs.writeFileSync(keyFile, keac.ownerKey);
+        Object.assign(process.env, { KEA_WORKER_JOB: job.id, KEA_OWNER_KEY_FILE: keyFile, KEA_HUB_OWNER_PORT: String(ports.ownerPort) });
+        delete Module._cache[pc.req.resolve('./scholar/remote.cjs')];
+        const remote = pc.req('./scholar/remote.cjs');
+        const B = pc.req('./scholar/backend.cjs');
+        const info = await remote.jobInfo();
+        const key = await remote.apiKey();
+        check(key === API_KEY, 'the key, for this running job');
+        check(JSON.stringify(B.choose(info.job, { hasKey: !!key })) === JSON.stringify({ run: 'api', auto: true }), 'runs on the API credits');
+        const before = (await byBackend()).api?.input || 0;
+        const usage = { byModel: { 'claude-opus-5-5': { input: 11, output: 22, cacheRead: 33, cacheWrite: 44 } } };
+        await remote.finish(true, 'done', usage, { backend: 'api', usageByBackend: { api: usage } });
+        delete process.env.KEA_WORKER_JOB;
+        check((await byBackend()).api.input - before === 11, 'counted as API');
+        check(ok(await owner('GET', '/owner/scan/history')).jobs.find((j) => j.id === job.id)?.ranOn === 'api', 'the owner sees it ran on API credits');
+        return 'api';
+      });
+      await step('the key is nowhere in KeaC’s data folder (database, logs) after all of it', async () => {
+        keac.h.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+        const files = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(path.join(d, e.name)) : [path.join(d, e.name)]));
+        for (const f of files(keacData)) check(!fs.readFileSync(f).includes(Buffer.from(API_KEY)), `the key is in ${f}`);
+      });
+    } else if (apiBackend && sharedTeach && !backendsKea && has('scholar/usage.cjs')) {
+      await step('an older Kea (it doesn’t say it runs backends) writes auto lessons on its plan, and never gets one for API credits only', async () => {
+        const { job, err } = await lesson({ claude: FAKE });
+        check(!err && job && job.backend === undefined, `auto lesson: ${err?.message} ${JSON.stringify(job && job.backend)}`);
+        check(((await byBackend()).plan?.jobs || 0) >= 1, 'counted on the plan');
+        const id = await personId();
+        ok(await owner('POST', `/owner/accounts/${id}/claude`, { backend: 'api' }));
+        const r = await lesson({ claude: FAKE });
+        ok(await owner('POST', `/owner/accounts/${id}/claude`, { backend: null }));
+        check(r.job === null, 'the API-only lesson was never handed to it');
+        check(r.err && NOT_AVAILABLE.test(r.err.message), `the person saw: ${r.err?.message}`);
+        return r.err.message;
+      });
+    } else if (!apiBackend && backendsKea && newKea) {
+      await step('an older KeaC (no backends): the job comes without one and the owner’s Kea runs it on the plan', async () => {
+        if (sharedTeach) {
+          const f = api.lessonFetch();
+          const { job, err } = await lesson({ fetch: f, claude: FAKE });
+          check(!err && job && job.backend === undefined, `lesson: ${err?.message}`);
+          check(f.calls.length === 0, 'the API was never used');
+        }
+        const B = pc.req('./scholar/backend.cjs');
+        check(JSON.stringify(B.choose({ kind: 'initial_scan' }, { hasKey: true })) === JSON.stringify({ run: 'plan', auto: false }), 'a job without a backend runs on the plan');
+        return 'plan';
+      });
+    }
   } finally {
     await keac.close();
   }

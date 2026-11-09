@@ -10,6 +10,7 @@ import { ArrowUp, Check, GraduationCap, RotateCcw, Square, X } from 'lucide-reac
 import { api, Lesson, StudyQuestion, TeachCheck } from '../../lib/api';
 import { uid } from '../../lib/util';
 import { setting } from '../../lib/settings';
+import { OwnClaudeSwitch, useOwnClaudeOnly } from '../account/OwnClaude';
 import { latexToText } from '../../lib/lookup';
 
 /** The question in front of the student, answered: what Teach is about. */
@@ -141,9 +142,11 @@ export function TeachPane({ subject, ask }: { subject: TeachSubject | null; ask:
   const [older, setOlder] = useState(false);
   // Where lessons are written now (own Claude or Kea's shared Claude), for the line under the button.
   const [via, setVia] = useState<'own' | 'shared' | 'none'>('own');
+  // (Asked again when "Use my own Claude" changes.)
+  const ownOnly = useOwnClaudeOnly();
   useEffect(() => {
     api.scholar.teachRoute?.().then((r) => r && setVia(r.via)).catch(() => {});
-  }, []);
+  }, [ownOnly]);
   const scroller = useRef<HTMLDivElement>(null);
   const k = subject?.k || '';
   const handled = useRef(0);
@@ -242,6 +245,8 @@ export function TeachPane({ subject, ask }: { subject: TeachSubject | null; ask:
           <div className="muted small">
             {plan} · {model}
           </div>
+          {/* Wherever Kea's shared Claude would write it: the choice to use only your own. */}
+          {via !== 'own' && <OwnClaudeSwitch className="small" />}
         </div>
       ) : (
         <>

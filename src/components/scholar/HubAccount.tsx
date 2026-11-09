@@ -8,6 +8,7 @@ import { useKeaCloud, watchKeaCloud } from '../../lib/keaCloud';
 import { PHONE_HINT, SHARE_DEFAULTS, oneStepAgreement, profileSave, savedText, showPhone } from '../../lib/profile';
 import { SIGN_IN_WAITS, hubStatusNow, loadLocal, openAccount, refreshHub, refreshNotifications, run, setHubNotifications, setHubStatus, signInWaits, useHubNotifications, useHubStatus } from '../account/hubStore';
 import { NeedsOnline } from '../account/NeedsOnline';
+import { OwnClaudeSwitch, useOwnClaudeOnly } from '../account/OwnClaude';
 import { SignInSecurity, YourData } from '../account/Security';
 import { ProfileHead, VerifiedBadge, useAccount } from './Account';
 import { UpdateRequired } from '../Updates';
@@ -1024,13 +1025,18 @@ export function SharedClaude() {
   }, []);
   const open = jobs.find((j) => j.kind !== 'more_questions' && (j.status === 'queued' || j.status === 'running'));
   const last = jobs.find((j) => j.kind !== 'more_questions' && (j.status === 'done' || j.status === 'failed'));
+  // "Use my own Claude": Kea's shared Claude is never asked (the switch says why, right here).
+  const ownOnly = useOwnClaudeOnly();
   return (
     <div className="hub-shared">
       <h3 className="hub-title">No Claude account? Use Kea’s shared Claude</h3>
       <p className="muted acct-note">
         Free, with limits: one full scan per class each term, a light check at most once a day, practice questions 25 at a time and one guide per assignment. It needs your Kea account online. Your school password never leaves this computer: the scan reads your class site through this Kea, so keep Kea open while it runs. With your own Claude there are no limits and no account is needed.
       </p>
-      {!status?.signedIn || !status.reachable ? (
+      <OwnClaudeSwitch />
+      {ownOnly ? (
+        <p className="muted acct-note">Kea uses only your own Claude. Turn the switch off to use Kea’s shared Claude.</p>
+      ) : !status?.signedIn || !status.reachable ? (
         <NeedsOnline what="Kea’s shared Claude" />
       ) : !status.me ? null : status.me.account.birthYear == null || status.me.account.parentSignOff === 'needed' || status.me.account.parentSignOff === 'pending' ? (
         <ParentSignOff status={status} />
@@ -1080,7 +1086,7 @@ export function SharedClaude() {
         </div>
       )}
       {status?.signedIn && <SectionRequests />}
-      {status?.signedIn && status.me && status.me.account.birthYear != null && (status.me.account.parentSignOff === 'approved' || status.me.account.parentSignOff === 'not_needed') && (
+      {!ownOnly && status?.signedIn && status.me && status.me.account.birthYear != null && (status.me.account.parentSignOff === 'approved' || status.me.account.parentSignOff === 'not_needed') && (
         <MoreQuestions jobs={jobs} onAsked={load} />
       )}
     </div>

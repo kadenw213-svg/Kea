@@ -51,7 +51,7 @@ beforeEach(() => {
   asked.length = 0;
   ownClaude = FAKE;
   delete process.env.FAKE_CLAUDE_FAIL;
-  settings.set({ 'claude.sharedFallback': true, 'study.teach.via': 'auto' });
+  settings.set({ 'claude.ownOnly': false, 'study.teach.via': 'auto' });
 });
 plan.findClaude = async () => ownClaude;
 hub.signedIn = () => true;
@@ -100,8 +100,8 @@ test('an ordinary failure is not a reason: no fallback, the person sees their ow
   assert.equal(asked.length, 0);
 });
 
-test('the Advanced setting off: no fallback, even at the limit or with no Claude on this PC', async () => {
-  settings.set({ 'claude.sharedFallback': false });
+test('"Use my own Claude" on: no fallback, even at the limit or with no Claude on this PC', async () => {
+  settings.set({ 'claude.ownOnly': true });
   process.env.FAKE_CLAUDE_FAIL = LIMIT_TEXT;
   const r = await lesson();
   assert.ok(r.error);
@@ -156,9 +156,9 @@ test('a class scan or a question batch: handed to the shared Claude when own Cla
   // Other runs (the daily check, textbooks, guides) aren't handed over.
   for (const task of ['daily', 'sync', 'study', 'guides', 'lookup']) assert.equal((await sharedInstead({ task, arg: '' }, 'limit', fakeHub())).ok, false, task);
   // Setting off, signed out of the Kea account, or the shared Claude says no: not handed over (the run pauses as before).
-  settings.set({ 'claude.sharedFallback': false });
+  settings.set({ 'claude.ownOnly': true });
   assert.equal((await sharedInstead({ task: 'import', arg: '' }, 'limit', fakeHub())).ok, false);
-  settings.set({ 'claude.sharedFallback': true });
+  settings.set({ 'claude.ownOnly': false });
   assert.equal((await sharedInstead({ task: 'import', arg: '' }, 'limit', fakeHub({ signedIn: () => false }))).ok, false);
   const no = await sharedInstead({ task: 'import', arg: '' }, 'limit', fakeHub({ requestScan: async () => { throw new Error('This class already had its full scan this term.'); } }));
   assert.deepEqual(no, { ok: false, error: 'This class already had its full scan this term.' });

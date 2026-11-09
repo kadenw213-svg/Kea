@@ -4,6 +4,14 @@
 //   current Kea x KeaC 0.4.0           no sharedTeach: Kea doesn't offer it; the lesson writer waits; usage is ignored
 //   Kea 0.85.0 x current KeaC          an older Kea never asks; with no Kea writing lessons, a clear 503 no_worker; its
 //                                       worker's finish (no usage) counts as one untracked job
+// And where jobs run (the owner's API credits or plan: KeaC's apiBackend, Kea's scholar/backend.cjs; stand-ins for the
+// Claude API and Claude Code, never the real ones):
+//   current Kea x current KeaC          a lesson on API credits (Messages API stand-in) counted as API; the API's billing
+//                                       error moving an auto lesson to the plan, with the time for the owner; API credits
+//                                       only with no key refused, the person told only it isn't available; a scan job's
+//                                       backend, key and report; the key nowhere in KeaC's data
+//   current Kea x KeaC 0.5.1           no backends: every job runs on the plan, the API never used
+//   Kea 0.86.0 x current KeaC          an older worker: auto lessons on its plan, never one for API credits only
 // Each cell runs a real KeaC on 127.0.0.1 port 0 with scratch data, in a child process (shared-claude-cell.mjs). The
 // previous releases are read with git show (harness.mjs extract), pinned here.
 // The same file is in Kea and KeaC (test/compat/shared-claude.test.mjs): keep them the same.
@@ -18,16 +26,20 @@ import { DIRS, extract } from './harness.mjs';
 
 // The releases before shared Teach and usage tracking (commits in each repo).
 const PREVIOUS = { keac: { label: '0.4.0', commit: 'e8c7cb7' }, kea: { label: '0.85.0', commit: '9335cfc' } };
+// The releases before backends (the owner's API credits).
+const BEFORE_BACKENDS = { keac: { label: '0.5.1', commit: 'f6b6fdb' }, kea: { label: '0.86.0', commit: '9fab627' } };
 const current = (repo) => (existsSync(join(DIRS[repo], repo === 'kea' ? 'electron/hub.cjs' : 'server/index.mjs')) ? { label: 'current', dir: DIRS[repo] } : { error: `no ${repo} at ${DIRS[repo]}` });
-const previous = (repo) => {
-  const x = extract(repo, PREVIOUS[repo].commit);
-  return x.error ? { error: x.error } : { label: PREVIOUS[repo].label, dir: x.dir };
+const previous = (repo, from = PREVIOUS) => {
+  const x = extract(repo, from[repo].commit);
+  return x.error ? { error: x.error } : { label: from[repo].label, dir: x.dir };
 };
 const fake = join(DIRS.kea, 'test', 'sharedclaude', 'fake-claude.cjs');
 const CELLS = [
   ['current Kea x current KeaC', current('kea'), current('keac')],
   ['current Kea x KeaC 0.4.0', current('kea'), previous('keac')],
   ['Kea 0.85.0 x current KeaC', previous('kea'), current('keac')],
+  ['current Kea x KeaC 0.5.1', current('kea'), previous('keac', BEFORE_BACKENDS)],
+  ['Kea 0.86.0 x current KeaC', previous('kea', BEFORE_BACKENDS), current('keac')],
 ];
 
 function runCell(spec) {

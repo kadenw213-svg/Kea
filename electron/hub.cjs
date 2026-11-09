@@ -1157,7 +1157,9 @@ async function launcherTick() {
   const call = (p, body) => require('./ownerauth.cjs').ownerFetch(`http://127.0.0.1:${port}`, key, 'POST', p, { body: JSON.stringify(body || {}), headers: { 'content-type': 'application/json' }, fetchFn: net.fetch }).then((r) => r.json());
   let job;
   try {
-    job = (await call('/owner/scan/next')).job;
+    // (backends: this Kea runs jobs on the owner's API credits or plan, scholar/backend.cjs; an account server that
+    // knows backends sends each job with one.)
+    job = (await call('/owner/scan/next', { backends: require('./scholar/backend.cjs').BACKENDS })).job;
   } catch {
     return; // the Hub isn't running here
   }
@@ -1222,15 +1224,18 @@ const teachState = { running: null, last: null, written: 0 };
  * when there was none, or 'unsupported' when the account server doesn't hand out lessons (an older one).
  */
 async function teachOnce(call, { wait = 15_000, ...opts } = {}) {
-  const r = await call('/owner/teach/next', { wait });
+  const r = await call('/owner/teach/next', { wait, backends: require('./scholar/backend.cjs').BACKENDS });
   if (!r || !('job' in r)) return 'unsupported';
   const job = r.job;
   if (!job) return null;
   const id = encodeURIComponent(job.id);
   teachState.running = { id: job.id, startedAt: Date.now() };
   try {
-    const out = await require('./scholar/teach.cjs').writeShared(job, { ...opts, progress: (text) => call(`/owner/teach/${id}/progress`, { text }) });
-    await call(`/owner/teach/${id}/finish`, { ok: out.ok, ...(out.ok ? { text: out.text } : { error: out.error }), ...(out.usage ? { usage: out.usage } : {}) });
+    // (The owner's API key, for a lesson on API credits: asked for over the owner console for this lesson only.)
+    const apiKey = () => call(`/owner/teach/${id}/api-key`, {}).then((a) => a?.key || null);
+    const out = await require('./scholar/teach.cjs').writeShared(job, { apiKey, ...opts, progress: (text) => call(`/owner/teach/${id}/progress`, { text }) });
+    // (run: where it ran, for the account server only: backend, fallback, refused, ownerNote, usageByBackend.)
+    await call(`/owner/teach/${id}/finish`, { ok: out.ok, ...(out.ok ? { text: out.text } : { error: out.error }), ...(out.usage ? { usage: out.usage } : {}), ...(out.run || {}) });
     teachState.last = { id: job.id, ok: out.ok, at: Date.now() };
     if (out.ok) teachState.written++;
   } finally {

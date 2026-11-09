@@ -897,3 +897,19 @@
 .dialog.hub-welcome h2 {
   margin-bottom: 4px;
 }
+/* "Use my own Claude" (components/account/OwnClaude.tsx), beside every offer of Kea's shared Claude. */
+.own-claude {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 6px 0 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.own-claude input {
+  margin-top: 2px;
+}
+.own-claude.small {
+  font-size: 12px;
+  margin: 8px 0 0;
+}

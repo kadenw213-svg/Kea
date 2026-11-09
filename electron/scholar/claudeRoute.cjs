@@ -8,8 +8,9 @@
 //       (read from Claude Code's own error and usage-limit output: never an ordinary failure such as a bad prompt,
 //       a server hiccup or a run they stopped).
 // - Every fallback is still a shared-Claude request: the account's limits and the locked models apply.
-// - Settings → Claude Assistant → Advanced → "Use Kea's shared Claude when yours can't" (claude.sharedFallback, on by
-//   default) turns the fallback off.
+// - Settings → Claude Assistant → "Use my own Claude" (claude.ownOnly, off by default; also beside every mention of
+//   the shared Claude) turns the fallback off: more privacy and no shared limits. (It replaces the Advanced setting
+//   claude.sharedFallback; someone who had turned that off has "Use my own Claude" on.)
 const settings = () => require('../settings.cjs');
 
 // Claude Code's usage-limit messages (the same reading as runner.cjs's pause), and its signed-out ones.
@@ -22,8 +23,21 @@ const NOTES = {
   none: 'Used the shared Claude because this PC has no Claude connected.',
 };
 
-/** Whether falling back to Kea's shared Claude is allowed (the Advanced setting). */
-const fallbackOn = () => settings().get('claude.sharedFallback', true) !== false;
+/** Whether only this person's own Claude is used, never Kea's shared Claude ("Use my own Claude"). */
+function ownOnly() {
+  const v = settings().get('claude.ownOnly', null);
+  if (v != null) return v === true;
+  // (Carried over once from the old Advanced setting, so the switch shows what Kea does.)
+  if (settings().get('claude.sharedFallback', true) === false) {
+    try {
+      settings().set({ 'claude.ownOnly': true });
+    } catch {}
+    return true;
+  }
+  return false;
+}
+/** Whether falling back to Kea's shared Claude is allowed. */
+const fallbackOn = () => !ownOnly();
 
 /**
  * Why an own run's failure allows the fallback: 'limit', 'signedOut', or null (an ordinary failure, or a stopped run).
@@ -38,4 +52,4 @@ function fallbackReason(text, { stopped = false } = {}) {
 }
 const noteFor = (reason) => NOTES[reason] || NOTES.none;
 
-module.exports = { fallbackOn, fallbackReason, noteFor, NOTES, LIMIT, SIGNED_OUT };
+module.exports = { ownOnly, fallbackOn, fallbackReason, noteFor, NOTES, LIMIT, SIGNED_OUT };

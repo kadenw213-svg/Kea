@@ -12,13 +12,16 @@
 // Settings → Teach → Where lessons are written (study.teach.via): auto (own Claude first), own, or shared. Through
 // the shared Claude a lesson always runs on Sonnet with effort medium and no tools, within the account's daily limits;
 // a follow-up sends the lesson it follows (there's no conversation to continue on someone else's PC).
-// On the Kea owner's PC, writeShared() is the other end: it writes those lessons for others (hub.cjs teachLoop).
+// On the Kea owner's PC, writeShared() is the other end: it writes those lessons for others (hub.cjs teachLoop), on the
+// backend the account server sent (backend.cjs): the owner's API credits (turnApi: one streamed Messages API call with
+// the owner's key, the same system prompt and lesson format, no tools) or the owner's plan (turn: Claude Code).
 const { spawn } = require('child_process');
 const settings = require('../settings.cjs');
 const plan = require('../assistantPlan.cjs');
 const study = require('./study.cjs');
 const { usageOf, checkJob, lockedFor } = require('./usage.cjs');
 const { fallbackOn, fallbackReason, noteFor } = require('./claudeRoute.cjs');
+const B = require('./backend.cjs');
 
 const SYSTEM = `You are Kea's tutor. A college student has just answered one practice question and wants to understand the concept behind it. Teach it so they could answer any question on it, not only this one.
 
@@ -73,6 +76,9 @@ function lessonPrompt(w, req) {
   return lines.join('\n');
 }
 
+/** The system prompt for a lesson with `checks` check questions (0: none). */
+const systemFor = (checks) => SYSTEM.replace('CHECKS', String(checks || 2)) + (checks ? '' : '\nWrite no check block.');
+
 /**
  * Run one turn: streams the text as it comes (onText), resolves { text, session, usage } or { error }. `lock` (a lesson
  * for someone else through the shared Claude) fixes the model, effort and check count instead of this Kea's settings.
@@ -83,7 +89,7 @@ async function turn(id, message, session, onText, lock = null) {
   const model = lock ? lock.model : settings.get('study.teach.model', 'claude-sonnet-5-5');
   const effort = lock ? lock.effort : settings.get('study.teach.effort', 'medium');
   const checks = Math.max(0, Math.min(5, Number(lock ? lock.checks : settings.get('study.teach.checks', 2)) || 0));
-  const system = SYSTEM.replace('CHECKS', String(checks || 2)) + (checks ? '' : '\nWrite no check block.');
+  const system = systemFor(checks);
   const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--strict-mcp-config', '--tools', '', '--permission-mode', 'dontAsk', '--setting-sources', 'project', '--system-prompt', system, '--model', model, '--effort', effort];
   if (session) args.push('--resume', session);
   return new Promise((resolve) => {
@@ -143,6 +149,53 @@ async function turn(id, message, session, onText, lock = null) {
     });
     child.stdin.end(`${JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: message }] } })}\n`);
   });
+}
+
+/**
+ * One lesson for someone else on the owner's API credits: a streamed Messages API call with the owner's key (`apiKey`),
+ * on the locked model and effort, with the same system prompt and lesson format as turn(), no tools and nothing else.
+ * Resolves { text, usage } or { error, ownerNote, billing?, usage } or { text, stopped }. `fetch`: a stand-in for tests.
+ * The key goes only to the Anthropic API; errors are described without it.
+ */
+async function turnApi(id, message, onText, lock, { apiKey, fetch: fetchImpl = null } = {}) {
+  const Anthropic = require('@anthropic-ai/sdk');
+  const checks = Math.max(0, Math.min(5, Number(lock.checks) || 0));
+  const client = new Anthropic({ apiKey, maxRetries: 2, ...(fetchImpl ? { fetch: fetchImpl } : {}) });
+  const params = {
+    model: lock.model,
+    max_tokens: 64000,
+    system: systemFor(checks),
+    messages: [{ role: 'user', content: message }],
+    ...(lock.effort ? { output_config: { effort: lock.effort } } : {}),
+    // A refusal is re-run on another model inside the same request (the API's own routing), instead of no lesson.
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+  };
+  let text = '';
+  let stream = null;
+  const handle = { killedByUser: false, kill: () => stream?.abort() };
+  running.set(id, handle);
+  try {
+    stream = client.beta.messages.stream(params);
+    if (handle.killedByUser) stream.abort();
+    for await (const ev of stream) {
+      if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+        text += ev.delta.text;
+        onText(ev.delta.text);
+      }
+    }
+    const msg = await stream.finalMessage();
+    const usage = B.usageOfMessage(msg, lock.model);
+    if (msg.stop_reason === 'refusal') return { error: 'Claude declined to write this lesson.', ownerNote: `The API declined the lesson (refusal${msg.stop_details?.category ? `: ${msg.stop_details.category}` : ''}).`, usage };
+    return { text, usage };
+  } catch (err) {
+    if (handle.killedByUser || err instanceof Anthropic.APIUserAbortError) return { text, stopped: true, usage: null };
+    if (B.isBillingError(err)) return { error: B.BILLING_REASON, ownerNote: B.BILLING_REASON, billing: true, usage: null };
+    const what = err instanceof Anthropic.APIError ? `The Claude API answered ${err.status ?? 'with an error'}${err.type ? ` (${err.type})` : ''}: ${String(err.message || '').slice(0, 300)}` : `Couldn’t reach the Claude API: ${String(err?.message || err).slice(0, 300)}`;
+    return { error: 'Kea’s shared Claude couldn’t write this lesson. Ask again.', ownerNote: B.redact(what, apiKey), usage: null };
+  } finally {
+    running.delete(id);
+  }
 }
 
 /** The lesson's check block, as questions (bad ones dropped). */
@@ -214,9 +267,9 @@ const hub = () => require('../hub.cjs');
  * Claude Code when it's here, else Kea's shared Claude when the Kea account is online and its server offers it.
  */
 async function route() {
-  const want = String(settings.get('study.teach.via', 'auto'));
-  // (auto: Kea's shared Claude only as the fallback, when that's on; own: never; shared: always.)
-  const sharedOk = want === 'shared' || (want === 'auto' && fallbackOn());
+  // (auto: Kea's shared Claude only as the fallback; own: never; shared: always. "Use my own Claude" makes it own.)
+  const want = fallbackOn() ? String(settings.get('study.teach.via', 'auto')) : 'own';
+  const sharedOk = want === 'shared' || want === 'auto';
   const own = want !== 'shared' && !!(await plan.findClaude().catch(() => null));
   if (own) return { via: 'own', model: settings.get('study.teach.model', 'claude-sonnet-5-5'), sharedOk };
   const shared = sharedOk && (await sharedAvailable());
@@ -284,9 +337,31 @@ function followupPrompt(f) {
 /**
  * On the Kea owner's PC: write one lesson for someone else (a job from /owner/teach/next). Locked to Sonnet, effort
  * medium, no tools (usage.cjs); a job naming another model is refused. progress(piece) posts text as it comes (a few
- * times a second at most) and answers { cancelled } when the person stopped it. Resolves { ok, text, error, usage }.
+ * times a second at most) and answers { cancelled } when the person stopped it. Resolves { ok, text, error, usage } and
+ * where it ran (`run`: { backend, fallback, refused, ownerNote, usageByBackend }, only when the job came with a backend).
+ * apiKey(): the owner's key for this job (asked for only when the job may use it). fetch: a stand-in for tests.
  */
-async function writeShared(job, { progress = async () => ({}), claude = null, cwd = null, env = null, flushMs = 400 } = {}) {
+async function writeShared(job, opts = {}) {
+  const told = job?.backend != null;
+  let key = null;
+  if (B.wantsKey(job) && opts.apiKey) key = await Promise.resolve(opts.apiKey()).catch(() => null);
+  const choice = B.choose(job, { hasKey: !!key });
+  if (choice.refuse) return { ok: false, error: choice.refuse, usage: null, run: { refused: 'backend' } };
+  if (choice.run === 'plan') {
+    const r = await writeWith(job, opts, null);
+    return told ? { ...r, run: { backend: 'plan' } } : r;
+  }
+  const a = await writeWith(job, opts, { apiKey: key, fetch: opts.fetch || null });
+  // The API said the credit balance is too low: an auto lesson is written on the owner's plan instead (and the account
+  // server hears it, for the rest of the billing cycle). Never for any other error.
+  if (a.billing && choice.auto) {
+    const p = await writeWith(job, opts, null);
+    return { ...p, run: { backend: 'plan', fallback: { reason: B.BILLING_REASON }, usageByBackend: { ...(p.usage ? { plan: p.usage } : {}) } } };
+  }
+  const { billing, ownerNote, ...rest } = a;
+  return { ...rest, run: { backend: 'api', ...(ownerNote ? { ownerNote } : {}) } };
+}
+async function writeWith(job, { progress = async () => ({}), claude = null, cwd = null, env = null, flushMs = 400 } = {}, api = null) {
   let lock;
   try {
     if (job?.kind !== 'explain') throw new Error(`Not a lesson: ${job?.kind}`);
@@ -313,16 +388,18 @@ async function writeShared(job, { progress = async () => ({}), claude = null, cw
     }, () => {});
     return posting;
   };
-  const r = await turn(id, message, null, (t) => {
+  const onText = (t) => {
     buf += t;
     if (!timer) timer = setTimeout(flush, flushMs);
-  }, { model: lock.model, effort: lock.effort, checks: Math.max(0, Math.min(5, Number(job.checks ?? 2))), claude, cwd, env });
+  };
+  const turnLock = { model: lock.model, effort: lock.effort, checks: Math.max(0, Math.min(5, Number(job.checks ?? 2))), claude, cwd, env };
+  const r = api ? await turnApi(id, message, onText, turnLock, api) : await turn(id, message, null, onText, turnLock);
   clearTimeout(timer);
   await flush();
   stopped.delete(id);
   if (cancelled || r.stopped) return { ok: false, error: 'Stopped.', text: r.text || '', usage: r.usage || null, cancelled: true };
-  if (r.error) return { ok: false, error: r.error, usage: r.usage || null };
+  if (r.error) return { ok: false, error: r.error, usage: r.usage || null, ...(r.billing ? { billing: true } : {}), ...(r.ownerNote ? { ownerNote: r.ownerNote } : {}) };
   return { ok: true, text: r.text, usage: r.usage || null };
 }
 
-module.exports = { teach, stop, route, writeShared, _test: { SYSTEM, checksOf, bodyOf, lessonPrompt, given, correct, sharedRequest, followupPrompt } };
+module.exports = { teach, stop, route, writeShared, _test: { SYSTEM, systemFor, checksOf, bodyOf, lessonPrompt, given, correct, sharedRequest, followupPrompt, turnApi } };

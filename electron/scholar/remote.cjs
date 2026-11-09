@@ -84,8 +84,16 @@ const jobInfo = async () => (await owner('GET', '')).json();
 const courseFiles = async (prefix = '') => (await (await owner('GET', `/course-files?prefix=${encodeURIComponent(prefix)}`)).json()).files;
 const courseFile = async (p) => Buffer.from(await (await owner('GET', `/course-file?path=${encodeURIComponent(p)}`)).arrayBuffer());
 const putCourseFile = async (p, data) => (await owner('PUT', `/course-file?path=${encodeURIComponent(p)}`, { raw: data })).json();
-/** Done or failed, with the job's Claude usage ({ byModel }, usage.cjs) when there is any. */
-const finish = (ok, note, usage = null) => owner('POST', '/finish', { body: { ok, note: String(note || '').slice(0, 1900), ...(usage ? { usage } : {}) } });
+/**
+ * Done or failed, with the job's Claude usage ({ byModel }, usage.cjs) when there is any, and where it ran (worker.cjs
+ * extras: backend, fallback, refused, ownerNote, usageByBackend; for the owner only).
+ */
+const finish = (ok, note, usage = null, extra = {}) => owner('POST', '/finish', { body: { ok, note: String(note || '').slice(0, 1900), ...(usage ? { usage } : {}), ...extra } });
+/**
+ * The owner's Claude API key for this job (one handed out on API credits), or null when none is set. Asked for over the
+ * owner console on this PC only; kept in memory by the caller for the job, never written anywhere.
+ */
+const apiKey = async () => (await (await owner('POST', '/api-key', { body: {} })).json()).key || null;
 const syncRoot = () => path.join(require('electron').app.getPath('userData'), 'hub-sync');
 
-module.exports = { active, JOB, request, open, click, status, job, jobInfo, courseFiles, courseFile, putCourseFile, syncClient, finish, syncRoot };
+module.exports = { active, JOB, request, open, click, status, job, jobInfo, courseFiles, courseFile, putCourseFile, syncClient, finish, apiKey, syncRoot };

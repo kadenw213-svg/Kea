@@ -38,6 +38,10 @@ export interface Section {
   fields: Field[];
 }
 
+/** Why someone would pick "Use my own Claude" (Settings and every place that offers Kea's shared Claude). */
+export const OWN_CLAUDE_WHY = 'More privacy and no shared limits.';
+const OWN_CLAUDE_HELP = `${OWN_CLAUDE_WHY} On: Kea uses only the Claude on this PC, never Kea’s shared Claude. Off: your own Claude still goes first, and Kea’s shared Claude steps in only when this PC has no Claude, or yours is signed out or at its plan’s limit (within your Kea account’s limits).`;
+
 const pct = (vals: number[]) => vals.map((v) => ({ value: v, label: `${Math.round(v * 100)}%` }));
 
 export const SECTIONS: Section[] = [
@@ -640,8 +644,7 @@ export const SECTIONS: Section[] = [
       { key: 'scholar.weekStart', group: 'Calendar', label: 'Weeks start on', type: 'select', default: '0', options: [['0', 'Sunday'], ['1', 'Monday'], ['2', 'Tuesday'], ['3', 'Wednesday'], ['4', 'Thursday'], ['5', 'Friday'], ['6', 'Saturday']].map(([value, label]) => ({ value, label })), help: 'The first day of each week in the calendar. Kea on your phone has its own setting (Settings → Calendar).' },
       { key: 'scholar.parallelRuns', group: 'Practice questions', label: 'Question sets written at once', type: 'number', default: 3, min: 1, max: 20, step: 1, help: 'When you write questions for several chapters, this many are written at the same time (each chapter is its own Claude run). More is faster and uses your Claude plan’s limit sooner; the same total either way. Class checks and textbooks still run one at a time.' },
       { key: 'scholar.maxTurns', label: 'Most steps in one Claude run', type: 'number', default: 400, min: 10, max: 2000, step: 10, unit: 'steps', advanced: true, help: 'A run that takes more steps than this stops (each page read, file saved or command is a step), so a run that goes in circles can’t use up your Claude plan. A big class’s first scan takes a few hundred.' },
-      { key: 'claude.sharedFallback', group: 'Kea’s shared Claude', label: 'Use Kea’s shared Claude when yours can’t', type: 'toggle', default: true, advanced: true, help: 'Your own Claude always goes first. When this PC has no Claude, or yours is signed out or at its plan’s usage limit, Kea asks Kea’s shared Claude instead for class scans, practice questions and Teach lessons, within your Kea account’s limits, and says so.' },
-      { key: 'hub.relayMinutes', label: 'Let a shared-Claude scan read my class site for at most', type: 'number', default: 60, min: 10, max: 480, step: 5, unit: 'minutes', advanced: true, help: 'While a scan you asked for runs on Kea’s shared Claude, it reads your class site through this Kea (read-only), and Kea shows a notification. After this long, Kea stops answering it, and the scan ends.' },
+      { key: 'hub.relayMinutes', group: 'Kea’s shared Claude', label: 'Let a shared-Claude scan read my class site for at most', type: 'number', default: 60, min: 10, max: 480, step: 5, unit: 'minutes', advanced: true, help: 'While a scan you asked for runs on Kea’s shared Claude, it reads your class site through this Kea (read-only), and Kea shows a notification. After this long, Kea stops answering it, and the scan ends.' },
       { key: 'hub.workerMinutes', label: 'Kea owner: longest a shared-Claude job may take', type: 'number', default: 45, min: 10, max: 240, step: 5, unit: 'minutes', advanced: true, help: 'Only on the Kea owner’s computer. A job still running then is stopped, with Claude and everything it started, and reported as over time.' },
       { key: 'hub.teachWorker', label: 'Kea owner: write Teach lessons for others', type: 'toggle', default: true, advanced: true, help: 'Only on the Kea owner’s computer. While Kea runs, it writes the lessons other Kea accounts ask Kea’s shared Claude for, on your Claude plan (Sonnet, within each account’s daily limits).' },
       { key: 'hub.workerMaxTurns', label: 'Kea owner: most steps in one shared-Claude job', type: 'number', default: 200, min: 10, max: 2000, step: 10, unit: 'steps', advanced: true, help: 'Only on the Kea owner’s computer. Each Claude run in a shared job stops after this many steps.' },
@@ -791,7 +794,9 @@ export const SECTIONS: Section[] = [
     icon: 'Sparkles',
     blurb: 'Press Ctrl+Shift+J in any file (document, PDF, spreadsheet, slides, code, photo or video) to talk to Claude about it. Claude reads the file and makes the changes you ask for with the editor’s own tools; each change is one Ctrl+Z. It runs on your own Claude plan (through Claude Code) or your own Anthropic API key, kept encrypted on this computer. The Encyclopedia stays Wikipedia only.',
     fields: [
-      { key: 'assistant.enabled', label: 'Show the Claude button in editors', type: 'toggle', default: true },
+      // One switch, not under Advanced: the person's own Claude only, never Kea's shared Claude (claudeRoute.cjs).
+      { key: 'claude.ownOnly', group: 'Your Claude', label: 'Use my own Claude', type: 'toggle', default: false, help: OWN_CLAUDE_HELP },
+      { key: 'assistant.enabled', group: 'Claude in editors', label: 'Show the Claude button in editors', type: 'toggle', default: true },
       {
         key: 'assistant.provider',
         label: 'Run Claude on',
