@@ -55,10 +55,11 @@ test('settings:set from the page: protected keys refused, the rest saved', async
     // Removing a protected key from the page is refused too.
     const out2 = await handlers['settings:set'](app, { 'hub.url': null });
     assert.equal(out2['hub.url'], 'https://hub.example');
-    // A good sync folder and Google client still work.
+    // A good sync folder still works; a Google client never comes from the page (Kea has its own).
     const out3 = await handlers['settings:set'](app, { 'scholar.cloudPath': 'D:\\Sync\\Kea', 'google.clientId': '123-abc.apps.googleusercontent.com', 'google.clientSecret': 'GOCSPX-abc_1' });
     assert.equal(out3['scholar.cloudPath'], 'D:\\Sync\\Kea');
-    assert.equal(out3['google.clientId'], '123-abc.apps.googleusercontent.com');
+    assert.equal(out3['google.clientId'], undefined);
+    assert.equal(out3['google.clientSecret'], undefined);
   } finally {
     console.warn = warn;
   }

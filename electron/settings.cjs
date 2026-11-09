@@ -56,16 +56,14 @@ function set(patch) {
 }
 
 // Settings the page may never change through settings:set: where Kea's secrets go and what it runs. Each has its own
-// checked IPC (hub:setUrl for the Hub's address) or is Kea's own bookkeeping.
-const PROTECTED = new Set(['hub.url', 'hub.ownerKeyFile', 'hub.ownerPort', 'hub.googleClientId', 'hub.googleClientSecret', 'hub.microsoftClientId', 'scholar.pcId', 'scholar.lastPrimary', 'app.storageMoved']);
+// checked IPC (hub:setUrl for the Hub's address) or is Kea's own bookkeeping. (google.clientId and google.clientSecret:
+// the person's own Google client from Kea 0.83 and older, read only to keep such a Drive connection working.)
+const PROTECTED = new Set(['hub.url', 'hub.ownerKeyFile', 'hub.ownerPort', 'hub.googleClientId', 'hub.googleClientSecret', 'hub.microsoftClientId', 'google.clientId', 'google.clientSecret', 'scholar.pcId', 'scholar.lastPrimary', 'app.storageMoved']);
 const protectedKey = (k) => PROTECTED.has(k) || /^hub\.(owner|google)/.test(k) || k === '__proto__' || k === 'constructor' || k === 'prototype';
 // Settings the page may change, but only to a value of the right shape.
 const CHECKED = {
   // The other sync folder: a folder on this PC, never a network share (\\server\share) or a web address.
-  'scholar.cloudPath': (v) => v === '' || (typeof v === 'string' && v.length < 1024 && !/[\x00-\x1f]/.test(v) && (/^[a-z]:[\\/]/i.test(v) || (process.platform !== 'win32' && v.startsWith('/') && !v.startsWith('//')))),
-  // The student's own Google client: a Google OAuth client id and its secret, nothing else.
-  'google.clientId': (v) => v === '' || (typeof v === 'string' && /^[\w-]{1,200}\.apps\.googleusercontent\.com$/.test(v.trim())),
-  'google.clientSecret': (v) => v === '' || (typeof v === 'string' && /^[\w-]{1,200}$/.test(v.trim()))
+  'scholar.cloudPath': (v) => v === '' || (typeof v === 'string' && v.length < 1024 && !/[\x00-\x1f]/.test(v) && (/^[a-z]:[\\/]/i.test(v) || (process.platform !== 'win32' && v.startsWith('/') && !v.startsWith('//'))))
 };
 /**
  * A change from the page (settings:set): protected keys and badly shaped values are left out (and logged), the rest

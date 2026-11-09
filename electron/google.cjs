@@ -293,11 +293,12 @@ function register({ log }) {
     const s = loadSession();
     if (s?.refresh_token) net.fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(s.refresh_token)}`, { method: 'POST' }).catch(() => {});
     saveSession(null);
+    // (The person's own client from Kea 0.83 and older was only kept for that connection.)
+    if (settings.get('google.clientId', '') || settings.get('google.clientSecret', '')) settings.set({ 'google.clientId': null, 'google.clientSecret': null });
     return true;
   });
   handleApp(ipcMain, 'google:open', wrap((_e, p) => openFile(p)));
   handleApp(ipcMain, 'google:save', wrap((_e, id, ext, data) => saveFile(id, ext, data)));
-  handleApp(ipcMain, 'google:open-in-browser', (_e, p) => shell.openPath(p));
 }
 
 /** Whether Drive can be used here (the built-in client), and who's connected. */
