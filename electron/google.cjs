@@ -1,9 +1,11 @@
 // Google Docs, Sheets and Slides support. Google Drive for desktop only puts small shortcut files
-// (.gdoc/.gsheet/.gslides) on disk; the documents themselves live in Google's cloud. Kea signs in to
-// the user's Google account (OAuth for desktop apps: system browser + loopback redirect + PKCE), finds
+// (.gdoc/.gsheet/.gslides) on disk; the documents themselves live in Google's cloud. Kea asks Google once for access to
+// the person's Drive (OAuth for desktop apps: system browser + loopback redirect + PKCE, incremental consent), finds
 // the document, downloads it as .docx/.xlsx/.pptx, and uploads changes back so it stays a Google Doc.
-// The OAuth client ID is the user's own (created once in Google Cloud console); tokens are encrypted
-// with the OS keychain (safeStorage) and never leave this computer except to talk to Google.
+// It uses Kea's built-in Google client, the same one as "Sign in with Google" (oauthClients.cjs), and prefers the
+// Google account the person signed in to Kea with (login_hint). Nothing to set up. Tokens are encrypted with the OS
+// keychain (safeStorage) and never leave this computer except to talk to Google. While Google hasn't reviewed Kea for
+// Drive, only its listed test users get through; everyone else is told plainly and offered the browser instead.
 const { app, ipcMain, shell, net, safeStorage } = require('electron');
 const http = require('http');
 const crypto = require('crypto');
@@ -11,7 +13,9 @@ const path = require('path');
 const fs = require('fs');
 const settings = require('./settings.cjs');
 const { handleApp } = require('./ipcGuard.cjs');
+const oauthClients = require('./oauthClients.cjs');
 
+// (The scope the feature needs; with include_granted_scopes the person's earlier Kea sign-in stays part of it.)
 const SCOPES = ['https://www.googleapis.com/auth/drive'];
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
@@ -41,16 +45,58 @@ function saveSession(s) {
   fs.writeFileSync(tokenFile(), safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(json) : Buffer.from(json));
 }
 
+const coded = (code, message) => Object.assign(new Error(message), { code });
+const NOT_HERE = 'Google Drive isn’t available in this copy of Kea. Google files open in your browser.';
+const REFUSED = 'Google didn’t let Kea open your Drive yet. You can open the file in your browser instead.';
+/** Kea's built-in Google client (the same as "Sign in with Google"). */
 function client() {
-  const id = String(settings.get('google.clientId', '') || '').trim();
-  const secret = String(settings.get('google.clientSecret', '') || '').trim();
-  if (!id) {
-    const e = new Error('Google sign-in is not set up yet.');
-    e.code = 'NO_CLIENT';
-    throw e;
-  }
-  return { id, secret };
+  const g = oauthClients.clients().google;
+  if (!g.id) throw coded('NO_CLIENT', NOT_HERE);
+  return { id: g.id, secret: g.secret };
 }
+/**
+ * The client a saved Drive connection renews with: the one it was made with. (Kea 0.83 and older made it with the
+ * person's own client, google.clientId in settings: that keeps working until they disconnect.)
+ */
+function clientFor(s) {
+  let built = null;
+  try {
+    built = client();
+  } catch {}
+  if (s?.clientId && built && s.clientId === built.id) return built;
+  const ownId = String(settings.get('google.clientId', '') || '').trim();
+  if (ownId && (!s?.clientId || s.clientId === ownId)) return { id: ownId, secret: String(settings.get('google.clientSecret', '') || '').trim() };
+  throw coded('NO_ACCOUNT', 'Connect Google Drive again.');
+}
+/** The Google account the person signed in to Kea with, if it was with Google (for login_hint). */
+function keaGoogleEmail() {
+  try {
+    const a = require('./hub.cjs').current();
+    return a?.hub && a.hub.provider !== 'microsoft' ? a.email : null;
+  } catch {
+    return null;
+  }
+}
+/** The address that asks Google for Drive access: one consent, added to what the person already allowed Kea. */
+function driveAuthorizeUrl({ clientId, port, challenge, state, loginHint }) {
+  const auth = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  auth.search = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: `http://127.0.0.1:${port}`,
+    response_type: 'code',
+    scope: SCOPES.join(' '),
+    include_granted_scopes: 'true',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    access_type: 'offline',
+    prompt: 'consent',
+    state,
+    ...(loginHint ? { login_hint: loginHint } : {})
+  }).toString();
+  return auth.toString();
+}
+/** Google saying no (the app isn't reviewed for Drive and this account isn't a test user, or access was declined). */
+const refusedError = (detail) => /access_denied|unauthorized_client|invalid_client|admin_policy|disallowed|org_internal/i.test(String(detail || '')) || !detail;
 
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
@@ -61,13 +107,14 @@ async function tokenRequest(params) {
     body: new URLSearchParams(params).toString()
   });
   const j = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(j.error_description || j.error || `Google sign-in failed (${res.status})`);
+  if (!res.ok) throw Object.assign(new Error(j.error_description || j.error || `Google sign-in failed (${res.status})`), { oauthError: j.error || '' });
   return j;
 }
 
 let pendingLogin = null;
 function signIn() {
   const { id, secret } = client();
+  const loginHint = keaGoogleEmail();
   if (pendingLogin) pendingLogin.cancel();
   return new Promise((resolve, reject) => {
     const verifier = b64url(crypto.randomBytes(48));
@@ -85,14 +132,16 @@ function signIn() {
       if (url.searchParams.get('state') !== state) return done(false, 'Please try again from Kea.');
       const code = url.searchParams.get('code');
       if (!code) {
-        done(false, url.searchParams.get('error') === 'access_denied' ? 'Access was not allowed.' : 'Please try again from Kea.');
-        finish(new Error(url.searchParams.get('error') === 'access_denied' ? 'Google sign-in was cancelled.' : 'Google sign-in failed.'));
+        const err = url.searchParams.get('error') || '';
+        done(false, 'You can close this tab and go back to Kea.');
+        finish(refusedError(err) ? coded('REFUSED', REFUSED) : new Error('Google didn’t finish connecting. Try again from Kea.'));
         return;
       }
       try {
         const port = server.address().port;
         const t = await tokenRequest({ code, client_id: id, client_secret: secret, code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: `http://127.0.0.1:${port}` });
-        const s = { refresh_token: t.refresh_token, access_token: t.access_token, expires_at: Date.now() + (t.expires_in - 60) * 1000 };
+        if (!t.refresh_token) throw new Error('Google didn’t give Kea lasting access. Try again from Kea.');
+        const s = { clientId: id, refresh_token: t.refresh_token, access_token: t.access_token, expires_at: Date.now() + (t.expires_in - 60) * 1000 };
         saveSession(s);
         try {
           const about = await api('/about?fields=user(emailAddress,displayName)');
@@ -104,32 +153,20 @@ function signIn() {
         finish(null, { email: s.email, name: s.name });
       } catch (err) {
         done(false, String(err.message || err));
-        finish(err);
+        finish(err.oauthError && refusedError(err.oauthError) ? coded('REFUSED', REFUSED) : err);
       }
     });
-    const timer = setTimeout(() => finish(new Error('Google sign-in timed out.')), 5 * 60e3);
+    // (Google's "access blocked" page never comes back to Kea: after a few minutes, the same plain message.)
+    const timer = setTimeout(() => finish(coded('REFUSED', `Google didn’t finish connecting. ${REFUSED}`)), 3 * 60e3);
     const finish = (err, val) => {
       clearTimeout(timer);
       pendingLogin = null;
       setTimeout(() => server.close(), 500);
       err ? reject(err) : resolve(val);
     };
-    pendingLogin = { cancel: () => finish(new Error('Sign-in was replaced by a newer attempt.')) };
+    pendingLogin = { cancel: () => finish(new Error('Replaced by a newer try.')) };
     server.listen(0, '127.0.0.1', () => {
-      const port = server.address().port;
-      const auth = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      auth.search = new URLSearchParams({
-        client_id: id,
-        redirect_uri: `http://127.0.0.1:${port}`,
-        response_type: 'code',
-        scope: SCOPES.join(' '),
-        code_challenge: challenge,
-        code_challenge_method: 'S256',
-        access_type: 'offline',
-        prompt: 'consent',
-        state
-      }).toString();
-      shell.openExternal(auth.toString());
+      shell.openExternal(driveAuthorizeUrl({ clientId: id, port: server.address().port, challenge, state, loginHint }));
     });
   });
 }
@@ -137,12 +174,12 @@ function signIn() {
 async function accessToken() {
   const s = loadSession();
   if (!s || !s.refresh_token) {
-    const e = new Error('Not signed in to Google.');
+    const e = new Error('Connect Google Drive first.');
     e.code = 'NO_ACCOUNT';
     throw e;
   }
   if (s.access_token && Date.now() < s.expires_at) return s.access_token;
-  const { id, secret } = client();
+  const { id, secret } = clientFor(s);
   try {
     const t = await tokenRequest({ client_id: id, client_secret: secret, refresh_token: s.refresh_token, grant_type: 'refresh_token' });
     s.access_token = t.access_token;
@@ -152,7 +189,7 @@ async function accessToken() {
   } catch (err) {
     if (/invalid_grant|expired|revoked/i.test(err.message)) {
       saveSession(null);
-      const e = new Error('Your Google sign-in expired. Please sign in again.');
+      const e = new Error('Your Google Drive connection ended. Connect it again.');
       e.code = 'NO_ACCOUNT';
       throw e;
     }
@@ -250,16 +287,7 @@ function register({ log }) {
       throw new Error(`${err.code ? `[${err.code}] ` : ''}${err.message || err}`);
     }
   };
-  handleApp(ipcMain, 'google:status', () => {
-    const s = loadSession();
-    let configured = true;
-    try {
-      client();
-    } catch {
-      configured = false;
-    }
-    return { configured, signedIn: !!s?.refresh_token, email: s?.email || null, name: s?.name || null };
-  });
+  handleApp(ipcMain, 'google:status', () => status());
   handleApp(ipcMain, 'google:sign-in', wrap(() => signIn()));
   handleApp(ipcMain, 'google:sign-out', async () => {
     const s = loadSession();
@@ -272,7 +300,19 @@ function register({ log }) {
   handleApp(ipcMain, 'google:open-in-browser', (_e, p) => shell.openPath(p));
 }
 
+/** Whether Drive can be used here (the built-in client), and who's connected. */
+function status() {
+  const s = loadSession();
+  let configured = true;
+  try {
+    client();
+  } catch {
+    configured = false;
+  }
+  return { configured, signedIn: !!s?.refresh_token, email: s?.email || null, name: s?.name || null };
+}
+
 /** The Google account signed in to Kea, if any (its email). */
 const signedInEmail = () => loadSession()?.email || null;
 
-module.exports = { register, signedInEmail };
+module.exports = { register, signedInEmail, _drive: { client, clientFor, driveAuthorizeUrl, status, keaGoogleEmail, refusedError, REFUSED, NOT_HERE } };

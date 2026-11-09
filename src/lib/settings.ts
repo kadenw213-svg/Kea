@@ -538,9 +538,7 @@ export const SECTIONS: Section[] = [
           { value: 'browser', label: 'In the web browser' }
         ]
       },
-      { key: 'google.autosave', label: 'Save changes back to Google Drive automatically', type: 'toggle', default: true },
-      { key: 'google.clientId', label: 'OAuth client ID', type: 'text', default: '', advanced: true, help: 'From your own Google Cloud project (see the setup steps above).' },
-      { key: 'google.clientSecret', label: 'OAuth client secret', type: 'text', default: '', advanced: true }
+      { key: 'google.autosave', label: 'Save changes back to Google Drive automatically', type: 'toggle', default: true }
     ]
   },
   {
