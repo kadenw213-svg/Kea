@@ -52,6 +52,15 @@ export const loadWorkScreen = () => {
   return load ? (load() as Promise<{ WorkScreen: () => JSX.Element }>) : Promise.reject(new Error('Work is not in this copy of Kea.'));
 };
 
+/** The product audit tab (owner tool, off unless Settings → Home → Owner tools turns it on). */
+export const useAuditOn = () => useSettings((s) => s.values['audit.enabled'] === true);
+export function openAudit() {
+  const tabs = useTabs.getState();
+  const existing = tabs.tabs.find((t) => t.kind === 'audit');
+  if (existing) tabs.setActive(existing.id);
+  else tabs.addTab({ kind: 'audit', name: 'Audit', path: null, data: null });
+}
+
 export function openWork() {
   const tabs = useTabs.getState();
   const existing = tabs.tabs.find((t) => t.kind === 'work');

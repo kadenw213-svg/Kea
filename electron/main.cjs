@@ -407,6 +407,7 @@ app.whenReady().then(() => {
   });
   require('./syncChoice.cjs').register();
   require('./scholar/index.cjs').register();
+  require('./audit.cjs').register();
   require('./dict.cjs').register();
   updateLoop();
   // Quizzes were removed in v0.15.0: clear the per-file quiz progress they kept.

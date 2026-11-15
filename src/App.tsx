@@ -34,6 +34,7 @@ import { VoiceTypingPanel, toggleVoice } from './components/VoiceTyping';
 
 const PdfEditor = lazy(() => import('./editors/pdf/PdfEditor'));
 const ScholarScreen = lazy(() => import('./components/scholar/ScholarScreen').then((m) => ({ default: m.ScholarScreen })));
+const AuditScreen = lazy(() => import('./components/audit/AuditScreen').then((m) => ({ default: m.AuditScreen })));
 const WorkScreen = lazy(() => loadWorkScreen().then((m) => ({ default: m.WorkScreen })));
 const DocEditor = lazy(() => import('./editors/doc/DocEditor'));
 const SheetEditor = lazy(() => import('./editors/sheet/SheetEditor'));
@@ -271,6 +272,16 @@ export function App() {
                 }
               >
                 <ScholarScreen />
+              </Suspense>
+            ) : t.kind === 'audit' ? (
+              <Suspense
+                fallback={
+                  <div className="center-fill">
+                    <div className="spinner" />
+                  </div>
+                }
+              >
+                <AuditScreen />
               </Suspense>
             ) : t.kind === 'work' ? (
               <Suspense

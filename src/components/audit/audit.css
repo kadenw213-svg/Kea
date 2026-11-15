@@ -1,0 +1,322 @@
+/* Product audit tab. Colours come from Kea's theme tokens. */
+.audit {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--bg);
+  user-select: text;
+}
+.audit-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.audit-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.audit-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0;
+}
+.audit-sub,
+.audit-muted {
+  color: var(--text-muted, var(--muted));
+  font-size: 13px;
+  margin: 2px 0 0;
+}
+.audit-problem {
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface-2));
+  font-size: 13px;
+}
+.audit-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.audit-running span {
+  color: var(--text-muted, var(--muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audit-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+.audit-tabs button {
+  border: none;
+  background: none;
+  padding: 8px 14px;
+  color: inherit;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.audit-tabs button.on {
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.audit-filters,
+.audit-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.audit-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.audit-card.dismissed {
+  opacity: 0.55;
+}
+.audit-card.done {
+  border-color: var(--success);
+}
+.audit-card-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.audit-card-title {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.audit-card-title em {
+  color: var(--text-muted, var(--muted));
+  font-style: normal;
+}
+.audit-stars {
+  color: var(--warning);
+  letter-spacing: 1px;
+  font-size: 13px;
+}
+.audit-stars i {
+  font-style: normal;
+  opacity: 0.25;
+}
+.audit-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.audit-tag.feas-easy {
+  border-color: var(--success);
+}
+.audit-tag.feas-hard,
+.audit-tag.feas-not-feasible {
+  border-color: var(--danger);
+}
+.audit-card-body {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+}
+.audit-card-body p {
+  margin: 0;
+}
+.audit-card-body dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 6px 12px;
+}
+.audit-card-body dt {
+  color: var(--text-muted, var(--muted));
+  font-size: 13px;
+}
+.audit-card-body dd {
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .audit-card-body dl {
+    grid-template-columns: 1fr;
+  }
+}
+.audit-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.audit-plan summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.audit-plan pre,
+.audit-spec {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 13px/1.5 var(--font-ui, inherit);
+  margin: 8px 0 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.audit-note,
+.audit-field input:not([type='checkbox']),
+.audit-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+  padding: 6px 8px;
+  font: inherit;
+}
+.audit-empty {
+  text-align: center;
+  padding: 40px 12px;
+  color: var(--text-muted, var(--muted));
+}
+.audit-runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.audit-runs li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.audit-runs li.failed {
+  border-color: var(--danger);
+}
+.audit-adv {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.audit-adv h3 {
+  margin: 0 0 6px;
+}
+.audit-topic {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.audit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.audit-field.inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.audit-field.inline input {
+  width: 80px;
+}
+.audit-new {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.audit-new input,
+.audit-new textarea,
+.audit-thread-title {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+  padding: 7px 9px;
+  font: inherit;
+}
+.audit-thread-title {
+  flex: 1 1 240px;
+  width: auto;
+  font-size: 18px;
+  font-weight: 600;
+}
+.audit-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.audit-thread-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.audit-entry {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+}
+.audit-entry.claude {
+  border-left: 3px solid var(--accent);
+}
+.audit-entry.finding {
+  border-left: 3px solid var(--warning);
+}
+.audit-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.audit-spacer {
+  flex: 1;
+}
+.audit-entry-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 1.5;
+}

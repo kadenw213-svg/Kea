@@ -266,6 +266,7 @@ export const SECTIONS: Section[] = [
       { key: 'areas.documents', group: 'Areas of Kea', label: 'Documents (docs, sheets, slides, PDFs and files)', type: 'toggle', default: true },
       { key: 'scholar.enabled', label: 'School (classes, calendar, study and library)', type: 'toggle', default: true },
       { key: 'areas.auto', label: 'Turn areas on by themselves when I start using them', type: 'toggle', default: true, advanced: true, help: 'Joining a class turns on School.' },
+      { key: 'audit.enabled', group: 'Owner tools', label: 'Product audit tab', type: 'toggle', default: false, help: 'A tab that keeps a specs list of Kea and sends research out (through your own Claude Code) to see what newer and older apps do, then plans what Kea could copy. Off for everyone else.' },
       { key: 'areas.setupDone', label: 'First-run setup finished', type: 'toggle', default: false, advanced: true, help: 'Turn off to see the "How do you use Kea?" screen again.' },
       { key: 'home.greeting', group: 'Today', label: 'Show greeting and date', type: 'toggle', default: true },
       { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from School and your Kea classes.' },

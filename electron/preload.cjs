@@ -475,6 +475,25 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('servers:changed', h);
     }
   },
+  audit: {
+    state: () => ipcRenderer.invoke('audit:state'),
+    buildSpec: () => ipcRenderer.invoke('audit:buildSpec'),
+    research: (ids) => ipcRenderer.invoke('audit:research', ids),
+    plan: (id) => ipcRenderer.invoke('audit:plan', id),
+    stop: () => ipcRenderer.invoke('audit:stop'),
+    setStatus: (id, status) => ipcRenderer.invoke('audit:setStatus', id, status),
+    setNote: (id, note) => ipcRenderer.invoke('audit:setNote', id, note),
+    setConfig: (patch) => ipcRenderer.invoke('audit:setConfig', patch),
+    thread: (op, args) => ipcRenderer.invoke('audit:thread', op, args),
+    threadAsk: (id) => ipcRenderer.invoke('audit:threadAsk', id),
+    openFolder: () => ipcRenderer.invoke('audit:openFolder'),
+    openUrl: (url) => ipcRenderer.invoke('audit:openUrl', url),
+    onChanged: (cb) => {
+      const h = () => cb();
+      ipcRenderer.on('audit:changed', h);
+      return () => ipcRenderer.removeListener('audit:changed', h);
+    }
+  },
   work: {
     pendingJoin: () => ipcRenderer.invoke('work:pendingJoin'),
     onJoinLink: (cb) => {

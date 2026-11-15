@@ -2,10 +2,10 @@ import { Logo } from './Logo';
 import { useRef, useState } from 'react';
 import { Popover } from './Popover';
 import { Columns2, PanelRightClose, XSquare } from 'lucide-react';
-import { Home, Plus, X, GraduationCap, Briefcase } from 'lucide-react';
+import { Home, Plus, X, GraduationCap, Briefcase, Radar } from 'lucide-react';
 import { useAreas, useSetupDone } from '../lib/areas';
 import { openScholar } from './scholar/scholarStore';
-import { openWork, useKeaModes, workAvailable } from '../lib/modes';
+import { openAudit, openWork, useAuditOn, useKeaModes, workAvailable } from '../lib/modes';
 import { useTabs, editorRegistry } from '../store';
 import { FileIcon } from './FileIcon';
 import { MenuButton } from './Popover';
@@ -149,7 +149,7 @@ export function TitleBar() {
             onDragEnd={() => (dragFrom.current = null)}
             title={t.path ? friendlyPath(t.path) : t.name}
           >
-            {t.kind === 'home' ? <Home size={16} /> : t.kind === 'scholar' ? <GraduationCap size={15} /> : t.kind === 'work' ? <Briefcase size={15} /> : <FileIcon name={t.name} kind={t.kind} size={15} />}
+            {t.kind === 'home' ? <Home size={16} /> : t.kind === 'scholar' ? <GraduationCap size={15} /> : t.kind === 'work' ? <Briefcase size={15} /> : t.kind === 'audit' ? <Radar size={15} /> : <FileIcon name={t.name} kind={t.kind} size={15} />}
             {t.kind !== 'home' && <span className="tab-label">{t.name}</span>}
             {t.kind !== 'home' && (
               <button
@@ -256,9 +256,11 @@ function AreaButtons() {
   const activeId = useTabs((s) => s.activeId);
   const activeKind = tabs.find((t) => t.id === activeId)?.kind;
   const modes = useKeaModes();
+  const auditOn = useAuditOn();
   const items = [
     areas.includes('school') && { kind: 'scholar', label: 'School', icon: <GraduationCap size={16} />, open: () => openScholar() },
     modes.work && workAvailable && { kind: 'work', label: 'Work', icon: <Briefcase size={16} />, open: () => openWork() },
+    auditOn && { kind: 'audit', label: 'Product audit', icon: <Radar size={16} />, open: () => openAudit() },
   ].filter(Boolean) as { kind: string; label: string; icon: JSX.Element; open: () => void }[];
   if (!setupDone || !items.length) return null;
   return (

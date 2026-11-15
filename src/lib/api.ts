@@ -1,3 +1,4 @@
+import type { AuditApi } from './auditTypes';
 /** The Claude plan's usage windows (from Claude Code): used is 0–1, resetsAt a timestamp in ms. */
 export interface PlanUsage {
   fiveHour: { used: number; resetsAt: number | null; status: string } | null;
@@ -1489,6 +1490,8 @@ export interface KeaApi {
   hubOrg: HubOrgApi;
   servers: ServersApi;
   sync: SyncApi;
+  /** The product audit (owner tool, electron/audit.cjs). */
+  audit: AuditApi;
   /** kea://join links opened from outside Kea (the installed Kea registers kea://). */
   work: { pendingJoin(): Promise<string | null>; onJoinLink(cb: (link: string) => void): () => void };
 }
