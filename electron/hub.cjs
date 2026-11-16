@@ -1398,6 +1398,19 @@ function register() {
     if (s.url && /^https:\/\//.test(s.url)) await shell.openExternal(s.url);
     return true;
   }));
+  // Settings → Feedback: a bug report, idea or anything else, to the Kea account server's owner (POST /v1/feedback,
+  // signed in only). A server too old for it answers 404, and the panel opens the GitHub page instead.
+  handleApp(ipcMain, 'hub:feedback', wrap((a) => {
+    if (!isSignedIn()) throw new HubError('Sign in to your Kea account to send feedback.', 401, { needsOnline: true });
+    const text = (v, max, tail = false) => (typeof v === 'string' && v.trim() ? (tail ? v.slice(-max) : v.slice(0, max)) : undefined);
+    return req('POST', '/v1/feedback', {
+      kind: ['bug', 'idea', 'other'].includes(a.kind) ? a.kind : 'other',
+      summary: text(a.summary, 120) ?? '',
+      details: text(a.details, 10_000) ?? '',
+      info: text(a.info, 1000),
+      log: text(a.log, 8000, true),
+    });
+  }));
   handleApp(ipcMain, 'hub:changes', wrap(() => req('GET', '/v1/terms/changes')));
   handleApp(ipcMain, 'hub:openTerms', wrap(({ since }) => shell.openExternal(`${hubUrl()}/terms${since ? `?since=${Number(since)}` : ''}`)));
   // Under 18: the birth year, and a parent's or guardian's sign-off before Kea's shared Claude.

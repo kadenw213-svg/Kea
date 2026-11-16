@@ -20,6 +20,8 @@ import { Explanation } from './Explanation';
 import { StudyImage } from './StudyImage';
 import { StudyStream, parseStream, streamTitle } from './StudyStream';
 import { Saved } from './Saved';
+import { NotebookButton, NotebookPane } from './Notebook';
+import { useSetting, useSettings } from '../../lib/settings';
 
 // ---------- Shared state ----------
 /** Every set, reloaded when Kea says something changed (a set finished) and while one is being made. */
@@ -317,6 +319,12 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
     return () => window.removeEventListener('keydown', key);
   }, [side.open]);
   const streaming = !!stream || (!!set && set.kind === 'exam');
+  // The notebook beside the questions (not on the Study page or in the set editor); open or closed is remembered.
+  const notebookHere = !hub && edit == null;
+  const notebookOpen = useSetting<boolean>('study.notebook.open') === true && notebookHere;
+  const notebookSide = useSetting<string>('study.notebook.side') === 'right' ? 'right' : 'left';
+  const toggleNotebook = () => useSettings.getState().set({ 'study.notebook.open': !notebookOpen });
+  const notebook = notebookOpen ? <NotebookPane courseId={pdfCourse || review || saved || ''} side={notebookSide} onClose={toggleNotebook} /> : null;
   const title = stream ? streamTitle(stream.code, stream.chapters, stream.bookmarks, !!stream.weak?.length) : saved != null ? 'Saved' : set?.kind === 'exam' ? streamTitle(set.courseCode, set.itemTitle ? [set.itemTitle] : set.chapters) : hub ? 'Study' : review != null ? 'Review' : edit != null ? (edit === 'new' || edit === 'import' ? 'New set' : 'Edit set') : set?.title || '';
   const body = stream ? (
     <StudyStream scope={stream} />
@@ -347,7 +355,7 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
   return (
     <ReadingContext.Provider value={{ has: (ch) => !!ch && pdfs.has(ch), open: (t) => (setReading(t), side.api.show('book')), current: side.api.tab === 'book' ? reading : null, course: (cid) => cid !== pdfCourse && (setReading(null), setPdfCourse(cid)) }}>
       <StudySideContext.Provider value={side.api}>
-      <div className={`st-player ${side.open ? 'with-reading' : ''} ${streaming ? 'streaming' : ''}`}>
+      <div className={`st-player ${side.open ? 'with-reading' : ''} ${streaming ? 'streaming' : ''} ${notebook ? 'with-notebook' : ''}`}>
         <div className="st-player-head">
           {!streaming && (
             <button className="icon-btn" onClick={onClose} title="Close (Esc)">
@@ -355,6 +363,7 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
             </button>
           )}
           <div className="st-player-title">{title}</div>
+          {notebookHere && <NotebookButton open={notebookOpen} onClick={toggleNotebook} />}
           {streaming && (
             <button className="btn sm st-exit" onClick={onClose} title="Exit (Esc)">
               Exit
@@ -376,7 +385,9 @@ export function StudyPlayer({ id: fullId, onClose }: { id: string; onClose(): vo
           )}
         </div>
         <div className="st-player-body">
+          {notebookSide === 'left' && notebook}
           <div className="st-main">{body}</div>
+          {notebookSide === 'right' && notebook}
           {side.pane}
         </div>
       </div>

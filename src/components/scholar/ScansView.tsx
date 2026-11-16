@@ -5,6 +5,7 @@ import { useSetting, openSettings } from '../../lib/settings';
 import { ask, toast } from '../../store';
 import { reloadScholar } from './scholarStore';
 import { SyncLine } from '../settings/SyncPicker';
+import { ClaudeReconnect } from './Setup';
 
 /**
  * Joining another device's classes is always the student's choice, asked here by that device's name: they replace
@@ -618,6 +619,7 @@ export function ScansView() {
   return (
     <div className="sch-page scans">
       <h1 className="sch-title">Scans</h1>
+      {dev?.role !== 'follower' && <ClaudeReconnect />}
       <StatusCard run={shown} queue={shownQueue} paused={shown ? null : shownPaused} dev={dev} lastRun={activity[0]} />
       {news.some((n) => !n.read) && (
         <p className="muted inbox-hint">

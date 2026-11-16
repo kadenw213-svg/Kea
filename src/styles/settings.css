@@ -571,6 +571,14 @@
   gap: 8px;
   margin-top: 8px;
 }
+.fb-note {
+  font-size: 13px;
+  margin: 4px 0 0;
+  color: var(--text-2, inherit);
+}
+.fb-note.warn {
+  color: var(--warn, var(--danger, inherit));
+}
 
 /* A group heading inside a section (Scholar: Checking your classes, Textbooks and study, …) */
 .sgroup-title.sgroup-in {

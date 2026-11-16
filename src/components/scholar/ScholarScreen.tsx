@@ -51,7 +51,7 @@ import { Picker as HandInPicker } from './HandIn';
 import { MenuButton } from '../Popover';
 import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
-import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, isUnconfirmed, openLink, primaryLink, placeKind, assignmentDoc, extendedInfo, setClassColor, setTypeColor, useColors } from './kinds';
+import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, openLink, primaryLink, placeKind, assignmentDoc, extendedInfo, setClassColor, setTypeColor, useColors } from './kinds';
 import { AssignmentGuide, OriginalWording, useGuides } from './Guide';
 import { COUNTS_AS_DUE, relatedText, handInText, panelLinks, platformLine, platformName, quickVerb, shorten, studyChapters, typeLabel, folderIdOf } from './itemRules';
 import { StudyPlayer } from './Study';
@@ -568,7 +568,7 @@ function WithdrawQuestion({ q }: { q: WithdrawnState['ask'][number] }) {
 
 // ---------- What needs you (above the calendar) ----------
 /**
- * Missing work across every class, past items to check off, and this week's calendar changes. Each folds to one line
+ * Missing work across every class (past due and not checked off), and this week's calendar changes. Each folds to one line
  * (its count stays on it); the first one showing starts open, and each remembers being opened or closed.
  */
 function AttentionBar({ ctx }: { ctx: Ctx }) {
@@ -589,13 +589,10 @@ function AttentionBoxes({ ctx }: { ctx: Ctx }) {
   const past = useItems(missingSince(ctx.courses, day), day);
   const askWithdraw = useWithdrawAsk();
   const miss = useAttentionFold('missing');
-  const unc = useAttentionFold('unconfirmed');
   if (!past) return null;
+  // (Everything past due and not checked off. Work is checked off only by the student, one item at a time with its own
+  // checkbox: there's no "check all off", which would cross off work that isn't done.)
   const missing = past.filter((i) => isMissing(i));
-  // (Work is checked off only by the student, one item at a time with its own checkbox: there's no "check all off",
-  // which would cross off work that isn't done.)
-  const recent = iso(addDays(parse(day), -28));
-  const unconfirmed = past.filter((i) => i.date >= recent && isUnconfirmed(i));
   return (
     <div className="cal-attention">
       {askWithdraw.map((q) => (
@@ -606,29 +603,12 @@ function AttentionBoxes({ ctx }: { ctx: Ctx }) {
           <button className="miss-head" aria-expanded={miss.open} onClick={miss.toggle}>
             <AlertTriangle size={16} />
             <b>{missing.length} missing</b>
-            <span className="muted">Past due, and your class site shows nothing handed in. Hand them in if you still can.</span>
+            <span className="muted">Past due and not checked off. Hand them in if you still can, or check off each one you already did.</span>
             <ChevronDown size={15} className={miss.open ? 'flip' : ''} />
           </button>
           {miss.open && (
             <div className="sch-list">
               {missing.map((i) => (
-                <ItemRow key={i.id} ctx={ctx} it={i} showDate />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-      {unconfirmed.length > 0 && (
-        <section className="unc-box" ref={unc.ref}>
-          <button className="miss-head unc" aria-expanded={unc.open} onClick={unc.toggle}>
-            <Circle size={15} />
-            <b>{unconfirmed.length} done? Check {unconfirmed.length === 1 ? 'it' : 'them'} off</b>
-            <span className="muted">Past items Kea couldn’t match on your class site. Check off each one you did.</span>
-            <ChevronDown size={15} className={unc.open ? 'flip' : ''} />
-          </button>
-          {unc.open && (
-            <div className="sch-list">
-              {unconfirmed.map((i) => (
                 <ItemRow key={i.id} ctx={ctx} it={i} showDate />
               ))}
             </div>
@@ -1727,7 +1707,8 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
       {missing && (
         <div className="miss-banner">
           <AlertTriangle size={15} /> Missing: this was due {/^(Today|Tomorrow|Yesterday)$/.test(dayName(it.date)) ? dayName(it.date).toLowerCase() : `on ${dayName(it.date)}`}
-          {it.due ? ` at ${clock(it.due)}` : ''}, and your class site shows nothing handed in.
+          {it.due ? ` at ${clock(it.due)}` : ''}, and it isn’t checked off.
+          {it.handIn === 'submitted' || it.handIn === 'graded' ? ` Your class site shows it ${it.handIn === 'graded' ? 'graded' : 'handed in'}, so check it off if you’re done.` : ' Check it off if you already did it.'}
         </div>
       )}
       <div className="pn-facts">

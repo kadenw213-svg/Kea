@@ -219,6 +219,12 @@ export interface KeaApi {
     /** Write question banks for chapters that have none (on the primary); false when Claude isn't connected. */
     studyBanks(): Promise<boolean>;
     studyDelete(id: string): Promise<boolean>;
+    /** Study notebooks (.md files) and the folder they're in, newest change first. */
+    notebookList(): Promise<{ dir: string; list: { name: string; file: string; modified: string; size: number }[] }>;
+    notebookRead(name: string): Promise<string>;
+    notebookWrite(name: string, text: string): Promise<{ name: string; file: string; modified: string }>;
+    notebookCreate(name: string): Promise<{ name: string; file: string }>;
+    notebookRename(from: string, to: string): Promise<{ name: string; file: string }>;
     /** items: how each question went, [key, right] (right null for an unmarked written answer). */
     studyAttempt(id: string, a: { score: number; total: number; n: number; items?: [string, boolean | null][] }): Promise<boolean>;
     studyKnown(id: string, known: string[]): Promise<boolean>;
@@ -322,7 +328,7 @@ export interface KeaApi {
     capture(rect: { x: number; y: number; width: number; height: number }): Promise<{ dataUrl: string; width: number; height: number }>;
     onEvent(cb: (ev: { id: string; type: 'text' | 'thinking' | 'tool'; text?: string; name?: string }) => void): () => void;
     planStatus(): Promise<{ installed: boolean; loggedIn: boolean; email: string; plan: string; method: string }>;
-    planSignIn(): Promise<{ loggedIn: boolean; email?: string }>;
+    planSignIn(): Promise<{ loggedIn: boolean; email?: string; command?: string }>;
     planSend(id: string, req: { tabId: string; content: unknown[]; session?: string; model?: string; effort?: string; system: string; web?: boolean }): Promise<{ session?: string; error?: string; stopped?: boolean; usage?: any; turns?: number }>;
     planStop(id: string): Promise<boolean>;
     planUsage(): Promise<PlanUsage | null>;
@@ -624,6 +630,11 @@ export interface HubApi {
   terms(): Promise<HubResult<HubTerms>>;
   /** The Hub's donation link, if its owner set one. */
   support(): Promise<HubResult<{ url: string | null; message: string | null }>>;
+  /**
+   * Settings → Feedback, to the Kea account server's owner (signed in only). 404: the server is too old for it; 429:
+   * too many reports (data.until, when sending works again, for the per-minute pause).
+   */
+  feedback(a: { kind: 'bug' | 'idea' | 'other'; summary: string; details: string; info?: string; log?: string }): Promise<HubResult<{ ok: true; id: string }>>;
   openSupport(): Promise<HubResult<boolean>>;
   changes(): Promise<HubResult<HubTermsChanges>>;
   openTerms(since?: number): Promise<HubResult<void>>;
@@ -842,6 +853,8 @@ export interface ClaudeAccount {
   email?: string;
   method?: string;
   plan?: string;
+  /** From a sign-in: what to type in a terminal when the sign-in window doesn't open. */
+  command?: string;
 }
 /** A profile's classes shared through a drive by the device that scans them (its primary). */
 export interface DeviceShare {

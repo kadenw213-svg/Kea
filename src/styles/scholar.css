@@ -701,6 +701,35 @@
 .seg-row .setup-check {
   margin-top: 0;
 }
+.claude-reconnect {
+  margin: 0 0 16px;
+  border-color: var(--warning);
+}
+.claude-reconnect h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.claude-steps {
+  margin: 6px 0 10px;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.claude-manual {
+  margin-top: 10px;
+}
+.claude-cmd {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 8px;
+}
 .setup-log {
   max-height: 180px;
   overflow: auto;

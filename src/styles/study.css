@@ -226,6 +226,99 @@
     border-top: 1px solid var(--border);
   }
 }
+/* The notebook beside the quiz (Notebook.tsx): left by default, right when chosen in Settings → Study. */
+.st-notebook {
+  flex: 0 1 34%;
+  min-width: 240px;
+  max-width: 520px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.st-notebook.right {
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+.st-nb-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.st-nb-pick,
+.st-nb-name {
+  flex: 1;
+  min-width: 0;
+}
+.st-nb-error,
+.st-nb-hint {
+  padding: 6px 12px 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.st-nb-error {
+  color: var(--danger, #d9534f);
+}
+.st-nb-text {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 12px 14px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.st-nb-empty {
+  padding: 18px 14px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.st-nb-empty p {
+  margin: 0 0 10px;
+}
+.st-nb-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.st-nb-status {
+  color: var(--text-3);
+}
+.st-nb-status.error {
+  color: var(--danger, #d9534f);
+}
+.st-nb-foot .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.st-nb-btn.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+@media (max-width: 760px) {
+  .st-player.with-notebook .st-player-body {
+    flex-direction: column;
+  }
+  .st-notebook {
+    max-width: none;
+    min-width: 0;
+    flex-basis: 40%;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
 .st-player-head {
   position: sticky;
   top: 0;

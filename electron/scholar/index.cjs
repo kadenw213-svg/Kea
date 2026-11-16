@@ -1013,6 +1013,18 @@ function register() {
     return ok;
   });
   handleApp(ipcMain, 'scholar:studyDelete', (_e, id) => inSet(id, (raw) => study.remove(raw)));
+  // Notebooks beside a quiz: plain .md files in the first site's study folder (study\Notebooks), or the folder chosen
+  // in Settings → Study (Advanced). (studyFiles and other computers' sync only take .json, so these stay on this PC.)
+  const notebooks = require('./notebooks.cjs');
+  const notebookDir = () => {
+    const own = String(settings.get('study.notebook.folder', '') || '').trim();
+    return own && path.isAbsolute(own) ? own : path.join(profiles.paths(profiles.home()).dir, 'study', 'Notebooks');
+  };
+  handleApp(ipcMain, 'scholar:notebookList', () => ({ dir: notebookDir(), list: notebooks.list(notebookDir()) }));
+  handleApp(ipcMain, 'scholar:notebookRead', (_e, name) => notebooks.read(notebookDir(), name));
+  handleApp(ipcMain, 'scholar:notebookWrite', (_e, name, text) => notebooks.write(notebookDir(), name, text));
+  handleApp(ipcMain, 'scholar:notebookCreate', (_e, name) => notebooks.create(notebookDir(), name));
+  handleApp(ipcMain, 'scholar:notebookRename', (_e, from, to) => notebooks.rename(notebookDir(), from, to));
   // Running low on a chapter's questions: more get written, ~5 s after an attempt. The Study stream saves every 10
   // answers, so its saves only check on leaving the stream (`final`) or once every 25 answers.
   let banksTimer = null;

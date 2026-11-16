@@ -12,6 +12,7 @@
     "build": "node scripts/engine-vendor.cjs && node scripts/oauth-clients.cjs && node scripts/licenses.cjs && node scripts/assets.cjs && vite build",
     "start": "node scripts/engine-vendor.cjs && node scripts/oauth-clients.cjs && vite build && electron .",
     "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.cjs",
     "dist": "node scripts/engine-vendor.cjs && node scripts/oauth-clients.cjs && vite build && electron-builder --win",
     "dist:mac": "node scripts/engine-vendor.cjs && node scripts/oauth-clients.cjs && vite build && electron-builder --mac",
     "release": "node scripts/release.cjs",

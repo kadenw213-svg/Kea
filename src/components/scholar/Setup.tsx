@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, KeyRound } from 'lucide-react';
+import { CheckCircle2, Circle, Loader2, Bot, Cpu, School, Play, KeyRound, Copy, RefreshCw } from 'lucide-react';
 import { api, ScholarSetup, SchoolInfo, SchoolPlatform } from '../../lib/api';
 import { toast } from '../../store';
 
@@ -13,6 +13,107 @@ function Step({ done, busy, icon, title, children }: { done: boolean; busy?: boo
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Signing Claude Code in (first setup, or again after its sign-in expires, about once a month), as numbered steps,
+ * with the command to type by hand when no window opens.
+ */
+export function ClaudeSignIn({ onDone, again }: { onDone?(signedIn: boolean): void; again?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [command, setCommand] = useState('');
+  const go = async () => {
+    setBusy(true);
+    setFailed(false);
+    let ok = false;
+    try {
+      const r = await api.scholar.signInClaude();
+      ok = r.loggedIn;
+      if (r.command) setCommand(r.command);
+      if (ok) toast(`Claude is connected${r.email ? ` as ${r.email}` : ''}.`, 'success');
+      else setFailed(true);
+    } catch (err: any) {
+      toast(String(err?.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '').split('\n')[0], 'error');
+      setFailed(true);
+    }
+    setBusy(false);
+    onDone?.(ok);
+  };
+  return (
+    <div className="claude-signin">
+      <ol className="claude-steps">
+        <li>Click <b>{again ? 'Sign in to Claude again' : 'Sign in to Claude'}</b>. A small black window opens, and then your browser.</li>
+        <li>In the browser, sign in with your Claude account and click <b>Authorize</b>.</li>
+        <li>If the small window asks you to paste a code, copy it from the browser, paste it there and press Enter.</li>
+        <li>Come back here. Kea notices by itself when you’re signed in.</li>
+      </ol>
+      <div className="setup-row">
+        <button className="btn tonal sm" disabled={busy} onClick={go}>
+          {busy ? (
+            <>
+              <Loader2 size={13} className="spin" /> Waiting for you to sign in…
+            </>
+          ) : again ? (
+            'Sign in to Claude again'
+          ) : (
+            'Sign in to Claude'
+          )}
+        </button>
+      </div>
+      {busy && <p className="muted">Close the small window to stop waiting.</p>}
+      {failed && (
+        <div className="claude-manual">
+          <p className="warn-line">You’re not signed in yet. Try again, or if no window opened, sign in by hand:</p>
+          <ol className="claude-steps">
+            <li>Press the Windows key, type <b>Terminal</b> and open it.</li>
+            <li>
+              Paste this and press Enter:
+              {command && (
+                <div className="setup-row">
+                  <code className="claude-cmd">{command}</code>
+                  <button className="btn sm" onClick={() => (navigator.clipboard.writeText(command), toast('Copied.', 'success'))}>
+                    <Copy size={13} /> Copy
+                  </button>
+                </div>
+              )}
+            </li>
+            <li>Follow steps 2 and 3 above, then click <b>Check again</b>.</li>
+          </ol>
+          <button className="btn sm" onClick={() => onDone?.(false)}>
+            <RefreshCw size={13} /> Check again
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Shown at the top of Scans when this computer's own Claude was set up but has signed out (Claude Code's sign-in
+ * expires about once a month): what happened, and the same steps as first setup to connect it again.
+ */
+export function ClaudeReconnect() {
+  const [c, setC] = useState<ScholarSetup | null>(null);
+  const load = () => api.scholar.check().then(setC).catch(() => {});
+  useEffect(() => {
+    load();
+    window.addEventListener('focus', load);
+    return () => window.removeEventListener('focus', load);
+  }, []);
+  if (!c || !c.claude || c.account.loggedIn || !c.hasData) return null;
+  return (
+    <div className="gate claude-reconnect">
+      <h2>
+        <Bot size={18} /> Your Claude is signed out
+      </h2>
+      <p>
+        Claude Code’s sign-in expires now and then (usually about once a month), so Kea can’t use your Claude plan until you sign in again. Until then, scans and new study
+        questions wait or use Kea’s shared Claude if your Kea account has it. Nothing you’ve saved is lost.
+      </p>
+      <ClaudeSignIn again onDone={() => load()} />
     </div>
   );
 }
@@ -89,16 +190,13 @@ export function SetupWizard({ onDone, target }: { onDone?(): void; target?: stri
             Install Claude Code
           </button>
         ) : !c.account.loggedIn ? (
-          <button className="btn tonal sm" disabled={!!busy} onClick={() => act('claude', () => api.scholar.signInClaude())}>
-            Sign in to Claude
-          </button>
+          <ClaudeSignIn onDone={refresh} />
         ) : (
           <div className="setup-ok">
             Signed in{c.account.email ? ` as ${c.account.email}` : ''}
             {c.account.plan ? ` (Claude ${c.account.plan[0].toUpperCase()}${c.account.plan.slice(1)})` : ''}.
           </div>
         )}
-        {c.claude && !c.account.loggedIn && <p className="muted">Signing in opens a small window and your browser. Kea notices when you're done.</p>}
       </Step>
 
       <Step done={engineOk} busy={busy === 'engine'} icon={<Cpu size={16} />} title="The scan engine">

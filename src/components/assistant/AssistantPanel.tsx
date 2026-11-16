@@ -539,7 +539,10 @@ function PlanSetup({ installed, onDone }: { installed: boolean; onDone: () => vo
             setErr('');
             try {
               const r = await api.assistant.planSignIn();
-              if (!r.loggedIn) setErr('Sign-in didn’t finish. Try again.');
+              if (!r.loggedIn)
+                setErr(
+                  `Sign-in didn’t finish. Try again. If no window opened, open Terminal (Windows key, type Terminal), paste ${r.command || 'claude auth login'} and press Enter, sign in in your browser, then come back.`
+                );
             } catch (e: any) {
               setErr(e?.message || String(e));
             }

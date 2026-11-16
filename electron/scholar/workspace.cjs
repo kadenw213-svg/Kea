@@ -110,17 +110,39 @@ const installUv = (onLine) => powershell('irm https://astral.sh/uv/install.ps1 |
 /** Claude Code, with Anthropic's official Windows installer (into the user's own folder). */
 const installClaude = (onLine) => powershell('irm https://claude.ai/install.ps1 | iex', onLine);
 
-/** Claude's sign-in needs the user: it opens in its own small window (and their browser), and Kea waits for it. */
+/** What to type in a terminal to sign in by hand, when the sign-in window doesn't open. */
+const signInCommand = (claude) => `& "${claude}" auth login`;
+
+/**
+ * The command line that opens Claude's sign-in in its own visible window and waits until that window closes. Built by
+ * hand and passed verbatim: Node's own quoting turns the window title into `"\"…\""`, which cmd reads as a program
+ * called `Sign`, so nothing opened before (Kea 0.87 and earlier).
+ */
+const signInLine = (claude) => `/d /s /c "start "Sign in to Claude for Kea" /wait "${claude}" auth login"`;
+
+/**
+ * Claude's sign-in needs the user: it opens in its own small window (and their browser), and Kea waits until they're
+ * signed in, or the window is closed, or 10 minutes pass. { loggedIn, email?, command } (`command`: to type by hand).
+ */
 async function signInClaude() {
   const claude = await findClaude();
   if (!claude) throw new Error('Claude Code isn’t installed yet.');
-  spawn('cmd.exe', ['/c', 'start', '"Sign in to Claude for Kea"', claude, 'auth', 'login'], { windowsHide: true, detached: true }).unref();
+  const command = signInCommand(claude);
+  let closed = false;
+  try {
+    const child = spawn('cmd.exe', [signInLine(claude)], { windowsHide: true, windowsVerbatimArguments: true, stdio: 'ignore' });
+    child.on('error', () => (closed = true));
+    child.on('exit', () => (closed = true));
+  } catch {
+    closed = true;
+  }
   for (let i = 0; i < 300; i++) {
     await new Promise((r) => setTimeout(r, 2000));
     const a = await claudeAccount(claude);
-    if (a.loggedIn) return a;
+    if (a.loggedIn) return { ...a, command };
+    if (closed) break;
   }
-  return { loggedIn: false };
+  return { ...(await claudeAccount(claude)), command };
 }
 
 /** Python and the engine's packages (uv downloads Python 3.12 itself), then the engine's database. */
@@ -183,4 +205,4 @@ function engineEnv(uv) {
   };
 }
 
-module.exports = { prepare, check, findUv, findClaude, claudeAccount, installUv, installClaude, signInClaude, setupEngine, engineEnv, minimalEnv, runHidden };
+module.exports = { prepare, check, findUv, findClaude, claudeAccount, installUv, installClaude, signInClaude, signInLine, signInCommand, setupEngine, engineEnv, minimalEnv, runHidden };

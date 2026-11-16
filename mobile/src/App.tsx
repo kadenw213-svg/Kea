@@ -1120,7 +1120,8 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
         <h1>{it.title}</h1>
         {isMissing(it) && (
           <div className="miss-banner">
-            <AlertTriangle size={14} /> Missing: nothing handed in on the class site.
+            <AlertTriangle size={14} /> Missing: past due and not checked off.{' '}
+            {it.handIn === 'submitted' || it.handIn === 'graded' ? `The class site shows it ${it.handIn === 'graded' ? 'graded' : 'handed in'}, so check it off if you’re done.` : 'Check it off if you already did it.'}
           </div>
         )}
         <p className="muted">

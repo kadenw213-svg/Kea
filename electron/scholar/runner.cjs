@@ -1345,12 +1345,16 @@ async function begin(job) {
         }
         pauseIt();
       } else if (failed && FALLBACK_TASKS.includes(job.task) && fallbackReason(said) === 'signedOut') {
-        // Claude Code is signed out: Kea's shared Claude instead, if it can; else the usual message.
-        const msg = result?.result ? String(result.result).slice(0, 2000) : `The scan ended early (code ${code}). Details are in the scan log.`;
+        // Claude Code is signed out: Kea's shared Claude instead, if it can; else how to sign in again.
         try {
           after?.(false);
         } catch {}
-        sharedInstead(job, 'signedOut').then((fb) => (fb.ok ? fellBack(fb.note) : finish(false, fb.error ? `${msg} ${fb.error}` : msg)), () => finish(false, msg));
+        // (Without the shared Claude, say how to fix it: Scans shows the steps to sign in again.)
+        const signedOut = (also = '') => {
+          if (Notification.isSupported()) new Notification({ title: 'Your Claude is signed out', body: 'Kea couldn’t run a scan. Open Kea → Scans and click “Sign in to Claude again”.' }).show();
+          finish(false, `Your Claude is signed out (its sign-in expires about once a month). Sign in again at the top of Scans.${also ? ` ${also}` : ''}`);
+        };
+        sharedInstead(job, 'signedOut').then((fb) => (fb.ok ? fellBack(fb.note) : signedOut(fb.error)), () => signedOut());
       } else if (job.session && failed && /no conversation found|session.{0,40}not found|could not (?:find|resume)/i.test(said)) {
         // The stopped conversation couldn't be reopened (Claude Code cleared it): continue from what's saved instead.
         queue.unshift({ ...job, session: null, resolve: () => {}, started: true, arg: resumeArg(job.arg) });

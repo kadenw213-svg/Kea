@@ -74,11 +74,12 @@ export { TODO, IN_CLASS, placeKind, assignmentDoc, typeLabel, TYPE_LABEL } from 
  */
 export const isDone = (it: ScholarItem) => !!it.done;
 
-/** Missing: past due, and the class site shows nothing handed in. */
-export const isMissing = (it: ScholarItem, now = new Date()) => it.handIn === 'not_submitted' && !it.done && !it.withdrawn && pastDue(it, now);
-
-/** Past due and not checked off, but Kea can't confirm either way (no matching grade or assignment folder). */
-export const isUnconfirmed = (it: ScholarItem, now = new Date()) => !it.handIn && !it.withdrawn && pastDue(it, now);
+/**
+ * Missing: past its due time and not checked off, whatever the class site shows (since 2026-11-16). Done is the
+ * student's checkmark only, so work that isn't checked off is shown as missing; at worst they check it off. The site's
+ * "handed in" or "graded" still shows on the row as a hint.
+ */
+export const isMissing = (it: ScholarItem, now = new Date()) => !it.done && !it.withdrawn && pastDue(it, now);
 
 function pastDue(it: ScholarItem, now: Date) {
   if (!TODO.has(it.type) || IN_CLASS.has(it.type) || isDone(it) || it.optional) return false;
