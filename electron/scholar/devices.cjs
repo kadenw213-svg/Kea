@@ -4,7 +4,8 @@
 //
 //   <drive>/Kea/<profile>/Devices/primary.json        which device scans { id, name, since, at, db, run, queue }
 //   <drive>/Kea/<profile>/Devices/classes.db          the primary's class database
-//   <drive>/Kea/<profile>/Devices/shared/...          its Inbox, scan news, grades, hand-ins, study sets, check baselines
+//   <drive>/Kea/<profile>/Devices/shared/...          its Inbox, scan news, grades, hand-ins, study sets, check baselines,
+//                                                     study notebooks (study/Notebooks/*.md: notebookSync.cjs)
 //   <drive>/Kea/<profile>/Devices/devices/<id>.json   each device: name, when it was last on, its drive, and its own
 //                                                     changes (checkmarks, read, deleted, study progress)
 //   <drive>/Kea/<profile>/Devices/requests/*.json     scans, study sets and stops asked for on another device
@@ -28,6 +29,9 @@ const precheck = require('./precheck.cjs');
 const FILES = ['inbox.json', 'news.json', 'grades.json', 'submissions.json', 'precheck.json', 'sync-state.json', 'activity.json', 'extensions.json', 'withdrawn.json', path.join('study', 'guides.json')];
 const DIRS = [path.join('scholar', 'data', 'digests', 'kea-inbox'), path.join('study', 'sets'), path.join('study', 'images')];
 const MERGED = ['kea.json', path.join('study', 'index.json'), ...require('./studyMerge.cjs').PROGRESS.map((f) => path.join('study', f))];
+// Study notebooks (.md, notebookSync.cjs): the primary's in shared/study/Notebooks, the others' changes in their cards.
+const NOTEBOOKS = path.join('study', 'Notebooks');
+const notebookSync = require('./notebookSync.cjs');
 const HEARTBEAT = 5 * 60000;
 // A device not heard from in this long shows as off.
 const ONLINE = 3 * HEARTBEAT;
@@ -83,6 +87,16 @@ function folder() {
   return t ? path.join(t, 'Devices') : null;
 }
 const primaryInfo = (dir = folder()) => (dir ? readJson(path.join(dir, 'primary.json'), null) : null);
+
+/**
+ * The notebooks folder that syncs: the default one, study\Notebooks in the first class site's folder. Null when the
+ * student chose a folder of their own (Settings → Study, Advanced): those notebooks stay on this PC.
+ */
+function notebookDir() {
+  const own = String(settings.get('study.notebook.folder', '') || '').trim();
+  if (own && path.isAbsolute(own)) return null;
+  return path.join(profiles.paths(profiles.home()).dir, NOTEBOOKS);
+}
 // This device's own record of syncing (per profile, never shared).
 const stateFile = () => path.join(profiles.paths().dir, 'devices.json');
 
@@ -190,8 +204,20 @@ function marksOf(st) {
     deleted: precheck.readInbox().deletedKeys || [],
     study: progressOf(study),
     // (Classes withdrawn from here, or undone: the newer change wins on the primary.)
-    withdrawn: require('./withdrawn.cjs').read(profiles.paths().dir).log
+    withdrawn: require('./withdrawn.cjs').read(profiles.paths().dir).log,
+    // Notebooks changed or made here since they were last the same as the primary's, with the text they started from.
+    // (An older primary doesn't know this key and leaves it alone.)
+    notebooks: notebookOut(st)
   };
+}
+function notebookOut(st) {
+  const nb = notebookDir();
+  try {
+    return nb ? notebookSync.outgoing(nb, st.notebooks || {}) : {};
+  } catch (err) {
+    console.error('Devices: notebooks', err.message);
+    return {};
+  }
 }
 
 /** This device's study progress files ({ file: contents }), and the sets made here from saved questions. */
@@ -324,8 +350,26 @@ async function lead(dir) {
       if (st.seen[f] === m) continue;
       st.seen[f] = m;
       writeJson(stateFile(), st);
-      const marks = readJson(path.join(cards, f), null)?.marks;
+      const card = readJson(path.join(cards, f), null);
+      const marks = card?.marks;
       if (marks && hooks.applyMarks(marks)) hooks.syncSoon(5000);
+      // Its notebooks: a clash keeps both (theirs saved as "<name> (from <device>)").
+      const nb = notebookDir();
+      if (nb && marks?.notebooks) {
+        try {
+          st.nbSeen = st.nbSeen || {};
+          const seen = (st.nbSeen[f] = st.nbSeen[f] || {});
+          const r = notebookSync.takeIn(nb, marks.notebooks, card.name || 'another device', seen);
+          writeJson(stateFile(), st);
+          for (const c of r.copies) console.log(`Devices: notebook “${c.name}” changed here and on ${card.name}; theirs is kept as “${c.copy}”`);
+          if (r.changed) {
+            changed();
+            hooks.syncSoon(5000);
+          }
+        } catch (err) {
+          console.error('Devices: notebooks from another device', err.message);
+        }
+      }
     }
   }
   // Scans, study sets and stops asked for on another device.
@@ -366,6 +410,16 @@ async function lead(dir) {
     }
     for (const f of [...FILES, ...MERGED]) if (fs.existsSync(path.join(P.dir, f))) copyIfChanged(path.join(P.dir, f), path.join(dir, 'shared', f));
     for (const d of DIRS) copyTree(path.join(P.dir, d), path.join(dir, 'shared', d));
+  }
+  // Notebooks, whether or not a scan is running (they're the student's, not a scan's). With a folder of the student's
+  // own chosen here, the shared copy is left as it was.
+  const nb = notebookDir();
+  if (nb) {
+    try {
+      notebookSync.publish(nb, path.join(dir, 'shared', NOTEBOOKS));
+    } catch (err) {
+      console.error('Devices: sharing notebooks', err.message);
+    }
   }
   // What's running (for the other devices' progress bars) and that this device is still on.
   const r = now.running;
@@ -589,6 +643,19 @@ async function follow(dir) {
   }
   const { PROGRESS } = require('./studyMerge.cjs');
   if (mergeStudy(Object.fromEntries(PROGRESS.map((f) => [f, readJson(path.join(dir, 'shared', 'study', f), {})])))) any = true;
+  // Notebooks: the primary's, each checked against the text both last had (st.notebooks); a clash keeps both. (An older
+  // primary shares none: this device's stay as they are.)
+  const nb = notebookDir();
+  if (nb && fs.existsSync(path.join(dir, 'shared', NOTEBOOKS))) {
+    try {
+      st.notebooks = st.notebooks || {};
+      const r = notebookSync.pull(nb, path.join(dir, 'shared', NOTEBOOKS), st.notebooks, p?.name || 'your other computer');
+      for (const c of r.copies) console.log(`Devices: notebook “${c.name}” changed here and on ${p?.name}; theirs is kept as “${c.copy}”`);
+      if (r.changed) any = true;
+    } catch (err) {
+      console.error('Devices: notebooks from the primary', err.message);
+    }
+  }
   // Checkmarks: newest change wins; when checks last ran comes from the primary (so a new primary doesn't rescan today).
   const theirState = readJson(path.join(dir, 'shared', 'kea.json'), null);
   if (theirState) {
@@ -797,4 +864,4 @@ function forgetHere() {
   if (dir) fs.rmSync(path.join(dir, 'devices', `${me()}.json`), { force: true });
 }
 
-module.exports = { serveRequest, configure, follower, standsAside, publishes, step, soon, relay, status, mergeStudy, find, join, makePrimary, claimHere, releaseHere, forgetHere };
+module.exports = { notebookDir, serveRequest, configure, follower, standsAside, publishes, step, soon, relay, status, mergeStudy, find, join, makePrimary, claimHere, releaseHere, forgetHere };

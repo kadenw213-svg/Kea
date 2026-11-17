@@ -1,6 +1,10 @@
 // The notebook beside a quiz: plain Markdown files the student names and picks, saved about a second after typing
 // stops and when the panel closes. The files are in the Notebooks folder of the study folder (notebooks.cjs), so they
 // open in Kea's Markdown editor too. Which notebook was last used is remembered per class.
+//
+// They sync to the other computers and the phone (notebookSync.cjs). A change that arrives while one is open shows
+// here when nothing typed is waiting to be saved; a save never writes over a change that came in meanwhile (that text
+// is kept as "<name> (changed elsewhere)"). On the phone the same panel only shows them (`readOnly`).
 import { useEffect, useRef, useState } from 'react';
 import { Check, ExternalLink, NotebookPen, Pencil, Plus, X } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -26,6 +30,7 @@ export function NotebookButton({ open, onClick }: { open: boolean; onClick(): vo
 
 export function NotebookPane({ courseId, side, onClose }: { courseId: string; side: 'left' | 'right'; onClose(): void }) {
   const [list, setList] = useState<Entry[] | null>(null);
+  const [readOnly, setReadOnly] = useState(false);
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [status, setStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
@@ -36,6 +41,10 @@ export function NotebookPane({ courseId, side, onClose }: { courseId: string; si
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textRef = useRef(text);
   textRef.current = text;
+  const nameRef = useRef(name);
+  nameRef.current = name;
+  // The notebook's text as last read or saved here, so a save can tell when the file changed meanwhile.
+  const baseRef = useRef<{ name: string; text: string } | null>(null);
 
   const flush = async () => {
     if (timer.current) clearTimeout(timer.current);
@@ -45,8 +54,14 @@ export function NotebookPane({ courseId, side, onClose }: { courseId: string; si
     pending.current = null;
     setStatus('saving');
     try {
-      await api.scholar.notebookWrite(p.name, p.text);
+      const base = baseRef.current?.name === p.name ? baseRef.current.text : undefined;
+      const r = await api.scholar.notebookWrite(p.name, p.text, base);
+      baseRef.current = { name: p.name, text: p.text };
       if (!pending.current) setStatus('saved');
+      if (r?.kept) {
+        toast(`“${p.name}” changed on another device or in another program while you were writing. That version is kept as “${r.kept}”.`, 'info');
+        refresh(nameRef.current);
+      }
     } catch (e) {
       // (Kept to try again with the next change.)
       if (!pending.current) pending.current = p;
@@ -59,26 +74,40 @@ export function NotebookPane({ courseId, side, onClose }: { courseId: string; si
     await flush();
     setName(n);
     setText('');
+    baseRef.current = null;
     setStatus('saved');
     if (!n) return;
     rememberLast(courseId, n);
     try {
-      setText(await api.scholar.notebookRead(n));
+      const t = await api.scholar.notebookRead(n);
+      baseRef.current = { name: n, text: t };
+      setText(t);
     } catch (e) {
       toast(`Couldn’t open the notebook: ${errText(e)}`, 'error');
     }
   };
 
   const refresh = async (pick?: string) => {
-    const { list: l } = await api.scholar.notebookList().catch(() => ({ list: [] as Entry[] }));
-    setList(l);
-    return pick !== undefined ? pick : l.find((x) => x.name === lastFor(courseId))?.name || l[0]?.name || '';
+    const r = await Promise.resolve()
+      .then(() => api.scholar.notebookList())
+      .catch(() => ({ list: [] as Entry[], readOnly: false }));
+    setList(r.list);
+    setReadOnly(!!r.readOnly);
+    return pick !== undefined ? pick : r.list.find((x) => x.name === lastFor(courseId))?.name || r.list[0]?.name || '';
   };
 
   // The class's last notebook (or the newest) when the panel opens or the class changes.
   useEffect(() => {
     refresh().then(load);
   }, [courseId]);
+  // Notebooks synced in from another device: the list, and this one's text when nothing typed is waiting to be saved.
+  useEffect(
+    () =>
+      api.scholar.onChanged(() => {
+        refresh(nameRef.current).then(() => reread());
+      }),
+    []
+  );
   // Saved when the panel closes (or the player does).
   useEffect(
     () => () => {
@@ -98,10 +127,15 @@ export function NotebookPane({ courseId, side, onClose }: { courseId: string; si
 
   // Back from the editor (or another program): the file as it is now, when nothing here is waiting to be saved.
   const reread = async () => {
-    if (!name || pending.current) return;
+    const n = nameRef.current;
+    if (!n || pending.current) return;
     const before = textRef.current;
-    const now = await api.scholar.notebookRead(name).catch(() => null);
-    if (now != null && now !== before && textRef.current === before && !pending.current) setText(now);
+    const now = await Promise.resolve()
+      .then(() => api.scholar.notebookRead(n))
+      .catch(() => null);
+    if (now == null || nameRef.current !== n || textRef.current !== before || pending.current) return;
+    baseRef.current = { name: n, text: now };
+    if (now !== before) setText(now);
   };
 
   const submitName = async () => {
@@ -172,10 +206,12 @@ export function NotebookPane({ courseId, side, onClose }: { courseId: string; si
                 </option>
               ))}
             </select>
-            <button className="icon-btn sm" onClick={() => setNaming({ mode: 'new', value: '', error: '' })} title="New notebook">
-              <Plus size={14} />
-            </button>
-            {name && (
+            {!readOnly && (
+              <button className="icon-btn sm" onClick={() => setNaming({ mode: 'new', value: '', error: '' })} title="New notebook">
+                <Plus size={14} />
+              </button>
+            )}
+            {name && !readOnly && (
               <button className="icon-btn sm" onClick={() => setNaming({ mode: 'rename', value: name, error: '' })} title="Rename this notebook">
                 <Pencil size={13} />
               </button>
@@ -188,7 +224,15 @@ export function NotebookPane({ courseId, side, onClose }: { courseId: string; si
       </div>
       {naming?.error && <div className="st-nb-error">{naming.error}</div>}
       {naming && !naming.error && <div className="st-nb-hint">Letters, numbers, spaces and - _ . ( ) only.</div>}
-      {name ? (
+      {name && readOnly ? (
+        <textarea className="st-nb-text" value={text} readOnly placeholder="This notebook is empty." />
+      ) : readOnly ? (
+        list && (
+          <div className="st-nb-empty">
+            <p>Notebooks you write while studying in Kea on your PC show here. On the phone you can read them.</p>
+          </div>
+        )
+      ) : name ? (
         <textarea className="st-nb-text" value={text} onChange={(e) => type(e.target.value)} onBlur={flush}
           onFocus={reread}
           // (Esc while writing leaves the notebook instead of closing the quiz.)
@@ -204,7 +248,12 @@ export function NotebookPane({ courseId, side, onClose }: { courseId: string; si
           </div>
         )
       )}
-      {name && (
+      {name && readOnly && (
+        <div className="st-nb-foot">
+          <span className="st-nb-status">Read only on the phone. Edit it in Kea on your PC.</span>
+        </div>
+      )}
+      {name && !readOnly && (
         <div className="st-nb-foot">
           <span className={`st-nb-status ${status}`}>{status === 'saving' ? 'Saving…' : status === 'unsaved' ? 'Not saved yet' : status === 'error' ? 'Not saved' : 'Saved'}</span>
           <button className="link-btn" onClick={openInEditor}>

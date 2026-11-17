@@ -245,8 +245,18 @@ async function snapshotSite() {
     ...fix({ kea: 1, keaVersion: require('electron').app.getVersion(), synced: new Date().toISOString(), profile: profiles.all().list.find((x) => x.id === profiles.active())?.name || '', home: browser.schoolInfo().home, platform: browser.schoolInfo().platform, courses, items, details, grades, inbox, inboxDeleted, mail, doneLog, withdrawn: require('./withdrawn.cjs').read(P.dir).log }),
     // The study folder as it is here (sets, saved questions, progress), for the phone to study from; its pictures are in
     // the library zip. A set still being written stays out until it's ready.
-    study: studyFiles()
+    study: studyFiles(),
+    // Study notebooks (the default folder's, only from the first site), for the phone to read: [{ name, modified, text }].
+    // (Kept out of `study`, which the phone loads as JSON files; an older phone ignores this key.)
+    ...(profiles.active() === profiles.home() && devices.notebookDir() ? { notebooks: phoneNotebooks() } : {})
   };
+}
+function phoneNotebooks() {
+  try {
+    return require('./notebookSync.cjs').forPhone(devices.notebookDir());
+  } catch {
+    return [];
+  }
 }
 
 /** The study folder's files (not its pictures) as { "sets/exam-x.json": contents }. */
@@ -1014,15 +1024,14 @@ function register() {
   });
   handleApp(ipcMain, 'scholar:studyDelete', (_e, id) => inSet(id, (raw) => study.remove(raw)));
   // Notebooks beside a quiz: plain .md files in the first site's study folder (study\Notebooks), or the folder chosen
-  // in Settings → Study (Advanced). (studyFiles and other computers' sync only take .json, so these stay on this PC.)
+  // in Settings → Study (Advanced). The default folder goes to the other computers and the phone with the rest of
+  // study data (devices.cjs, notebookSync.cjs); a folder of one's own stays on this PC.
   const notebooks = require('./notebooks.cjs');
-  const notebookDir = () => {
-    const own = String(settings.get('study.notebook.folder', '') || '').trim();
-    return own && path.isAbsolute(own) ? own : path.join(profiles.paths(profiles.home()).dir, 'study', 'Notebooks');
-  };
-  handleApp(ipcMain, 'scholar:notebookList', () => ({ dir: notebookDir(), list: notebooks.list(notebookDir()) }));
+  const notebookDir = () => devices.notebookDir() || String(settings.get('study.notebook.folder', '')).trim();
+  handleApp(ipcMain, 'scholar:notebookList', () => ({ dir: notebookDir(), list: notebooks.list(notebookDir()), synced: !!devices.notebookDir() }));
   handleApp(ipcMain, 'scholar:notebookRead', (_e, name) => notebooks.read(notebookDir(), name));
-  handleApp(ipcMain, 'scholar:notebookWrite', (_e, name, text) => notebooks.write(notebookDir(), name, text));
+  // (`base`: the text the panel started from, so a change synced in meanwhile is kept, not saved over.)
+  handleApp(ipcMain, 'scholar:notebookWrite', (_e, name, text, base) => notebooks.write(notebookDir(), name, text, typeof base === 'string' ? base : undefined));
   handleApp(ipcMain, 'scholar:notebookCreate', (_e, name) => notebooks.create(notebookDir(), name));
   handleApp(ipcMain, 'scholar:notebookRename', (_e, from, to) => notebooks.rename(notebookDir(), from, to));
   // Running low on a chapter's questions: more get written, ~5 s after an attempt. The Study stream saves every 10

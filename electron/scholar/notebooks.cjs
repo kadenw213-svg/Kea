@@ -74,16 +74,49 @@ function read(dir, name) {
   }
 }
 
-/** Save a notebook's text (made if it isn't there), through a temporary file so a cut-off save never empties it. */
-function write(dir, name, text) {
+/**
+ * Save a notebook's text (made if it isn't there), through a temporary file so a cut-off save never empties it.
+ *
+ * `base` (optional) is the text the writer started from (the notebook panel: what it last read or saved). When the file
+ * holds something else by now (another device's change synced in, or an edit in another program), that text is kept
+ * first as "<name> (changed elsewhere).md" and named in `kept`, so saving never silently loses it.
+ */
+function write(dir, name, text, base) {
   const file = fileOf(dir, name);
   const body = String(text ?? '');
   if (Buffer.byteLength(body, 'utf8') > MAX_TEXT) throw new Error('That notebook is too big to save (over 5 MB).');
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  let kept = null;
+  if (typeof base === 'string') {
+    let now = null;
+    try {
+      now = fs.readFileSync(file, 'utf8');
+    } catch {}
+    if (now != null && now !== base && now !== body) kept = keepAside(dir, cleanName(name), now);
+  }
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, body, 'utf8');
   fs.renameSync(tmp, file);
-  return { name: cleanName(name), file, modified: fs.statSync(file).mtime.toISOString() };
+  return { name: cleanName(name), file, modified: fs.statSync(file).mtime.toISOString(), kept };
+}
+
+/** Save `text` as "<name> (changed elsewhere).md" (then "... 2" and up), shortening the name to fit. Returns its name. */
+function keepAside(dir, name, text) {
+  for (let n = 1; n < 1000; n++) {
+    const tail = ` (changed elsewhere${n > 1 ? ` ${n}` : ''})`;
+    const cand = `${name.slice(0, MAX_NAME - tail.length).replace(/[. ]+$/, '') || 'Notebook'}${tail}`;
+    const f = fileOf(dir, cand);
+    if (exists(f)) {
+      // (The same text kept before: nothing more to save.)
+      try {
+        if (fs.readFileSync(f, 'utf8') === text) return cand;
+      } catch {}
+      continue;
+    }
+    fs.writeFileSync(f, text, { encoding: 'utf8', flag: 'wx' });
+    return cand;
+  }
+  return null;
 }
 
 /** Rename a notebook. Fails when it isn't there or the new name is taken (a change of capitals only is allowed). */
@@ -105,4 +138,4 @@ function exists(file) {
   }
 }
 
-module.exports = { MAX_NAME, cleanName, fileOf, list, create, read, write, rename };
+module.exports = { MAX_NAME, MAX_TEXT, cleanName, fileOf, list, create, read, write, rename };

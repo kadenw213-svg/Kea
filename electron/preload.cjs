@@ -212,7 +212,7 @@ contextBridge.exposeInMainWorld('api', {
     studyDelete: (id) => ipcRenderer.invoke('scholar:studyDelete', id),
     notebookList: () => ipcRenderer.invoke('scholar:notebookList'),
     notebookRead: (name) => ipcRenderer.invoke('scholar:notebookRead', name),
-    notebookWrite: (name, text) => ipcRenderer.invoke('scholar:notebookWrite', name, text),
+    notebookWrite: (name, text, base) => ipcRenderer.invoke('scholar:notebookWrite', name, text, base),
     notebookCreate: (name) => ipcRenderer.invoke('scholar:notebookCreate', name),
     notebookRename: (from, to) => ipcRenderer.invoke('scholar:notebookRename', from, to),
     studyAttempt: (id, a) => ipcRenderer.invoke('scholar:studyAttempt', id, a),

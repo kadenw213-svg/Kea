@@ -219,10 +219,14 @@ export interface KeaApi {
     /** Write question banks for chapters that have none (on the primary); false when Claude isn't connected. */
     studyBanks(): Promise<boolean>;
     studyDelete(id: string): Promise<boolean>;
-    /** Study notebooks (.md files) and the folder they're in, newest change first. */
-    notebookList(): Promise<{ dir: string; list: { name: string; file: string; modified: string; size: number }[] }>;
+    /**
+     * Study notebooks (.md files) and the folder they're in, newest change first. `synced`: the folder goes to the other
+     * computers and the phone (the default one). `readOnly`: the phone, which only shows them.
+     */
+    notebookList(): Promise<{ dir: string; list: { name: string; file: string; modified: string; size: number }[]; synced?: boolean; readOnly?: boolean }>;
     notebookRead(name: string): Promise<string>;
-    notebookWrite(name: string, text: string): Promise<{ name: string; file: string; modified: string }>;
+    /** `base`: the text this save started from; when the file changed meanwhile, that text is kept too (`kept` names it). */
+    notebookWrite(name: string, text: string, base?: string): Promise<{ name: string; file: string; modified: string; kept?: string | null }>;
     notebookCreate(name: string): Promise<{ name: string; file: string }>;
     notebookRename(from: string, to: string): Promise<{ name: string; file: string }>;
     /** items: how each question went, [key, right] (right null for an unmarked written answer). */

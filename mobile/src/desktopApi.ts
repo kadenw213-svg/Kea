@@ -144,9 +144,32 @@ const api: any = {
     // Rescan: the PC does it (it has Claude and the class site); the new guide comes with its next copy.
     guideRescan: async (id: string, code: string) => (askPC('guides', { arg: `${code} ${id} force` }), { queued: true }),
     onTeach: () => () => {},
-    textbookOf: async () => null
+    textbookOf: async () => null,
+    // Study notebooks, from the PC's copy: shown, not changed, on the phone (the panel sees `readOnly`).
+    notebookList: async () => ({
+      dir: '',
+      readOnly: true,
+      list: notebookCopies().map((n) => ({ name: n.name, file: '', modified: n.modified, size: n.text?.length || 0 }))
+    }),
+    notebookRead: async (name: string) => {
+      const n = notebookCopies().find((x) => x.name === name);
+      if (!n) return '';
+      return n.text ?? 'This notebook is too big for the phone. Read it in Kea on your PC.';
+    },
+    notebookWrite: notebooksReadOnly,
+    notebookCreate: notebooksReadOnly,
+    notebookRename: notebooksReadOnly
   }
 };
+
+/** The notebooks in the PC's copy (only well-formed entries). */
+function notebookCopies() {
+  const list = Array.isArray(data?.notebooks) ? data!.notebooks : [];
+  return list.filter((n) => n && typeof n.name === 'string' && (typeof n.text === 'string' || n.text === null));
+}
+async function notebooksReadOnly(): Promise<never> {
+  throw new Error('Notebooks can only be read on the phone. Write in them in Kea on your PC.');
+}
 
 /** Install it before any shared screen loads (they read window.api when they're imported). */
 export function installDesktopApi() {

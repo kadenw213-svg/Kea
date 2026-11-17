@@ -209,6 +209,11 @@ export interface KeaData {
   withdrawn?: Record<string, { on: boolean; at: string; by?: string; code?: string }>;
   /** The Kea version on the PC that wrote it (older PCs don't say), so the phone can say when it's behind. */
   keaVersion?: string;
+  /**
+   * Study notebooks (.md text), newest first, shown read-only beside a quiz. `text` is null for one too big for the
+   * phone copy (`tooBig`). Older PCs don't send them.
+   */
+  notebooks?: { name: string; modified: string; text: string | null; tooBig?: boolean }[];
 }
 
 const CACHE = 'kea.data';
