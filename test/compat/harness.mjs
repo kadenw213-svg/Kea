@@ -31,7 +31,7 @@ export const RELEASES = {
     { label: '0.2.0', commit: '2c1d1a0', has: { profilePatch: false } },
   ],
   keas: [{ label: '0.8.0', commit: '70cf250' }],
-  kea: [{ label: '0.84.0', commit: '29ad5d8' }],
+  kea: [{ label: '0.88.0', commit: '2334747' }, { label: '0.84.0', commit: '29ad5d8' }],
 };
 // What a release needs to run here (folders and files; read with git show).
 const PATHS = {
