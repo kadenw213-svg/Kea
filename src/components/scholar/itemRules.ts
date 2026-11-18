@@ -190,6 +190,20 @@ export function panelLinks(it: ScholarItem, guide?: { steps?: { links?: { url: s
   return { quick, platforms, doc, rest };
 }
 
+// ---------- What the class site shows, in words ----------
+/**
+ * What the class site shows about work that isn't checked off, for the little tag on a row (desktop and phone):
+ * "Class Site: Graded 8/10" (a zero reads "Class Site: Graded 0/10", so a real grade is told from a zero at a glance),
+ * "Class site: graded" when the score isn't known, "Class site: handed in", or null. Only a hint: Kea never checks work
+ * off for you.
+ */
+export function classSiteTag(it: Pick<ScholarItem, 'done' | 'handIn' | 'handScore'>): string | null {
+  if (it.done) return null;
+  if (it.handIn === 'graded') return it.handScore ? `Class Site: Graded ${it.handScore}` : 'Class site: graded';
+  if (it.handIn === 'submitted') return 'Class site: handed in';
+  return null;
+}
+
 // ---------- Where it's handed in, in words ----------
 const shortRoom = (loc: string) => (loc === 'Online' ? 'Online' : loc.split(',').pop()!.trim());
 /**

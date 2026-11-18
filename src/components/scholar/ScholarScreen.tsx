@@ -53,7 +53,7 @@ import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, openLink, primaryLink, placeKind, assignmentDoc, extendedInfo, setClassColor, setTypeColor, useColors } from './kinds';
 import { AssignmentGuide, OriginalWording, useGuides } from './Guide';
-import { COUNTS_AS_DUE, relatedText, handInText, panelLinks, platformLine, platformName, quickVerb, shorten, studyChapters, typeLabel, folderIdOf } from './itemRules';
+import { COUNTS_AS_DUE, classSiteTag, relatedText, handInText, panelLinks, platformLine, platformName, quickVerb, shorten, studyChapters, typeLabel, folderIdOf } from './itemRules';
 import { StudyPlayer } from './Study';
 import { ResourcesView } from './Resources';
 import { MessagesView } from './Messages';
@@ -433,9 +433,9 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
             </span>
           )}
           {it.opensAt && <span className="opens-tag" title={`Opens on your class site ${opensText(it.opensAt)}`}>Opens {new Date(it.opensAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
-          {!it.done && (it.handIn === 'graded' || it.handIn === 'submitted') && (
+          {classSiteTag(it) && (
             <span className="hand-tag" title="What your class site shows. Kea doesn't check work off for you: check it off once it's really done.">
-              {it.handIn === 'graded' ? 'Class site: graded' : 'Class site: handed in'}
+              {classSiteTag(it)}
             </span>
           )}
         </div>
@@ -1708,7 +1708,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
         <div className="miss-banner">
           <AlertTriangle size={15} /> Missing: this was due {/^(Today|Tomorrow|Yesterday)$/.test(dayName(it.date)) ? dayName(it.date).toLowerCase() : `on ${dayName(it.date)}`}
           {it.due ? ` at ${clock(it.due)}` : ''}, and it isn’t checked off.
-          {it.handIn === 'submitted' || it.handIn === 'graded' ? ` Your class site shows it ${it.handIn === 'graded' ? 'graded' : 'handed in'}, so check it off if you’re done.` : ' Check it off if you already did it.'}
+          {classSiteTag(it) ? ` ${classSiteTag(it)}. Check it off if you’re done.` : ' Check it off if you already did it.'}
         </div>
       )}
       <div className="pn-facts">

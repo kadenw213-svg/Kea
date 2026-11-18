@@ -359,17 +359,37 @@ const norm = (s) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+// A bare group name ("Module 1", "Chapter 5", "Week 3", "Unit 2") is a gradebook category's total (or reads like one):
+// it says nothing about any one assignment in it.
+const CATEGORY_TOTAL = /^(module|chapter|ch|unit|week|part|section|lab|labs|homework|quizzes|exams|discussions?|assignments?)( \d+)?$/;
+
+/** A score as "8/10" (a zero stays "0/10"), or null when it isn't points out of points (a letter, empty, "--"). */
+function cleanScore(s) {
+  const v = String(s ?? '').replace(/\s*\/\s*/, '/').trim();
+  return /^\d+(\.\d+)?\/\d+(\.\d+)?$/.test(v) ? v : null;
+}
+
 /**
  * Evidence per class of what the student handed in: grades the daily checks recorded, and what Kea's pre-check
  * learned from D2L (graded items, assignment folders with or without a submission). Map course id → [{t, state}].
+ * Its `scores` property (course id → [{t, score}]) holds the class site's scores, for handScore.
  */
 function evidence(db, file) {
   const out = new Map();
+  // Course id → [{t, score}]: the score the class site shows for each graded item. Only a label for work that handIn()
+  // already calls graded (see handScore); it is never evidence that something was handed in.
+  const scores = new Map();
+  out.scores = scores;
+  const addScore = (courseId, title, score) => {
+    const t = norm(title);
+    const s = cleanScore(score);
+    if (!t || !s || CATEGORY_TOTAL.test(t)) return;
+    if (!scores.has(courseId)) scores.set(courseId, []);
+    scores.get(courseId).push({ t, score: s });
+  };
   const add = (courseId, title, state, opens = null, x = null) => {
     const t = norm(title);
-    // A bare group name ("Module 1", "Chapter 5", "Week 3", "Unit 2") is a gradebook category's total (or reads like
-    // one): it says nothing about any one assignment in it.
-    if (!t || (state === 'graded' && /^(module|chapter|ch|unit|week|part|section|lab|labs|homework|quizzes|exams|discussions?|assignments?)( \d+)?$/.test(t))) return;
+    if (!t || (state === 'graded' && CATEGORY_TOTAL.test(t))) return;
     if (!out.has(courseId)) out.set(courseId, []);
     // Which class-site object it is (an assignment folder, quiz or discussion topic), and its due date when known:
     // the only evidence that can cross off work that isn't due yet (see handIn).
@@ -378,8 +398,14 @@ function evidence(db, file) {
   };
   for (const r of rows(db, "SELECT course_id, payload_json FROM digest_entries WHERE kind = 'grade'")) {
     const p = json(r.payload_json, {});
-    if (!p.category) add(r.course_id, p.title, 'graded');
+    if (!p.category) { add(r.course_id, p.title, 'graded'); addScore(r.course_id, p.title, p.score_text); }
   }
+  // Kea's own grade check (grades.json, next to submissions.json): "8 / 10" per graded item, "0 / 10" for a zero.
+  try {
+    const g = JSON.parse(fs.readFileSync(path.join(path.dirname(file), '..', '..', 'grades.json'), 'utf8'));
+    const ids = new Map(rows(db, 'SELECT id, course_code FROM courses').map((c) => [c.course_code, c.id]));
+    for (const [code, c] of Object.entries(g.byCourse || {})) if (ids.has(code)) for (const x of c.items || []) addScore(ids.get(code), x.title, x.score);
+  } catch {}
   // Grades read from outside platforms (ALEKS and the like) during weekly checks.
   for (const r of rows(db, 'SELECT course_id, title, is_missing FROM grade_snapshots')) add(r.course_id, r.title, r.is_missing ? 'not_submitted' : 'graded');
   try {
@@ -488,6 +514,27 @@ function handIn(r, ev) {
   const done = close.filter((x) => x.state !== 'opens');
   if (!done.length) return null;
   return done.find((x) => x.state === 'graded')?.state || done.find((x) => x.state === 'submitted')?.state || 'not_submitted';
+}
+
+/**
+ * The score the class site shows for work it says is graded, as "8/10" (a zero is "0/10"), so a real grade can be told
+ * from a zero at a glance. Null when the item isn't graded, the score isn't points out of points, or two matching grades
+ * disagree (better to say nothing than the wrong score). Matches by title the way handIn does; work due ahead is never
+ * graded, so it has no score.
+ */
+function handScore(r, ev, state) {
+  if (state !== 'graded' || NEVER_GRADED.has(r.item_type)) return null;
+  const list = ev.scores?.get(r.course_id);
+  const t = norm(r.title);
+  if (!list || t.length < 3) return null;
+  const exact = list.filter((x) => x.t === t);
+  let close = exact.length ? exact : list.filter((x) => sameWork(x.t, t));
+  if (!close.length) {
+    const bare = t.replace(/ handout$/, '').trim();
+    if (bare !== t && bare.split(' ').length >= 2) close = list.filter((x) => sameWork(x.t, bare));
+  }
+  const found = [...new Set(close.map((x) => x.score))];
+  return found.length === 1 ? found[0] : null;
 }
 
 /** When the item opens on the class site, if that's still ahead (an ISO time), else null. */
@@ -683,6 +730,8 @@ function itemOutRaw(r, course, banner, readings, done, rooms, ev) {
     tentative: !!r.is_tentative || !!r.is_inferred_date,
     done: done[r.id] || null,
     handIn: ev ? handIn(r, ev) : null,
+    // The class site's score for graded work ("8/10", or "0/10" for a zero), else null.
+    handScore: ev ? handScore(r, ev, handIn(r, ev)) : null,
     opensAt: ev ? opensAt(r, ev) : null,
     // Only the class's own chapters ("Inner Fish CH 6" is a side book, not the course's Chapter 6).
     readings: chapters

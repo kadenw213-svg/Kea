@@ -1334,6 +1334,8 @@ export interface ScholarItem {
   done: string | null;
   /** What the class site says: graded or handed in, confirmed not handed in, or null when Kea can't tell. */
   handIn: 'graded' | 'submitted' | 'not_submitted' | null;
+  /** The score the class site shows when it says graded: "8/10", or "0/10" for a zero. Null when none is known. */
+  handScore?: string | null;
   /** The outside platforms it's done on (Science Interactive, ALEKS…), through the class's own link. */
   platformLinks?: ScholarLink[];
   /** The work it goes with: the lab a discussion is built on, or the other half of a discussion. */

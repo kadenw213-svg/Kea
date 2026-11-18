@@ -4,7 +4,7 @@ import type { ScholarInboxItem, ScholarItem } from '../../src/lib/api';
 import { inboxParts, kindOf } from '../../src/components/scholar/inboxFormat';
 import { CATEGORIES, CLASS_COLORS, LinkGroups, TODO, categoryOf, extendedInfo, isDone, isMissing, primaryLink } from '../../src/components/scholar/kinds';
 // (What each item offers, the same rules as the PC: src/components/scholar/itemRules.ts.)
-import { handInText, panelLinks, platformLine, quickVerb, relatedText, studyChapters, typeLabel } from '../../src/components/scholar/itemRules';
+import { classSiteTag, handInText, panelLinks, platformLine, quickVerb, relatedText, studyChapters, typeLabel } from '../../src/components/scholar/itemRules';
 import { useSetting } from '../../src/lib/settings';
 import { useAreas } from '../../src/lib/areas';
 import { hubOn, hubSyncLibrary, onAccountChange } from './hub';
@@ -486,7 +486,7 @@ function Row({ ctx, it, date }: { ctx: Ctx; it: ScholarItem; date?: boolean }) {
           {extendedInfo(it) && <span className="ext-tag">{extendedInfo(it)!.tag}</span>}
           {it.opensAt && <span className="ext-tag">Opens {new Date(it.opensAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
           {/* (What the class site shows, as on the PC: a hint, never a checkmark.) */}
-          {!it.done && (it.handIn === 'graded' || it.handIn === 'submitted') && <span className="ext-tag">{it.handIn === 'graded' ? 'Class site: graded' : 'Class site: handed in'}</span>}
+          {classSiteTag(it) && <span className="ext-tag">{classSiteTag(it)}</span>}
           {room(it.location) && (
             <span>
               <MapPin size={11} /> {room(it.location)}
@@ -1121,7 +1121,7 @@ function Sheet({ ctx, it, onClose }: { ctx: Ctx; it: ScholarItem; onClose(): voi
         {isMissing(it) && (
           <div className="miss-banner">
             <AlertTriangle size={14} /> Missing: past due and not checked off.{' '}
-            {it.handIn === 'submitted' || it.handIn === 'graded' ? `The class site shows it ${it.handIn === 'graded' ? 'graded' : 'handed in'}, so check it off if you’re done.` : 'Check it off if you already did it.'}
+            {classSiteTag(it) ? `${classSiteTag(it)}. Check it off if you’re done.` : 'Check it off if you already did it.'}
           </div>
         )}
         <p className="muted">
