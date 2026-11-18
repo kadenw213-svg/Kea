@@ -5,7 +5,7 @@ import { BookOpen, ClipboardList, Globe, KeyRound, Link2, ListChecks, MessageSqu
 import { api, ScholarItem, ScholarLink } from '../../lib/api';
 import { useSetting, useSettings, useThemeDark } from '../../lib/settings';
 import { ink } from '../../lib/themes';
-import { TODO, IN_CLASS, Quick, QuickKind, platformName, quickLink } from './itemRules';
+import { TODO, IN_CLASS, Quick, QuickKind, hasGrade, platformName, quickLink } from './itemRules';
 
 // ---------- Kinds of item, grouped into a few colors ----------
 export interface Category {
@@ -77,9 +77,12 @@ export const isDone = (it: ScholarItem) => !!it.done;
 /**
  * Missing: past its due time and not checked off, whatever the class site shows (since 2026-11-16). Done is the
  * student's checkmark only, so work that isn't checked off is shown as missing; at worst they check it off. The site's
- * "handed in" or "graded" still shows on the row as a hint.
+ * "handed in" still shows on the row as a hint.
+ * One exception (since 2026-11-18): work the class site shows graded with a score isn't missing. It shows its grade
+ * ("Class Site: Graded 1/10") and waits, unchecked, for the student to check it off, so a low grade with an
+ * instructor's comment is seen and never crossed off for them (itemRules.hasGrade).
  */
-export const isMissing = (it: ScholarItem, now = new Date()) => !it.done && !it.withdrawn && pastDue(it, now);
+export const isMissing = (it: ScholarItem, now = new Date()) => !it.done && !it.withdrawn && !hasGrade(it) && pastDue(it, now);
 
 function pastDue(it: ScholarItem, now: Date) {
   if (!TODO.has(it.type) || IN_CLASS.has(it.type) || isDone(it) || it.optional) return false;

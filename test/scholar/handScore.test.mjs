@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { classSiteTag } from '../../src/components/scholar/itemRules.ts';
+import { classSiteTag, gradeLevel, hasGrade } from '../../src/components/scholar/itemRules.ts';
 
 const require = createRequire(import.meta.url);
 require('../worker/electronStub.cjs');
@@ -109,6 +109,29 @@ test('a score never makes work graded: only work the class site calls graded get
 test('two different scores for the same title: no score is shown rather than a guess', () => {
   assert.equal(got.clash.handIn, 'graded');
   assert.equal(got.clash.handScore, null);
+});
+
+test('graded with a score is not Missing (hasGrade), but a letter-only grade or a hand-in alone still is', () => {
+  // isMissing (kinds.tsx) is `!done && !withdrawn && !hasGrade && pastDue`: hasGrade is the only thing that changed.
+  assert.equal(hasGrade(got.real), true);
+  assert.equal(hasGrade(got.zero), true, 'a zero is a grade too: shown, never hidden as Missing');
+  assert.equal(hasGrade(got.letter), false, 'no points score: nothing to check it by, so it stays Missing');
+  assert.equal(hasGrade(got.plain), false);
+  assert.equal(hasGrade({ handIn: 'submitted', handScore: '8/10' }), false);
+  assert.equal(hasGrade({ handIn: null, handScore: null }), false);
+});
+
+test('grade color: a 1/10 reads low, never green', () => {
+  assert.equal(gradeLevel('1/10'), 'low');
+  assert.equal(gradeLevel('0/5'), 'low');
+  assert.equal(gradeLevel('4.9/10'), 'low');
+  assert.equal(gradeLevel('5/10'), 'fair');
+  assert.equal(gradeLevel('6.9/10'), 'fair');
+  assert.equal(gradeLevel('7/10'), 'good');
+  assert.equal(gradeLevel('10/10'), 'good');
+  assert.equal(gradeLevel('8/0'), null);
+  assert.equal(gradeLevel(null), null);
+  assert.equal(gradeLevel('A'), null);
 });
 
 test('classSiteTag: the wording on a row, and nothing for work that is checked off', () => {

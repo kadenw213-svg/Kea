@@ -204,6 +204,22 @@ export function classSiteTag(it: Pick<ScholarItem, 'done' | 'handIn' | 'handScor
   return null;
 }
 
+/**
+ * Graded with a score the class site gave (since 2026-11-18): real feedback to read, so it is never Missing. It is still
+ * not done: it waits, unchecked and showing its grade, until the student checks it off themselves (a 1/10 with an
+ * instructor's comment must not slip by). Graded work with no points score (a letter only) can't be told from a
+ * mismatched title, so it still counts as Missing.
+ */
+export const hasGrade = (it: Pick<ScholarItem, 'handIn' | 'handScore'>) => it.handIn === 'graded' && !!it.handScore;
+
+/** How good a score is, for the tag's color: 'good' (70% and up), 'fair' (50 to 70), 'low' (under 50), null when unknown. */
+export function gradeLevel(score: string | null | undefined): 'good' | 'fair' | 'low' | null {
+  const m = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/.exec(String(score ?? ''));
+  if (!m || !Number(m[2])) return null;
+  const f = Number(m[1]) / Number(m[2]);
+  return f >= 0.7 ? 'good' : f >= 0.5 ? 'fair' : 'low';
+}
+
 // ---------- Where it's handed in, in words ----------
 const shortRoom = (loc: string) => (loc === 'Online' ? 'Online' : loc.split(',').pop()!.trim());
 /**

@@ -53,7 +53,7 @@ import { SetupWizard } from './Setup';
 import { ScansView, FromAnotherDevice } from './ScansView';
 import { CATEGORIES, Colors, LinkGroups, TODO, categoryOf, isDone, isMissing, openLink, primaryLink, placeKind, assignmentDoc, extendedInfo, setClassColor, setTypeColor, useColors } from './kinds';
 import { AssignmentGuide, OriginalWording, useGuides } from './Guide';
-import { COUNTS_AS_DUE, classSiteTag, relatedText, handInText, panelLinks, platformLine, platformName, quickVerb, shorten, studyChapters, typeLabel, folderIdOf } from './itemRules';
+import { COUNTS_AS_DUE, classSiteTag, gradeLevel, hasGrade, relatedText, handInText, panelLinks, platformLine, platformName, quickVerb, shorten, studyChapters, typeLabel, folderIdOf } from './itemRules';
 import { StudyPlayer } from './Study';
 import { ResourcesView } from './Resources';
 import { MessagesView } from './Messages';
@@ -434,7 +434,7 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
           )}
           {it.opensAt && <span className="opens-tag" title={`Opens on your class site ${opensText(it.opensAt)}`}>Opens {new Date(it.opensAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
           {classSiteTag(it) && (
-            <span className="hand-tag" title="What your class site shows. Kea doesn't check work off for you: check it off once it's really done.">
+            <span className={`hand-tag ${hasGrade(it) ? `graded ${gradeLevel(it.handScore) || ''}` : ''}`} title="What your class site shows. Kea doesn't check work off for you: check it off once you've seen it and it's really done.">
               {classSiteTag(it)}
             </span>
           )}
@@ -1709,6 +1709,11 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
           <AlertTriangle size={15} /> Missing: this was due {/^(Today|Tomorrow|Yesterday)$/.test(dayName(it.date)) ? dayName(it.date).toLowerCase() : `on ${dayName(it.date)}`}
           {it.due ? ` at ${clock(it.due)}` : ''}, and it isn’t checked off.
           {classSiteTag(it) ? ` ${classSiteTag(it)}. Check it off if you’re done.` : ' Check it off if you already did it.'}
+        </div>
+      )}
+      {!it.done && hasGrade(it) && (
+        <div className={`grade-banner ${gradeLevel(it.handScore) || ''}`}>
+          <CheckCircle2 size={15} /> {classSiteTag(it)}. It stays on your list until you check it off, so you can read your instructor’s feedback first.
         </div>
       )}
       <div className="pn-facts">

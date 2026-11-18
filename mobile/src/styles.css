@@ -229,6 +229,32 @@ h2 {
   color: var(--text);
   font-size: 13.5px;
 }
+/* Graded work with a score: tinted by how good the grade is, so a low one stands out. */
+.ext-tag.graded {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+}
+.ext-tag.graded.fair {
+  background: color-mix(in srgb, var(--warning) 22%, transparent);
+  color: var(--warning);
+}
+.ext-tag.graded.low {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+  color: var(--danger);
+}
+.grade-banner {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--text);
+  font-size: 13.5px;
+}
+.grade-banner.fair {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+.grade-banner.low {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
 .next {
   padding: 14px;
   border: 1px solid;

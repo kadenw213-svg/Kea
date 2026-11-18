@@ -5,8 +5,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(new URL('../..', import.meta.url).pathname.replace(/^\/([a-z]:)/i, '$1'));
+// (fileURLToPath, not .pathname: a folder name with a space, like "Kea Suite", would come out as "Kea%20Suite".)
+const root = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
 /** Every class a stylesheet's rules style, by the first class of each compound selector (".a.b .c" gives a and c). */
