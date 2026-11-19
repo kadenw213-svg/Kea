@@ -1,3 +1,4 @@
+import { showPrint } from '../../lib/printPreview';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RotateCcw, RotateCw, FlipHorizontal2, FlipVertical2, ZoomIn, ZoomOut, Maximize, Save, MoreVertical, FileType2, Printer, Copy } from 'lucide-react';
 import type { Tab } from '../../store';
@@ -93,7 +94,7 @@ export default function ImageViewer({ tab, active }: { tab: Tab; active: boolean
   const print = async () => {
     const bytes = await render('image/png');
     const b64 = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
-    await api.printHtml(`<!doctype html><html><head><style>@page{margin:0.5in}body{margin:0;display:flex;justify-content:center}img{max-width:100%;max-height:100vh}</style></head><body><img src="data:image/png;base64,${b64}"></body></html>`);
+    await showPrint(`<!doctype html><html><head><style>@page{margin:0.5in}body{margin:0;display:flex;justify-content:center}img{max-width:100%;max-height:100vh}</style></head><body><img src="data:image/png;base64,${b64}"></body></html>`);
   };
   const copyToClipboard = async () => {
     try {

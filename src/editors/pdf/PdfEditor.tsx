@@ -1,3 +1,4 @@
+import { showPrint } from '../../lib/printPreview';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   MousePointer2,
@@ -1157,7 +1158,7 @@ export default function PdfEditor({ tab, active }: { tab: Tab; active: boolean }
       }
       html += '</body></html>';
       pdf.destroy();
-      await api.printHtml(html);
+      await showPrint(html);
     } catch (err: any) {
       toast(`Print failed: ${err.message}`, 'error');
     }

@@ -85,7 +85,7 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
   // Every editor can be designed in, so every editor carries the design knowledge. An editor's own tool replaces the
   // general one of the same name (the document's add_comment has the review format).
   const own = hooks.tools || [];
-  const all = [...t.filter((g) => !own.some((o) => o.name === g.name)), ...own, designGuideTool, findAssignmentTool, ...classTools];
+  const all = [...t.filter((g) => !own.some((o) => o.name === g.name)), ...own, designGuideTool, findAssignmentTool, ...sourceTools, ...windowTools, ...classTools];
   // Several edits in one step: each step re-sends the whole conversation, so batching is the biggest saving.
   all.push({
     name: 'apply_edits',
@@ -127,6 +127,66 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
   });
   return all;
 }
+
+// ---------- Kea's other windows: the school library and the class site ----------
+const windowTools: AssistantTool[] = [
+  {
+    name: 'window_read',
+    description:
+      'Read the page in the Kea window the student has open beside this one (the school library or a class-site page): its text and its buttons, links and boxes. Use it when they ask about “this page”, a search result or what is on screen there. It only reads; it never changes anything.',
+    input_schema: { type: 'object', properties: {} },
+    async run() {
+      const r = await api.windowAgent.read();
+      if (r.error) return r.error;
+      const controls = (r.controls || []).map((c) => `[${c.kind}] ${c.name}`).join('\n');
+      return `Window: ${r.label} · ${r.title}\n${r.url}\n\n${r.text}\n\nButtons, links and boxes on the page:\n${controls}`;
+    }
+  },
+  {
+    name: 'window_click',
+    description: 'Click a button or link in that window, named as it reads on the page (use window_read first to see the names). The student is asked to allow every click, so say what you are doing before you do it, and stop if they say no.',
+    input_schema: { type: 'object', properties: { text: { type: 'string', description: 'The button or link’s visible name' } }, required: ['text'] },
+    async run({ text }) {
+      const r = await api.windowAgent.click(String(text || ''));
+      return r.error || `Clicked “${r.clicked}”. Read the page again to see what changed.`;
+    }
+  },
+  {
+    name: 'window_type',
+    description: 'Fill in a text box in that window (a search box, for example), named by its label or placeholder. It never presses Enter or submits; click the page’s own button for that. The student is asked to allow every entry. Password and file boxes are never filled in.',
+    input_schema: { type: 'object', properties: { label: { type: 'string', description: 'The box’s label or placeholder' }, text: { type: 'string' } }, required: ['label', 'text'] },
+    async run({ label, text }) {
+      const r = await api.windowAgent.type(String(label || ''), String(text ?? ''));
+      return r.error || `Filled in “${r.filledIn}”. Click the page’s search or submit button when ready.`;
+    }
+  }
+];
+
+// ---------- Real sources: only what a registry confirms ----------
+const line = (s: import('./api').VerifiedSource) =>
+  `${s.authors.slice(0, 3).join(', ') || 'Unknown author'} (${s.year || 'n.d.'}). ${s.title}.${s.container ? ` ${s.container}.` : ''}${s.publisher ? ` ${s.publisher}.` : ''} ${s.doi ? `DOI: ${s.doi}` : s.isbn ? `ISBN: ${s.isbn}` : ''} ${s.url} [confirmed by ${s.verifiedBy}${s.linkChecked ? '; link opens' : '; link not checked'}]`;
+const sourceTools: AssistantTool[] = [
+  {
+    name: 'find_sources',
+    description:
+      'Find real articles and books on a topic for the student’s paper. Every result is confirmed to exist by Crossref or Open Library and its link was checked; nothing else is ever returned. Look in the student’s own class material first (class_search, find_assignment: the assigned readings and links), and use this for outside, scholarly or library-style sources. Never cite a source that is not in these results or confirmed by verify_source, and never invent authors, titles, DOIs or links. Add a chosen result with add_source.',
+    input_schema: { type: 'object', properties: { query: { type: 'string', description: 'What the source is about, e.g. "effects of sleep on memory in college students"' } }, required: ['query'] },
+    async run({ query }) {
+      const found = await api.sources.search(String(query || ''));
+      if (!found.length) return 'No confirmed sources matched. Say so, try different words, or ask the student to open their school library (Library button on the assignment bar) and bring a source back.';
+      return `${found.length} confirmed source${found.length === 1 ? '' : 's'}:\n${found.map((s, i) => `${i + 1}. ${line(s)}`).join('\n')}`;
+    }
+  },
+  {
+    name: 'verify_source',
+    description: 'Check that one source really exists, given its DOI, ISBN or web link. Use it on any source the student pasted or you remember before putting it in their paper. Returns its confirmed details, or says it could not be confirmed (then do not use it).',
+    input_schema: { type: 'object', properties: { source: { type: 'string', description: 'A DOI (10.xxxx/…), an ISBN, or an https link' } }, required: ['source'] },
+    async run({ source }) {
+      const s = await api.sources.verify(String(source || ''));
+      return s ? `Confirmed: ${line(s)}` : 'Could not be confirmed: no registry or page holds a record for that. Do not cite it; tell the student.';
+    }
+  }
+];
 
 /** The student's assignments from Kea Scholar (their class site), with instructions and the rubric when the site has one. */
 const findAssignmentTool: AssistantTool = {

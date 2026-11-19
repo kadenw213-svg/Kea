@@ -1,3 +1,4 @@
+import { showPrint } from '../../lib/printPreview';
 import { useEffect, useRef, useState } from 'react';
 import { Save, Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Layers as LayersIcon, History as HistoryIcon, SlidersHorizontal, Settings2 } from 'lucide-react';
 import type { Tab, AiHooks } from '../../store';
@@ -166,7 +167,7 @@ function Workspace({ tab, active, e }: { tab: Tab; active: boolean; e: Engine })
   const print = async () => {
     const bytes = await pngBytes();
     const b64 = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
-    await api.printHtml(`<!doctype html><html><head><style>@page{margin:0.5in}body{margin:0;display:flex;justify-content:center}img{max-width:100%;max-height:100vh}</style></head><body><img src="data:image/png;base64,${b64}"></body></html>`);
+    await showPrint(`<!doctype html><html><head><style>@page{margin:0.5in}body{margin:0;display:flex;justify-content:center}img{max-width:100%;max-height:100vh}</style></head><body><img src="data:image/png;base64,${b64}"></body></html>`);
   };
 
   const aiRef = useRef<AiHooks>(null as any);

@@ -1,3 +1,5 @@
+import { dropLightText } from '../../lib/printShell';
+import { showPrint } from '../../lib/printPreview';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -486,7 +488,7 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     exportFile(`${baseName(tab.name)}.html`, { name: 'Web page', ext: 'html', build: async () => textToBytes(printableHtml(editor!, tab.name, false, metaRef.current)) });
   const print = async () => {
     await renderAllMath(editor!.getJSON());
-    await api.printHtml(printableHtml(editor!, tab.name, true, metaRef.current), { noMargins: !metaRef.current.pageless });
+    await showPrint(printableHtml(editor!, tab.name, true, metaRef.current), { noMargins: !metaRef.current.pageless }, baseName(tab.name));
   };
 
   // AI "Comment" mode adds threads through the same path as the comment rail.
@@ -1492,7 +1494,7 @@ function printableHtml(editor: Editor, title: string, forPrint: boolean, meta: D
   }
   // Print and PDF: only pictures inside the document (data:) go to the print page, which loads nothing else. A picture
   // linked from the web isn't shown in the editor either (Kea's window doesn't load web pictures), so it's left out.
-  if (forPrint) body = onlyEmbeddedImages(body);
+  if (forPrint) body = dropLightText(onlyEmbeddedImages(body));
   const embedded = btoa(unescape(encodeURIComponent(JSON.stringify(meta))));
   const pageW = (meta.page.landscape ? meta.page.height : meta.page.width).toFixed(3);
   const pageH = (meta.page.landscape ? meta.page.width : meta.page.height).toFixed(3);

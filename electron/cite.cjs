@@ -137,4 +137,4 @@ function register({ log }) {
   });
 }
 
-module.exports = { register };
+module.exports = { register, lookupUrl: byUrl };

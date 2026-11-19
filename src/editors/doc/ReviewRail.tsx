@@ -25,6 +25,29 @@ function Avatar({ name }: { name: string }) {
   );
 }
 
+/** A comment's words: long ones fold after a few lines, with Show more, so one comment never takes over the column. */
+function Clamped({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 260 || text.split(/\r?\n/).length > 5;
+  return (
+    <div className={`rv-text ${long && !open ? 'clamped' : ''}`}>
+      {text}
+      {long && (
+        <button
+          className="rv-more"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(!open);
+          }}
+        >
+          {open ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 type Item = { kind: 'comment'; id: string; from: number; thread: CommentThread; quote: string } | { kind: 'change'; id: string; from: number; change: Change; pair?: Change };
 
 /**
@@ -112,8 +135,19 @@ export function ReviewRail({
       next[it.kind + it.id] = top;
       bottom = top + (cardRefs.current.get(it.kind + it.id)?.offsetHeight || 80) + 8;
     }
+    // The column is as tall as its last card, so the page's scroll area always has room for every card.
+    next.__h = bottom;
     if (JSON.stringify(next) !== JSON.stringify(tops)) setTops(next);
   });
+
+  // A card that grows or shrinks (a reply, "Show more") moves the cards below it.
+  const [, relayout] = useState(0);
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => relayout((n) => n + 1));
+    cardRefs.current.forEach((el) => ro.observe(el));
+    return () => ro.disconnect();
+  }, [items]);
 
   useEffect(() => {
     setDraft('');
@@ -154,7 +188,7 @@ export function ReviewRail({
           )}
         </div>
       )}
-      <div className="rv-cards" ref={cardsRef}>
+      <div className="rv-cards" ref={cardsRef} style={{ height: tops.__h || undefined }}>
         {items.map((it) => {
           const key = it.kind + it.id;
           const isActive = active === it.id;
@@ -321,7 +355,7 @@ export function ReviewRail({
                           {t.tag && <span>{t.tag}</span>}
                         </div>
                       )}
-                      <div className="rv-text">{t.text}</div>
+                      <Clamped text={t.text} />
                       {t.rewrite && (
                         <div className="rv-rewrite">
                           <span className="rv-rewrite-label">Suggested wording</span>

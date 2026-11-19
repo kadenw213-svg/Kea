@@ -3144,3 +3144,18 @@ summary.gd-label {
   text-decoration: line-through;
   opacity: 0.7;
 }
+
+/* Readings: what they are, the real textbook link, and what a chapter was built from */
+.tb-note { font-size: 12.5px; margin: 0 0 8px; max-width: 70ch; }
+.tb-real { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; margin: 0 0 12px; }
+.tb-real .input { min-width: 220px; }
+.tb-built { font-size: 12.5px; margin-top: 8px; }
+
+/* Calendar → Share (calendar link) */
+.share-cal { position: relative; display: inline-block; }
+.share-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(380px, 90vw); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.share-pop p { margin: 0; overflow-wrap: anywhere; }
+.share-head { display: flex; align-items: center; justify-content: space-between; }
+.share-url { width: 100%; box-sizing: border-box; font-size: 12px; }
+.share-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.share-err { color: var(--danger); }

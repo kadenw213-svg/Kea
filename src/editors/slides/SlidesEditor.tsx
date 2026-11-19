@@ -1,3 +1,4 @@
+import { showPrint } from '../../lib/printPreview';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
@@ -539,7 +540,7 @@ function SlidesInner({ tab, active, initial }: { tab: Tab; active: boolean; init
   };
   const exportPdf = () => exportFile(`${baseName(tab.name)}.pdf`, { name: 'PDF', ext: 'pdf', build: () => api.pdfFromHtml(staticHtml()) });
   const print = async () => {
-    await api.printHtml(staticHtml());
+    await showPrint(staticHtml(), undefined, baseName(tab.name));
   };
   const aiRef = useRef<AiHooks>(null as any);
   // The Claude Assistant's slide tools. Titles are one line; bodies are lines of text, each a bullet.

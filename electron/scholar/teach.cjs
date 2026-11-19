@@ -32,6 +32,7 @@ Write Markdown for a narrow side pane:
 - End the lesson with "### Remember" and one or two sentences.
 - Math in LaTeX: $...$ inline, $$...$$ on its own line. Short paragraphs, lists where they help, **bold** for key terms. No emoji, no tables, no headings other than these.
 - About 250 to 600 words: complete, without padding.
+- When a picture would teach this better (anatomy, cell or tissue structures, lab equipment, a cycle or pathway, a map), add up to two fenced blocks with the language "figure" right after the opening sentences, each holding JSON like {"search": "heart anterior view labeled diagram", "caption": "The four chambers", "parts": ["right atrium", "left ventricle"]}. Kea finds a real, openly licensed picture for the search words (choose specific words that name the subject and say labeled or diagram); you never see it, so never describe how it looks or where a label sits. List in "parts" the structures the lesson names, in order, and refer to them by name in the text. Leave the blocks out when text teaches it just as well.
 
 Be accurate at college level and use the course's terms. If the question's stored answer looks wrong, say so plainly and explain the right one.
 

@@ -179,7 +179,7 @@ export function SetupWizard({ onDone, target }: { onDone?(): void; target?: stri
     <div className="setup">
       <Step done={claudeOk} busy={busy === 'claude'} icon={<Bot size={16} />} title="Your Claude account">
         <p>
-          Kea uses <b>Claude Code</b>, Anthropic's free app for your Claude account, to read your class site and write your textbook chapters. It runs hidden in the
+          Kea uses <b>Claude Code</b>, Anthropic's free app for your Claude account, to read your class site and write your readings. It runs hidden in the
           background with Kea's own instructions. It can read only Kea's class folder, your class site and the school platforms your classes link to, and it saves only into Kea.
         </p>
         <p className="muted">
@@ -201,7 +201,7 @@ export function SetupWizard({ onDone, target }: { onDone?(): void; target?: stri
 
       <Step done={engineOk} busy={busy === 'engine'} icon={<Cpu size={16} />} title="The scan engine">
         <p>
-          The exact parts of a scan (reading dates, matching each assignment once, building textbook PDFs) are done by a small Python program that comes with Kea.{' '}
+          The exact parts of a scan (reading dates, matching each assignment once, building reading PDFs) are done by a small Python program that comes with Kea.{' '}
           <b>uv</b> installs Python and what it needs, in your own user folder (no admin rights, nothing system-wide).
         </p>
         {!c.uv ? (

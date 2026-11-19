@@ -40,7 +40,7 @@ export function runLabel(run: string | null) {
   if (!run) return '';
   if (run === 'migration') return 'when history began';
   const task = run.split(':')[0];
-  const names: Record<string, string> = { daily: 'the daily check', sync: 'a weekly update', import: 'a class scan', study: 'a textbook run', practice: 'a practice run', resume: 'a resumed scan' };
+  const names: Record<string, string> = { daily: 'the daily check', sync: 'a weekly update', import: 'a class scan', study: 'a readings run', practice: 'a practice run', resume: 'a resumed scan' };
   if (names[task]) return names[task];
   return run.startsWith('manual') ? 'a manual fix' : run;
 }

@@ -45,12 +45,12 @@ const ins = (table, row) => d.run(`INSERT INTO ${table} (${Object.keys(row).join
 ins('courses', { id: 'c1', course_code: 'BIO111', name: 'Biology', term: 'Fall 2026', status: 'active', is_synthetic: 0 });
 const work = (id, title, type = 'assignment') => ins('academic_items', { id, course_id: 'c1', item_type: type, title, date: day(-3), due_time: '23:59', status: 'active' });
 // What the class site calls graded (the daily check's grade entries); grades.json below holds the scores.
-const graded = (title) => ins('digest_entries', { course_id: 'c1', kind: 'grade', external_id: title, payload_json: JSON.stringify({ title }), first_seen: day(-2) });
+const graded = (title, comment) => ins('digest_entries', { course_id: 'c1', kind: 'grade', external_id: title, payload_json: JSON.stringify({ title, ...(comment ? { comment } : {}) }), first_seen: day(-2) });
 
 work('real', 'Lab 4 Report');
 graded('Lab 4 Report');
 work('zero', 'Quiz 2');
-graded('Quiz 2');
+graded('Quiz 2', 'Please come see me about this one.');
 work('letter', 'Essay 1');
 graded('Essay 1');
 work('plain', 'Problem Set 3'); // a score exists, but nothing says it is graded
@@ -90,7 +90,7 @@ test('graded work shows the score the class site gives, in the form 8/10', () =>
 test('a zero is kept and shown, so it can be told from a real grade', () => {
   assert.equal(got.zero.handIn, 'graded');
   assert.equal(got.zero.handScore, '0/5');
-  assert.equal(classSiteTag(got.zero), 'Class Site: Graded 0/5');
+  assert.equal(classSiteTag(got.zero), 'Class Site: Graded 0/5 · has a comment');
 });
 
 test('a grade with no points (a letter) has no score; the tag falls back to the plain wording', () => {
@@ -141,4 +141,12 @@ test('classSiteTag: the wording on a row, and nothing for work that is checked o
   assert.equal(classSiteTag({ done: null, handIn: 'not_submitted', handScore: null }), null);
   assert.equal(classSiteTag({ done: null, handIn: null }), null);
   assert.equal(classSiteTag({ done: '2026-11-01T10:00:00Z', handIn: 'graded', handScore: '8/10' }), null);
+});
+
+test('graded work whose instructor left a comment says so, and one without does not', () => {
+  assert.equal(got.zero.handComment, true);
+  assert.equal(got.real.handComment, false);
+  assert.equal(got.none.handComment, false);
+  assert.equal(classSiteTag(got.zero), 'Class Site: Graded 0/5 · has a comment');
+  assert.equal(classSiteTag(got.real), 'Class Site: Graded 8/10');
 });

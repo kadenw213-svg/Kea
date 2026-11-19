@@ -176,7 +176,7 @@ export const SECTIONS: Section[] = [
           { value: 'light', label: 'Light' },
           { value: 'sepia', label: 'Sepia (warm paper)' }
         ],
-        help: 'Colours all of Kea: menus, the calendar, quizzes and textbook pages. Kea on your phone uses the same theme. Scans and printing stay white.'
+        help: 'Colours all of Kea: menus, the calendar, quizzes and reading pages. Kea on your phone uses the same theme. Scans and printing stay white.'
       },
       {
         key: 'appearance.accent',
@@ -511,7 +511,7 @@ export const SECTIONS: Section[] = [
           { value: 'light', label: 'Always white' },
           { value: 'dark', label: 'Always dark' }
         ],
-        help: 'Textbooks and PDFs take the theme\u2019s colours unless you pick one here. Scans stay white.'
+        help: 'Readings and PDFs take the theme\u2019s colours unless you pick one here. Scans stay white.'
       },
       { key: 'pdf.highlightColor', label: 'Highlighter colour', type: 'color', default: '#ffd400' },
       { key: 'pdf.inkColor', label: 'Pen colour', type: 'color', default: '#1a73e8', advanced: true },
@@ -551,7 +551,7 @@ export const SECTIONS: Section[] = [
     id: 'scholar',
     label: 'Classes and study',
     icon: 'GraduationCap',
-    blurb: 'Your classes, their textbooks and calendar. Classes from your class sites are kept up to date by scans that run in the background with your own Claude, or with Kea’s shared Claude (limited).',
+    blurb: 'Your classes, their readings and calendar. Classes from your class sites are kept up to date by scans that run in the background with your own Claude, or with Kea’s shared Claude (limited).',
     fields: [
       {
         key: 'scholar.scanEvery',
@@ -594,10 +594,11 @@ export const SECTIONS: Section[] = [
         options: [['1', 'Day'], ['2', '2 days'], ['3', '3 days'], ['7', 'Week']].map(([value, label]) => ({ value, label })),
         help: 'Outside platforms’ gradebooks can’t be checked without Claude, so on the other days only classes with something new are read. Every day uses a little more of your Claude plan.'
       },
-      { key: 'scholar.curriculumCheck', label: 'Match chapters to each syllabus', type: 'toggle', default: true, help: 'Every day Kea compares each class’s chapters with its syllabus outcomes and topical outline by itself; Claude only fixes a class when something doesn’t match. Shown under each class → Textbook → Syllabus.' },
+      { key: 'scholar.curriculumCheck', label: 'Match chapters to each syllabus', type: 'toggle', default: true, help: 'Every day Kea compares each class’s chapters with its syllabus outcomes and topical outline by itself; Claude only fixes a class when something doesn’t match. Shown under each class → Readings → Syllabus.' },
       { key: 'scholar.notifyMessages', group: 'Notifications', label: 'Notify me of new messages', type: 'toggle', default: true, help: 'With who sent it and the whole message. Click it to answer in Kea with the reply box open.' },
       { key: 'scholar.notifyAnnouncements', label: 'Notify me of announcements', type: 'toggle', default: true },
       { key: 'scholar.notifyGrades', label: 'Notify me of new grades and feedback', type: 'toggle', default: true },
+      { key: 'library.url', label: 'School library', type: 'text', default: '', help: 'Your school library’s web address (for example library.myschool.edu). The assignment bar’s Library button opens it in its own Kea window, where you sign in with your school account and find sources.' },
       { key: 'scholar.notifyQuietClasses', label: 'Classes to keep quiet', type: 'text', default: '', advanced: true, help: 'Class codes, separated by commas (BIO1112, ENG1001). Their news still goes to Notifications.' },
       { key: 'scholar.notifyQuietFrom', label: 'Quiet hours from', type: 'text', default: '', advanced: true, help: 'Like 22:00. Notifications in the quiet hours come without a sound.' },
       { key: 'scholar.notifyQuietTo', label: 'Quiet hours until', type: 'text', default: '', advanced: true, help: 'Like 07:00.' },
@@ -628,8 +629,8 @@ export const SECTIONS: Section[] = [
         advanced: true,
         help: 'Opus is better at not missing a requirement buried in a long lab manual or rubric.'
       },
-      { key: 'scholar.studyPdfs', group: 'Textbooks and study', label: "Write each week's textbook chapters", type: 'toggle', default: true, help: "Each class's chapters for the week ahead, written from what the class covers and its tests." },
-      { key: 'scholar.questionBanks', label: 'Keep a question bank for every chapter', type: 'toggle', default: true, help: 'Each chapter with a textbook gets saved practice questions (Quiz me in the textbook), and more are written when you run low. Written once, then free to take on every device.' },
+      { key: 'scholar.studyPdfs', group: 'Readings and study', label: "Write each week's readings", type: 'toggle', default: true, help: "Each class's chapters for the week ahead, written from what the class covers and its tests." },
+      { key: 'scholar.questionBanks', label: 'Keep a question bank for every chapter', type: 'toggle', default: true, help: 'Each chapter with a reading gets saved practice questions (Quiz me in the reading), and more are written when you run low. Written once, then free to take on every device.' },
       {
         key: 'scholar.bankSize',
         label: 'Questions per chapter',
@@ -641,9 +642,9 @@ export const SECTIONS: Section[] = [
       },
       { key: 'scholar.instructorHints', label: 'Write practice when the instructor points something out', type: 'toggle', default: true, help: 'When a message or announcement says the test will have problems like something ("practice these, the practical will have more like them"), Kea always keeps it word for word for every practice set it writes for that class. With this on, it also writes 25 questions in that style for the next test right away (at most one set per class every three days).' },
       { key: 'scholar.pictureQuestions', label: 'Picture questions for identification', type: 'toggle', default: true, help: 'Chapters that test recognizing things (lab practicals, specimens, structures, anatomy, glassware, molecular shapes) get a set of questions that show a real picture from Wikimedia Commons and ask what it is. Pictures are saved with the questions, so they work offline.' },
-      { key: 'scholar.depthReviews', label: 'Review chapters at exam depth', type: 'toggle', default: true, advanced: true, help: 'When your teacher posts something new for a test within three weeks (a study focus, a review sheet or key), Claude checks those chapters against it and writes a practice set for that test where they fall short. It fixes explanations only on questions you got wrong, and rewrites a textbook chapter only when it’s missing something the test asks. Nothing new from the teacher, no run.' },
+      { key: 'scholar.depthReviews', label: 'Review chapters at exam depth', type: 'toggle', default: true, advanced: true, help: 'When your teacher posts something new for a test within three weeks (a study focus, a review sheet or key), Claude checks those chapters against it and writes a practice set for that test where they fall short. It fixes explanations only on questions you got wrong, and rewrites a reading only when it’s missing something the test asks. Nothing new from the teacher, no run.' },
       { key: 'scholar.weekStart', group: 'Calendar', label: 'Weeks start on', type: 'select', default: '0', options: [['0', 'Sunday'], ['1', 'Monday'], ['2', 'Tuesday'], ['3', 'Wednesday'], ['4', 'Thursday'], ['5', 'Friday'], ['6', 'Saturday']].map(([value, label]) => ({ value, label })), help: 'The first day of each week in the calendar. Kea on your phone has its own setting (Settings → Calendar).' },
-      { key: 'scholar.parallelRuns', group: 'Practice questions', label: 'Question sets written at once', type: 'number', default: 3, min: 1, max: 20, step: 1, help: 'When you write questions for several chapters, this many are written at the same time (each chapter is its own Claude run). More is faster and uses your Claude plan’s limit sooner; the same total either way. Class checks and textbooks still run one at a time.' },
+      { key: 'scholar.parallelRuns', group: 'Practice questions', label: 'Question sets written at once', type: 'number', default: 3, min: 1, max: 20, step: 1, help: 'When you write questions for several chapters, this many are written at the same time (each chapter is its own Claude run). More is faster and uses your Claude plan’s limit sooner; the same total either way. Class checks and readings still run one at a time.' },
       { key: 'scholar.maxTurns', label: 'Most steps in one Claude run', type: 'number', default: 400, min: 10, max: 2000, step: 10, unit: 'steps', advanced: true, help: 'A run that takes more steps than this stops (each page read, file saved or command is a step), so a run that goes in circles can’t use up your Claude plan. A big class’s first scan takes a few hundred.' },
       { key: 'hub.relayMinutes', group: 'Kea’s shared Claude', label: 'Let a shared-Claude scan read my class site for at most', type: 'number', default: 60, min: 10, max: 480, step: 5, unit: 'minutes', advanced: true, help: 'While a scan you asked for runs on Kea’s shared Claude, it reads your class site through this Kea (read-only), and Kea shows a notification. After this long, Kea stops answering it, and the scan ends.' },
       { key: 'hub.workerMinutes', label: 'Kea owner: longest a shared-Claude job may take', type: 'number', default: 45, min: 10, max: 240, step: 5, unit: 'minutes', advanced: true, help: 'Only on the Kea owner’s computer. A job still running then is stopped, with Claude and everything it started, and reported as over time.' },

@@ -102,7 +102,7 @@ const TASKS = {
     label: 'Connection test'
   },
   // This week's textbook chapters (no class site needed; open educational sources for figures and checking facts).
-  study: { prompt: (arg) => `/weekly-study-pdf ${arg || ''}`.trim(), tools: [...BASE, ...REFERENCE, 'WebSearch', 'mcp__kea__kea_progress', 'mcp__kea__kea_notify'], label: 'Writing textbook chapters' },
+  study: { prompt: (arg) => `/weekly-study-pdf ${arg || ''}`.trim(), tools: [...BASE, ...REFERENCE, 'WebSearch', 'mcp__kea__kea_progress', 'mcp__kea__kea_notify'], label: 'Writing readings' },
   // A practice exam or flashcard deck the student asked for, written from the brief Kea prepares (the tests' focus, the
   // chapters' notes and review sheets Kea downloaded itself): Claude only reads that and writes.
   practice: { prompt: (arg) => require('./study.cjs').prompt(arg), tools: [...BASE, 'mcp__kea__kea_progress'], label: 'Making study material' },
@@ -285,7 +285,7 @@ TASKS.study.pre = async (job, step) => {
     ...missing.map((b) => ({ b, arg: `${b.banner_id} only ${(b.write_only || []).join(', ')}` })),
     ...due.filter((b) => !missing.some((x) => x.banner_id === b.banner_id)).map((b) => ({ b, arg: b.banner_id }))
   ];
-  if (!runs.length) return { skip: re ? 'Kea couldn’t find the week that teaches that chapter.' : m ? 'Every chapter already has its textbook.' : 'Every chapter already has its textbook, and every week starting soon is ready.', ok: re ? false : true };
+  if (!runs.length) return { skip: re ? 'Kea couldn’t find the week that teaches that chapter.' : m ? 'Every chapter already has its reading.' : 'Every chapter already has its reading, and every week starting soon is ready.', ok: re ? false : true };
   // The chapters' notes (guided readings, review sheets and keys, every test's focus) as plain text, so the writer
   // teaches everything the instructor will ask. The same files practice sets use; Kea fetches and converts, no Claude.
   const uv = await workspace.findUv();
@@ -481,7 +481,7 @@ async function depthAfter(code, course, started) {
     course: code,
     kind: 'update',
     title: `${code}: new practice for ${[...new Set(gaps.map((g) => g.next_test?.title).filter(Boolean))].join(', ') || 'your next test'}`,
-    body: `The teacher posted new material that these chapters didn't fully cover yet:\n${gaps.map((g) => `• ${g.label}: ${String(g.note || '').slice(0, 220)}`).join('\n')}${books.length ? `\nTextbook chapters being updated: ${books.map((g) => g.label).join(', ')}.` : ''}`
+    body: `The teacher posted new material that these chapters didn't fully cover yet:\n${gaps.map((g) => `• ${g.label}: ${String(g.note || '').slice(0, 220)}`).join('\n')}${books.length ? `\nReadings being updated: ${books.map((g) => g.label).join(', ')}.` : ''}`
   });
 }
 
@@ -1010,7 +1010,7 @@ const TYPICAL = { daily: 4, import: 25, sync: 6, study: 10, practice: 2, probe: 
 const classOf = (arg) => (/^([A-Z]{2,5}\d{3,5})\b/.exec(String(arg || '').trim()) || [])[1] || '';
 // Old entries don't say whether Claude ran: a skip (Kea's own check found nothing) is short and says so.
 const usedClaude = (e) =>
-  e.claude !== undefined ? e.claude : !/no Claude usage|Dry run|one at a time|already has its textbook|already in Kea|^Skipped|isn’t signed in|aren’t set up|No classes to update/i.test(e.summary || '') && new Date(e.end) - new Date(e.start) > 20000;
+  e.claude !== undefined ? e.claude : !/no Claude usage|Dry run|one at a time|already has its reading|already in Kea|^Skipped|isn’t signed in|aren’t set up|No classes to update/i.test(e.summary || '') && new Date(e.end) - new Date(e.start) > 20000;
 const median = (xs) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : 0);
 
 /** What a run of this task (for this class, when known) usually takes: { ms, turns }. Learned from past runs. */

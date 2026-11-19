@@ -1344,3 +1344,61 @@
     background-color: color-mix(in srgb, var(--accent) 18%, transparent);
   }
 }
+
+/* ---------- Comment column: always in view, wraps its words, never taller than its cards ---------- */
+.rv-rail {
+  /* Stays at the right edge of the scroll area, so a long comment or a wide page never pushes the cards out of sight. */
+  position: sticky;
+  right: 12px;
+  z-index: 4;
+  min-width: 0;
+}
+.rv-cards {
+  min-height: 1px;
+}
+.rv-card {
+  box-sizing: border-box;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rv-card .rv-text,
+.rv-card .rv-change,
+.rv-card .rv-rewrite {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.rv-card.active {
+  /* (Slid left a little; kept inside the column so it can't leave the screen.) */
+  transform: none;
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.rv-text.clamped {
+  max-height: 9.2em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 70%, transparent);
+  mask-image: linear-gradient(#000 70%, transparent);
+}
+.rv-more {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.rv-text.clamped .rv-more {
+  position: relative;
+}
+@media (max-width: 1100px) {
+  .rv-rail {
+    flex-basis: 240px;
+    min-width: 200px;
+    background: var(--bg);
+    box-shadow: -8px 0 12px -8px rgba(0, 0, 0, 0.35);
+    padding-left: 6px;
+  }
+}

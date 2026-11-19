@@ -667,7 +667,7 @@ function register() {
   });
   // (With the Kea Hub's class sessions this person is in, from what hubClasses.cjs last read.)
   // Every class site's items on one calendar; one class's from its own site.
-  handleApp(ipcMain, 'scholar:items', async (_e, q) => {
+  const itemsFor = async (q) => {
     q = q || {};
     const fromSite = /^(hub|work):/.test(String(q.courseId || ''))
       ? []
@@ -682,7 +682,10 @@ function register() {
       if (!q.courseId) hub = [...hub, ...require('../hubOrg.cjs').calendarItems(q)];
     } catch {}
     return hub.length || profiles.ids().length > 1 ? sortItems([...fromSite, ...hub]) : fromSite;
-  });
+  };
+  handleApp(ipcMain, 'scholar:items', (_e, q) => itemsFor(q));
+  // The calendar link (calendarShare.cjs) sends the same items the Calendar screen shows.
+  require('../calendarShare.cjs').setProvider(itemsFor);
   // The Claude tab's assignment picker: graded work to choose from, and one assignment written out whole.
   handleApp(ipcMain, 'scholar:assignments', () => sites.union(() => require('./assignmentBrief.cjs').list().catch(() => [])));
   // The Claude tab's class tools: search what Kea has, read one result, and send a lookup to read the class site.

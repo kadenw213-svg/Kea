@@ -159,6 +159,7 @@ function studentWindow() {
     webPreferences: { partition: partition(), sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'browser-preload.cjs') }
   });
   pageWin = w;
+  require('../windowAgent.cjs').track(w, 'class site');
   prepareSession(session.fromPartition(partition()));
   guardWindow(w);
   w.webContents.on('context-menu', (_e, params) => contextMenu(w, params));

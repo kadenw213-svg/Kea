@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useUi, DialogRequest } from '../store';
+import { PrintPreview } from './PrintPreview';
 
 function Dialog({ d }: { d: DialogRequest }) {
   const [value, setValue] = useState(d.input?.value ?? '');
@@ -72,6 +73,7 @@ export function Overlays() {
   return (
     <>
       {dialogs.length > 0 && <Dialog key={dialogs[0].id} d={dialogs[0]} />}
+      <PrintPreview />
       <div className="toasts">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`}>

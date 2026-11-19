@@ -1,3 +1,4 @@
+import { showPrint } from '../../lib/printPreview';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   Undo2,
@@ -1087,7 +1088,7 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
     return html + '</table></body></html>';
   };
   const print = async () => {
-    await api.printHtml(printHtml());
+    await showPrint(printHtml(), undefined, baseName(tab.name));
   };
   const exportPdf = () => exportFile(`${baseName(tab.name)}.pdf`, { name: 'PDF', ext: 'pdf', build: () => api.pdfFromHtml(printHtml()) });
 

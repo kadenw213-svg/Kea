@@ -12,6 +12,7 @@ import { uid } from '../../lib/util';
 import { setting } from '../../lib/settings';
 import { OwnClaudeSwitch, useOwnClaudeOnly } from '../account/OwnClaude';
 import { latexToText } from '../../lib/lookup';
+import { figuresOf, withoutBlocks, type FigureRequest } from '../../lib/teachFigures';
 
 /** The question in front of the student, answered: what Teach is about. */
 export interface TeachSubject {
@@ -31,8 +32,8 @@ md.renderer.rules.link_open = (tokens, i, options, _env, self) => {
   return self.renderToken(tokens, i, options);
 };
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-/** The lesson without its check block (also while it's still being written). */
-const bodyOf = (text: string) => text.replace(/```check[\s\S]*?(```|$)/, '').trim();
+/** The lesson without its check and figure blocks (also while it's still being written). */
+const bodyOf = withoutBlocks;
 const modelName = (m: string) => (/opus/i.test(m) ? 'Opus' : /haiku/i.test(m) ? 'Haiku' : 'Sonnet');
 
 /** A lesson's Markdown, with its math typeset (offline, MathJax) once drawn and readable text until then. */
@@ -68,6 +69,33 @@ function LessonText({ text }: { text: string }) {
     };
   }, [html]);
   return <div ref={ref} className="tc-text" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/** A figure the lesson asked for: a real, openly licensed picture with its credit and the parts to find in it. Nothing shows when none is found. */
+function Figure({ req }: { req: FigureRequest }) {
+  const [pic, setPic] = useState<{ image: string; title: string; credit: string; page: string } | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    api.figures
+      .find(req.search)
+      .then((p) => live && setPic(p))
+      .catch(() => live && setPic(null));
+    return () => {
+      live = false;
+    };
+  }, [req.search]);
+  if (pic === undefined) return <div className="tc-fig muted">Finding a picture…</div>;
+  if (!pic) return null;
+  return (
+    <figure className="tc-fig">
+      <img src={pic.image} alt={req.caption || pic.title} />
+      <figcaption>
+        {req.caption && <b>{req.caption}</b>}
+        {req.parts.length > 0 && <div className="tc-fig-parts">Find in the picture: {req.parts.map((p, i) => `${i + 1}. ${p}`).join(' · ')}</div>}
+        <div className="tc-fig-credit">{pic.credit}</div>
+      </figcaption>
+    </figure>
+  );
 }
 
 /** The check questions: pick one to see if it's right and why. Practice only, never saved. */
@@ -114,7 +142,8 @@ function LessonView({ lesson }: { lesson: Lesson }) {
   return (
     <div className="tc-lesson">
       {lesson.focus && <div className="tc-focus">On “{lesson.focus}”</div>}
-      <LessonText text={lesson.text} />
+      {figuresOf(lesson.text).map((f, i) => <Figure key={`${lesson.id}${i}`} req={f} />)}
+      <LessonText text={bodyOf(lesson.text)} />
       <Checks checks={lesson.checks} />
       {lesson.followups.map((f, i) => (
         <div key={i} className="tc-follow">

@@ -287,6 +287,21 @@ export interface KeaApi {
   };
   searchContent(query: string, roots?: string[]): Promise<{ path: string; name: string; snippet: string; nameHit: boolean }[]>;
   citeLookup(query: string): Promise<any>;
+  /** The sidebar working in Kea's other windows (the school library, the class site): read the page; click and type only with a yes each time (electron/windowAgent.cjs). */
+  windowAgent: {
+    read(): Promise<{ error?: string; label?: string; title?: string; url?: string; text?: string; controls?: { kind: string; name: string }[] }>;
+    click(text: string): Promise<{ error?: string; ok?: boolean; clicked?: string }>;
+    type(label: string, value: string): Promise<{ error?: string; ok?: boolean; filledIn?: string }>;
+  };
+  /** A real, openly licensed picture for a lesson, with its credit (electron/figures.cjs), or null. */
+  figures: { find(search: string): Promise<{ image: string; title: string; credit: string; page: string } | null> };
+  /** The school library in its own window (electron/library.cjs). open() rejects with what to do when no address is set. */
+  library: { open(): Promise<{ ok: boolean }>; has(): Promise<boolean> };
+  /** Real sources only (electron/sources.cjs): search finds articles and books a registry confirms; verify checks one DOI, ISBN or link. */
+  sources: {
+    search(query: string): Promise<VerifiedSource[]>;
+    verify(input: string): Promise<VerifiedSource | null>;
+  };
   /** The video editor's main-process helpers (electron/media.cjs): streaming media, export writing, and the index cache. */
   video: {
     mediaUrl(path: string): string;
@@ -389,6 +404,13 @@ export interface KeaApi {
   onDriveProgress(cb: (m: DriveProgress) => void): () => void;
   printHtml(html: string, opts?: { noMargins?: boolean }): Promise<boolean>;
   pdfFromHtml(html: string, opts?: { pageSize?: string; noMargins?: boolean }): Promise<Uint8Array>;
+  /** Share the Calendar to Google Calendar (or Apple, Outlook) through a private link (electron/calendarShare.cjs). */
+  calendarShare: {
+    status(): Promise<CalendarShareStatus>;
+    on(): Promise<CalendarShareStatus>;
+    off(): Promise<CalendarShareStatus>;
+    now(): Promise<CalendarShareStatus>;
+  };
   getPendingOpen(): Promise<string[]>;
   getPathForFile(file: File): string;
   onOpenPaths(cb: (paths: string[]) => void): () => void;
@@ -1281,6 +1303,30 @@ export interface ReviewQueue {
   counts: Record<string, { due: number; fresh: number; total: number; learning?: number; mastered?: number; code: string; test?: { date: string; title: string } | null }>;
   newToday: number;
 }
+export interface VerifiedSource {
+  kind: string;
+  title: string;
+  authors: string[];
+  container: string;
+  publisher: string;
+  year: string;
+  doi?: string;
+  isbn?: string;
+  url: string;
+  /** Which registry confirmed the record (Crossref, Open Library, or the page itself). */
+  verifiedBy: string;
+  /** The link was opened and it leads to the source. */
+  linkChecked: boolean;
+}
+export interface CalendarShareStatus {
+  enabled: boolean;
+  /** The private link to subscribe to (kept on this computer so it can be copied again). */
+  url: string | null;
+  count: number;
+  updatedAt: number | null;
+  error: string | null;
+  signedIn: boolean;
+}
 export interface ScholarReading {
   chapter: string;
   title: string | null;
@@ -1336,6 +1382,8 @@ export interface ScholarItem {
   handIn: 'graded' | 'submitted' | 'not_submitted' | null;
   /** The score the class site shows when it says graded: "8/10", or "0/10" for a zero. Null when none is known. */
   handScore?: string | null;
+  /** The instructor left a comment on this graded work. */
+  handComment?: boolean;
   /** The outside platforms it's done on (Science Interactive, ALEKS…), through the class's own link. */
   platformLinks?: ScholarLink[];
   /** The work it goes with: the lab a discussion is built on, or the other half of a discussion. */
@@ -1379,6 +1427,8 @@ export interface ScholarChapter {
   vocabulary: string;
   readingUrl: string | null;
   readingLabel: string | null;
+  /** What the reading was built from, in plain words (the class's own objectives, sections, tests...). */
+  builtFrom?: string[];
   pdf: ScholarReading['pdf'];
 }
 export interface ScholarCourseDetail {

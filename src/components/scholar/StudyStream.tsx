@@ -285,7 +285,7 @@ export function StudyStream({ scope, set }: { scope?: StreamScope; set?: StudySe
               </button>
             )}
             {side.hasBook(card.served.item.chapter) && (
-              <button className={`btn sm ${side.tab === 'book' ? 'tonal' : 'ghost'}`} onClick={() => side.show(side.tab === 'book' ? null : 'book')} title="Read where the textbook teaches this">
+              <button className={`btn sm ${side.tab === 'book' ? 'tonal' : 'ghost'}`} onClick={() => side.show(side.tab === 'book' ? null : 'book')} title="Read where the reading teaches this">
                 <BookOpen size={14} /> Book
               </button>
             )}

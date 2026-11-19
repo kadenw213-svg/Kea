@@ -1,3 +1,4 @@
+import { showPrint } from '../../lib/printPreview';
 import { useEffect, useRef, useState } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState, Compartment } from '@codemirror/state';
@@ -219,7 +220,7 @@ export default function CodeEditor({ tab, active }: { tab: Tab; active: boolean 
   };
   const print = async () => {
     const text = viewRef.current!.state.doc.toString();
-    await api.printHtml(
+    await showPrint(
       `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(tab.name)}</title><style>@page{margin:0.6in}body{margin:0}pre{font:10pt Consolas,'Courier New',monospace;white-space:pre-wrap;word-break:break-word}</style></head><body><pre>${escapeHtml(text)}</pre></body></html>`
     );
   };

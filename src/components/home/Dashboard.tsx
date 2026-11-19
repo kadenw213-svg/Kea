@@ -306,7 +306,7 @@ export function Dashboard({ showSchool }: { showSchool: boolean }) {
             <Plus size={16} />
             <span className="dmain">
               <span className="dtitle">Add your classes</span>
-              <span className="dsub">What’s due, your readings and textbooks, and studying, kept up to date for you.</span>
+              <span className="dsub">What’s due, your readings, and studying, kept up to date for you.</span>
             </span>
             <ChevronRight size={16} />
           </button>

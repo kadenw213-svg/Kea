@@ -203,7 +203,7 @@ function StatusCard({ run, queue, paused, dev, lastRun }: { run: RunProgress | n
         <button className="btn sm ghost" onClick={() => start('sync')} title="Readings, links and anything that changed in each class">
           <Activity size={14} /> Update readings
         </button>
-        <button className="btn sm ghost" onClick={() => start('study')} title="Textbook chapters still to write">
+        <button className="btn sm ghost" onClick={() => start('study')} title="Readings still to write">
           <BookOpen size={14} /> Write chapters
         </button>
         <button className="btn sm ghost icon-only" onClick={() => openSettings('scholar')} title="When and how often Kea checks">

@@ -278,6 +278,20 @@ contextBridge.exposeInMainWorld('api', {
   },
   searchContent: (q, roots) => ipcRenderer.invoke('search:content', q, roots),
   citeLookup: (q) => ipcRenderer.invoke('cite:lookup', q),
+  windowAgent: {
+    read: () => ipcRenderer.invoke('window:read'),
+    click: (text) => ipcRenderer.invoke('window:click', text),
+    type: (label, value) => ipcRenderer.invoke('window:type', label, value)
+  },
+  figures: { find: (search) => ipcRenderer.invoke('figures:find', search) },
+  library: {
+    open: () => ipcRenderer.invoke('library:open'),
+    has: () => ipcRenderer.invoke('library:has')
+  },
+  sources: {
+    search: (q) => ipcRenderer.invoke('sources:search', q),
+    verify: (q) => ipcRenderer.invoke('sources:verify', q)
+  },
   // The video editor: stream big media files from disk, and write exports as they're rendered (electron/media.cjs).
   video: {
     mediaUrl: (p) => ipcRenderer.sendSync('video:media-url', p),
@@ -393,6 +407,12 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('drives:progress', fn);
   },
   printHtml: (html, opts) => ipcRenderer.invoke('print:html', html, opts),
+  calendarShare: {
+    status: () => ipcRenderer.invoke('calendarShare:status'),
+    on: () => ipcRenderer.invoke('calendarShare:on'),
+    off: () => ipcRenderer.invoke('calendarShare:off'),
+    now: () => ipcRenderer.invoke('calendarShare:now')
+  },
   pdfFromHtml: (html, opts) => ipcRenderer.invoke('export:pdf-from-html', html, opts),
   getPendingOpen: () => ipcRenderer.invoke('app:get-pending-open'),
   getPathForFile: (file) => {

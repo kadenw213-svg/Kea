@@ -112,7 +112,7 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
                         <b>{ch.label.replace(/^Chapter /, 'Ch ')}</b> {ch.title || ''}
                       </span>
                       <span className="muted res-ch-sub">
-                        {[ch.pdf ? (ch.pdf.pages ? `${ch.pdf.pages} pages` : 'Textbook chapter') : 'Textbook being written', n ? `${n} questions` : 'no questions yet'].join(' · ')}
+                        {[ch.pdf ? (ch.pdf.pages ? `${ch.pdf.pages} pages` : 'Reading') : 'Reading being written', n ? `${n} questions` : 'no questions yet'].join(' · ')}
                       </span>
                     </div>
                     <div className="res-acts">

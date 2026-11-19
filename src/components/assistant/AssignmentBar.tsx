@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { ClipboardList, RefreshCw, ChevronDown, ChevronUp, X, Sparkles, ListChecks, Square } from 'lucide-react';
+import { ClipboardList, RefreshCw, ChevronDown, ChevronUp, X, Sparkles, ListChecks, Square, MessageSquare, FileText, ListOrdered, Library } from 'lucide-react';
 import { useSetting } from '../../lib/settings';
 import { useAssignments, fileKey, assignmentSig, type AssignmentRef } from '../../lib/assignmentContext';
 import { linkAssignment } from '../../lib/assignmentLink';
@@ -10,18 +10,54 @@ import { ask } from '../../lib/assistant';
 import { useAssistant, setAssistantOpen, chatOf } from './assistantStore';
 import { AssignmentPicker } from './AssignmentPicker';
 import { toast } from '../../store';
+import { api } from '../../lib/api';
 import { useKeaModes } from '../../lib/modes';
+import { AssignmentChecklist } from './AssignmentChecklist';
 import '../../styles/assistant.css';
 
 /** Which tab's assignment picker is open from its editor (the File menu's "For an assignment…"). */
 const usePicker = create<{ tabId: string | null }>(() => ({ tabId: null }));
 export const openAssignmentPicker = (tabId: string) => usePicker.setState({ tabId });
 
-/** Ask Claude (in the Claude tab) to go through the file against the assignment, leaving margin comments. */
-export function checkAgainstRubric(tabId: string, rubric: boolean) {
+/** Whether Claude leaves pointer comments in the margin when it checks the file (on unless turned off; remembered per file). */
+const pointersKey = (tabId: string) => `kea.assistant.pointers.${fileKey(tabId)}`;
+export function pointerComments(tabId: string): boolean {
+  try {
+    return localStorage.getItem(pointersKey(tabId)) !== 'off';
+  } catch {
+    return true;
+  }
+}
+const setPointerComments = (tabId: string, on: boolean) => {
+  try {
+    localStorage.setItem(pointersKey(tabId), on ? 'on' : 'off');
+  } catch {}
+};
+
+/**
+ * Ask Claude (in the Claude tab) to go through the file against the assignment. With pointer comments on it leaves
+ * short margin comments that point at what to change to meet the rubric; off, it answers in the chat only and leaves
+ * the document untouched.
+ */
+export function checkAgainstRubric(tabId: string, rubric: boolean, comments: boolean = pointerComments(tabId)) {
   if (chatOf(tabId).busy) return toast('Claude is still working on this file. Try again when it’s done.');
   setAssistantOpen(true);
-  ask(tabId, rubric ? 'Review this against my assignment’s rubric' : 'Review this against my assignment’s instructions');
+  const what = rubric ? 'my assignment’s rubric' : 'my assignment’s instructions';
+  ask(tabId, comments ? `Review this against ${what}` : `Review this against ${what}. Don’t leave margin comments or change the document: answer in the chat with the estimated level for each criterion and the top fixes.`);
+}
+
+/** Ask Claude to gather everything the assignment says to do into one clearly marked section at the top of the file. */
+export function gatherInstructions(tabId: string) {
+  if (chatOf(tabId).busy) return toast('Claude is still working on this file. Try again when it’s done.');
+  setAssistantOpen(true);
+  ask(tabId, 'Put this assignment’s instructions at the top of this document as one section headed “Instructions (delete when finished)”: the steps, what to hand in, the requirements (length, sources, format) and how it’s graded, from the assignment above, with nothing invented. Don’t change anything else in the document.');
+}
+
+/** Ask Claude for an outline of questions to answer, so the thinking and the thesis stay the student’s. */
+export function outlineHelp(tabId: string) {
+  if (chatOf(tabId).busy) return toast('Claude is still working on this file. Try again when it’s done.');
+  setAssistantOpen(true);
+  ask(tabId, 'Help me outline this assignment. Don’t write any of my paper. Give me an outline where every part is a question for me to answer (for the intro, each main point, the evidence for it, and the conclusion), based on what the assignment and rubric ask for. Put it in the chat, and ask if I want it inserted in the document.');
 }
 
 /**
@@ -58,6 +94,7 @@ function Bar({ tabId, active, assignment, onChange }: { tabId: string; active: b
   const roughOk = useSetting<boolean>('assistant.gradeFromInstructions') !== false;
   const autoFirst = useSetting<boolean>('assistant.gradeAutoFirst') === true;
   const [open, setOpen] = useState(false);
+  const [pointers, setPointers] = useState(() => pointerComments(tabId));
   // What Kea knows: whether the assignment has a rubric, and whether Claude is connected (null while finding out).
   const [rubric, setRubric] = useState<boolean | null>(null);
   const [ready, setReady] = useState<boolean | null>(null);
@@ -161,13 +198,34 @@ function Bar({ tabId, active, assignment, onChange }: { tabId: string; active: b
           </div>
         )}
         <span className="ab-grow" />
-        <button className="ab-link" disabled={chatBusy} title={rubric === false ? 'Claude goes through your file against the instructions and leaves comments' : 'Claude goes through your file against the rubric and leaves comments'} onClick={() => checkAgainstRubric(tabId, rubric !== false)}>
+        <button className="ab-link" disabled={chatBusy} title="Gathers everything the assignment says to do into one section at the top of this document" onClick={() => gatherInstructions(tabId)}>
+          <FileText size={14} /> Instructions
+        </button>
+        <button className="ab-link" disabled={chatBusy} title="An outline made of questions for you to answer. Claude doesn’t write your paper" onClick={() => outlineHelp(tabId)}>
+          <ListOrdered size={14} /> Outline help
+        </button>
+        <button className="ab-link" title="Open your school library in its own window to find sources" onClick={() => api.library.open().catch((err: any) => toast(err?.message || 'Couldn’t open the library.', 'error'))}>
+          <Library size={14} /> Library
+        </button>
+        <label className="ab-toggle" title="When on, Claude leaves short comments in the margin pointing at what to change to meet the rubric. When off, it answers in the chat only.">
+          <input
+            type="checkbox"
+            checked={pointers}
+            onChange={(e) => {
+              setPointers(e.target.checked);
+              setPointerComments(tabId, e.target.checked);
+            }}
+          />
+          <MessageSquare size={13} /> Comments
+        </label>
+        <button className="ab-link" disabled={chatBusy} title={(rubric === false ? 'Claude goes through your file against the instructions' : 'Claude goes through your file against the rubric') + (pointers ? ' and leaves comments' : '')} onClick={() => checkAgainstRubric(tabId, rubric !== false, pointers)}>
           <ListChecks size={14} /> {rubric === false ? 'Check against instructions' : 'Check against rubric'}
         </button>
         <button className="icon-btn sm" title="Not for an assignment" onClick={() => linkAssignment(tabId, null)}>
           <X size={13} />
         </button>
       </div>
+      <AssignmentChecklist tabId={tabId} file={fileKey(tabId)} assignment={assignment} active={active} />
       {open && result && (
         <div className="ab-how">
           <table>

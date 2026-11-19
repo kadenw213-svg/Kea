@@ -59,6 +59,7 @@ import { ResourcesView } from './Resources';
 import { MessagesView } from './Messages';
 import { ChangesBox, ItemHistory } from './History';
 import { Fold, FoldGroup, useFold, useFoldPlace } from '../Fold';
+import { ShareCalendar } from './ShareCalendar';
 import { openClassStudy, openStudyHub } from './StudyHub';
 import { studyRoute } from './studyIds';
 import { Avatar, VerifiedBadge, useAccount } from './Account';
@@ -456,7 +457,7 @@ function ItemRow({ ctx, it, showCourse = true, showDate = false }: { ctx: Ctx; i
         {reading && (
           <button
             className="btn sm tonal"
-            title={`Open ${reading.chapter} in the textbook`}
+            title={`Open ${reading.chapter} in the reading`}
             onClick={(e) => {
               e.stopPropagation();
               openReading(reading);
@@ -900,6 +901,7 @@ function CalendarView({ ctx, courseId }: { ctx: Ctx; courseId?: string }) {
           </button>
         </div>
         <div className="cal-tools">
+          {!courseId && <ShareCalendar />}
           <ColorsMenu ctx={ctx} />
           <div className="seg-mini">
             {(
@@ -1515,9 +1517,71 @@ function Textbook({ c }: { c: ScholarCourseDetail }) {
   if (!c.chapters.length) return <div className="sch-empty">No chapters yet. They appear after the class is scanned.</div>;
   return (
     <div className="tb-list">
+      <div className="muted tb-note">
+        Readings are study aids Kea writes from your class’s own materials. They are not your instructor’s textbook, and your class site stays the source of truth.
+      </div>
+      <RealBook courseId={c.id} />
       {c.chapters.map((ch, i) => (
         <TextbookChapter key={ch.label} c={c} ch={ch} first={i === 0} />
       ))}
+    </div>
+  );
+}
+/** The class's real textbook, remembered on this device: type its ISBN and Kea checks that the book exists. */
+function RealBook({ courseId }: { courseId: string }) {
+  const key = `kea.realBook.${courseId}`;
+  const read = () => {
+    try {
+      return JSON.parse(localStorage.getItem(key) || 'null') as { isbn: string; title: string; by: string } | null;
+    } catch {
+      return null;
+    }
+  };
+  const [book, setBook] = useState(read);
+  const [isbn, setIsbn] = useState('');
+  const [busy, setBusy] = useState(false);
+  const link = async () => {
+    const q = isbn.replace(/[\s-]/g, '');
+    if (!/^(\d{9}[\dXx]|\d{13})$/.test(q)) return toast('That doesn’t look like an ISBN (10 or 13 digits).', 'error');
+    setBusy(true);
+    try {
+      const r = await api.citeLookup(q);
+      const b = { isbn: q, title: r?.title || 'Untitled', by: (r?.authors || []).map((a: any) => [a.first, a.last].filter(Boolean).join(' ')).filter(Boolean).join(', ') };
+      try {
+        localStorage.setItem(key, JSON.stringify(b));
+      } catch {}
+      setBook(b);
+      setIsbn('');
+    } catch (err: any) {
+      toast(err?.message || 'Kea couldn’t find a book with that ISBN.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const clear = () => {
+    try {
+      localStorage.removeItem(key);
+    } catch {}
+    setBook(null);
+  };
+  return (
+    <div className="tb-real">
+      {book ? (
+        <>
+          <BookOpen size={14} /> <b>{book.title}</b>
+          {book.by ? ` · ${book.by}` : ''} · ISBN {book.isbn}
+          <button className="btn sm ghost" onClick={clear}>
+            Remove
+          </button>
+        </>
+      ) : (
+        <>
+          <input className="input sm" value={isbn} placeholder="Your real textbook’s ISBN" onChange={(e) => setIsbn(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && link()} />
+          <button className="btn sm" onClick={link} disabled={busy || !isbn.trim()}>
+            Link textbook
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -1568,6 +1632,9 @@ function TextbookChapter({ c, ch, first }: { c: ScholarCourseDetail; ch: Scholar
                 </button>
               )}
               {ch.pdf && <RewriteButton code={c.code} chapter={ch.label} />}
+              {ch.builtFrom && ch.builtFrom.length > 0 && (
+                <div className="muted tb-built">Made from this class’s {ch.builtFrom.join(', ')}.</div>
+              )}
             </div>
           )}
         </div>
@@ -1847,7 +1914,7 @@ function ItemPanel({ ctx, item: it, onClose }: { ctx: Ctx; item: ScholarItem; on
                     <BookOpen size={14} /> Read
                   </button>
                 ) : (
-                  <span className="muted sch-nopdf">{r.unlisted ? 'No textbook for this class in Kea yet' : 'Being written'}</span>
+                  <span className="muted sch-nopdf">{r.unlisted ? 'No reading for this class in Kea yet' : 'Being written'}</span>
                 )}
               </div>
               {r.summary && <div className="rd-summary">{r.summary}</div>}
@@ -1930,7 +1997,7 @@ function AddClass({ first }: { first: boolean }) {
     if (!folder) return;
     try {
       const r = await api.scholar.importExisting(folder, target);
-      toast(`Classes brought in${r.pdfs ? `, with ${r.pdfs} textbook chapter file${r.pdfs === 1 ? '' : 's'}` : ''}.`, 'success');
+      toast(`Classes brought in${r.pdfs ? `, with ${r.pdfs} reading file${r.pdfs === 1 ? '' : 's'}` : ''}.`, 'success');
       useScholar.getState().set({ view: { name: 'calendar' } });
       reloadScholar();
     } catch (err: any) {
@@ -1940,7 +2007,7 @@ function AddClass({ first }: { first: boolean }) {
   return (
     <div className="sch-page">
       <h1 className="sch-title">{first ? 'Add your first class' : 'Add a class'}</h1>
-      <p className="sch-sub">Each class gets its own textbook, calendar and study materials.</p>
+      <p className="sch-sub">Each class gets its own readings, calendar and study materials.</p>
       <div className="add-cards">
         {showHub && (
           <button className="add-card" onClick={() => useScholar.getState().set({ view: { name: 'hub' } })}>
@@ -1959,7 +2026,7 @@ function AddClass({ first }: { first: boolean }) {
           <button className="add-card" onClick={() => fromSchool(false)}>
             <GraduationCap size={26} />
             <div className="add-name">From your school</div>
-            <div className="add-desc">Kea keeps your assignments, tests, readings, announcements and a weekly textbook up to date from your class site.</div>
+            <div className="add-desc">Kea keeps your assignments, tests, readings, announcements and weekly readings up to date from your class site.</div>
           </button>
         )}
         <button className="add-card" onClick={() => setOther(true)}>
@@ -1980,7 +2047,7 @@ function AddClass({ first }: { first: boolean }) {
           <h2>Connect your Claude account to scan your classes</h2>
           <p>
             A class's first scan reads its syllabus, modules, assignments and tests once. Kea uses <b>Claude</b> for that, through your own Claude account, because it needs judgment
-            to find everything and get dates exactly right. It also writes each week's textbook chapter from what your class covers. Your own Claude needs no online Kea account.
+            to find everything and get dates exactly right. It also writes each week’s reading from what your class covers. Your own Claude needs no online Kea account.
           </p>
           <ul>
             <li>After the first scan, Kea checks your classes itself every morning and only asks Claude about classes where something changed.</li>

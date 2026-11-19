@@ -271,7 +271,7 @@ export function ReadingPane({ file, target, onClose, bare }: { file: string; tar
         const vp = (await b.pdf.getPage(1)).getViewport({ scale: 1 });
         if (live) setDoc({ ...b, ratio: vp.height / vp.width });
       })
-      .catch(() => live && setError('Kea couldn’t open this chapter’s textbook.'));
+      .catch(() => live && setError('Kea couldn’t open this chapter’s reading.'));
     return () => {
       live = false;
     };

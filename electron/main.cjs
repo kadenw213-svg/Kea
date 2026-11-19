@@ -387,6 +387,10 @@ app.whenReady().then(() => {
   require('./history.cjs').register({ log });
   require('./google.cjs').register({ log });
   require('./cite.cjs').register({ log });
+  require('./sources.cjs').register();
+  require('./library.cjs').register();
+  require('./figures.cjs').register();
+  require('./windowAgent.cjs').register();
   require('./wiki.cjs').register();
   require('./assistant.cjs').register();
   require('./assistantPlan.cjs').register({ getWindow: () => mainWindow });
@@ -397,6 +401,7 @@ app.whenReady().then(() => {
   require('./hub.cjs').register();
   require('./keaCloud.cjs').register();
   require('./hubOrg.cjs').register();
+  require('./calendarShare.cjs').register();
   require('./servers.cjs').register();
   // (Only the installed Kea opens kea:// links: a development copy never takes them over.)
   if (app.isPackaged) app.setAsDefaultProtocolClient('kea');
@@ -647,8 +652,11 @@ function printSessionGet() {
   return printSession;
 }
 /** The page's HTML with the policy as its first <head> element (before anything it could load). */
+// Printing is always on white paper, whatever theme Kea is in. This base comes first, so a page's own styles
+// (a slide's background, a highlighted cell) still win; it only decides what a page that sets nothing looks like.
+const PRINT_BASE = '<style>:root{color-scheme:light}html,body{background:#fff;color:#202124}</style>';
 function withPrintCsp(html) {
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${PRINT_CSP}">`;
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${PRINT_CSP}">${PRINT_BASE}`;
   const s = String(html);
   if (/<head(\s[^>]*)?>/i.test(s)) return s.replace(/<head(\s[^>]*)?>/i, (m) => `${m}${meta}`);
   if (/<html(\s[^>]*)?>/i.test(s)) return s.replace(/<html(\s[^>]*)?>/i, (m) => `${m}<head>${meta}</head>`);

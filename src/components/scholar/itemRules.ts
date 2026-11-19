@@ -197,9 +197,10 @@ export function panelLinks(it: ScholarItem, guide?: { steps?: { links?: { url: s
  * "Class site: graded" when the score isn't known, "Class site: handed in", or null. Only a hint: Kea never checks work
  * off for you.
  */
-export function classSiteTag(it: Pick<ScholarItem, 'done' | 'handIn' | 'handScore'>): string | null {
+export function classSiteTag(it: Pick<ScholarItem, 'done' | 'handIn' | 'handScore'> & { handComment?: boolean }): string | null {
   if (it.done) return null;
-  if (it.handIn === 'graded') return it.handScore ? `Class Site: Graded ${it.handScore}` : 'Class site: graded';
+  // (A graded item whose instructor left a comment says so, so a low score's feedback is read, not missed.)
+  if (it.handIn === 'graded') return it.handScore ? `Class Site: Graded ${it.handScore}${it.handComment ? ' · has a comment' : ''}` : 'Class site: graded';
   if (it.handIn === 'submitted') return 'Class site: handed in';
   return null;
 }

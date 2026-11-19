@@ -380,12 +380,15 @@ function evidence(db, file) {
   // already calls graded (see handScore); it is never evidence that something was handed in.
   const scores = new Map();
   out.scores = scores;
-  const addScore = (courseId, title, score) => {
+  // Course id → [{t}]: graded work the instructor left a comment on (from the daily check's grade entries).
+  const comments = new Map();
+  out.comments = comments;
+  const addScore = (courseId, title, score, comment) => {
     const t = norm(title);
     const s = cleanScore(score);
     if (!t || !s || CATEGORY_TOTAL.test(t)) return;
     if (!scores.has(courseId)) scores.set(courseId, []);
-    scores.get(courseId).push({ t, score: s });
+    scores.get(courseId).push({ t, score: s, comment: !!String(comment || '').trim() });
   };
   const add = (courseId, title, state, opens = null, x = null) => {
     const t = norm(title);
@@ -398,13 +401,20 @@ function evidence(db, file) {
   };
   for (const r of rows(db, "SELECT course_id, payload_json FROM digest_entries WHERE kind = 'grade'")) {
     const p = json(r.payload_json, {});
-    if (!p.category) { add(r.course_id, p.title, 'graded'); addScore(r.course_id, p.title, p.score_text); }
+    if (!p.category) {
+      add(r.course_id, p.title, 'graded');
+      addScore(r.course_id, p.title, p.score_text, p.comment);
+      if (String(p.comment || '').trim() && norm(p.title)) {
+        if (!comments.has(r.course_id)) comments.set(r.course_id, []);
+        comments.get(r.course_id).push({ t: norm(p.title) });
+      }
+    }
   }
   // Kea's own grade check (grades.json, next to submissions.json): "8 / 10" per graded item, "0 / 10" for a zero.
   try {
     const g = JSON.parse(fs.readFileSync(path.join(path.dirname(file), '..', '..', 'grades.json'), 'utf8'));
     const ids = new Map(rows(db, 'SELECT id, course_code FROM courses').map((c) => [c.course_code, c.id]));
-    for (const [code, c] of Object.entries(g.byCourse || {})) if (ids.has(code)) for (const x of c.items || []) addScore(ids.get(code), x.title, x.score);
+    for (const [code, c] of Object.entries(g.byCourse || {})) if (ids.has(code)) for (const x of c.items || []) addScore(ids.get(code), x.title, x.score, x.comment || x.feedback);
   } catch {}
   // Grades read from outside platforms (ALEKS and the like) during weekly checks.
   for (const r of rows(db, 'SELECT course_id, title, is_missing FROM grade_snapshots')) add(r.course_id, r.title, r.is_missing ? 'not_submitted' : 'graded');
@@ -522,19 +532,29 @@ function handIn(r, ev) {
  * disagree (better to say nothing than the wrong score). Matches by title the way handIn does; work due ahead is never
  * graded, so it has no score.
  */
-function handScore(r, ev, state) {
-  if (state !== 'graded' || NEVER_GRADED.has(r.item_type)) return null;
+function scoresFor(r, ev, state) {
+  if (state !== 'graded' || NEVER_GRADED.has(r.item_type)) return [];
   const list = ev.scores?.get(r.course_id);
   const t = norm(r.title);
-  if (!list || t.length < 3) return null;
+  if (!list || t.length < 3) return [];
   const exact = list.filter((x) => x.t === t);
   let close = exact.length ? exact : list.filter((x) => sameWork(x.t, t));
   if (!close.length) {
     const bare = t.replace(/ handout$/, '').trim();
     if (bare !== t && bare.split(' ').length >= 2) close = list.filter((x) => sameWork(x.t, bare));
   }
-  const found = [...new Set(close.map((x) => x.score))];
+  return close;
+}
+function handScore(r, ev, state) {
+  const found = [...new Set(scoresFor(r, ev, state).map((x) => x.score))];
   return found.length === 1 ? found[0] : null;
+}
+/** Whether the instructor left a comment on this graded work (so it's read, not missed behind a low score). */
+function handComment(r, ev, state) {
+  if (handScore(r, ev, state) === null) return false;
+  if (scoresFor(r, ev, state).some((x) => x.comment)) return true;
+  const t = norm(r.title);
+  return (ev.comments?.get(r.course_id) || []).some((x) => x.t === t || sameWork(x.t, t));
 }
 
 /** When the item opens on the class site, if that's still ahead (an ISO time), else null. */
@@ -732,6 +752,7 @@ function itemOutRaw(r, course, banner, readings, done, rooms, ev) {
     handIn: ev ? handIn(r, ev) : null,
     // The class site's score for graded work ("8/10", or "0/10" for a zero), else null.
     handScore: ev ? handScore(r, ev, handIn(r, ev)) : null,
+    handComment: ev ? handComment(r, ev, handIn(r, ev)) : false,
     opensAt: ev ? opensAt(r, ev) : null,
     // Only the class's own chapters ("Inner Fish CH 6" is a side book, not the course's Chapter 6).
     readings: chapters
@@ -880,6 +901,20 @@ function inheritPlatforms(items) {
   }
 }
 
+/**
+ * What a chapter's reading is built from, in plain words: the class's own material that exists for it. A reading is a
+ * study aid Kea writes from these, never the class's textbook and never the source of truth.
+ */
+function builtFromOf({ sections, objectives, vocabulary, reading, tests }) {
+  const out = [];
+  if (objectives) out.push(`${objectives} learning objective${objectives === 1 ? '' : 's'}`);
+  if (sections) out.push(`${sections} section heading${sections === 1 ? '' : 's'}`);
+  if (vocabulary) out.push('vocabulary');
+  if (reading) out.push(`the class reading (${reading})`);
+  if (tests) out.push(`${tests} test${tests === 1 ? '' : 's'} that cover it`);
+  return out;
+}
+
 /** One class: its chapters (titles, sections, objectives, study PDF) and its weeks. */
 async function course(file, textbooks, done, id) {
   const db = await open(file);
@@ -888,18 +923,27 @@ async function course(file, textbooks, done, id) {
   const c = rows(db, 'SELECT * FROM courses WHERE id = ?', [id])[0];
   if (!c) return null;
   const readings = readingsFor(db, c.id, c.course_code, textbooks);
+  // The tests each chapter is covered by, to say what its reading was built from.
+  const testRows = rows(db, `SELECT title, covered_chapters_json FROM academic_items WHERE course_id = ? AND item_type IN ${TEST_TYPES} AND ${ACTIVE}`, [id]);
   const chapters = rows(db, 'SELECT * FROM chapter_topics WHERE course_id = ?', [id])
-    .map((t) => ({
-      label: t.chapter_label,
-      title: t.title,
-      summary: t.summary || null,
-      sections: json(t.sections_json, []),
-      objectives: [...json(t.objectives_json, []), ...json(t.added_objectives_json, [])],
-      vocabulary: [t.vocabulary, t.added_vocabulary].filter(Boolean).join('; '),
-      readingUrl: t.reading_url,
-      readingLabel: t.reading_label,
-      pdf: readings.pdfs.get(t.chapter_label) || null
-    }))
+    .map((t) => {
+      const sections = json(t.sections_json, []);
+      const objectives = [...json(t.objectives_json, []), ...json(t.added_objectives_json, [])];
+      const vocabulary = [t.vocabulary, t.added_vocabulary].filter(Boolean).join('; ');
+      const tests = testRows.filter((r) => coveredOf({ title: r.title, covered_chapters_json: r.covered_chapters_json }).some((ch) => sameChapter(ch, t.chapter_label))).length;
+      return {
+        label: t.chapter_label,
+        title: t.title,
+        summary: t.summary || null,
+        sections,
+        objectives,
+        vocabulary,
+        readingUrl: t.reading_url,
+        readingLabel: t.reading_label,
+        builtFrom: builtFromOf({ sections: sections.length, objectives: objectives.length, vocabulary: !!vocabulary, reading: t.reading_label || (t.reading_url ? 'the class reading link' : ''), tests }),
+        pdf: readings.pdfs.get(t.chapter_label) || null
+      };
+    })
     .sort((a, b) => chapterNumber(a.label) - chapterNumber(b.label));
   // (A chapter saved under its bare number, "33", next to "Chapter 33" is a copy of it: shown once.)
   const named = new Set(chapters.map((ch) => (/^(chapter|unit|module)\s+(\d+)$/i.exec(ch.label) || [])[2]).filter(Boolean));
