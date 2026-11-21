@@ -406,6 +406,19 @@ export interface KeaApi {
   onDriveProgress(cb: (m: DriveProgress) => void): () => void;
   printHtml(html: string, opts?: { noMargins?: boolean }): Promise<boolean>;
   pdfFromHtml(html: string, opts?: { pageSize?: string; noMargins?: boolean }): Promise<Uint8Array>;
+  /** Personal events on the Kea calendar: birthdays, appointments, bills, recertifications (electron/personalEvents.cjs). */
+  personal: {
+    list(): Promise<PersonalEvent[]>;
+    save(e: Partial<PersonalEvent>): Promise<PersonalEvent>;
+    remove(id: string): Promise<boolean>;
+  };
+  /** Google Calendar sync: Kea's calendar copied into a "Kea" calendar in Google Calendar (electron/gcal.cjs). */
+  gcal: {
+    status(): Promise<GcalStatus>;
+    connect(): Promise<GcalStatus>;
+    disconnect(): Promise<GcalStatus>;
+    sync(): Promise<GcalStatus>;
+  };
   /** Share the Calendar to Google Calendar (or Apple, Outlook) through a private link (electron/calendarShare.cjs). */
   calendarShare: {
     status(): Promise<CalendarShareStatus>;
@@ -1659,4 +1672,27 @@ export interface KeaCloudApi {
 }
 export interface KeaApi {
   keaCloud: KeaCloudApi;
+}
+
+/** A personal event on the Kea calendar. `remind`: minutes before (for all-day events, before 9:00 that day). */
+export interface PersonalEvent {
+  id: string;
+  title: string;
+  date: string;
+  allDay: boolean;
+  start?: string;
+  end?: string;
+  repeat: 'none' | 'weekly' | 'monthly' | 'yearly' | 'years';
+  every?: number;
+  until?: string;
+  remind: number[];
+  notes?: string;
+  location?: string;
+}
+export interface GcalStatus {
+  connected: boolean;
+  email: string | null;
+  lastSync: string | null;
+  count: number;
+  error: string | null;
 }

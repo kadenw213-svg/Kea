@@ -78,13 +78,13 @@ function keaGoogleEmail() {
   }
 }
 /** The address that asks Google for Drive access: one consent, added to what the person already allowed Kea. */
-function driveAuthorizeUrl({ clientId, port, challenge, state, loginHint }) {
+function driveAuthorizeUrl({ clientId, port, challenge, state, loginHint, scopes = SCOPES }) {
   const auth = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   auth.search = new URLSearchParams({
     client_id: clientId,
     redirect_uri: `http://127.0.0.1:${port}`,
     response_type: 'code',
-    scope: SCOPES.join(' '),
+    scope: scopes.join(' '),
     include_granted_scopes: 'true',
     code_challenge: challenge,
     code_challenge_method: 'S256',
@@ -112,7 +112,11 @@ async function tokenRequest(params) {
 }
 
 let pendingLogin = null;
-function signIn() {
+/**
+ * Ask Google for access (system browser, loopback redirect, PKCE, incremental consent) and return the tokens:
+ * { clientId, refresh_token, access_token, expires_at }. Used for Drive (signIn) and Google Calendar (gcal.cjs).
+ */
+function authorize(scopes = SCOPES) {
   const { id, secret } = client();
   const loginHint = keaGoogleEmail();
   if (pendingLogin) pendingLogin.cancel();
@@ -141,16 +145,8 @@ function signIn() {
         const port = server.address().port;
         const t = await tokenRequest({ code, client_id: id, client_secret: secret, code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: `http://127.0.0.1:${port}` });
         if (!t.refresh_token) throw new Error('Google didn’t give Kea lasting access. Try again from Kea.');
-        const s = { clientId: id, refresh_token: t.refresh_token, access_token: t.access_token, expires_at: Date.now() + (t.expires_in - 60) * 1000 };
-        saveSession(s);
-        try {
-          const about = await api('/about?fields=user(emailAddress,displayName)');
-          s.email = about.user?.emailAddress;
-          s.name = about.user?.displayName;
-          saveSession(s);
-        } catch {}
         done(true, 'You can close this tab and go back to Kea.');
-        finish(null, { email: s.email, name: s.name });
+        finish(null, { clientId: id, refresh_token: t.refresh_token, access_token: t.access_token, expires_at: Date.now() + (t.expires_in - 60) * 1000, scope: t.scope || '' });
       } catch (err) {
         done(false, String(err.message || err));
         finish(err.oauthError && refusedError(err.oauthError) ? coded('REFUSED', REFUSED) : err);
@@ -166,9 +162,30 @@ function signIn() {
     };
     pendingLogin = { cancel: () => finish(new Error('Replaced by a newer try.')) };
     server.listen(0, '127.0.0.1', () => {
-      shell.openExternal(driveAuthorizeUrl({ clientId: id, port: server.address().port, challenge, state, loginHint }));
+      shell.openExternal(driveAuthorizeUrl({ clientId: id, port: server.address().port, challenge, state, loginHint, scopes }));
     });
   });
+}
+
+/** Connect Google Drive: ask for access, keep it, and note which Google account it is. */
+async function signIn() {
+  const s = await authorize(SCOPES);
+  saveSession(s);
+  try {
+    const about = await api('/about?fields=user(emailAddress,displayName)');
+    s.email = about.user?.emailAddress;
+    s.name = about.user?.displayName;
+    saveSession(s);
+  } catch {}
+  return { email: s.email, name: s.name };
+}
+
+/** A fresh access token for a saved connection (renewed with its refresh token when it has expired). */
+async function refreshed(s) {
+  if (s.access_token && Date.now() < s.expires_at) return s;
+  const { id, secret } = clientFor(s);
+  const t = await tokenRequest({ client_id: id, client_secret: secret, refresh_token: s.refresh_token, grant_type: 'refresh_token' });
+  return { ...s, access_token: t.access_token, expires_at: Date.now() + (t.expires_in - 60) * 1000 };
 }
 
 async function accessToken() {
@@ -316,4 +333,4 @@ function status() {
 /** The Google account signed in to Kea, if any (its email). */
 const signedInEmail = () => loadSession()?.email || null;
 
-module.exports = { register, signedInEmail, _drive: { client, clientFor, driveAuthorizeUrl, status, keaGoogleEmail, refusedError, REFUSED, NOT_HERE } };
+module.exports = { register, signedInEmail, authorize, refreshed, _drive: { client, clientFor, driveAuthorizeUrl, status, keaGoogleEmail, refusedError, REFUSED, NOT_HERE } };

@@ -3197,3 +3197,42 @@ summary.gd-label {
   white-space: pre-wrap;
   user-select: text;
 }
+
+/* Calendar → Share: direct Google Calendar sync, then the private link (ShareCalendar.tsx). */
+.share-gsync {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.share-sub {
+  margin-top: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* Add to Kea calendar (PersonalEvent.tsx). */
+.pe-dialog {
+  width: 460px;
+}
+.pe-dialog .input,
+.pe-dialog .select {
+  width: 100%;
+  box-sizing: border-box;
+}
+.pe-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 10px 0;
+}
+.pe-row > div {
+  flex: 1 1 120px;
+}
+.pe-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  font-size: 13px;
+}

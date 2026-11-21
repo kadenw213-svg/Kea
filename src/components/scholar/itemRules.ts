@@ -55,6 +55,7 @@ export const TYPE_LABEL: Record<string, string> = {
   other_deadline: 'To do',
   weekly_reading: 'This week',
   work_shift: 'Work shift',
+  personal: 'Personal',
   office_hours: 'Office hours',
   midterm: 'Midterm'
 };

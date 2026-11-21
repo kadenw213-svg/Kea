@@ -681,6 +681,10 @@ function register() {
     try {
       if (!q.courseId) hub = [...hub, ...require('../hubOrg.cjs').calendarItems(q)];
     } catch {}
+    // The student's own events (Add to Kea calendar): birthdays, appointments, bills, recertifications.
+    try {
+      if (!q.courseId || q.courseId === 'personal') hub = [...hub, ...require('../personalEvents.cjs').calendarItems(q)];
+    } catch {}
     return hub.length || profiles.ids().length > 1 ? sortItems([...fromSite, ...hub]) : fromSite;
   };
   handleApp(ipcMain, 'scholar:items', (_e, q) => itemsFor(q));

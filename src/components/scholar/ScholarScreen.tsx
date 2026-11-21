@@ -41,6 +41,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { inboxParts, kindOf } from './inboxFormat';
+import { AddEventButton, PersonalEventDialog, openPersonalEvent } from './PersonalEvent';
 import { api, WithdrawnState, ScholarSite, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
 import { openPaths } from '../../lib/open';
 import { setPdfTarget } from '../../lib/pdfTarget';
@@ -132,6 +133,7 @@ async function openReading(r: ScholarReading) {
 export function ScholarScreen() {
   const { view, version, inboxTick, set, study } = useScholar();
   const [hasData, setHasData] = useState<boolean | null>(null);
+  const [hasOwn, setHasOwn] = useState(false);
   const [courses, setCourses] = useState<ScholarCourse[]>([]);
   const [item, setItem] = useState<ScholarItem | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -183,6 +185,8 @@ export function ScholarScreen() {
       const [st, cs] = await Promise.all([api.scholar.status(), api.scholar.courses()]);
       if (!live) return;
       setHasData(st.hasData);
+      // (Personal events alone are enough for the calendar to show.)
+      api.personal.list().then((own) => live && setHasOwn(own.length > 0), () => {});
       setCourses(cs);
       const past = await api.scholar.items({ from: missingSince(cs), to: today() });
       if (live) setMissing(past.filter((i) => isMissing(i)).length);
@@ -209,7 +213,8 @@ export function ScholarScreen() {
     reloadScholar();
   };
   // (A Kea Hub class session opens its class's page, with the meeting link.)
-  const ctx: Ctx = { colors, open: (it) => (it.hub ? go({ name: 'hub', classId: it.hub.classId }) : setItem(it)), toggleDone, courses, go };
+  // (A personal event opens its own form, to change or delete it.)
+  const ctx: Ctx = { colors, open: (it) => (it.hub ? go({ name: 'hub', classId: it.hub.classId }) : it.type === 'personal' ? void openPersonalEvent({ id: (it as any).personalId }) : setItem(it)), toggleDone, courses, go };
 
   const [account] = useAccount();
   const main =
@@ -217,7 +222,7 @@ export function ScholarScreen() {
       <div className="center-fill">
         <div className="spinner" />
       </div>
-    ) : (!hasData && !hubClasses.length && !['scans', 'library', 'inbox', 'resources', 'account', 'hub'].includes(view.name)) || view.name === 'add' ? (
+    ) : (!hasData && !hubClasses.length && !(hasOwn && view.name === 'calendar') && !['scans', 'library', 'inbox', 'resources', 'account', 'hub'].includes(view.name)) || view.name === 'add' ? (
       <AddClass first={!hasData} />
     ) : view.name === 'hub' && showHub ? (
       <HubView classId={view.classId} />
@@ -258,7 +263,7 @@ export function ScholarScreen() {
           </span>
         </button>
 
-        <button className={`sch-link ${view.name === 'calendar' ? 'on' : ''}`} onClick={() => go({ name: 'calendar' })} disabled={!hasData && !hubClasses.length}>
+        <button className={`sch-link ${view.name === 'calendar' ? 'on' : ''}`} onClick={() => go({ name: 'calendar' })} disabled={!hasData && !hubClasses.length && !hasOwn}>
           <CalendarDays size={17} /> Calendar
           {missing > 0 && (
             <span className="sch-badge alert" title={`${missing} missing`}>
@@ -301,6 +306,7 @@ export function ScholarScreen() {
         {main}
       </main>
       {item && <ItemPanel ctx={ctx} item={item} onClose={() => setItem(null)} />}
+      <PersonalEventDialog />
       {study &&
         (() => {
           // (Routed by studyIds.ts, the one place the prefixes are defined.)
@@ -923,6 +929,7 @@ function CalendarView({ ctx, courseId }: { ctx: Ctx; courseId?: string }) {
           </button>
         </div>
         <div className="cal-tools">
+          {!courseId && <AddEventButton />}
           {!courseId && <ShareCalendar />}
           <ColorsMenu ctx={ctx} />
           <div className="seg-mini">
@@ -2024,7 +2031,17 @@ function AddClass({ first }: { first: boolean }) {
   return (
     <div className="sch-page">
       <h1 className="sch-title">{first ? 'Add your first class' : 'Add a class'}</h1>
-      <p className="sch-sub">Each class gets its own readings, calendar and study materials.</p>
+      <p className="sch-sub">
+        Each class gets its own readings, calendar and study materials.
+        {first && (
+          <>
+            {' '}No classes? You can still keep birthdays, appointments and reminders on your Kea calendar:{' '}
+            <button className="link-btn" onClick={() => openPersonalEvent()}>
+              Add an event
+            </button>
+          </>
+        )}
+      </p>
       <div className="add-cards">
         {showHub && (
           <button className="add-card" onClick={() => useScholar.getState().set({ view: { name: 'hub' } })}>

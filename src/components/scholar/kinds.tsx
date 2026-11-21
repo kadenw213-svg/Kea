@@ -22,6 +22,7 @@ export const CATEGORIES: Category[] = [
   { id: 'discussion', label: 'Discussions', color: '#78d9ec', types: ['discussion'] },
   { id: 'class', label: 'Lectures and labs', color: '#81c995', types: ['lecture', 'lab', 'recitation', 'seminar', 'class_session'] },
   { id: 'work', label: 'Work shifts', color: '#ff8bcb', types: ['work_shift'] },
+  { id: 'personal', label: 'Personal', color: '#a8c7fa', types: ['personal'] },
   { id: 'reading', label: 'Readings', color: '#c9cdd2', types: ['reading', 'weekly_reading'] },
   { id: 'date', label: 'Deadlines and breaks', color: '#fdd663', types: ['administrative_deadline', 'break', 'no_class'] }
 ];

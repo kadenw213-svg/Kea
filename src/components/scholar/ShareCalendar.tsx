@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { CalendarPlus, Copy, RefreshCw, Link2Off, X } from 'lucide-react';
-import { api, type CalendarShareStatus } from '../../lib/api';
+import { api, type CalendarShareStatus, type GcalStatus } from '../../lib/api';
 import { toast } from '../../store';
 
-const ago = (t: number | null) => {
+const ago = (t: number | string | null) => {
+  if (typeof t === 'string') t = Date.parse(t);
   if (!t) return 'not yet';
   const m = Math.round((Date.now() - t) / 60_000);
   return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
@@ -59,6 +60,8 @@ export function ShareCalendar() {
               <X size={14} />
             </button>
           </div>
+          <GoogleSync />
+          <div className="share-sub">Or share a private link</div>
           {!st ? (
             <p className="muted">Checking…</p>
           ) : !st.signedIn ? (
@@ -102,6 +105,57 @@ export function ShareCalendar() {
             </>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Sync with Google Calendar: Kea keeps a "Kea" calendar in the person's Google Calendar up to date (every 15 minutes).
+ * Faster than the link (Google re-reads a link only every several hours) and needs no Kea account server.
+ */
+function GoogleSync() {
+  const [g, setG] = useState<GcalStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.gcal.status().then(setG).catch(() => {});
+  }, []);
+  const run = async (fn: () => Promise<GcalStatus>, fail: string) => {
+    setBusy(true);
+    try {
+      setG(await fn());
+    } catch (err: any) {
+      const msg = String(err?.message || fail).replace(/^.*?\[\w+\]\s*/, '');
+      toast(/REFUSED/.test(String(err?.message)) ? 'Google didn’t let Kea connect your calendar yet. Use the private link below instead.' : msg, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!g) return null;
+  return (
+    <div className="share-gsync">
+      {!g.connected ? (
+        <>
+          <p>Sync with Google Calendar: Kea keeps a calendar called “Kea” in your Google Calendar up to date, within about 15 minutes of any change. Kea can only see and change that one calendar.</p>
+          <button className="btn primary sm" disabled={busy} onClick={() => run(api.gcal.connect, 'Couldn’t connect Google Calendar.')}>
+            {busy ? 'Waiting for Google…' : 'Connect Google Calendar'}
+          </button>
+        </>
+      ) : (
+        <>
+          <p>
+            Syncing to the <b>Kea</b> calendar{g.email ? ` in ${g.email}` : ''} · {g.count} event{g.count === 1 ? '' : 's'} · updated {ago(g.lastSync)}.
+          </p>
+          {g.error && <p className="share-err">{g.error}</p>}
+          <div className="share-row">
+            <button className="btn sm" disabled={busy} onClick={() => run(api.gcal.sync, 'Couldn’t update.')}>
+              <RefreshCw size={13} /> Sync now
+            </button>
+            <button className="btn sm ghost" disabled={busy} title="Removes the Kea calendar from Google Calendar" onClick={() => run(api.gcal.disconnect, 'Couldn’t disconnect.')}>
+              <Link2Off size={13} /> Disconnect
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

@@ -38,7 +38,7 @@ const instant = (date, hm) => {
 };
 const TYPE_NAME = {
   assignment: 'Assignment', exam: 'Exam', final_exam: 'Exam', quiz: 'Quiz', discussion: 'Discussion', lab: 'Lab', lab_practical: 'Lab', project: 'Project',
-  paper: 'Paper', draft: 'Draft', presentation: 'Presentation', class_session: 'Class', work_shift: 'Work', lecture: 'Class', recitation: 'Class',
+  paper: 'Paper', draft: 'Draft', presentation: 'Presentation', class_session: 'Class', work_shift: 'Work', personal: 'Personal', lecture: 'Class', recitation: 'Class',
 };
 
 /** One Calendar item as an event for the feed (docs/protocol.md), or null when it can't be one. */

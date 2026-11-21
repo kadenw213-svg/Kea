@@ -408,6 +408,17 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('drives:progress', fn);
   },
   printHtml: (html, opts) => ipcRenderer.invoke('print:html', html, opts),
+  personal: {
+    list: () => ipcRenderer.invoke('personal:list'),
+    save: (e) => ipcRenderer.invoke('personal:save', e),
+    remove: (id) => ipcRenderer.invoke('personal:delete', id)
+  },
+  gcal: {
+    status: () => ipcRenderer.invoke('gcal:status'),
+    connect: () => ipcRenderer.invoke('gcal:connect'),
+    disconnect: () => ipcRenderer.invoke('gcal:disconnect'),
+    sync: () => ipcRenderer.invoke('gcal:sync')
+  },
   calendarShare: {
     status: () => ipcRenderer.invoke('calendarShare:status'),
     on: () => ipcRenderer.invoke('calendarShare:on'),
