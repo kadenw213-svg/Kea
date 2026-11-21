@@ -376,6 +376,8 @@ export interface KeaApi {
   /** An installed font's file, for embedding in a PDF (null if the family isn't installed). */
   fontFile(family: string, bold: boolean, italic: boolean): Promise<{ file: string; name: string; data: Uint8Array } | null>;
   fileExists(p: string): Promise<boolean>;
+  /** Paste the clipboard into whatever has focus, exactly as Ctrl+V does. */
+  paste(): Promise<boolean>;
   /** Rename a file in place; fails if the new name is taken. */
   renameFile(from: string, to: string): Promise<boolean>;
   showInFolder(p: string): Promise<void>;

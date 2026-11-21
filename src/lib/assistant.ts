@@ -9,60 +9,37 @@ import { setting } from './settings';
 import { uid } from './util';
 import { editorRegistry, useTabs, type AiHooks, type AssistantTool } from '../store';
 import { useLookup } from '../components/lookup/lookupStore';
-import { chatOf, patchChat, setActivity, doing, type ChatItem } from '../components/assistant/assistantStore';
+import { chatOf, patchChat, setActivity, doing, focusOf, setFocus, type ChatItem, type Focus } from '../components/assistant/assistantStore';
 import { toolsFor, picture, summary, runToolHeadless } from './editorTools';
 import { contentBlock, describeAttachment, type Attachment } from './attachments';
 import { assignmentOf, assignmentSig, assignmentText } from './assignmentContext';
+import { route, routeFor, type Route, type Tier } from './funnel';
+import { newPlaceholders, placeholderComment } from './placeholders';
 
 const MAX_STEPS = 40;
 
-const SYSTEM = `You are Claude, working inside Kea, the student's office and study app, in a sidebar next to the file they have open (a document, PDF, spreadsheet, presentation, code file, image or video). You can read it and change it with the tools you're given, the way Claude Code works in a project.
+// What Claude is told about working in Kea: one file per topic in ./guidelines (core rules, writing feedback, academic
+// writing, classes, documents, design), read in this order.
+import core from './guidelines/core.md?raw';
+import writing from './guidelines/writing.md?raw';
+import academic from './guidelines/academic.md?raw';
+import classes from './guidelines/classes.md?raw';
+import documents from './guidelines/documents.md?raw';
+import design from './guidelines/design.md?raw';
 
-How to work:
-- Read the file (read_document) before answering questions about it or editing it; don't guess its content. For pictures, video and slides, use look to see them.
-- Make the change the student asks for with the editor's tools, then say briefly what you did. Every change is one undo step (Ctrl+Z) for them, so act rather than asking permission for ordinary edits; ask first only before replacing most of the file or when the request is unclear.
-- Keep edits precise: change the passage that needs it, not the whole file. Copy quotes exactly from the latest text.
-- When you have several edits ready (a layout's elements, a list of fixes), send them together with apply_edits: one step instead of many. Look when a pass is done, not after every edit.
-- If a tool fails, read its message, fix the input (re-read the file if the text changed) and try again, or explain what's in the way.
-- Answers are shown in a narrow panel: short paragraphs, plain Markdown, no big headings. Don't paste the whole file back.
-- Don't narrate while you work ("Now the type…", "Quick update…"): the student watches the file change and sees each step. Work, then finish with one short message: what you made or changed, any choice they may want to steer, and anything they need to fill in.
-- For schoolwork, help the student understand and improve their own work; explain why when you correct something.
+export const SYSTEM = [core, writing, academic, classes, documents, design].map((t) => t.trim()).join('\n\n');
 
-Feedback on writing (essays, reports, applications):
-- When the message carries [The assignment this file is for], that is the assignment: its guide, the class site's instructions and rubric word for word, and its files. Work against all of it (every requirement, the format, the length, the criteria) and don't look it up again. Kea's guide summarizes the class site; where they differ, the class site's own wording wins.
-- With a rubric or guidelines (attached, pasted into the document, or found with find_assignment), grade against its criteria, not your own taste. Read the whole piece and the whole rubric first, then go criterion by criterion.
-- Every passage you flag gets its own margin comment, anchored to exactly that passage: send them together with add_comments. Never mark feedback with highlight or colour (format_text); the comment highlights its passage. One issue per comment; don't bundle several passages into one comment or put the review in a single comment.
-- Each comment uses the review format: criterion = the rubric criterion or guideline it's about, named as the rubric names it; kind = fix (must change), consider (would improve), strength (keep it) or question (unclear to a reader); comment = 1–3 plain sentences saying what's wrong and why (tied to the rubric's level descriptions where it has them), then how to fix it, with no brackets, labels or headings of your own; rewrite = optional replacement wording for exactly the quoted passage, only for a plain error (spelling, grammar, a wrong format); for anything about ideas, structure or style give a hint or a question instead and let the student write it.
-- Cover every criterion, but keep a pass to the 5 to 7 comments that matter most, ranked by how many points they could save (one or two may be strengths). Don't pile on small style notes; mention that more are available and offer another pass. Comments name the exact passage and give one reason, so they read as help, never as a wall of marks.
-- Don't rewrite their work unless they ask; when they do, make the edits as suggestions they can accept or reject.
-- Finish with a short summary in the chat: an estimated score per criterion (level or points, honest, with one line of reason each) and the top three fixes in priority order.
-
-The student's classes (class_search, class_read, class_lookup, class_open):
-- When the student asks about their class work ("find the Lab 9 assignment", "list the procedures for the buffers lab", "what does my essay need"), use Kea's class tools instead of guessing or asking them to paste it: class_search first, class_read for the result that fits, and class_lookup only when Kea doesn't have it (it reads the class site and platforms like Science Interactive for a few minutes, read-only, on their plan). Ask the lookup for exactly what's needed.
-- Never invent a step, amount or requirement; what Kea couldn't find, say so and point to where it lives.
-- When class material goes into the file, give it one consistent shape: a heading named as the class names it; a source line (where it's from, with the link); then the content faithfully, procedures as numbered steps under their section headings with every amount, unit and safety note exact, tables as real tables, the platform's questions listed but never answered. Use the editor's own headings, lists and tables, not typed symbols.
-- class_open opens a class-site page or a file Kea downloaded (a PDF handout opens as its own tab) when the student wants to see the original.
-
-Document structure and formatting (Kea's document editor):
-- read_document shows one ¶ line per paragraph with its formatting in [brackets] (empty lines, page breaks, headings, indents, line spacing, lists, citations, the Works Cited list). Quote only the text after the brackets.
-- Fix layout with the structure tools, not by typing spaces, tabs or blank lines: format_paragraphs (indents, hanging indents, line spacing, alignment, heading styles), page_setup (font, size, spacing and indent for the whole document), delete_text with whole_paragraphs (remove a paragraph), join_paragraphs, clean_up_spacing (stray blank lines and double spaces in one step), and undo for your own mistakes.
-- Citations go through the citation manager: add_source (real sources only; verify them with web search when you have it, and never invent authors, dates or pages), cite for in-text citations, and insert_bibliography for the Works Cited / References list, which Kea builds and formats itself. Don't type a citation list by hand; if the student typed one, offer to move it into the manager. delete_comment and resolve_comment manage comments; list_comments shows them with their ids.
-
-Attachments and design:
-- The student may attach images or PDFs (a flier, a sketch, concept art, a brief, designs they like). Each is named in the message with an id like a1. Study them closely: layout, palette, type, mood, details.
-- "Make this" / "design it like this" / "use this as a reference" means build it in the open file with the editor's own tools, matching or improving on the reference's style. An attached image can be placed directly (attachment: "a1") when the student wants the picture itself in the file.
-- Design to a professional standard, never a basic one. Before designing anything visual, read design_guide "start" and only the topics this job needs (styles, typography, colour, formats; brand and video are idea banks for promotional work and timelines; vector before writing artwork). Topics stay in the conversation, so don't re-read them. Commit to one art direction, a grid, a type scale and a small palette (taken from the reference when there is one) before placing anything.
-- Plain rectangles and circles look amateur. Make the visuals rich with vector artwork you write as SVG (the image tools' svg input): layered gradients, grain, patterns, organic shapes, illustrations, badges, ornaments, depth and light. Keep text in real text boxes so it stays editable and sharp, and use only installed fonts.
-- A short or vague request still gets a finished, professional result: infer the audience and purpose, pick the direction yourself, write any missing copy, and say in one line what you chose. The student's own guidelines (shown in design_guide "start") always win over the defaults.
-- After each pass, run check_design (where the editor has it) and fix what it reports: it measures overflow, collisions, contrast and alignment exactly. Then look once at the whole and judge what only eyes can: hierarchy, balance, whether it looks generic or truly finished. Fix and check again before saying you're done.`;
-
-/** Context sent with each message: which file, and what the student has selected. */
-function context(tabId: string, hooks: AiHooks | undefined) {
+/**
+ * Context sent with each message: which file, and what the student has selected. A passage sent with "Ask Claude"
+ * (the selection menu, Ctrl+Shift+A) is the focus of the message; a selection that's just there is mentioned.
+ */
+function context(tabId: string, hooks: AiHooks | undefined, focus: Focus | null) {
   const tab = useTabs.getState().tabs.find((t) => t.id === tabId);
   const sel = useLookup.getState().selections[tabId] || '';
   const lines = [`[Open ${hooks?.noun || 'file'}: ${tab?.name || 'untitled'}]`];
   if (!hooks) lines.push('[This view has no tools: Claude can only talk about it.]');
-  if (sel) lines.push(`[Selected: «${sel.slice(0, 2000)}»]`);
+  if (focus) lines.push(`[Focus passage${focus.where ? ` (${focus.where})` : ''}: the student highlighted this and sent it to you; work on exactly this]\n«${focus.text.slice(0, 8000)}»`);
+  else if (sel) lines.push(`[Selected: «${sel.slice(0, 2000)}»]`);
   return lines.join('\n');
 }
 
@@ -80,8 +57,18 @@ const runs = new Map<string, { stopped: boolean }>();
 // Bumped by clear(): a loop still running for the old conversation must not add to the new one.
 const generation = new Map<string, number>();
 
+/**
+ * `look`: send a picture of the editor. `attachments`: files to give Claude. `tier`: a button that knows what it needs
+ * (one-click suggestions are standard, the pre-submit check is deep) skips the funnel's guess.
+ */
+export interface AskOpts {
+  look?: boolean;
+  attachments?: Attachment[];
+  tier?: Tier;
+}
+
 /** Send what the student typed and let Claude work until it's done (or is stopped). */
-export async function ask(tabId: string, text: string, opts: { look?: boolean; attachments?: Attachment[] } = {}) {
+export async function ask(tabId: string, text: string, opts: AskOpts = {}) {
   // Taken before anything is awaited, so a double Enter or a double-clicked starter can't start a second run.
   if (runs.has(tabId) || chatOf(tabId).busy) return;
   const run = { stopped: false };
@@ -111,7 +98,7 @@ export async function ask(tabId: string, text: string, opts: { look?: boolean; a
   }
 }
 
-async function askRun(tabId: string, text: string, opts: { look?: boolean; attachments?: Attachment[] }, run: { stopped: boolean }, live: () => boolean) {
+async function askRun(tabId: string, text: string, opts: AskOpts, run: { stopped: boolean }, live: () => boolean) {
   const hooks = editorRegistry.get(tabId)?.ai;
   const tools = toolsFor(hooks);
   const content: any[] = [];
@@ -136,11 +123,57 @@ async function askRun(tabId: string, text: string, opts: { look?: boolean; attac
     content.push({ type: 'text', text: `[The assignment this ${hooks?.noun || 'file'} is for: work against its guidelines and rubric]\n${await assignmentText(assignment)}` });
     patchChat(tabId, { assignmentSent: sig });
   }
-  content.push({ type: 'text', text: `${context(tabId, hooks)}${named ? `\n${named}` : ''}\n\n${text || 'Here are the files.'}` });
-  addItem(tabId, { kind: 'user', text, image: shown, files: [...(assignment && giving ? [{ name: `Assignment: ${assignment.label}` }] : []), ...files.map((a) => ({ name: a.name, thumb: a.mime.startsWith('image/') ? a.dataUrl : undefined }))] });
+  const focus = focusOf(tabId);
+  setFocus(tabId, null);
+  content.push({ type: 'text', text: `${context(tabId, hooks, focus)}${named ? `\n${named}` : ''}\n\n${text || (focus ? 'Help me with this passage.' : 'Here are the files.')}` });
+  // Which model this message needs (the funnel), or the one chosen in Settings when the funnel is off.
+  const chosen = String(setting('assistant.model') || 'claude-opus-5-5');
+  const effort = String(setting('assistant.effort') || 'medium');
+  const sel = useLookup.getState().selections[tabId] || '';
+  const way: Route =
+    setting('assistant.funnel') === false
+      ? { tier: 'deep', model: chosen, effort, why: 'The model chosen in Settings' }
+      : opts.tier
+        ? routeFor(opts.tier, chosen, effort)
+        : route({ text, selection: focus ? focus.text.length : sel.length, assignment: !!assignment, attachments: files.length, noun: hooks?.noun || 'file' }, chosen, effort);
+  addItem(tabId, {
+    kind: 'user',
+    text,
+    image: shown,
+    focus: focus?.text,
+    route: setting('assistant.funnel') === false ? undefined : { tier: way.tier, model: way.model, why: way.why },
+    files: [...(assignment && giving ? [{ name: `Assignment: ${assignment.label}` }] : []), ...files.map((a) => ({ name: a.name, thumb: a.mime.startsWith('image/') ? a.dataUrl : undefined }))]
+  });
   if (run.stopped || !live()) return;
-  if (setting('assistant.provider') !== 'api') return askPlan(tabId, content, live, run);
-  patchChat(tabId, (c) => ({ messages: [...c.messages, { role: 'user', content }], via: 'api' }));
+  // What the document said before Claude worked on it, so placeholders Claude adds can be told from the student's own.
+  const before = hooks?.noun === 'document' ? await hooks.getDocument().then((d) => d.full).catch(() => null) : null;
+  try {
+    if (setting('assistant.provider') !== 'api') return await askPlan(tabId, content, live, run, way);
+    await askApi(tabId, content, live, run, way);
+  } finally {
+    if (before !== null && live() && !run.stopped) await sweepPlaceholders(tabId, before).catch(() => {});
+  }
+}
+
+/**
+ * Placeholders Claude left in the document ("[insert source]", "TODO") become margin comments: the guidelines say it
+ * never leaves them, and this catches any that slip through. The student's own are left alone.
+ */
+async function sweepPlaceholders(tabId: string, before: string) {
+  const hooks = editorRegistry.get(tabId)?.ai;
+  if (!hooks?.addComment || setting('assistant.placeholderComments') === false) return;
+  const after = await hooks.getDocument().then((d) => d.full);
+  const found = newPlaceholders(before, after).slice(0, 12);
+  let n = 0;
+  for (const p of found) if (hooks.addComment(p.quote, placeholderComment(p))) n++;
+  if (n) addItem(tabId, { kind: 'assistant', text: `I left ${n === 1 ? 'one spot' : `${n} spots`} for you to fill in, marked with ${n === 1 ? 'a comment' : 'comments'} in the margin.` });
+}
+
+async function askApi(tabId: string, content: any[], live: () => boolean, run: { stopped: boolean }, way: Route) {
+  // Earlier turns' reasoning belongs to the model that wrote it: when the funnel picks another model, it's left out
+  // (only the current turn's reasoning has to go back, and that turn stays on one model).
+  const strip = (m: any) => (m.role === 'assistant' && Array.isArray(m.content) ? { ...m, content: m.content.filter((b: any) => b.type !== 'thinking' && b.type !== 'redacted_thinking') } : m);
+  patchChat(tabId, (c) => ({ messages: [...(c.lastModel && c.lastModel !== way.model ? c.messages.map(strip) : c.messages), { role: 'user', content }], via: 'api', lastModel: way.model }));
 
   let retries = 0;
   try {
@@ -165,7 +198,7 @@ async function askRun(tabId: string, text: string, opts: { look?: boolean; attac
           patchItem(tabId, thinkItem, (i) => ({ text: i.text + ev.text }));
         } else if (ev.type === 'tool') textItem = '';
       });
-      const r = await api.assistant.send(reqId, { model: setting('assistant.model') || 'claude-opus-5-5', effort: setting('assistant.effort') || 'medium', system: SYSTEM, messages: chatOf(tabId).messages, tools: defs }).finally(off);
+      const r = await api.assistant.send(reqId, { model: way.model, effort: way.effort, system: SYSTEM, messages: chatOf(tabId).messages, tools: defs }).finally(off);
       if (!live()) break;
       if (r.content) patchChat(tabId, (c) => ({ items: c.items.filter((i) => !streamed.includes(i.id)) }));
       for (const b of r.content || []) {
@@ -213,7 +246,7 @@ async function askRun(tabId: string, text: string, opts: { look?: boolean; attac
  * private MCP connection) and we show what it streams: text and reasoning as they arrive, each tool step with its
  * result. Follow-up messages continue the same Claude Code session.
  */
-async function askPlan(tabId: string, content: any[], live: () => boolean, run: { stopped: boolean }) {
+async function askPlan(tabId: string, content: any[], live: () => boolean, run: { stopped: boolean }, way: Route) {
   const reqId = uid();
   patchChat(tabId, { reqId, via: 'plan' });
   const steps = new Map<string, string>(); // tool_use id -> panel item id
@@ -277,8 +310,8 @@ async function askPlan(tabId: string, content: any[], live: () => boolean, run: 
       tabId,
       content,
       session: chatOf(tabId).planSession,
-      model: setting('assistant.model') || 'claude-opus-5-5',
-      effort: setting('assistant.effort') || 'medium',
+      model: way.model,
+      effort: way.effort,
       system: SYSTEM,
       web: setting('assistant.web') !== false
     });

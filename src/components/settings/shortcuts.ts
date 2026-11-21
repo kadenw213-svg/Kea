@@ -15,6 +15,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Ctrl+Shift+H', 'Version history'],
       ['Ctrl+J', 'Show or hide the Encyclopedia'],
       ['Ctrl+Shift+J', 'Show or hide Claude'],
+      ['Ctrl+Shift+A', 'Ask Claude about what you’ve highlighted'],
       ['Ctrl+Alt+V', 'Voice typing: talk and Kea types (Esc stops)'],
       ['Ctrl+\\', 'Split view: two tabs side by side (again to close)']
     ]

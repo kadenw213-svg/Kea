@@ -322,6 +322,8 @@ export const SECTIONS: Section[] = [
         ],
         help: 'Printing and PDFs are always on white.'
       },
+      { key: 'editor.selectionMenu', label: 'Show a small menu above highlighted text', type: 'toggle', default: true, help: 'Copy, cut, paste, a few formatting buttons and Ask Claude, just above what you highlight in documents (and a highlighted range of cells in spreadsheets). It goes away when you keep typing or click elsewhere. Ctrl+Shift+A sends the highlight to Claude without the menu.' },
+      { key: 'editor.selectionMenuDelay', label: 'Wait before showing the selection menu', type: 'number', default: 0.35, min: 0, max: 1.5, step: 0.05, unit: 'seconds', advanced: true, when: (v) => v['editor.selectionMenu'] !== false },
       { key: 'doc.font', label: 'Font', type: 'select', default: 'Arial', options: ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Garamond', 'Segoe UI', 'Times New Roman', 'Trebuchet MS', 'Verdana'].map((f) => ({ value: f, label: f })) },
       { key: 'doc.size', label: 'Font size', type: 'number', default: 11, min: 6, max: 72, step: 0.5, unit: 'pt' },
       {
@@ -839,7 +841,15 @@ export const SECTIONS: Section[] = [
           { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (faster, half the price)' },
           { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (quickest and cheapest)' },
           { value: 'claude-fable-5-1', label: 'Claude Fable 5.1 (most capable, costs the most)' }
-        ]
+        ],
+        help: 'With “Pick the right model for each message” on, this is the model for the hard work (grading, reviews, research, design); quick and ordinary messages use Haiku and Sonnet.'
+      },
+      {
+        key: 'assistant.funnel',
+        label: 'Pick the right model for each message',
+        type: 'toggle',
+        default: true,
+        help: 'Quick jobs on highlighted text (rephrase, shorten, define) use Haiku and come back fast; ordinary edits and questions use Sonnet; grading, reviews, research, outlines and design use the model above. Off: every message uses the model above.'
       },
       {
         key: 'assistant.effort',
@@ -856,7 +866,8 @@ export const SECTIONS: Section[] = [
         help: 'More thinking costs more tokens. Medium suits most editing; raise it for hard maths, code or long rewrites.'
       },
       { key: 'assistant.autoLook', label: 'Show Claude a picture of photos, slides and video frames with each message', type: 'toggle', default: true, help: 'Off: Claude looks only when it decides to (or when you press the eye button). Each picture costs about 1,600 tokens.' },
-      { key: 'assistant.track', label: 'Make Claude’s document edits as suggestions', type: 'toggle', default: false, help: 'Edits show as tracked changes you accept or reject, instead of changing the text directly.' },
+      { key: 'assistant.track', label: 'Make Claude’s document edits as suggestions', type: 'toggle', default: true, help: 'Edits show as tracked changes you accept or reject one by one (or all at once), instead of changing the text directly. Off: Claude edits the text directly (each change is still one Ctrl+Z).' },
+      { key: 'assistant.placeholderComments', label: 'Turn placeholders Claude leaves into margin comments', type: 'toggle', default: true, advanced: true, help: 'Things like “[insert source]” or “TODO” that Claude adds get a comment saying what’s still needed. Placeholders you typed yourself are left alone.' },
       { key: 'assistant.flashEdits', label: 'Briefly highlight what Claude changes', type: 'toggle', default: true, help: 'Claude edits in the background: your cursor, selection, scroll and focus stay where they are, and you can keep typing. Each change is one Ctrl+Z.' },
       { key: 'assistant.flashSeconds', label: 'Highlight Claude’s changes for', type: 'number', default: 2.4, min: 0.5, max: 10, step: 0.1, unit: 'seconds', advanced: true, when: (v) => v['assistant.flashEdits'] !== false },
       { key: 'assistant.followEdits', label: 'Scroll to Claude’s changes as they happen', type: 'toggle', default: false, advanced: true, help: 'Only while you aren’t typing or moving around yourself. Off: the page and slide you’re on stay put.' },

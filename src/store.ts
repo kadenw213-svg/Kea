@@ -46,6 +46,8 @@ export interface AiHooks {
   getDocument(): Promise<{ full: string; sections: DocSection[]; annotated?: string }>;
   /** Replace the current selection; false if this editor can't. */
   replaceSelection?(text: string): boolean;
+  /** What's highlighted right now, for Ask Claude (Ctrl+Shift+A): null when nothing is. `where`: "cells B2:D9". */
+  focusSelection?(): { text: string; where?: string } | null;
   /** Insert after the selection / at the cursor (or as a comment for PDFs). */
   insertText?(text: string): boolean;
   /** Scroll to and highlight a quote from the document. */
@@ -99,6 +101,7 @@ export function proxyAi(ref: { current: AiHooks }): AiHooks {
     ...(c.readResource ? { readResource: (uri: string) => ref.current.readResource?.(uri) ?? Promise.resolve(null) } : {}),
     ...(c.getImage ? { getImage: () => ref.current.getImage?.() ?? Promise.resolve(null) } : {}),
     ...(c.replaceSelection ? { replaceSelection: (t: string) => ref.current.replaceSelection?.(t) ?? false } : {}),
+    ...(c.focusSelection ? { focusSelection: () => ref.current.focusSelection?.() ?? null } : {}),
     ...(c.insertText ? { insertText: (t: string) => ref.current.insertText?.(t) ?? false } : {}),
     ...(c.reveal ? { reveal: (q: string) => ref.current.reveal?.(q) ?? false } : {}),
     ...(c.replaceQuote ? { replaceQuote: (q: string, r: string) => ref.current.replaceQuote?.(q, r) ?? false } : {}),

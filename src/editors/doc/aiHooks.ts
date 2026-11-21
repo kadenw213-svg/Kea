@@ -82,6 +82,13 @@ export function docAiHooks(get: () => Editor | null, addThread?: (t: CommentThre
       const ed = get();
       if (ed && !ed.isDestroyed) ed.view.dispatch(closeHistory(ed.state.tr).setMeta('addToHistory', false));
     },
+    focusSelection() {
+      const ed = get();
+      if (!ed || ed.isDestroyed) return null;
+      const { from, to } = ed.state.selection;
+      const text = to > from ? ed.state.doc.textBetween(from, to, '\n', ' ') : '';
+      return text.trim() ? { text } : null;
+    },
     async getDocument() {
       const ed = get();
       if (!ed) return { full: '', sections: [] };

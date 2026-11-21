@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { ClipboardList, RefreshCw, ChevronDown, ChevronUp, X, Sparkles, ListChecks, Square, MessageSquare, FileText, ListOrdered, Library } from 'lucide-react';
+import { ClipboardList, RefreshCw, ChevronDown, ChevronUp, X, Sparkles, ListChecks, Square, MessageSquare, FileText, ListOrdered, Library, SendHorizontal } from 'lucide-react';
 import { useSetting } from '../../lib/settings';
 import { useAssignments, fileKey, assignmentSig, type AssignmentRef } from '../../lib/assignmentContext';
 import { linkAssignment } from '../../lib/assignmentLink';
@@ -51,6 +51,35 @@ export function gatherInstructions(tabId: string) {
   if (chatOf(tabId).busy) return toast('Claude is still working on this file. Try again when it’s done.');
   setAssistantOpen(true);
   ask(tabId, 'Put this assignment’s instructions at the top of this document as one section headed “Instructions (delete when finished)”: the steps, what to hand in, the requirements (length, sources, format) and how it’s graded, from the assignment above, with nothing invented. Don’t change anything else in the document.');
+}
+
+/**
+ * One-click writing suggestions (the document toolbar's Suggestions button): spelling, grammar, punctuation, clarity
+ * and wordiness across the whole document, each as a margin comment anchored to its passage with a one-click fix.
+ * Nothing in the text changes until the student applies a fix. Runs on the standard model: quick and thorough.
+ */
+export function writingSuggestions(tabId: string) {
+  if (chatOf(tabId).busy) return toast('Claude is still working on this file. Try again when it’s done.');
+  setAssistantOpen(true, tabId);
+  ask(
+    tabId,
+    'Give me writing suggestions for the whole document, like a proofreader: every spelling, grammar and punctuation mistake, plus sentences that are unclear, wordy or awkward. Leave each one as its own margin comment (add_comments) anchored to exactly that passage, with kind fix for errors and consider for style, a one-sentence reason, and a rewrite of exactly that passage so I can fix it in one click. Don’t change the document yourself, don’t comment on ideas or structure, and don’t leave more than 30. Then tell me in one line how many you found of each kind.',
+    { tier: 'standard' }
+  );
+}
+
+/**
+ * The pre-submit check (assignment bar): one final pass against the rubric and every requirement (length, format,
+ * citations, what to hand in) before the student turns it in, with an estimated score per criterion.
+ */
+export function preSubmitCheck(tabId: string) {
+  if (chatOf(tabId).busy) return toast('Claude is still working on this file. Try again when it’s done.');
+  setAssistantOpen(true, tabId);
+  ask(
+    tabId,
+    'Do a final check before I submit this. Go through every requirement in the assignment (length, format, citation style and Works Cited, required sections and sources, what to hand in) and say for each one whether it’s met, with a ✓ or ✗. Then give an honest estimated score for each rubric criterion against its top level, and the fixes that would gain the most points, in order. Answer in the chat only: don’t change the document or leave comments.',
+    { tier: 'deep' }
+  );
 }
 
 /** Ask Claude for an outline of questions to answer, so the thinking and the thesis stay the student’s. */
@@ -220,6 +249,9 @@ function Bar({ tabId, active, assignment, onChange }: { tabId: string; active: b
         </label>
         <button className="ab-link" disabled={chatBusy} title={(rubric === false ? 'Claude goes through your file against the instructions' : 'Claude goes through your file against the rubric') + (pointers ? ' and leaves comments' : '')} onClick={() => checkAgainstRubric(tabId, rubric !== false, pointers)}>
           <ListChecks size={14} /> {rubric === false ? 'Check against instructions' : 'Check against rubric'}
+        </button>
+        <button className="ab-link" disabled={chatBusy} title="A final pass before you turn it in: every requirement (length, format, citations) checked, and an estimated score for each part of the rubric" onClick={() => preSubmitCheck(tabId)}>
+          <SendHorizontal size={14} /> Before I submit
         </button>
         <button className="icon-btn sm" title="Not for an assignment" onClick={() => linkAssignment(tabId, null)}>
           <X size={13} />

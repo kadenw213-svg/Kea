@@ -55,7 +55,7 @@ export function rubricRows(guide: { rubric?: { criteria: { name: string; cells: 
   return [];
 }
 
-export const GRADE_SYSTEM = `You estimate the grade a student's draft would get, for the student's own information. Grade only against what you are given: the rubric (or, when there is none, the assignment's instructions) and the draft's text. Be honest and specific; don't inflate. Use no tools and don't edit anything. Answer with one JSON object and nothing else.`;
+export const GRADE_SYSTEM = `You estimate the grade a student's draft would get, for the student's own information. Grade only against what you are given: the rubric (or, when there is none, the assignment's instructions) and the draft's text. Be honest and specific; don't inflate. Judge each criterion against its top level: each reason names what the draft does and, when it falls short of full marks, exactly what the top level asks for that is missing. Use no tools and don't edit anything. Answer with one JSON object and nothing else.`;
 
 /** The message Claude gets. `mode`: against the rubric, or a rough estimate from the instructions. */
 export function buildGradePrompt(p: { title: string; noun: string; mode: 'rubric' | 'instructions'; rows?: RubricRow[]; rubricText?: string; instructions?: string; text: string; maxChars?: number }): string {

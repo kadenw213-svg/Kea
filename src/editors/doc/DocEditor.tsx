@@ -41,6 +41,7 @@ import {
   IndentIncrease,
   RemoveFormatting,
   Search,
+  SpellCheck,
   Sun,
   Moon,
   Save,
@@ -92,7 +93,8 @@ import { docxToDoc } from './docxImport';
 import { Footnote, Pagination, pageGroups, hfHtml, footnotesOf } from './pagination';
 import { DocMeta, defaultMeta, pageBox, hfFor, cssLineHeight, PAGE_SIZES, type CommentThread } from './docMeta';
 import { ask } from '../../lib/assistant';
-import { chatOf } from '../../components/assistant/assistantStore';
+import { chatOf, askAboutSelection } from '../../components/assistant/assistantStore';
+import { SelectionMenu, useSelectionMenu, clipboardActions } from '../../components/selection/SelectionMenu';
 import { PageSetupDialog, HeaderFooterDialog } from './DocDialogs';
 import { setting, useSetting, openSettings, useSettings, useThemeDark } from '../../lib/settings';
 import { DOMSerializer } from '@tiptap/pm/model';
@@ -125,7 +127,7 @@ import { HIGHLIGHT_SWATCHES } from '../../lib/highlightInk';
 import { mimeFor } from '../../lib/pdfTools';
 import './doc.css';
 import { docAiHooks } from './aiHooks';
-import { AssignmentBar, AssignmentMenuItem } from '../../components/assistant/AssignmentBar';
+import { AssignmentBar, AssignmentMenuItem, writingSuggestions } from '../../components/assistant/AssignmentBar';
 import { namedAfterAssignment } from '../../lib/assignmentLink';
 import { ClaudeEdits } from './claudeEditsExt';
 import { ToolbarFit } from '../../components/ToolbarFit';
@@ -515,6 +517,22 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
     });
   }, [tab.id]);
 
+  // The small menu above highlighted text (Copy, Cut, Paste, formatting, Ask Claude).
+  const selMenu = useSelectionMenu(
+    () => (editor && !editor.isDestroyed ? (editor.view.dom as HTMLElement) : null),
+    () => {
+      if (!editor || editor.isDestroyed) return null;
+      const { from, to } = editor.state.selection;
+      if (to <= from || !editor.state.doc.textBetween(from, to, ' ', ' ').trim()) return null;
+      const a = editor.view.coordsAtPos(from);
+      const b = editor.view.coordsAtPos(to, -1);
+      // Over a highlight on one line, centred on it; over several lines, near where it starts.
+      const oneLine = Math.abs(b.top - a.top) < 4;
+      return { top: a.top, bottom: b.bottom, left: a.left, right: oneLine ? b.right : a.left + 160 };
+    },
+    active
+  );
+
   // Report highlighted text to the AI sidebar.
   useEffect(() => {
     if (!editor) return;
@@ -772,6 +790,27 @@ function DocEditorInner({ tab, active, initialHtml, initialMeta }: { tab: Tab; a
         />
       )}
       <ContextBar editor={editor} />
+      <SelectionMenu
+        rect={selMenu.rect}
+        onClose={selMenu.close}
+        onAsk={() => {
+          const f = editorRegistry.get(tab.id)?.ai?.focusSelection?.();
+          if (f) askAboutSelection(tab.id, f);
+        }}
+        actions={[
+          ...clipboardActions(() => void api.paste()),
+          { id: 'bold', title: 'Bold (Ctrl+B)', icon: <Bold size={15} />, on: editor.isActive('bold'), run: () => (editor.chain().toggleBold().run(), selMenu.refresh()) },
+          { id: 'italic', title: 'Italic (Ctrl+I)', icon: <Italic size={15} />, on: editor.isActive('italic'), run: () => (editor.chain().toggleItalic().run(), selMenu.refresh()) },
+          { id: 'underline', title: 'Underline (Ctrl+U)', icon: <UIcon size={15} />, on: editor.isActive('underline'), run: () => (editor.chain().toggleUnderline().run(), selMenu.refresh()) },
+          {
+            id: 'highlight',
+            title: 'Highlight',
+            icon: <Highlighter size={15} />,
+            on: editor.isActive('highlight'),
+            run: () => ((editor.isActive('highlight') ? editor.chain().unsetHighlight() : editor.chain().setHighlight({ color: defaultHighlight() })).run(), selMenu.refresh())
+          }
+        ]}
+      />
       {reading && <ReadAloudBar editor={editor} onClose={() => setReading(false)} />}
       {findOpen && <FindBar editor={editor} mode={findOpen} onClose={() => (setFindOpen(false), editor.commands.setSearch(''), editor.commands.focus())} />}
       <div
@@ -1203,6 +1242,11 @@ function Toolbar(p: {
       <ToolbarFit />
       <div className="tb-end">
       <LookupButton />
+      {setting('assistant.enabled') !== false && (
+        <B title="Writing suggestions: Claude goes through the whole document for spelling, grammar and unclear sentences, and leaves each as a comment with a one-click fix" onClick={() => writingSuggestions(p.tabId)}>
+          <SpellCheck size={18} />
+        </B>
+      )}
       <AssistantButton />
       <button className="btn primary sm" onMouseDown={(e) => e.preventDefault()} onClick={() => p.onSave(false)} title="Save (Ctrl+S)">
         <Save size={16} /> Save

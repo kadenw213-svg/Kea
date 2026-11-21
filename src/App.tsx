@@ -13,7 +13,7 @@ import { UpdateDialog, initUpdates } from './components/Updates';
 import { LookupPanel } from './components/lookup/LookupPanel';
 import { AssistantPanel } from './components/assistant/AssistantPanel';
 import { ClaudeWorking } from './components/assistant/ClaudeWorking';
-import { toggleAssistant } from './components/assistant/assistantStore';
+import { toggleAssistant, askAboutSelection } from './components/assistant/assistantStore';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { VersionHistoryDialog, openHistory } from './components/settings/VersionHistory';
 import { openSettings, setting } from './lib/settings';
@@ -173,6 +173,13 @@ export function App() {
       } else if (k === 'j' && e.shiftKey) {
         e.preventDefault();
         toggleAssistant();
+      } else if (k === 'a' && e.shiftKey) {
+        // Send what's highlighted (text, or a range of cells) to Claude, without the mouse.
+        const f = handle?.ai?.focusSelection?.();
+        if (!f) return;
+        e.preventDefault();
+        e.stopPropagation();
+        askAboutSelection(activeId, f);
       } else if (k === '\\') {
         e.preventDefault();
         const st = useTabs.getState();

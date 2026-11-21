@@ -6,12 +6,14 @@ import { useTabs, editorRegistry, toast } from '../../store';
 import { api, type PlanUsage } from '../../lib/api';
 import { ask, stop, clear } from '../../lib/assistant';
 import { addAttachment, isAttachable, ATTACHABLE, type Attachment } from '../../lib/attachments';
-import { useAssistant, useAssistantOpen, setAssistantOpen, emptyChat, draftOf, setDraft, INTERNAL_STEPS, type ChatItem } from './assistantStore';
+import { useAssistant, useAssistantOpen, setAssistantOpen, emptyChat, draftOf, setDraft, setFocus, INTERNAL_STEPS, type ChatItem } from './assistantStore';
 import { AssignmentButton, AssignmentChip, AssignmentPicker } from './AssignmentPicker';
 import { useAssignments, fileKey } from '../../lib/assignmentContext';
 import { useKeaModes } from '../../lib/modes';
 import '../../styles/ai.css';
+import { TIER_LABEL, modelLabel } from '../../lib/funnel';
 import '../../styles/assistant.css';
+import '../../styles/selection.css';
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 // Links in answers open in the browser, not inside Kea.
@@ -19,6 +21,27 @@ md.renderer.rules.link_open = (tokens, i, options, _env, self) => {
   tokens[i].attrSet('target', '_blank');
   return self.renderToken(tokens, i, options);
 };
+// Wording Claude suggests (```suggestion blocks) comes with buttons: the student decides whether and where it goes.
+const fence = md.renderer.rules.fence!;
+md.renderer.rules.fence = (tokens, i, options, env, self) => {
+  const t = tokens[i];
+  if (t.info.trim().toLowerCase() !== 'suggestion') return fence(tokens, i, options, env, self);
+  const text = md.utils.escapeHtml(t.content.replace(/\n$/, ''));
+  return `<div class="as-suggest" data-text="${md.utils.escapeHtml(encodeURIComponent(t.content.replace(/\n$/, '')))}"><div class="as-suggest-text">${text}</div><div class="as-suggest-acts"><button data-act="replace" title="Put this in place of what's highlighted in the file">Replace highlight</button><button data-act="insert" title="Insert this at the cursor">Insert</button><button data-act="copy">Copy</button></div></div>`;
+};
+/** The buttons on a suggested passage: Replace highlight, Insert at the cursor, Copy. */
+function onSuggestClick(tabId: string, e: React.MouseEvent) {
+  const b = (e.target as HTMLElement).closest('button[data-act]') as HTMLElement | null;
+  const box = b?.closest('.as-suggest') as HTMLElement | null;
+  if (!b || !box) return;
+  const text = decodeURIComponent(box.dataset.text || '');
+  const hooks = editorRegistry.get(tabId)?.ai;
+  const act = b.dataset.act;
+  if (act === 'copy') return void navigator.clipboard.writeText(text).then(() => toast('Copied'));
+  const tracked = <T,>(fn: () => T) => (setting('assistant.track') && hooks?.track ? hooks.track(fn) : fn());
+  const ok = act === 'replace' ? tracked(() => hooks?.replaceSelection?.(text)) : tracked(() => hooks?.insertText?.(text));
+  if (!ok) toast(act === 'replace' ? 'Highlight the passage to replace in the file first.' : 'Click in the file where it should go first.', 'error');
+}
 const NAMES: Record<string, string> = {
   read_document: 'Read the file',
   replace_text: 'Replaced text',
@@ -41,6 +64,8 @@ export function AssistantPanel() {
   // Each file has its own unsent message.
   const input = useAssistant((s) => s.drafts[activeId]) ?? draftOf(activeId);
   const setInput = (v: string) => setDraft(activeId, v);
+  // A highlighted passage sent with Ask Claude, shown as a chip until the message goes.
+  const focus = useAssistant((s) => s.focus[activeId]);
   const listRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const model = useSettings((s) => s.values['assistant.model']) || 'claude-opus-5-5';
@@ -111,7 +136,7 @@ export function AssistantPanel() {
 
   const send = (look?: boolean) => {
     const t = input.trim();
-    if ((!t && !pending.length) || chat.busy) return;
+    if ((!t && !pending.length && !focus) || chat.busy) return;
     toBottom();
     setInput('');
     if (boxRef.current) boxRef.current.style.height = 'auto';
@@ -119,7 +144,7 @@ export function AssistantPanel() {
     ask(activeId, t, { attachments: pending, ...(look ? { look: true } : {}) });
   };
   const usable = tab && tab.kind !== 'home';
-  const canSend = usable && (!!input.trim() || pending.length > 0);
+  const canSend = usable && (!!input.trim() || pending.length > 0 || !!focus);
 
   const attach = async (files: { name: string; data: Uint8Array | Blob }[]) => {
     const added: Attachment[] = [];
@@ -235,8 +260,8 @@ export function AssistantPanel() {
                 </div>
               )}
               {setting('assistant.showSteps')
-                ? chat.items.map((it) => <Item key={it.id} it={it} />)
-                : group(chat.items, chat.busy).map((g) => (g.steps ? <Steps key={g.key} items={g.steps} live={g.live} tabId={activeId} /> : <Item key={g.key} it={g.it!} />))}
+                ? chat.items.map((it) => <Item key={it.id} it={it} tabId={activeId} />)
+                : group(chat.items, chat.busy).map((g) => (g.steps ? <Steps key={g.key} items={g.steps} live={g.live} tabId={activeId} /> : <Item key={g.key} it={g.it!} tabId={activeId} />))}
               {chat.busy && setting('assistant.showSteps') && (
                 <div className="ai-status">
                   <span className="dot-pulse" /> Working…
@@ -262,6 +287,17 @@ export function AssistantPanel() {
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+            {focus && usable && (
+              <div className="as-focus" title="Claude works on exactly this passage">
+                <span className="as-focus-text">
+                  {focus.where && <span className="as-focus-where">{focus.where}</span>}
+                  {focus.text}
+                </span>
+                <button className="icon-btn sm" title="Don’t send this passage" onClick={() => setFocus(activeId, null)}>
+                  <X size={12} />
+                </button>
               </div>
             )}
             {picking && usable && <AssignmentPicker tabId={activeId} onClose={() => setPicking(false)} />}
@@ -410,14 +446,14 @@ function Steps({ items, live, tabId }: { items: ChatItem[]; live?: boolean; tabI
       </button>
       {open && (
         <div className="as-steps-body">
-          {shown.map((it) => (it.kind === 'assistant' ? <div key={it.id} className="as-note">{it.text}</div> : <Item key={it.id} it={it} />))}
+          {shown.map((it) => (it.kind === 'assistant' ? <div key={it.id} className="as-note">{it.text}</div> : <Item key={it.id} it={it} tabId={tabId} />))}
         </div>
       )}
     </div>
   );
 }
 
-function Item({ it }: { it: ChatItem }) {
+function Item({ it, tabId }: { it: ChatItem; tabId: string }) {
   const [open, setOpen] = useState(false);
   const html = useMemo(() => (it.kind === 'assistant' || it.kind === 'thinking' ? md.render(it.text) : ''), [it.kind, it.text]);
   if (it.kind === 'user')
@@ -435,12 +471,22 @@ function Item({ it }: { it: ChatItem }) {
           )
         )}
         {it.text && <div className="ai-bubble">{it.text}</div>}
+        {it.focus && (
+          <div className="ai-msg-focus" title={it.focus}>
+            About: “{it.focus.slice(0, 120)}”
+          </div>
+        )}
+        {it.route && (
+          <div className="ai-msg-route" title={`${it.route.why}. Settings → Assistant → “Pick the right model for each message”`}>
+            {TIER_LABEL[it.route.tier]} · {modelLabel(it.route.model)}
+          </div>
+        )}
       </div>
     );
   if (it.kind === 'assistant')
     return (
       <div className="ai-msg assistant">
-        <div className="ai-md" dangerouslySetInnerHTML={{ __html: html }} />
+        <div className="ai-md" onClick={(e) => onSuggestClick(tabId, e)} dangerouslySetInnerHTML={{ __html: html }} />
       </div>
     );
   if (it.kind === 'thinking')

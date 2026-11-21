@@ -83,6 +83,8 @@ import { useOfficeLossGuard } from '../../lib/officeLosses';
 import { saveTabFile, exportFile, SaveFormat, isSilentSave } from '../../lib/save';
 import { extOf, baseName } from '../../lib/fileTypes';
 import { api } from '../../lib/api';
+import { askAboutSelection } from '../../components/assistant/assistantStore';
+import { SelectionMenu, useSelectionMenu, clipboardActions } from '../../components/selection/SelectionMenu';
 import { clamp, escapeHtml, modKey } from '../../lib/util';
 import { MenuButton, Popover } from '../../components/Popover';
 import { ColorPicker } from '../../components/ColorPicker';
@@ -1383,6 +1385,14 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
     replaceSelection(text) {
       return aiRef.current.insertText!(text);
     },
+    focusSelection() {
+      // The highlighted range as Claude reads it (tab-separated), with its address.
+      const g = { ...sel, r2: Math.min(sel.r2, Math.max(used.rows - 1, sel.r1), sel.r1 + 500), c2: Math.min(sel.c2, Math.max(used.cols - 1, sel.c1), sel.c1 + 50) };
+      const text = rangeTsv(g);
+      if (!text.replace(/\s/g, '')) return null;
+      const one = g.r1 === g.r2 && g.c1 === g.c2;
+      return { text, where: one ? `cell ${addr(g.r1, g.c1)}` : `cells ${addr(g.r1, g.c1)}:${addr(g.r2, g.c2)}` };
+    },
     reveal(quote) {
       const q = quote.replace(/[“”"]/g, '').trim().toLowerCase().slice(0, 40);
       if (!q) return false;
@@ -1403,6 +1413,18 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
   useEffect(() => {
     editorRegistry.set(tab.id, { save: (a) => handlers.current.save(a), holdAutosave: () => handlers.current.holdReason(), print: () => handlers.current.print(), debugBuild: () => writeXlsx(h.get()), ai: proxyAi(aiRef) });
   }, [tab.id]);
+
+  // The small menu above a highlighted range of cells (not a single cell: clicking around stays quiet).
+  const selMenu = useSelectionMenu(
+    () => bodyRef.current,
+    () => {
+      const box = bodyRef.current?.querySelector('.sel-range') as HTMLElement | null;
+      if (!box) return null;
+      const r = box.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, left: r.left, right: Math.min(r.right, r.left + 320) };
+    },
+    active
+  );
 
   // Report the selected cells (as tab-separated text) to the AI sidebar.
   useEffect(() => {
@@ -1997,6 +2019,20 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
             return <div className={`fill-box ${b.cls}`} style={{ left: b.left, top: b.top, width: b.width, height: b.height }} />;
           })()}
           {!editing && <div className={`sel-active ${curBox.cls}`} style={{ left: curBox.left, top: curBox.top, width: curBox.width, height: curBox.height }} />}
+          <SelectionMenu
+            rect={editing ? null : selMenu.rect}
+            onClose={selMenu.close}
+            onAsk={() => {
+              const f = aiRef.current.focusSelection?.();
+              if (f) askAboutSelection(tab.id, f);
+            }}
+            actions={[
+              ...clipboardActions(() => void api.paste()),
+              { id: 'bold', title: 'Bold (Ctrl+B)', icon: <Bold size={15} />, on: !!activeStyle.b, run: () => applyStyle({ b: !activeStyle.b }) },
+              { id: 'italic', title: 'Italic (Ctrl+I)', icon: <Italic size={15} />, on: !!activeStyle.i, run: () => applyStyle({ i: !activeStyle.i }) },
+              { id: 'underline', title: 'Underline (Ctrl+U)', icon: <UIcon size={15} />, on: !!activeStyle.u, run: () => applyStyle({ u: !activeStyle.u }) }
+            ]}
+          />
           {!editing && sel.r2 < rows - 1 && sel.c2 < cols - 1 && (
             <div className={`fill-handle ${selBox.cls}`} data-fill="1" style={{ left: selBox.left + selBox.width - 4, top: selBox.top + selBox.height - 4 }} title="Drag to fill" />
           )}

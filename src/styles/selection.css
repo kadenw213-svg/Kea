@@ -1,0 +1,128 @@
+/* The menu above highlighted text (components/selection/SelectionMenu.tsx): small, flat and quiet. */
+.selm {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 30px;
+  padding: 0 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  font-size: 12px;
+  user-select: none;
+}
+.selm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.selm-btn:hover {
+  background: var(--surface-3);
+}
+.selm-btn.on {
+  background: var(--surface-4, var(--surface-3));
+}
+.selm-ai {
+  padding: 0 8px;
+  font-weight: 500;
+}
+.selm-ai svg {
+  color: var(--accent);
+}
+.selm-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+/* The highlight sent to Claude, waiting in the chat as a chip (AssistantPanel.tsx). */
+.as-focus {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 12px 6px;
+  padding: 5px 4px 5px 8px;
+  border-left: 2px solid var(--accent);
+  border-radius: 3px;
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.as-focus-text {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+.as-focus-where {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.ai-msg-focus {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: right;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ai-msg-route {
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  text-align: right;
+}
+
+/* Wording Claude suggests in the chat, with Replace / Insert / Copy (AssistantPanel.tsx). */
+.as-suggest {
+  margin: 4px 0 8px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+.as-suggest-text {
+  padding: 6px 10px;
+  white-space: pre-wrap;
+  user-select: text;
+}
+.as-suggest-acts {
+  display: flex;
+  gap: 2px;
+  padding: 2px 4px 4px;
+  border-top: 1px solid var(--border);
+}
+.as-suggest-acts button {
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.as-suggest-acts button:hover {
+  background: var(--surface-3);
+}

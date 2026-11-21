@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   writeFile: (p, data) => ipcRenderer.invoke('file:write', p, data),
   fontFile: (family, bold, italic) => ipcRenderer.invoke('fonts:file', family, bold, italic),
   fileExists: (p) => ipcRenderer.invoke('file:exists', p),
+  paste: () => ipcRenderer.invoke('edit:paste'),
   renameFile: (from, to) => ipcRenderer.invoke('file:rename', from, to),
   showInFolder: (p) => ipcRenderer.invoke('shell:show-in-folder', p),
   getRecent: () => ipcRenderer.invoke('recent:get'),

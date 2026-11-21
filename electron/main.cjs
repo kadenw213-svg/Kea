@@ -598,6 +598,12 @@ ipcMain.handle('file:rename', appOnly((_e, from, to) => {
   return true;
 }));
 
+// The selection menu's Paste: the same as Ctrl+V in the focused editor (rich text and pictures included).
+handleApp(ipcMain, 'edit:paste', (e) => {
+  e.sender.paste();
+  return true;
+});
+
 handleApp(ipcMain, 'file:exists', (_e, p) => {
   try {
     return fs.statSync(p).isFile();

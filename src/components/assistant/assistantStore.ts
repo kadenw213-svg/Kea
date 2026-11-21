@@ -16,6 +16,17 @@ export interface ChatItem {
   image?: string;
   /** Files the student attached to the message. */
   files?: { name: string; thumb?: string }[];
+  /** The passage the student highlighted and sent with the message (Ask Claude). */
+  focus?: string;
+  /** Which model the funnel chose for this message, and why. */
+  route?: { tier: 'quick' | 'standard' | 'deep'; model: string; why: string };
+}
+
+/** A highlighted passage (or range of cells) sent to the chat with Ask Claude, shown as a chip until it's sent. */
+export interface Focus {
+  text: string;
+  /** Where it is: "cells B2:D9" in a spreadsheet; nothing for document text. */
+  where?: string;
 }
 
 /** A tab's conversation: the messages as Claude's API holds them, and what the panel shows. */
@@ -30,6 +41,8 @@ export interface Chat {
   via?: 'plan' | 'api';
   /** The assignment Claude was last given in this conversation (assignmentContext.ts assignmentSig). */
   assignmentSent?: string;
+  /** On an API key: the model the last message went to (the funnel can pick another for the next one). */
+  lastModel?: string;
 }
 
 interface AssistantStore {
@@ -37,6 +50,8 @@ interface AssistantStore {
   openTabs: Record<string, boolean>;
   /** What's typed in each tab's message box but not sent yet. */
   drafts: Record<string, string>;
+  /** The passage each tab sent with Ask Claude, waiting to go with the next message. */
+  focus: Record<string, Focus | undefined>;
   chats: Record<string, Chat>;
   /** What Claude is doing in each tab right now ("Adding a text box"), for the overlay on the file. */
   activity: Record<string, string | undefined>;
@@ -55,6 +70,7 @@ const loadDrafts = (): Record<string, string> => {
 export const useAssistant = create<AssistantStore>((set) => ({
   openTabs: {},
   drafts: {},
+  focus: {},
   chats: {},
   activity: {},
   key: null,
@@ -139,6 +155,23 @@ export const toggleAssistant = () => {
 useLookup.subscribe((s, prev) => {
   if (s.open && !prev.open) setAssistantOpen(false);
 });
+
+export const focusOf = (tabId: string) => useAssistant.getState().focus[tabId] || null;
+export function setFocus(tabId: string, focus: Focus | null) {
+  const s = useAssistant.getState();
+  s.set({ focus: { ...s.focus, [tabId]: focus || undefined } });
+}
+
+/**
+ * Ask Claude about a highlighted passage (the selection menu's AI button, or Ctrl+Shift+A): the panel opens on that
+ * file with the passage attached as a chip, and the cursor in the message box.
+ */
+export function askAboutSelection(tabId: string, focus: Focus) {
+  if (!focus.text.trim()) return;
+  setFocus(tabId, focus);
+  setAssistantOpen(true, tabId);
+  setTimeout(() => (document.querySelector('.ai-sidebar.assistant textarea') as HTMLTextAreaElement | null)?.focus(), 80);
+}
 
 // Drafts are kept by file (its path once saved), so a half-written message is still there when the file is reopened.
 let draftFiles: Record<string, string> = loadDrafts();
