@@ -45,3 +45,6 @@ export function openScholar(view: ScholarView = { name: 'calendar' }) {
   if (existing) tabs.setActive(existing.id);
   else tabs.addTab({ kind: 'scholar', name: 'School', path: null, data: null });
 }
+
+// (The screenshot harness, KEA_EVAL, opens School views and study through this: like window.__kea in store.ts.)
+(window as any).__keaScholar = { useScholar, openScholar };

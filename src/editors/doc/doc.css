@@ -46,7 +46,7 @@
   overflow: auto;
   padding: 8px 24px 80px;
   cursor: text;
-  background: var(--bg);
+  background: var(--canvas);
 }
 .doc-page {
   --paper: #1e1f20;
@@ -327,7 +327,7 @@
   text-indent: 0;
 }
 .pg-gap {
-  background: var(--bg);
+  background: var(--canvas);
   box-shadow: inset 0 7px 6px -6px rgba(0, 0, 0, 0.55), inset 0 -7px 6px -6px rgba(0, 0, 0, 0.55);
 }
 .pg-header-area,

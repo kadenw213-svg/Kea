@@ -36,6 +36,17 @@
   --sp-5: 16px;
   --sp-6: 24px;
   --hairline: 1px solid var(--border);
+  /* Layers (since Kea 0.98, like Windows 11's Mica and acrylic): --canvas is a screen's dead space (see-through over the
+     backdrop), --pane side panels and bars, --card cards, --flyout menus and dialogs. Without a backdrop they're the
+     theme's solid colours; with one, settings.ts applyBackground makes them see-through. */
+  --canvas: var(--bg);
+  --pane: var(--surface);
+  --card: var(--surface);
+  --flyout: var(--surface-2);
+  --scrim: transparent;
+  /* A screen laid over another (the study player): the same backdrop painted again, fixed to the window, so it covers
+     what's under it but still looks see-through. */
+  --canvas-cover: var(--bg);
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.32), 0 0 0 1px var(--border);
   --titlebar-h: 40px;
   --toolbar-h: 40px;
@@ -193,7 +204,7 @@ body.col-resizing * {
   gap: 8px;
   padding-left: 12px;
   padding-right: 150px; /* room for Windows caption buttons */
-  background: var(--bg);
+  background: var(--pane);
   -webkit-app-region: drag;
   flex-shrink: 0;
 }
@@ -323,20 +334,38 @@ body.col-resizing * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 16px;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
   border-radius: var(--radius);
   border: 1px solid var(--border-strong);
-  background: transparent;
-  color: var(--accent);
-  font-weight: 500;
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
 .btn:hover {
-  background: var(--accent-soft);
+  background: var(--surface-3);
+}
+.btn:active {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.btn:focus-visible,
+.icon-btn:focus-visible,
+.menu-item:focus-visible,
+.link-btn:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.btn.ghost:hover {
+  background: var(--hover);
 }
 .btn:disabled {
   opacity: 0.45;
@@ -346,6 +375,10 @@ body.col-resizing * {
   background: var(--accent);
   color: var(--on-accent);
   border-color: transparent;
+}
+.btn.primary:active {
+  background: var(--accent-strong);
+  color: var(--on-accent);
 }
 .btn.primary:hover {
   background: color-mix(in srgb, var(--accent) 82%, var(--text));
@@ -358,22 +391,23 @@ body.col-resizing * {
   color: #3c0d0a;
 }
 .btn.tonal {
-  background: var(--surface-3);
+  background: var(--accent-soft);
   border-color: transparent;
   color: var(--text);
 }
 .btn.tonal:hover {
-  background: var(--surface-4);
+  background: color-mix(in srgb, var(--accent-soft) 100%, var(--hover));
+  filter: brightness(1.12);
 }
 .btn.sm {
-  height: 30px;
-  padding: 0 12px;
+  height: 28px;
+  padding: 0 10px;
   font-size: 12.5px;
 }
 
 .icon-btn {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius);
   border: none;
   background: transparent;
@@ -483,21 +517,31 @@ body.col-resizing * {
 }
 
 .input {
-  height: 36px;
+  height: 32px;
   border-radius: var(--radius);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
+  border-bottom-color: var(--border-strong);
   background: var(--surface);
-  padding: 0 12px;
+  padding: 0 10px;
   outline: none;
   width: 100%;
   user-select: text;
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.input:hover {
+  border-color: var(--border-strong);
 }
 .input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  border-color: var(--border);
+  border-bottom-color: var(--accent);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+textarea.input {
+  height: auto;
+  padding: 6px 10px;
 }
 .input.sm {
-  height: 30px;
+  height: 28px;
   font-size: 12.5px;
 }
 
@@ -519,12 +563,16 @@ body.col-resizing * {
 .popover {
   position: fixed;
   z-index: 1000;
-  background: var(--surface-3);
-  border-radius: var(--radius-lg);
+  background: var(--flyout);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow);
-  padding: 6px;
+  padding: 4px;
   min-width: 180px;
   animation: pop 0.12s ease-out;
+}
+html.bg-acrylic .popover,
+html.bg-acrylic .dialog {
+  backdrop-filter: blur(30px) saturate(1.2);
 }
 /* Transform-only animations: content stays visible even if the clock is paused. */
 @keyframes pop {
@@ -535,9 +583,10 @@ body.col-resizing * {
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  padding: 8px 12px;
+  min-height: 32px;
+  padding: 5px 10px;
   border-radius: var(--radius);
   border: none;
   background: transparent;
@@ -565,16 +614,14 @@ body.col-resizing * {
 }
 .menu-sep {
   height: 1px;
-  background: var(--border-strong);
-  margin: 6px 4px;
+  background: var(--border);
+  margin: 4px -4px;
 }
 .menu-title {
-  padding: 6px 12px 4px;
-  font-size: 11px;
+  padding: 8px 10px 4px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .swatches {
@@ -602,7 +649,7 @@ body.col-resizing * {
 .scrim {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.4);
   z-index: 2000;
   display: grid;
   place-items: center;
@@ -614,7 +661,7 @@ body.col-resizing * {
   }
 }
 .dialog {
-  background: var(--surface-2);
+  background: var(--flyout);
   border-radius: var(--radius-xl);
   padding: 24px;
   min-width: 380px;
@@ -625,7 +672,8 @@ body.col-resizing * {
 .dialog h2 {
   margin: 0 0 12px;
   font-size: 20px;
-  font-weight: 500;
+  line-height: 28px;
+  font-weight: 600;
 }
 .dialog p {
   margin: 0 0 20px;
@@ -660,18 +708,21 @@ body.col-resizing * {
   pointer-events: none;
 }
 .toast {
-  background: var(--text);
-  color: var(--bg);
-  padding: 12px 18px;
-  border-radius: var(--radius);
+  background: var(--surface-3);
+  color: var(--text);
+  padding: 10px 16px 10px 14px;
+  border-radius: var(--radius-lg);
+  border-left: 3px solid var(--accent);
   box-shadow: var(--shadow);
   font-weight: 500;
   animation: pop 0.15s ease-out;
   max-width: 560px;
 }
+.toast.success {
+  border-left-color: var(--success);
+}
 .toast.error {
-  background: #f9dedc;
-  color: #410e0b;
+  border-left-color: var(--danger);
 }
 
 /* ---------- Status bar ---------- */
@@ -1229,17 +1280,73 @@ body.col-resizing * {
   filter: brightness(1.08);
 }
 
-/* ---------- Background picture (Settings → Appearance) ---------- */
+/* ---------- Backdrop (Settings → Appearance → Background) ---------- */
+/* The picture or colour behind the whole window, a scrim over it, and every screen's dead space see-through to it. */
+html.has-bg {
+  --canvas: transparent;
+  --canvas-cover: linear-gradient(var(--scrim), var(--scrim)) center / cover fixed, var(--app-bg-image, none) center / cover fixed no-repeat, var(--app-bg-color, var(--bg));
+}
 html.has-bg body {
-  background: var(--bg-solid);
+  background: var(--app-bg-color, var(--bg));
   isolation: isolate;
 }
-html.has-bg body::before {
+html.has-bg body::before,
+html.has-bg body::after {
   content: '';
   position: fixed;
-  inset: calc(-2 * var(--app-bg-blur, 0px));
-  background: var(--app-bg-image) center / cover no-repeat;
-  filter: blur(var(--app-bg-blur, 0px));
-  z-index: -1;
   pointer-events: none;
+  z-index: -1;
+}
+html.has-bg body::before {
+  inset: calc(-2 * var(--app-bg-blur, 0px));
+  background: var(--app-bg-image, none) center / cover no-repeat;
+  filter: blur(var(--app-bg-blur, 0px));
+}
+html.has-bg body::after {
+  inset: 0;
+  background: var(--scrim);
+}
+/* Frosted panels and menus (acrylic): the backdrop blurred behind them. */
+html.bg-acrylic .acrylic {
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+html.bg-acrylic .titlebar,
+html.bg-acrylic .sch-nav {
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+
+/* ---------- Fluent touches shared by every screen (Kea 0.98) ---------- */
+/* Toolbars are panes (frosted over the backdrop). */
+.toolbar {
+  background: var(--pane);
+}
+html.bg-acrylic .toolbar {
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+/* The selected item in a side list: a short accent bar on its left and a soft fill (Fluent's navigation view). */
+html .sch-link.on,
+html .snav-item.on,
+html .src.on {
+  position: relative;
+  background: var(--active);
+  color: var(--text);
+}
+html .sch-link.on::before,
+html .snav-item.on::before,
+html .src.on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* Empty states and drop areas (dashed boxes) sit on a card, never straight on the backdrop. */
+html.has-bg .sch-empty,
+html.has-bg .recent-empty,
+html.has-bg .empty-box {
+  background: var(--card);
 }

@@ -73,11 +73,11 @@ function answerLine(q: StudyQuestion, s: Shown) {
 
 /**
  * `dunno`: the student said they didn't know: the answer and the whole walkthrough, without a verdict. `brief` (the
- * Study stream): a right answer shows the verdict and the first sentence of why, the rest behind "Show explanation",
- * with worked steps folded even on a calculation; a wrong one shows everything, as always.
+ * Study stream): any answer (right, wrong or "I don't know") shows the verdict and the first sentence of why, the rest
+ * behind "Show explanation" (Claude's Teach is the fuller explanation there); expanded, it's everything, as always.
  */
 export function Explanation({ q, s, answer, result, onSelf, dunno, brief }: { q: StudyQuestion; s: Shown; answer: Answer; result: boolean | null; onSelf(ok: boolean): void; dunno?: boolean; brief?: boolean }) {
-  const short = !!brief && result === true && !dunno && q.type !== 'short';
+  const short = !!brief && q.type !== 'short';
   const [more, setMore] = useState(false);
   useEffect(() => setMore(false), [q.k]);
   const why = short && !more ? firstSentence(q.explain || '') : null;

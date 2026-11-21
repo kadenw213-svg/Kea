@@ -208,9 +208,25 @@ export const SECTIONS: Section[] = [
           { value: 'system', label: 'System font' }
         ]
       },
-      { key: 'appearance.background', label: 'Background picture', type: 'image', default: '', help: 'A picture that shows softly behind Kea. Empty: none.' },
-      { key: 'appearance.backgroundStrength', label: 'How much the picture shows', type: 'range', default: 0.18, min: 0.05, max: 0.6, step: 0.01, advanced: true, when: (v) => !!v['appearance.background'] },
-      { key: 'appearance.backgroundBlur', label: 'Blur the picture', type: 'range', default: 0, min: 0, max: 30, step: 1, advanced: true, when: (v) => !!v['appearance.background'] },
+      {
+        key: 'appearance.backdrop',
+        label: 'Background',
+        type: 'select',
+        default: 'mountains',
+        help: 'What shows behind Kea, in the space around pages, cards and panels. Pages and text stay on solid colour.',
+        options: [
+          { value: 'mountains', label: 'Snowy mountains (Kea’s own)' },
+          { value: 'color', label: 'A solid colour' },
+          { value: 'picture', label: 'Your own picture' },
+          { value: 'none', label: 'None (plain)' }
+        ]
+      },
+      { key: 'appearance.backdropColor', label: 'Background colour', type: 'color', default: '#1b2330', when: (v) => backdropOf(v) === 'color' },
+      { key: 'appearance.background', label: 'Your picture', type: 'image', default: '', help: 'Any picture from your computer. It’s darkened (or lightened, on light themes) so text stays readable.', when: (v) => backdropOf(v) === 'picture' },
+      { key: 'appearance.backgroundStrength', label: 'How much the background shows', type: 'range', default: 0.6, min: 0.1, max: 1, step: 0.05, advanced: true, when: (v) => backdropOf(v) === 'mountains' || backdropOf(v) === 'picture' },
+      { key: 'appearance.backgroundBlur', label: 'Blur the background', type: 'range', default: 0, min: 0, max: 30, step: 1, advanced: true, when: (v) => backdropOf(v) === 'mountains' || backdropOf(v) === 'picture' },
+      { key: 'appearance.acrylic', label: 'See-through panels', type: 'toggle', default: true, advanced: true, when: (v) => backdropOf(v) !== 'none', help: 'Side panels, bars and menus let the background show softly through them, like Windows 11. Off: solid panels. Windows’ own “Transparency effects” turned off also makes them solid.' },
+      { key: 'appearance.backdropLight', label: 'Daytime mountains on light themes', type: 'toggle', default: true, advanced: true, when: (v) => backdropOf(v) === 'mountains' },
       { key: 'appearance.surfaceContrast', label: 'Panel contrast', type: 'range', default: 0, min: -2, max: 3, step: 1, advanced: true, help: 'Makes panels and cards stand out more (or less) from the background.' },
       { key: 'appearance.radius', label: 'Corner roundness', type: 'range', default: 1, min: 0, max: 1.5, step: 0.25, advanced: true },
       { key: 'appearance.toolbarSize', label: 'Toolbar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }, { value: 1.3, label: 'Extra large' }] },
@@ -666,6 +682,7 @@ export const SECTIONS: Section[] = [
       { key: 'study.mix.tf', label: 'True or false', type: 'range', default: 1, min: 0, max: 10, advanced: true },
       { key: 'study.mix.short', label: 'Written answers', type: 'range', default: 1, min: 0, max: 10, advanced: true, help: 'You mark these yourself against the model answer.' },
       { key: 'study.sound', group: 'Studying', label: 'Soft sounds for right and wrong answers', type: 'toggle', default: false, help: 'A gentle rising tone when you’re right, a single low one when you’re not.' },
+      { key: 'study.teachOnDontKnow', label: 'Start Claude’s lesson when I press I don’t know', type: 'toggle', default: true, help: 'Teach opens beside the question and Claude explains the idea behind it straight away. The question still counts as missed and comes back later.' },
       { key: 'study.stream.missGap', label: 'A missed question comes back after', type: 'number', default: 4, min: 2, max: 20, step: 1, unit: 'questions', advanced: true, help: 'Give or take one. Answering it then doesn’t count as learned: right just after the explanation isn’t the same as knowing it.' },
       { key: 'study.stream.reviewShare', label: 'Share of questions from chapters already learned', type: 'range', default: 0.25, min: 0, max: 0.6, step: 0.05, advanced: true, help: 'When every chapter of a class is ticked, Kea goes through them in order. Chapters you’ve learned keep coming up this often (0.25 is about 1 in 4).' },
       { key: 'study.stream.learnedAt', label: 'A chapter counts as learned at', type: 'number', default: 80, min: 50, max: 100, step: 5, unit: '%', advanced: true, help: 'Of its questions right the last time you answered them. Then the next chapter joins.' },
@@ -1057,37 +1074,69 @@ function hexToRgb(h: string) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/** Apply look-and-feel settings to the whole window. */
-// The background picture (Appearance): read once per file, shown behind the app through a translucent background.
+// The backdrop (Appearance → Background), since Kea 0.98: Kea's own snowy mountains (the default), a solid colour, your
+// own picture, or none. It's drawn behind the whole window (body::before) under a scrim in the theme's background
+// colour (body::after; "how much it shows" is how see-through the scrim is). Screens leave their dead space see-through
+// (--canvas), side panels and bars are frosted (--pane, with a blur), cards nearly solid (--card), menus and dialogs
+// frosted (--flyout). Pages, sheets, inputs and reading panes keep their solid surfaces: long text never sits on the
+// picture. Without a backdrop all of these are the theme's ordinary solid colours. (styles/global.css, "Backdrop".)
+export type Backdrop = 'mountains' | 'color' | 'picture' | 'none';
+/** The backdrop chosen: someone who picked a picture before 0.98 (no backdrop setting yet) keeps it. */
+export function backdropOf(v: Record<string, any> = useSettings.getState().values): Backdrop {
+  const b = v['appearance.backdrop'];
+  if (b === 'mountains' || b === 'color' || b === 'picture' || b === 'none') return b;
+  return v['appearance.background'] ? 'picture' : 'mountains';
+}
 let bgPath = '';
 let bgUrl = '';
-async function applyBackground(file: string, strength: number, blur: number) {
-  const root = document.documentElement;
-  if (!file) {
-    root.classList.remove('has-bg');
-    root.style.removeProperty('--app-bg-image');
-    return;
-  }
-  if (file !== bgPath) {
-    bgPath = file;
-    try {
-      const e = await api.readFile(file);
-      const ext = (file.match(/\.(\w+)$/)?.[1] || 'png').toLowerCase();
-      if (bgUrl) URL.revokeObjectURL(bgUrl);
-      bgUrl = URL.createObjectURL(new Blob([e.data as BlobPart], { type: `image/${ext === 'jpg' ? 'jpeg' : ext === 'svg' ? 'svg+xml' : ext}` }));
-    } catch {
-      bgUrl = '';
+const rgba = (hex: string, a: number) => {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+};
+async function applyBackground(v: Record<string, any>, theme: { dark: boolean; c: Record<string, string> }, num: (k: string, d: number) => number) {
+  const html = document.documentElement;
+  const root = html.style;
+  const kind = backdropOf(v);
+  // (Windows' "Transparency effects" off, or high contrast: solid panels, as accessibility asks.)
+  const solidOnly = !!(window.matchMedia?.('(prefers-reduced-transparency: reduce)').matches || window.matchMedia?.('(forced-colors: active)').matches);
+  const off = () => {
+    html.classList.remove('has-bg', 'bg-acrylic');
+    root.removeProperty('--app-bg-image');
+    root.removeProperty('--app-bg-color');
+  };
+  if (kind === 'none') return off();
+  let image = '';
+  if (kind === 'mountains') image = `url("/backdrops/snowy-ridge-${theme.dark || v['appearance.backdropLight'] === false ? 'dark' : 'light'}.jpg")`;
+  else if (kind === 'picture') {
+    const file = String(v['appearance.background'] || '');
+    if (!file) return off();
+    if (file !== bgPath) {
+      bgPath = file;
+      try {
+        const e = await api.readFile(file);
+        const ext = (file.match(/\.(\w+)$/)?.[1] || 'png').toLowerCase();
+        if (bgUrl) URL.revokeObjectURL(bgUrl);
+        bgUrl = URL.createObjectURL(new Blob([e.data as BlobPart], { type: `image/${ext === 'jpg' ? 'jpeg' : ext === 'svg' ? 'svg+xml' : ext}` }));
+      } catch {
+        bgUrl = '';
+      }
     }
+    if (!bgUrl || bgPath !== file) return off();
+    image = `url("${bgUrl}")`;
   }
-  if (!bgUrl || bgPath !== file) return;
-  // The window's background turns see-through by `strength`, over the picture; panels and pages stay solid.
-  const solid = root.style.getPropertyValue('--bg').trim() || '#131314';
-  const [r, g, b] = hexToRgb(solid.startsWith('#') ? solid : '#131314');
-  root.style.setProperty('--bg-solid', solid);
-  root.style.setProperty('--bg', `rgba(${r}, ${g}, ${b}, ${1 - Math.max(0.02, Math.min(0.8, strength))})`);
-  root.style.setProperty('--app-bg-image', `url("${bgUrl}")`);
-  root.style.setProperty('--app-bg-blur', `${Math.max(0, Math.min(40, blur))}px`);
-  root.classList.add('has-bg');
+  const c = theme.c;
+  // How much shows: the scrim over the picture is the theme's background at (1 - strength). A solid colour is itself.
+  const strength = Math.max(0.05, Math.min(1, num('appearance.backgroundStrength', 0.6)));
+  root.setProperty('--app-bg-image', image || 'none');
+  root.setProperty('--app-bg-color', kind === 'color' ? String(v['appearance.backdropColor'] || '#1b2330') : c.bg);
+  root.setProperty('--app-bg-blur', `${Math.max(0, Math.min(40, num('appearance.backgroundBlur', 0)))}px`);
+  root.setProperty('--scrim', kind === 'color' ? 'transparent' : rgba(c.bg, 1 - strength));
+  const acrylic = !solidOnly && v['appearance.acrylic'] !== false;
+  root.setProperty('--pane', acrylic ? rgba(c.surface, theme.dark ? 0.78 : 0.8) : c.surface);
+  root.setProperty('--card', acrylic ? rgba(c.surface, theme.dark ? 0.86 : 0.88) : c.surface);
+  root.setProperty('--flyout', acrylic ? rgba(c['surface-2'], 0.94) : c['surface-2']);
+  html.classList.add('has-bg');
+  html.classList.toggle('bg-acrylic', acrylic);
 }
 
 function applyAppearance() {
@@ -1146,7 +1195,7 @@ function applyAppearance() {
   root.setProperty('--tb-zoom', String(num('appearance.toolbarSize', 1)));
   root.setProperty('--tab-zoom', String(num('appearance.tabSize', 1)));
   root.setProperty('--menu-font', `${num('appearance.menuFont', 13)}px`);
-  applyBackground(String(v['appearance.background'] || ''), num('appearance.backgroundStrength', 0.18), num('appearance.backgroundBlur', 0));
+  applyBackground(v, theme, num);
   root.setProperty('--ai-w', `${Math.min(640, Math.max(300, num('ai.sidebarWidth', 380)))}px`);
   root.setProperty('--ai-font', `${num('appearance.aiFont', 13)}px`);
   api.setZoom(Number(v['appearance.scale']) || 1);

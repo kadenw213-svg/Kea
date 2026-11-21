@@ -25,7 +25,7 @@
   width: var(--ai-w, 380px);
   height: 100%;
   margin: 0;
-  background: var(--surface);
+  background: var(--pane);
   border-left: var(--hairline);
   border-radius: 0;
   display: flex;
@@ -446,7 +446,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: var(--surface);
+  background: var(--card);
   border-radius: var(--radius);
   padding: 10px 12px;
   margin-bottom: 12px;
@@ -492,7 +492,7 @@
   display: flex;
   gap: 12px;
   align-items: center;
-  background: var(--surface);
+  background: var(--card);
   border-radius: var(--radius-lg);
   padding: 10px 14px;
   margin: 14px 0;
@@ -557,7 +557,7 @@
   gap: 6px;
 }
 .set-section.adv {
-  background: var(--surface);
+  background: var(--card);
   border-radius: var(--radius-lg);
   padding: 12px 14px 4px;
 }
@@ -707,7 +707,7 @@
 /* Segmented toggles in the sidebar carry their own look: the editors' .seg styles only load with those editors. */
 .ai-sidebar .seg {
   display: inline-flex;
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 2px;
@@ -753,7 +753,7 @@
   margin: 0 12px 10px;
   padding: 10px 12px;
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
 }
 .ai-settings .ai-instr {
@@ -1015,7 +1015,7 @@
   display: flex;
   width: auto;
   margin: 0 6px;
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 2px;
@@ -1097,4 +1097,7 @@
   border: none;
   border-top: 1px solid var(--border);
   margin: 10px 0;
+}
+html.bg-acrylic .ai-inner {
+  backdrop-filter: blur(24px) saturate(1.2);
 }

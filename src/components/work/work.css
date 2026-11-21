@@ -3,7 +3,7 @@
   position: absolute;
   inset: 0;
   overflow: auto;
-  background: var(--bg);
+  background: var(--canvas);
   user-select: text;
   container: work / inline-size;
   --wk-good: var(--success);
@@ -114,7 +114,7 @@
   font-weight: 600;
 }
 .wk-card {
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 14px 16px;
@@ -388,7 +388,7 @@ select.input {
   gap: 10px;
   padding: 10px 12px;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   text-align: left;
   color: var(--text);
@@ -479,7 +479,7 @@ select.input {
 
 /* ---------- the to-do box ---------- */
 .wk-todo {
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 12px 14px;
@@ -738,7 +738,7 @@ select.input {
   font-size: 12.5px;
   line-height: 1.25;
   border: 1px solid var(--border-strong);
-  background: var(--surface);
+  background: var(--card);
   color: var(--text-3);
   cursor: pointer;
   touch-action: none;
@@ -806,7 +806,7 @@ select.input {
   padding: 2px 0;
 }
 .af-day {
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 6px;
@@ -1083,7 +1083,7 @@ select.input {
   gap: 12px;
   padding: 10px 12px;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
 }
 .wk-day.today {
@@ -1141,7 +1141,7 @@ select.input {
   gap: 8px;
 }
 .wk-team-day {
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 8px 10px;
@@ -1230,7 +1230,7 @@ select.input {
   gap: 6px;
   padding: 6px 8px;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   cursor: grab;
   font-size: 13px;
@@ -1278,7 +1278,7 @@ select.input {
   padding: 2px 4px;
 }
 .sb-slot {
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   border-left: 3px solid var(--success);
   border-radius: var(--radius);
@@ -1565,7 +1565,7 @@ select.input {
   margin-bottom: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--card);
 }
 .wk-server-note .wk-row-main {
   flex: 1;

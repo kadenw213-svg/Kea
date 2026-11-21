@@ -9,7 +9,8 @@
 //
 // Once a question is answered, Teach has Claude teach the idea behind it step by step (Teach.tsx), Book opens the
 // textbook where it's taught, and Encyclopedia looks up any word or idea; highlighting words offers Teach and Look up
-// for just those. None of it is there before answering, so it can't give the answer away.
+// for just those. "I don't know" opens Teach and starts the lesson at once (study.teachOnDontKnow). None of it is
+// there before answering, so it can't give the answer away.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, BookOpen, Globe, GraduationCap } from 'lucide-react';
 import { api, StudyHistory, StudyQuestion, StudySetFull } from '../../lib/api';
@@ -17,6 +18,7 @@ import { useScholar } from './scholarStore';
 import { Answer, QuestionCard, Shown, grade, showQuestion } from './Study';
 import { StarButton } from './StudyModes';
 import { judgeBlank } from '../../lib/blank';
+import { setting } from '../../lib/settings';
 import { createLog, createQueue, Served } from '../../lib/studyQueue';
 import { streamSettings, studyMix } from '../../lib/studyMix';
 import { playRight, playWrong } from '../../lib/sound';
@@ -115,6 +117,8 @@ export function StudyStream({ scope, set }: { scope?: StreamScope; set?: StudySe
   const [starred, setStarred] = useState<Set<string>>(new Set());
   const side = useStudySide();
   const [cardEl, setCardEl] = useState<HTMLDivElement | null>(null);
+  // (The card whose "I don't know" already started a lesson: once per card.)
+  const taught = useRef<number | null>(null);
   const result = card && revealed ? (dunno ? false : grade(card.shown, answer, self, judged)) : null;
   useEffect(() => {
     if (!queue) return;
@@ -149,7 +153,12 @@ export function StudyStream({ scope, set }: { scope?: StreamScope; set?: StudySe
       [q.q, choices, q.explain].filter(Boolean).join('\n\n'),
       { k: card.served.item.k, q, courseCode: scope?.code || set?.courseCode || '', answer: dunno ? null : mine, right: dunno ? false : result, dunno }
     );
-  }, [card, revealed, result]);
+    // "I don't know": Claude's lesson on it starts straight away (Settings → Study, on by default).
+    if (dunno && side?.canTeach && taught.current !== card.served.at && setting('study.teachOnDontKnow') !== false) {
+      taught.current = card.served.at;
+      side.teach('');
+    }
+  }, [card, revealed, result, side?.canTeach]);
   /** What's saved: a miss on a question whose stored answer may be wrong counts neither way. */
   const saved = (r: boolean | null) => (r === false && card?.shown.q.answerDisputed ? null : r);
 

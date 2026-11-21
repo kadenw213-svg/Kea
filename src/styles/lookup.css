@@ -100,7 +100,7 @@
 }
 .lk-chip {
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--card);
   color: var(--text-2);
   border-radius: var(--radius);
   padding: 1px 9px;

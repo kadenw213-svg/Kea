@@ -383,7 +383,7 @@
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--card);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -629,7 +629,7 @@
   padding: 8px 12px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--card);
   font-size: 13px;
   font-weight: 600;
 }
@@ -686,7 +686,7 @@
   background: var(--surface-2);
 }
 .acct-sub input {
-  background: var(--surface);
+  background: var(--card);
 }
 .acct-danger {
   border: 1px solid var(--danger, #e5534b);

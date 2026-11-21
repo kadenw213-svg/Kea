@@ -3,7 +3,7 @@
   position: absolute;
   inset: 0;
   overflow: auto;
-  background: var(--bg);
+  background: var(--canvas);
   user-select: text;
 }
 .audit-inner {
