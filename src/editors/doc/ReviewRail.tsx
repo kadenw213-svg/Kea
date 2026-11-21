@@ -8,6 +8,8 @@ import { uid, timeAgo } from '../../lib/util';
 import { Logo } from '../../components/Logo';
 import { LEGACY } from '../../lib/legacy';
 import { commentChange, removeCommentMark } from './commentUndo';
+import { api, type KeaAccount } from '../../lib/api';
+import { Avatar as AccountAvatar } from '../../components/scholar/Account';
 
 /** Comments and suggestions made by Kea's AI get the app's logo and a quiet grey look. */
 export const AI_AUTHOR = 'Claude';
@@ -16,8 +18,30 @@ export const AI_AUTHOR = 'Claude';
 export const isAiAuthor = (a?: string) => a === AI_AUTHOR || a === 'Kea AI' || a === LEGACY.aiAuthor;
 const initial = (name: string) => (name.trim()[0] || '?').toUpperCase();
 const hue = (name: string) => [...name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
-function Avatar({ name }: { name: string }) {
+/** The signed-in person's picture (Settings → Account), shown on their own comments instead of a letter. */
+let myAccount: KeaAccount | null | undefined;
+let accountP: Promise<void> | null = null;
+function useMyAccount() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (myAccount !== undefined) return;
+    accountP ||= api.account
+      .get()
+      .then((a) => void (myAccount = a))
+      .catch(() => void (myAccount = null));
+    let live = true;
+    accountP.then(() => live && bump((n) => n + 1));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return myAccount;
+}
+function Avatar({ name, me }: { name: string; me?: string }) {
+  const mine = useMyAccount();
   if (isAiAuthor(name)) return <Logo size={26} className="rv-avatar ai" />;
+  const isMe = !!mine?.avatar && (name === me || (!!mine.name && name === mine.name) || (!!mine.email && name === mine.email));
+  if (isMe) return <AccountAvatar account={mine} size={26} />;
   return (
     <span className="rv-avatar" style={{ background: `hsl(${hue(name)} 45% 42%)` }}>
       {initial(name)}
@@ -29,9 +53,10 @@ function Avatar({ name }: { name: string }) {
 function Clamped({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const long = text.length > 260 || text.split(/\r?\n/).length > 5;
+  // (The button sits after the folded text, not inside it, so folding never hides it.)
   return (
-    <div className={`rv-text ${long && !open ? 'clamped' : ''}`}>
-      {text}
+    <>
+      <div className={`rv-text ${long && !open ? 'clamped' : ''}`}>{text}</div>
       {long && (
         <button
           className="rv-more"
@@ -44,7 +69,7 @@ function Clamped({ text }: { text: string }) {
           {open ? 'Show less' : 'Show more'}
         </button>
       )}
-    </div>
+    </>
   );
 }
 
@@ -199,7 +224,7 @@ export function ReviewRail({
             return (
               <div key={key} ref={(el) => (el ? cardRefs.current.set(key, el) : cardRefs.current.delete(key))} className={`rv-card change ${isAiAuthor(c.author) ? 'ai' : ''} ${isActive ? 'active' : ''}`} style={{ top: tops[key] ?? 0 }} onMouseDown={() => setActive(it.id)}>
                 <div className="rv-who">
-                  <Avatar name={c.author || 'Someone'} />
+                  <Avatar name={c.author || 'Someone'} me={me} />
                   <div className="rv-meta">
                     <b>{c.author || 'Someone'}</b>
                     <span>{timeAgo(c.at)}</span>
@@ -242,7 +267,7 @@ export function ReviewRail({
               {isDraft ? (
                 <>
                   <div className="rv-who">
-                    <Avatar name={me} />
+                    <Avatar name={me} me={me} />
                     <div className="rv-meta">
                       <b>{me}</b>
                     </div>
@@ -289,7 +314,7 @@ export function ReviewRail({
               ) : (
                 <>
                   <div className="rv-who">
-                    <Avatar name={t.author} />
+                    <Avatar name={t.author} me={me} />
                     <div className="rv-meta">
                       <b>{t.author}</b>
                       <span>{timeAgo(t.at)}</span>
@@ -379,7 +404,7 @@ export function ReviewRail({
                   {t.replies.map((r) => (
                     <div key={r.id} className="rv-reply">
                       <div className="rv-who">
-                        <Avatar name={r.author} />
+                        <Avatar name={r.author} me={me} />
                         <div className="rv-meta">
                           <b>{r.author}</b>
                           <span>{timeAgo(r.at)}</span>

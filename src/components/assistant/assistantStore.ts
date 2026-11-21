@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { useLookup, setLookupOpen } from '../lookup/lookupStore';
+import { useTabs } from '../../store';
+import { fileKey, onFileKeyChange } from '../../lib/assignmentContext';
 
 /** One line in the Assistant panel: what you asked, Claude's answer, its reasoning, or a step it took in the file. */
 export interface ChatItem {
@@ -31,7 +33,10 @@ export interface Chat {
 }
 
 interface AssistantStore {
-  open: boolean;
+  /** Which tabs have the panel open: it belongs to the file it was opened on and comes back with it. */
+  openTabs: Record<string, boolean>;
+  /** What's typed in each tab's message box but not sent yet. */
+  drafts: Record<string, string>;
   chats: Record<string, Chat>;
   /** What Claude is doing in each tab right now ("Adding a text box"), for the overlay on the file. */
   activity: Record<string, string | undefined>;
@@ -39,15 +44,17 @@ interface AssistantStore {
   set(p: Partial<AssistantStore>): void;
 }
 
-const OPEN_KEY = 'kea.assistant.open';
+const DRAFT_KEY = 'kea.assistant.drafts';
+const loadDrafts = (): Record<string, string> => {
+  try {
+    return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+};
 export const useAssistant = create<AssistantStore>((set) => ({
-  open: (() => {
-    try {
-      return localStorage.getItem(OPEN_KEY) === '1';
-    } catch {
-      return false;
-    }
-  })(),
+  openTabs: {},
+  drafts: {},
   chats: {},
   activity: {},
   key: null,
@@ -96,15 +103,79 @@ export function doing(name = '') {
   return VERBS[verb] ? `${VERBS[verb]} ${rest.join(' ')}`.trim() : name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 }
 
-/** The Assistant and the Encyclopedia share the right side of the window: opening one closes the other. */
-export function setAssistantOpen(open: boolean) {
-  useAssistant.getState().set({ open });
-  if (open && useLookup.getState().open) setLookupOpen(false);
-  try {
-    localStorage.setItem(OPEN_KEY, open ? '1' : '0');
-  } catch {}
+/** Tabs that aren't a file (Home, the school dashboard, the work space): the panel never shows there. */
+const NOT_A_FILE = new Set(['home', 'scholar', 'work', 'audit']);
+const canHold = (tabId: string) => {
+  const t = useTabs.getState().tabs.find((x) => x.id === tabId);
+  return !!t && !NOT_A_FILE.has(t.kind);
+};
+
+/** Is the panel showing right now: open on the tab in front, and that tab is a file. */
+export const isAssistantOpen = (s: { openTabs: Record<string, boolean> }, activeId: string) => !!s.openTabs[activeId] && canHold(activeId);
+export function useAssistantOpen() {
+  const activeId = useTabs((s) => s.activeId);
+  useTabs((s) => s.tabs.find((t) => t.id === s.activeId)?.kind);
+  return useAssistant((s) => isAssistantOpen(s, activeId));
 }
-export const toggleAssistant = () => setAssistantOpen(!useAssistant.getState().open);
+
+/**
+ * Open or close the panel on a tab (the one in front unless named). It stays with that file: switching to Home or
+ * another document hides it, and it's back when you return. The Assistant and the Encyclopedia share the right side
+ * of the window: opening one closes the other.
+ */
+export function setAssistantOpen(open: boolean, tabId = useTabs.getState().activeId) {
+  const s = useAssistant.getState();
+  if (!!s.openTabs[tabId] === open) return;
+  const openTabs = { ...s.openTabs };
+  if (open) openTabs[tabId] = true;
+  else delete openTabs[tabId];
+  s.set({ openTabs });
+  if (open && useLookup.getState().open) setLookupOpen(false);
+}
+export const toggleAssistant = () => {
+  const id = useTabs.getState().activeId;
+  if (canHold(id)) setAssistantOpen(!useAssistant.getState().openTabs[id], id);
+};
 useLookup.subscribe((s, prev) => {
-  if (s.open && !prev.open && useAssistant.getState().open) setAssistantOpen(false);
+  if (s.open && !prev.open) setAssistantOpen(false);
+});
+
+// Drafts are kept by file (its path once saved), so a half-written message is still there when the file is reopened.
+let draftFiles: Record<string, string> = loadDrafts();
+const saveDrafts = () => {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(Object.fromEntries(Object.entries(draftFiles).filter(([f, t]) => !f.startsWith('tab:') && t))));
+  } catch {}
+};
+export const draftOf = (tabId: string) => useAssistant.getState().drafts[tabId] ?? draftFiles[fileKey(tabId)] ?? '';
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+export function setDraft(tabId: string, text: string) {
+  const s = useAssistant.getState();
+  s.set({ drafts: { ...s.drafts, [tabId]: text } });
+  const k = fileKey(tabId);
+  if (text) draftFiles[k] = text;
+  else delete draftFiles[k];
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveDrafts, 400);
+}
+onFileKeyChange((from, to) => {
+  if (draftFiles[from] && !draftFiles[to]) {
+    draftFiles = { ...draftFiles, [to]: draftFiles[from] };
+    if (from.startsWith('tab:')) delete draftFiles[from];
+    saveDrafts();
+  }
+});
+// A closed tab's panel, draft and chat go with it (the draft stays saved by the file's path).
+useTabs.subscribe((s, prev) => {
+  if (s.tabs === prev.tabs) return;
+  const gone = prev.tabs.filter((t) => !s.tabs.some((x) => x.id === t.id)).map((t) => t.id);
+  if (!gone.length) return;
+  const a = useAssistant.getState();
+  const openTabs = { ...a.openTabs };
+  const drafts = { ...a.drafts };
+  for (const id of gone) {
+    delete openTabs[id];
+    delete drafts[id];
+  }
+  a.set({ openTabs, drafts });
 });

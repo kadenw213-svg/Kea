@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardList, X, Search, ClipboardPaste, BookOpenCheck } from 'lucide-react';
 import { api, type AssignmentChoice } from '../../lib/api';
-import { assignmentOf, setAssignment, useAssignments, fileKey } from '../../lib/assignmentContext';
+import { assignmentOf, setAssignment, useAssignments, fileKey, assignmentSig, type AssignmentRef } from '../../lib/assignmentContext';
+import { useGrades } from '../../lib/gradeRun';
+import { gradeKey, readCached } from '../../lib/gradeEstimate';
+import { daysUntil, dueText } from '../../lib/dueDate';
 import { linkAssignment } from '../../lib/assignmentLink';
 
 const dateText = (a: AssignmentChoice) => new Date(`${a.date}T12:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -16,16 +19,55 @@ export function AssignmentButton({ tabId, onOpen }: { tabId: string; onOpen: () 
   );
 }
 
-/** The chosen assignment, shown above the composer. */
+// The student's assignments, looked up at most every few minutes (for the due date shown in the chat).
+let listAt = 0;
+let listP: Promise<AssignmentChoice[]> | null = null;
+function assignmentList(): Promise<AssignmentChoice[]> {
+  if (!listP || Date.now() - listAt > 5 * 60_000) {
+    listAt = Date.now();
+    listP = api.scholar.assignments().catch(() => []);
+  }
+  return listP;
+}
+
+/** When an assignment is due, from Kea Scholar's calendar (null for a pasted rubric or one Kea can't find). */
+export function useDueDate(ref: AssignmentRef | null | undefined): string | null {
+  const id = ref && 'id' in ref ? ref.id : null;
+  const [due, setDue] = useState<string | null>(null);
+  useEffect(() => {
+    setDue(null);
+    if (!id) return;
+    let live = true;
+    assignmentList().then((l) => live && setDue(l.find((a) => a.id === id)?.date || null));
+    return () => {
+      live = false;
+    };
+  }, [id]);
+  return due;
+}
+
+/**
+ * The chosen assignment, in its own small section at the top of the chat: what it is, the estimated grade from the
+ * assignment bar, and how long until it's due.
+ */
 export function AssignmentChip({ tabId, onOpen }: { tabId: string; onOpen: () => void }) {
   const ref = useAssignments((s) => s.byFile[fileKey(tabId)]);
+  const sig = ref ? assignmentSig(ref) : '';
+  const grade = useGrades((s) => (ref ? readCached(s.byKey[gradeKey(fileKey(tabId), sig)], sig) : null));
+  const due = useDueDate(ref);
   if (!ref) return null;
+  const days = due ? daysUntil(due) : null;
   return (
-    <div className="as-assignment">
+    <div className="as-assignment" role="region" aria-label="Assignment">
       <button className="as-assignment-main" title="Claude works against this assignment's guidelines and rubric (click to change)" onClick={onOpen}>
-        <ClipboardList size={14} />
-        <span>
-          For: <b>{ref.label}</b>
+        <span className="as-assignment-label">{ref.label}</span>
+        <span className="as-assignment-meta">
+          {grade && (
+            <span title="An estimate from Claude, not a grade">
+              Est. {grade.letter} ({grade.percent}%)
+            </span>
+          )}
+          {days !== null && <span className={days < 0 ? 'late' : days <= 2 ? 'soon' : ''}>{dueText(days)}</span>}
         </span>
       </button>
       <button className="icon-btn sm" title="Not for an assignment" onClick={() => setAssignment(tabId, null)}>
@@ -65,6 +107,10 @@ export function AssignmentPicker({ tabId, onClose }: { tabId: string; onClose: (
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return (list || []).filter((a) => words.every((w) => `${a.course} ${a.title}`.toLowerCase().includes(w)));
   }, [list, q]);
+  // The current assignment is highlighted and scrolled into view when the picker opens.
+  useEffect(() => {
+    if (list?.length) box.current?.querySelector('.as-pick-row.on')?.scrollIntoView({ block: 'nearest' });
+  }, [list]);
   const coming = shown.filter((a) => a.date >= today);
   const past = shown.filter((a) => a.date < today);
   const pick = (a: AssignmentChoice) => {
@@ -72,7 +118,7 @@ export function AssignmentPicker({ tabId, onClose }: { tabId: string; onClose: (
     onClose();
   };
   const row = (a: AssignmentChoice) => (
-    <button key={a.id} className={`as-pick-row ${current && 'id' in current && current.id === a.id ? 'on' : ''}`} onClick={() => pick(a)}>
+    <button key={a.id} className={`as-pick-row ${current && 'id' in current && current.id === a.id ? 'on' : ''}`} aria-current={current && 'id' in current && current.id === a.id ? 'true' : undefined} onClick={() => pick(a)}>
       <span className="as-pick-course">{a.course}</span>
       <span className="as-pick-title">{a.title}</span>
       <span className="as-pick-due">

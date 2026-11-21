@@ -108,8 +108,47 @@
 .as-step .as-shot {
   margin-left: 0;
 }
+/* Answers: words break only when one won't fit a line (not mid-word everywhere), and spacing stays even. */
 .ai-msg.assistant .ai-md {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+.ai-md > :last-child,
+.ai-md li > :last-child {
+  margin-bottom: 0;
+}
+.ai-md li > p {
+  margin: 0 0 4px;
+}
+.ai-md li > ul,
+.ai-md li > ol {
+  margin: 2px 0 0;
+}
+.ai-md h1,
+.ai-md h2 {
+  font-size: 1.08em;
+  margin-top: 14px;
+}
+.ai-md pre code {
+  background: none;
+  padding: 0;
+}
+.ai-md blockquote {
+  margin: 0 0 8px;
+  padding: 0 0 0 10px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-2);
+}
+.ai-md a {
+  color: var(--accent);
+}
+
+/* The panel's top bar: just its buttons (no title or logo). */
+.as-head {
+  justify-content: flex-end;
+  padding: 4px 6px 2px;
+}
+.as-head-tools {
+  display: flex;
 }
 .ai-md pre {
   background: var(--surface-2);
@@ -382,30 +421,49 @@ body.kea-capturing .claude-working {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin: 0 12px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 12px;
+  padding: 0 8px 0 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 11.5px;
 }
 .as-assignment-main {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px 6px;
   background: none;
   border: 0;
+  border-radius: var(--radius-sm);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
-.as-assignment-main span {
+.as-assignment-main:hover {
+  background: var(--surface-2);
+}
+.as-assignment-label {
+  color: var(--text);
+  font-weight: 500;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.as-assignment-meta {
+  display: flex;
+  gap: 10px;
+  color: var(--text-3);
+}
+.as-assignment-meta .soon {
+  color: var(--warning);
+}
+.as-assignment-meta .late {
+  color: var(--danger);
+}
+.as-pick-row.on {
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .as-picker {
   display: flex;

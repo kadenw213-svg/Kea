@@ -6,7 +6,7 @@ import { useTabs, editorRegistry, toast } from '../../store';
 import { api, type PlanUsage } from '../../lib/api';
 import { ask, stop, clear } from '../../lib/assistant';
 import { addAttachment, isAttachable, ATTACHABLE, type Attachment } from '../../lib/attachments';
-import { useAssistant, setAssistantOpen, emptyChat, INTERNAL_STEPS, type ChatItem } from './assistantStore';
+import { useAssistant, useAssistantOpen, setAssistantOpen, emptyChat, draftOf, setDraft, INTERNAL_STEPS, type ChatItem } from './assistantStore';
 import { AssignmentButton, AssignmentChip, AssignmentPicker } from './AssignmentPicker';
 import { useAssignments, fileKey } from '../../lib/assignmentContext';
 import { useKeaModes } from '../../lib/modes';
@@ -32,13 +32,15 @@ const stepName = (n = '') => NAMES[n] || n.replace(/_/g, ' ').replace(/^./, (c) 
 
 /** The Claude Assistant (Ctrl+Shift+J): talk to Claude about the open file, and let it read and edit it. */
 export function AssistantPanel() {
-  const open = useAssistant((s) => s.open);
+  const open = useAssistantOpen();
   const key = useAssistant((s) => s.key);
   const activeId = useTabs((s) => s.activeId);
   const tab = useTabs((s) => s.tabs.find((t) => t.id === s.activeId));
   const chat = useAssistant((s) => s.chats[activeId]) || emptyChat();
   const hooks = editorRegistry.get(activeId)?.ai;
-  const [input, setInput] = useState('');
+  // Each file has its own unsent message.
+  const input = useAssistant((s) => s.drafts[activeId]) ?? draftOf(activeId);
+  const setInput = (v: string) => setDraft(activeId, v);
   const listRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const model = useSettings((s) => s.values['assistant.model']) || 'claude-opus-5-5';
@@ -84,18 +86,35 @@ export function AssistantPanel() {
     api.assistant.planUsage().then((u) => u && setUsage(u));
     return api.assistant.onPlanUsage(setUsage);
   }, [open, onPlan]);
+  // New lines follow the conversation while you're at the bottom; scrolled up to read, it stays put.
   useEffect(() => {
     const el = listRef.current;
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight;
   }, [chat.items]);
+  // Opening the panel or coming back to a file starts at the latest message.
+  const toBottom = () =>
+    requestAnimationFrame(() => {
+      const el = listRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
   useEffect(() => {
-    if (open) setTimeout(() => boxRef.current?.focus(), 50);
+    if (!open) return;
+    toBottom();
+    setTimeout(() => {
+      const box = boxRef.current;
+      if (!box) return;
+      box.focus();
+      box.style.height = 'auto';
+      box.style.height = `${Math.min(140, box.scrollHeight)}px`;
+    }, 50);
   }, [open, activeId]);
 
   const send = (look?: boolean) => {
     const t = input.trim();
     if ((!t && !pending.length) || chat.busy) return;
+    toBottom();
     setInput('');
+    if (boxRef.current) boxRef.current.style.height = 'auto';
     setPending([]);
     ask(activeId, t, { attachments: pending, ...(look ? { look: true } : {}) });
   };
@@ -169,15 +188,8 @@ export function AssistantPanel() {
       {dropHere && <div className="as-drop">Drop to give Claude {usable ? 'these files' : ''}</div>}
       <div className="ai-resize" title="Drag to resize" onPointerDown={startResize} onDoubleClick={() => useSettings.getState().set({ 'ai.sidebarWidth': 380 })} />
       <div className="ai-inner">
-        <div className="ai-head">
-          <div className="ai-title">
-            <Sparkles size={17} />
-            <span>Claude</span>
-            <span className="as-model" title={onPlan ? `On your Claude plan${plan?.email ? ` (${plan.email})` : ''}` : 'On your API key'}>
-              {model.replace('claude-', '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-(\d)$/, ' $1')} · {onPlan ? 'plan' : 'API'}
-            </span>
-          </div>
-          <div style={{ display: 'flex' }}>
+        <div className="ai-head as-head">
+          <div className="as-head-tools">
             {chat.items.length > 0 && (
               <button className="icon-btn sm" title="New conversation" onClick={() => clear(activeId)}>
                 <Trash2 size={15} />
@@ -188,7 +200,7 @@ export function AssistantPanel() {
                 <Gauge size={15} />
               </button>
             )}
-            <button className="icon-btn sm" title="Assistant settings" onClick={() => openSettings('assistant')}>
+            <button className="icon-btn sm" title={`Assistant settings (${modelName(model)} ${onPlan ? `on your Claude plan${plan?.email ? `, ${plan.email}` : ''}` : 'on your API key'})`} onClick={() => openSettings('assistant')}>
               <Settings2 size={15} />
             </button>
             <button className="icon-btn sm" title="Close (Ctrl+Shift+J)" onClick={() => setAssistantOpen(false)}>
@@ -196,6 +208,7 @@ export function AssistantPanel() {
             </button>
           </div>
         </div>
+        {usable && <AssignmentChip tabId={activeId} onOpen={() => setPicking(true)} />}
 
         {onPlan && plan && (!plan.installed || !plan.loggedIn) ? (
           <PlanSetup installed={plan.installed} onDone={() => api.assistant.planStatus().then(setPlan)} />
@@ -206,7 +219,6 @@ export function AssistantPanel() {
             <div className="ai-list as-list" ref={listRef}>
               {!chat.items.length && (
                 <div className="ai-empty">
-                  <Sparkles size={28} />
                   <div>{usable ? `Ask Claude about this ${hooks?.noun || 'file'}, or tell it what to change.` : 'Open a file to work on it with Claude.'}</div>
                   <div className="muted">
                     Claude reads the {hooks?.noun || 'file'}, makes the changes you ask for with the editor’s own tools, and tells you what it did. You can keep working while it does; each change is one Ctrl+Z. {onPlan ? 'It runs on your own Claude plan.' : `It uses your own Claude API key${key?.hint ? ` (${key.hint})` : ''}.`}
@@ -252,7 +264,6 @@ export function AssistantPanel() {
                 ))}
               </div>
             )}
-            {usable && <AssignmentChip tabId={activeId} onOpen={() => setPicking(true)} />}
             {picking && usable && <AssignmentPicker tabId={activeId} onClose={() => setPicking(false)} />}
             <div className="ai-composer">
               {usable && !chat.busy && classes && <AssignmentButton tabId={activeId} onOpen={() => setPicking((v) => !v)} />}
@@ -308,6 +319,7 @@ export function AssistantPanel() {
   );
 }
 
+const modelName = (m: string) => m.replace('claude-', '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-(\d)$/, ' $1').replace(/^./, (c) => c.toUpperCase());
 const fmt = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 
 /** Suggestions that fit this file: the rubric only for a file linked to an assignment, "the introduction" only for a written piece. */
@@ -315,9 +327,9 @@ function starters(noun: string, f: { linked: boolean; paras: number | null }): s
   const empty = f.paras === 0;
   switch (noun) {
     case 'document':
-      if (empty) return ['Help me start: ask me what this is for', 'Make an outline I can fill in'];
+      if (empty) return ['Help me start: ask me what this is for', 'Make an outline I can fill in', ...(f.linked ? ['Make me a plan to finish this on time'] : [])];
       return [
-        ...(f.linked ? ['Review this against my assignment’s rubric'] : []),
+        ...(f.linked ? ['Review this against my assignment’s rubric', 'Make me a plan to finish this on time'] : []),
         'Proofread this and fix mistakes',
         ...((f.paras ?? 0) > 3 ? ['Make the introduction stronger'] : ['Make this clearer and easier to read'])
       ];
@@ -601,7 +613,7 @@ function KeySetup() {
 
 /** Toolbar button that opens/closes the Claude panel. */
 export function AssistantButton() {
-  const open = useAssistant((s) => s.open);
+  const open = useAssistantOpen();
   const on = useSettings((s) => s.values['assistant.enabled']) !== false;
   if (!on) return null;
   return (

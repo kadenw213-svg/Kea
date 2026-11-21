@@ -1390,8 +1390,8 @@
   font-size: 12px;
   cursor: pointer;
 }
-.rv-text.clamped .rv-more {
-  position: relative;
+.rv-text + .rv-more {
+  margin-left: 34px;
 }
 @media (max-width: 1100px) {
   .rv-rail {
