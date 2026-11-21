@@ -454,13 +454,21 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
   // suspected, and asked about from its second day. A list that couldn't be read (null) decides nothing.
   try {
     const W = require('./withdrawn.cjs');
-    const a = W.assess({ courses: await db.termCourses(p.db), enrollments, grades: readGrades().byCourse || {}, today: day() });
-    const before = new Set(W.asking(W.read(p.dir)).map((x) => x.courseId));
+    const termCourses = await db.termCourses(p.db);
+    const a = W.assess({ courses: termCourses, enrollments, grades: readGrades().byCourse || {}, today: day() });
     const r = W.record(p.dir, a, day());
-    for (const s of r.ask.filter((x) => !before.has(x.courseId))) {
-      const { Notification } = require('electron');
-      if (Notification.isSupported()) new Notification({ title: `Did you withdraw from ${s.code}?`, body: s.reason === 'not listed' ? `Your class site no longer lists ${s.code} among this term's classes. Open the class in Kea to say.` : `Your class site no longer lets you into ${s.code}. Open the class in Kea to say.` }).show();
-    }
+    // Classes that are over or dropped send no alerts (alertRules.cjs).
+    const rules = require('./alertRules.cjs');
+    rules.setInactive(rules.inactiveCodes({ courses: termCourses, withdrawnLog: W.read(p.dir).log, today: day() }));
+    // A class the student can't get into any more (before it ends) is dropped: told once, with Undo on the class.
+    for (const s of r.dropped || [])
+      inboxNote({
+        id: `dropped:${s.courseId}`,
+        kind: 'update',
+        course: s.code,
+        title: `${s.code} is marked dropped`,
+        body: `${s.reason === 'not listed' ? `Your class site no longer lists ${s.code} among this term's classes` : `Your class site no longer lets you into ${s.code}`}, so Kea treats it as dropped: no more reminders, Missing items or alerts from it. Its past work and grades stay. If you're still in it, open the class in Kea and choose Undo.`
+      });
   } catch (err) {
     console.error('Withdrawn classes', err);
   }
@@ -612,6 +620,62 @@ async function run({ fullEveryDays = 3, force = false } = {}) {
     }
   } catch (err) {
     console.error('Unconfirmed', err);
+  }
+  // Missing and late work: each item once, as its own alert (the same rule the screens use: past due, not checked off,
+  // not shown graded with a score). The first few pop up; the rest wait in Notifications. Never for a dropped or
+  // finished class.
+  try {
+    const rules = require('./alertRules.cjs');
+    if (require('../settings.cjs').get('scholar.notifyMissing', true) !== false) {
+      const iso = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
+      let done = {};
+      try {
+        done = JSON.parse(fs.readFileSync(p.state, 'utf8')).done || {};
+      } catch {}
+      const toldFile = path.join(p.dir, 'missing-told.json');
+      let told = [];
+      try {
+        told = JSON.parse(fs.readFileSync(toldFile, 'utf8'));
+      } catch {}
+      const recent = await db.items(p.db, p.textbooks, done, { from: iso(-10), to: iso(0) });
+      const gone = new Set([...require('./withdrawn.cjs').active(p.dir).keys()]);
+      const list = rules.missingToTell(
+        recent.map((i) => ({ ...i, withdrawn: gone.has(i.courseId) })),
+        { told, inactive: new Set(recent.map((i) => i.courseCode).filter((c) => rules.isInactive(c))) }
+      );
+      list.forEach((it, i) => {
+        const when = new Date(`${it.date}T12:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+        const note = { id: `missing:${it.id}`, kind: 'missed', course: it.courseCode, title: `Missing: ${it.title}`, body: `It was due ${when}${it.due ? ` at ${it.due}` : ''} and isn't checked off. If you handed it in, check it off in Kea; if it's still open, it may not be too late.`, url: it.url || '', links: (it.links || []).filter((l) => l.kind === 'submit').slice(0, 1).map((l) => ({ label: 'Open', url: l.url })) };
+        if (i < 3) inboxNote(note);
+        else addInboxItems([{ ...note, at: new Date().toISOString() }]);
+      });
+      if (list.length) fs.writeFileSync(toldFile, JSON.stringify([...told, ...list.map((i) => String(i.id))].slice(-1000)));
+    }
+  } catch (err) {
+    console.error('Missing work alerts', err);
+  }
+  // Upcoming work Kea has no instructions or rubric for: Claude looks first (its guide run, forced), a set number of
+  // times; only if that finds nothing is the student told, once, what's missing and where to look (gapAgent.cjs).
+  try {
+    const G = require('./gapAgent.cjs');
+    const guides = require('./guides.cjs');
+    const study = require('./study.cjs');
+    const iso = (d) => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
+    let done = {};
+    try {
+      done = JSON.parse(fs.readFileSync(p.state, 'utf8')).done || {};
+    } catch {}
+    const gone = new Set([...require('./withdrawn.cjs').active(p.dir).keys()]);
+    const soon = (await db.items(p.db, p.textbooks, done, { from: iso(0), to: iso(14) })).map((i) => ({ ...i, withdrawn: gone.has(i.courseId) || require('./alertRules.cjs').isInactive(i.courseCode) }));
+    const files = await db.itemSources(p.db, soon.map((i) => i.id), 2000).catch(() => ({}));
+    const all = study.guidesAll();
+    const attempts = Number(require('../settings.cjs').get('scholar.gapAttempts', 1)) || 1;
+    const r = G.plan(soon, (it) => ({ hasRubric: !!guides.rubricFor(it.courseCode, it), hasFiles: (files[it.id] || []).some((s) => (s.text || '').trim().length > 40), guide: all[it.id] || null }), G.read(p.dir), { attempts });
+    G.write(p.dir, r.state);
+    for (const x of r.research) require('./runner.cjs').run('guides', `${x.it.courseCode.replace(/[^\w-]/g, '')} ${String(x.it.id).replace(/[^\w-]/g, '')} force`, 'gaps');
+    for (const x of r.tell) inboxNote(G.message(x.it, x.what, SITE()));
+  } catch (err) {
+    console.error('Gap research', err);
   }
   // Graded work with no link at all (no document, no hand-in page, no platform), due within about a month either way:
   // each asked of Claude once, to find where it's done, its document and where it's handed in.
@@ -1081,7 +1145,7 @@ function updateGrades(dir, ous) {
     const shown = g.score || g.shown;
     const item =
       kind === 'grade'
-        ? { id: `grade:${code}:${g.id}:${g.score}`, kind, title: `${updated ? 'Grade updated' : 'Graded'}: ${g.title}`, body: '', score: shown, percent: g.percent }
+        ? { id: `grade:${code}:${g.id}:${g.score}`, kind, title: `${updated ? 'Grade updated' : 'Graded'}: ${g.title}`, body: '', score: shown, percent: g.percent, hasComment: !!g.comment }
         : { id: `feedback:${code}:${g.id}:${hash(g.comment).slice(0, 12)}`, kind, title: `${updated ? 'Updated feedback' : 'Feedback'}: ${g.title}`, body: g.comment, score: shown, percent: g.percent };
     if (deleted.has(item.id)) continue;
     add.push({ ...item, course: code, at: g.at || new Date().toISOString(), url: byCourse[code].url, links: byCourse[code].url ? [{ label: 'Open grades', url: byCourse[code].url }] : [], read: false });
@@ -1089,11 +1153,27 @@ function updateGrades(dir, ous) {
   box.items.unshift(...add);
   writeInbox({ ...box, items: box.items.slice(0, 500) });
   const { Notification } = require('electron');
-  for (const n of add.filter((x) => require('./notify.cjs').wanted(x.kind, x.course)).slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.kind === 'grade' ? `${n.score}${n.percent != null ? ` (${n.percent}%)` : ''}` : n.body, silent: require('./notify.cjs').silent() }).show();
+  // Pop-ups only for what's worth it: grades under 95% (Settings → Notifications → Advanced), every instructor
+  // comment and hidden work; a high grade with no comment waits quietly in Notifications. Nothing for a dropped or
+  // finished class.
+  const rules = require('./alertRules.cjs');
+  const threshold = Number(require('../settings.cjs').get('scholar.quietGradeAt', rules.DEFAULT_THRESHOLD)) || rules.DEFAULT_THRESHOLD;
+  // (A grade whose comment is new pops up once, as the feedback message; a grade with an older comment pops up itself.)
+  const feedbackNow = new Set(add.filter((x) => x.kind === 'feedback').map((x) => `${x.course}:${String(x.id).split(':')[2]}`));
+  const pops = add.filter((x) => {
+    if (rules.isInactive(x.course) || !require('./notify.cjs').wanted(x.kind, x.course)) return false;
+    if (x.kind === 'grade' && x.hasComment) return !feedbackNow.has(`${x.course}:${String(x.id).split(':')[2]}`);
+    return rules.gradeAlert({ kind: x.kind, percent: x.percent }, threshold) === 'notify';
+  });
+  for (const n of pops.slice(0, 5)) if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: n.kind === 'grade' ? `${n.score}${n.percent != null ? ` (${n.percent}%)` : ''}` : n.body, silent: require('./notify.cjs').silent() }).show();
 }
 
-/** One message straight into the Inbox (and a notification), once per id. */
+/**
+ * One message straight into the Inbox (and a notification), once per id. Nothing at all for a class that's dropped or
+ * over, except the message saying it was marked dropped.
+ */
 function inboxNote(n) {
+  if (require('./alertRules.cjs').isInactive(n.course) && !String(n.id).startsWith('dropped:')) return;
   const box = readInbox();
   if ((box.deleted || []).includes(n.id) || box.items.some((i) => i.id === n.id)) return;
   box.items.unshift({ at: new Date().toISOString(), read: false, links: [], ...n });

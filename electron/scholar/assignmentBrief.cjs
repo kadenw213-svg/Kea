@@ -59,9 +59,29 @@ async function brief(id) {
   const files = ((await db.itemSources(P.db, [id], 20000))[id] || []).filter((s) => (s.text || '').trim().length > 40);
   for (const f of files) out.push(`Assignment file "${f.title || f.type}"${f.url ? ` (${f.url})` : ''}:\n${f.text.trim()}`);
   if (it.links?.length) out.push(`Links: ${it.links.map((l) => `${l.label} ${l.url}`).join('; ')}`);
+  // What this instructor said about the student's earlier work in the class: so the same mistakes aren't repeated.
+  const past = pastFeedback(it.courseCode, it.title);
+  if (past.length) out.push(`The instructor's comments on the student's earlier graded work in this class (newest first). Use them: point out where this draft repeats a mistake the instructor already marked, and build on what they praised:\n${past.map((p) => `- ${p.title}${p.grade ? ` (${p.grade})` : ''}: ${p.comment}`).join('\n')}`);
   let text = out.join('\n\n---\n\n');
   if (text.length > MAX) text = `${text.slice(0, MAX)}\n[… cut here: the rest is on the class site]`;
-  return { id, course: it.courseCode, title: it.title, due: when(it), points: it.points ?? null, guide: !!g, text };
+  // The class's details, for filling in a document's heading (templates): the course and its instructor.
+  const course = (await db.courses(P.db, P.textbooks, {}).catch(() => [])).find((c) => c.id === it.courseId);
+  return { id, course: it.courseCode, courseName: course?.name || '', instructor: course?.instructor || '', title: it.title, due: when(it), points: it.points ?? null, guide: !!g, text };
+}
+
+/** The instructor's comments on earlier graded work in a class (grades.json from the daily check), newest first. */
+function pastFeedback(code, exceptTitle = '', max = 8) {
+  try {
+    const all = JSON.parse(require('fs').readFileSync(require('path').join(profiles.paths().dir, 'grades.json'), 'utf8'));
+    const items = all?.byCourse?.[code]?.items || [];
+    return items
+      .filter((g) => (g.comment || '').trim() && g.title !== exceptTitle)
+      .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+      .slice(0, max)
+      .map((g) => ({ title: g.title, grade: g.percent != null ? `${g.percent}%` : g.shown || g.score || '', comment: String(g.comment).trim().slice(0, 600) }));
+  } catch {
+    return [];
+  }
 }
 
 module.exports = { list, brief };

@@ -77,3 +77,17 @@ export function nameForAssignment(p: { kind: string; name: string; hasPath: bool
   if (!clean) return null;
   return uniqueName(clean, p.taken);
 }
+
+/** The heading lines Kea's school templates leave for the class, and what fills each. */
+export function classFieldReplacements(c: { course: string; courseName?: string; instructor?: string }): [string, string][] {
+  const name = (c.courseName || '').trim();
+  const code = (c.course || '').trim();
+  const out: [string, string][] = [];
+  if (code || name) out.push(['Course Number: Course Name', [code, name].filter(Boolean).join(': ')]);
+  if (name || code) out.push(['Course Name', name || code]);
+  if ((c.instructor || '').trim()) out.push(['Instructor Name', c.instructor!.trim()]);
+  return out;
+}
+
+/** Names Kea or a template gives a file, which a student hasn't chosen themselves. */
+export const GENERIC_NAME = /^(untitled|untitled document|untitled spreadsheet|document|new document|doc|presentation|untitled presentation|mla essay|apa paper|chicago paper|lab report|outline|essay|paper)(\s*\(?\d+\)?)?$/i;

@@ -37,7 +37,8 @@ import {
   Reply,
   CalendarClock,
   Link2,
-  Users
+  Users,
+  MessageSquare
 } from 'lucide-react';
 import { inboxParts, kindOf } from './inboxFormat';
 import { api, WithdrawnState, ScholarSite, ScholarCourse, ScholarCourseDetail, ScholarGrades, ScholarInboxItem, ScholarItem, ScholarReading } from '../../lib/api';
@@ -515,23 +516,7 @@ function useToday() {
   return day;
 }
 
-// ---------- Classes withdrawn from ----------
-/** Which classes Kea suspects the student withdrew from (asked about), read again after every change. */
-function useWithdrawAsk() {
-  const version = useScholar((s) => s.version);
-  const [ask, setAsk] = useState<WithdrawnState['ask']>([]);
-  useEffect(() => {
-    let live = true;
-    api.scholar
-      .withdrawn()
-      .then((w) => live && setAsk(w.ask))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [version]);
-  return ask;
-}
+// ---------- Classes dropped (marked by Kea when it can't get into them; Undo on the class) ----------
 /** Mark a class withdrawn (after asking), or undo it. */
 async function setWithdrawn(c: { id: string; code: string }, on: boolean, asked = false) {
   if (on && !asked) {
@@ -549,21 +534,62 @@ async function setWithdrawn(c: { id: string; code: string }, on: boolean, asked 
     toast(String(err?.message || err), 'error');
   }
 }
-/** "Did you withdraw from BIO 111?" with the student's two answers. */
-function WithdrawQuestion({ q }: { q: WithdrawnState['ask'][number] }) {
+// ---------- Instructor feedback, first on the class page ----------
+const SEEN_KEY = 'kea.scholar.feedbackSeen';
+const seenFeedback = (): Set<string> => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
+};
+const feedbackId = (courseId: string, g: { id: string; comment?: string }) => `${courseId}:${g.id}:${(g.comment || '').length}:${(g.comment || '').slice(0, 24)}`;
+/**
+ * Graded work with an instructor's comment the student hasn't marked as read, at the top of the class page (newest
+ * first). "Got it" moves it back to the Grades tab, where every comment stays.
+ */
+function FeedbackFirst({ courseId, grades }: { courseId: string; grades: ScholarGrades }) {
+  const [seen, setSeen] = useState(seenFeedback);
+  const list = grades.items
+    .filter((g) => g.comment && !seen.has(feedbackId(courseId, g)))
+    .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+    .slice(0, 6);
+  if (!list.length) return null;
+  const mark = (ids: string[]) => {
+    const next = new Set([...seen, ...ids]);
+    try {
+      localStorage.setItem(SEEN_KEY, JSON.stringify([...next].slice(-2000)));
+    } catch {}
+    setSeen(next);
+  };
   return (
-    <div className="withdraw-ask">
-      <AlertTriangle size={15} />
-      <span>
-        {q.reason === 'not listed' ? `Your class site no longer lists ${q.code} among this term's classes.` : `Your class site no longer lets you into ${q.code}.`} Did you withdraw from it?
-      </span>
-      <button className="btn sm" onClick={() => setWithdrawn({ id: q.courseId, code: q.code }, true, true)}>
-        Yes, I withdrew
-      </button>
-      <button className="btn sm ghost" onClick={() => api.scholar.withdrawDismiss(q.courseId).then(() => reloadScholar(), () => {})}>
-        No, I'm still in it
-      </button>
-    </div>
+    <section className="fb-first" aria-label="Feedback from your instructor">
+      <div className="fb-first-head">
+        <MessageSquare size={15} />
+        <b>Feedback to review</b>
+        <span className="muted">{list.length}</span>
+        <span style={{ flex: 1 }} />
+        {list.length > 1 && (
+          <button className="link-btn sm" onClick={() => mark(list.map((g) => feedbackId(courseId, g)))}>
+            Mark all read
+          </button>
+        )}
+      </div>
+      {list.map((g) => (
+        <div key={g.id} className="fb-first-row">
+          <div className="fb-first-main">
+            <div className="fb-first-title">
+              {g.title}
+              <GradeText as="b" percent={g.percent} text={g.percent != null ? ` · ${g.percent}%` : g.shown ? ` · ${g.shown}` : ''} />
+            </div>
+            <div className="fb-first-text">{g.comment}</div>
+          </div>
+          <button className="btn sm" title="Read it: it moves to the Grades tab, where every comment stays" onClick={() => mark([feedbackId(courseId, g)])}>
+            Got it
+          </button>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -588,7 +614,6 @@ function useAttentionFold(id: string) {
 function AttentionBoxes({ ctx }: { ctx: Ctx }) {
   const day = useToday();
   const past = useItems(missingSince(ctx.courses, day), day);
-  const askWithdraw = useWithdrawAsk();
   const miss = useAttentionFold('missing');
   if (!past) return null;
   // (Everything past due and not checked off. Work is checked off only by the student, one item at a time with its own
@@ -596,9 +621,6 @@ function AttentionBoxes({ ctx }: { ctx: Ctx }) {
   const missing = past.filter((i) => isMissing(i));
   return (
     <div className="cal-attention">
-      {askWithdraw.map((q) => (
-        <WithdrawQuestion key={q.courseId} q={q} />
-      ))}
       {missing.length > 0 && (
         <section className="miss-box" ref={miss.ref}>
           <button className="miss-head" aria-expanded={miss.open} onClick={miss.toggle}>
@@ -1351,7 +1373,6 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
   }, [courseId, startTab]);
   const day = useToday();
   const items = useItems(missingSince(c ? [c] : ctx.courses, day), iso(addDays(parse(day), 20)), courseId);
-  const askWithdraw = useWithdrawAsk().find((q) => q.courseId === courseId);
   if (c === undefined) return <Loading />;
   if (!c)
     return (
@@ -1402,25 +1423,21 @@ function ClassView({ ctx, courseId, startTab }: { ctx: Ctx; courseId: string; st
             <ExternalLink size={13} /> Class site
           </button>
         )}
-        {!c.withdrawn && (
-          <button className="btn sm ghost" onClick={() => setWithdrawn(c, true)} title="Mark this class Withdrew for the rest of its term (you can undo it)">
-            I withdrew…
-          </button>
-        )}
       </div>
       {c.withdrawn && (
         <div className="withdrew-banner">
-          <b>Withdrew</b>
+          <b>Dropped</b>
           <span>
-            {c.withdrawn.by === 'grade' ? 'Your class site shows a withdrawal grade for this class' : 'You withdrew from this class'}
-            {` (${shortDate(dayOf(c.withdrawn.at))})`}. Its upcoming work is off your calendar; its past work, grades and files stay here.
+            {c.withdrawn.by === 'grade' ? 'Your class site shows a withdrawal grade for this class' : (c.withdrawn.by as string) === 'access' ? 'Your class site no longer lets you into this class, so Kea treats it as dropped' : 'You dropped this class'}
+            {` (${shortDate(dayOf(c.withdrawn.at))})`}. Its upcoming work, reminders and alerts are off; its past work, grades and files stay here.
           </span>
           <button className="btn sm" onClick={() => setWithdrawn(c, false)}>
             Undo
           </button>
         </div>
       )}
-      {!c.withdrawn && askWithdraw && <WithdrawQuestion q={askWithdraw} />}
+      {/* Your instructor's comments come first: the first thing to see and act on in a class. */}
+      {grades && <FeedbackFirst courseId={c.id} grades={grades} />}
       {/* What needs doing first, above the fold: missing work and today's. */}
       {tab === 'weeks' && items && (missing.length > 0 || dueToday.length > 0) && (
         <div className="cls-now">

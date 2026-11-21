@@ -1,5 +1,5 @@
 // Classes withdrawn from (electron/scholar/withdrawn.cjs): a check that failed never marks or suspects anything; a
-// class gone from this term's list is only suspected, and asked about from its second day; a W grade marks it; the
+// class Kea can no longer get into (or gone from this term's list) is suspected, and marked dropped on its second day; a W grade marks it; the
 // student's own say (and undo) always wins; next term's classes are untouched.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -38,20 +38,40 @@ test('a check that failed decides nothing: unreadable, empty, or without any cur
   }
 });
 
-test('a class gone from this term’s list is only suspected, asked about from its second day, never marked', () => {
+test('a class Kea can no longer get into is suspected on its first day and marked dropped on its second', () => {
   const dir = tmp();
   const a = W.assess({ courses, enrollments: enr('102'), today: TODAY });
   assert.deepEqual(a.suspect.map((s) => s.courseId), ['bio']);
-  assert.equal(W.record(dir, a, TODAY).ask.length, 0, 'not on the first day');
-  assert.equal(W.record(dir, a, TODAY).ask.length, 0, 'nor twice the same day');
+  assert.equal(W.record(dir, a, TODAY).dropped.length, 0, 'not on the first day');
+  assert.equal(W.record(dir, a, TODAY).dropped.length, 0, 'nor twice the same day');
+  assert.equal(W.active(dir).size, 0);
   const r = W.record(dir, a, '2026-11-08');
-  assert.deepEqual(r.ask.map((x) => x.courseId), ['bio']);
-  assert.equal(W.active(dir).size, 0, 'a suspicion never marks a class');
-  // A failed check in between changes nothing; the class listed again is no longer suspected.
-  W.record(dir, W.assess({ courses, enrollments: null, today: TODAY }), '2026-11-09');
-  assert.equal(W.asking(W.read(dir)).length, 1);
-  W.record(dir, W.assess({ courses, enrollments: enr('101', '102'), today: TODAY }), '2026-11-10');
-  assert.equal(W.asking(W.read(dir)).length, 0);
+  assert.deepEqual(r.dropped.map((x) => x.courseId), ['bio']);
+  assert.equal(W.active(dir).get('bio').by, 'access');
+  assert.equal(W.asking(W.read(dir)).length, 0, 'nothing is asked');
+  // Told once: the next checks don't drop it again.
+  assert.equal(W.record(dir, a, '2026-11-09').dropped.length, 0);
+});
+
+test('a failed check in between, or the class listed again, keeps it from being dropped', () => {
+  const dir = tmp();
+  const a = W.assess({ courses, enrollments: enr('102'), today: TODAY });
+  W.record(dir, a, TODAY);
+  W.record(dir, W.assess({ courses, enrollments: null, today: TODAY }), '2026-11-08');
+  assert.equal(W.active(dir).size, 0);
+  W.record(dir, W.assess({ courses, enrollments: enr('101', '102'), today: TODAY }), '2026-11-09');
+  assert.equal(W.record(dir, a, '2026-11-10').dropped.length, 0, 'the count starts again');
+});
+
+test('the student’s undo of a dropped class stays undone', () => {
+  const dir = tmp();
+  const a = W.assess({ courses, enrollments: enr('102'), today: TODAY });
+  W.record(dir, a, TODAY);
+  W.record(dir, a, '2026-11-08');
+  W.set(dir, 'bio', false, 'BIO111');
+  W.record(dir, a, '2026-11-09');
+  W.record(dir, a, '2026-11-10');
+  assert.equal(W.active(dir).has('bio'), false);
 });
 
 test('next term’s and last term’s classes are never suspected', () => {
@@ -81,11 +101,11 @@ test('the student marks and undoes it; "No, I’m still in it" isn’t asked aga
   assert.ok(!W.active(dir).has('chm'));
   const a = W.assess({ courses, enrollments: enr('102'), today: TODAY });
   W.record(dir, a, TODAY);
-  W.record(dir, a, '2026-11-08');
   W.dismiss(dir, 'bio');
   W.record(dir, a, '2026-11-09');
   W.record(dir, a, '2026-11-10');
   assert.equal(W.asking(W.read(dir)).length, 0);
+  assert.equal(W.active(dir).has('bio'), false, '"still in it" is never overridden');
 });
 
 test('another device’s or the phone’s change merges in, the newer one winning', () => {

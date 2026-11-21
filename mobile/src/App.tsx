@@ -975,7 +975,7 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
                 <div className="mcard-body">
                   <b className="mcard-code">{d.code}</b>
                   <span className="mcard-name">{d.name}</span>
-                  {ctx.gone.has(d.id) && <span className="muted small">Withdrew</span>}
+                  {ctx.gone.has(d.id) && <span className="muted small">Dropped</span>}
                 </div>
               </div>
             );
@@ -999,17 +999,13 @@ function Classes({ ctx, code, setCode, missing }: { ctx: Ctx; code: string | nul
           <h1 style={{ color: k }}>{c.code}</h1>
           <span className="muted">{c.name}</span>
           {(c.instructor || c.contact) && <span className="muted small block">{[c.instructor, c.contact].filter(Boolean).join(' · ')}</span>}
-          {ctx.gone.has(c.id) ? (
+          {ctx.gone.has(c.id) && (
             <span className="small block">
-              <b>Withdrew</b> · its upcoming work is off your calendar; past work and grades stay here.{' '}
+              <b>Dropped</b> · its upcoming work and alerts are off; past work and grades stay here.{' '}
               <button className="link" onClick={() => ctx.withdraw(c.id, false, c.code)}>
                 Undo
               </button>
             </span>
-          ) : (
-            <button className="link small block" onClick={() => window.confirm(`Did you withdraw from ${c.code}? Kea then shows it as Withdrew for the rest of its term: no upcoming work, Missing items or Study from it. You can undo this.`) && ctx.withdraw(c.id, true, c.code)}>
-              I withdrew from this class…
-            </button>
           )}
         </span>
         {grades?.final && (

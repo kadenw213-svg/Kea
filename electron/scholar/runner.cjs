@@ -788,13 +788,19 @@ async function curriculumCheck(why = 'schedule') {
   return due.map((d) => d.code);
 }
 
+/**
+ * A message from Kea or Claude in Notifications. One alert per problem (alertRules.cjs): the same problem coming up
+ * again (on the next sync, with a different count) updates the open message in place instead of popping up again.
+ * Nothing for a class that's dropped or over.
+ */
 function addNews(n) {
-  const list = readJson(newsFile(), []);
-  list.unshift({ id: `${Date.now()}`, at: new Date().toISOString(), read: false, ...n });
+  const rules = require('./alertRules.cjs');
+  if (rules.isInactive(n.course)) return;
+  const r = rules.mergeNews(readJson(newsFile(), []), n);
   fs.mkdirSync(path.dirname(newsFile()), { recursive: true });
-  fs.writeFileSync(newsFile(), JSON.stringify(list.slice(0, 300), null, 1));
-  send('scholar:news', n);
-  if (Notification.isSupported()) new Notification({ title: n.course ? `${n.course}: ${n.title}` : n.title, body: n.body.slice(0, 220) }).show();
+  fs.writeFileSync(newsFile(), JSON.stringify(r.list.slice(0, 300), null, 1));
+  send('scholar:news', r.item);
+  if (r.isNew && Notification.isSupported()) new Notification({ title: n.course ? `${n.course}: ${n.title}` : n.title, body: String(n.body || '').slice(0, 220) }).show();
 }
 
 // ---------- A run stopped partway: pause, then continue where it stopped ----------

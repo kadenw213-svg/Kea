@@ -3159,3 +3159,41 @@ summary.gd-label {
 .share-url { width: 100%; box-sizing: border-box; font-size: 12px; }
 .share-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .share-err { color: var(--danger); }
+
+/* Instructor feedback first on the class page (FeedbackFirst in ScholarScreen.tsx). */
+.fb-first {
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--surface);
+}
+.fb-first-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.fb-first-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+}
+.fb-first-row + .fb-first-row {
+  border-top: 1px solid var(--border);
+}
+.fb-first-main {
+  flex: 1;
+  min-width: 0;
+}
+.fb-first-title {
+  font-weight: 500;
+}
+.fb-first-text {
+  margin-top: 3px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  user-select: text;
+}

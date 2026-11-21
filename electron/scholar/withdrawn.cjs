@@ -115,13 +115,15 @@ function assess({ courses, enrollments, grades = {}, today }) {
 
 /**
  * Take one check's assessment in: a withdrawal grade marks the class (unless the student said otherwise after it);
- * a suspicion is remembered by day and asked about from its second day; a class listed again is no longer suspected.
- * A failed check changes nothing. Returns { changed, ask: [suspects to ask about] }.
+ * a suspicion (no access, or gone from the list) is remembered by day and marks the class dropped on its second day;
+ * a class listed again is no longer suspected.
+ * A failed check changes nothing. Returns { changed, ask: [suspects still to decide], dropped: [classes just marked dropped] }.
  */
 function record(dir, a, today, now = new Date()) {
-  if (!a) return { changed: false, ask: [] };
+  if (!a) return { changed: false, ask: [], dropped: [] };
   const v = read(dir);
   let changed = false;
+  const dropped = [];
   for (const w of a.withdraw) {
     const cur = v.log[w.courseId];
     // (The student's own say wins: an undo stays undone.)
@@ -132,11 +134,20 @@ function record(dir, a, today, now = new Date()) {
   }
   if (!a.failed) {
     for (const s of a.suspect) {
-      if (v.log[s.courseId]?.on || v.dismissed[s.courseId] === s.reason) continue;
+      // (The student's own say wins: a class they undid, or said they're still in, is left alone.)
+      if (v.log[s.courseId] || v.dismissed[s.courseId] === s.reason) continue;
       const cur = v.suspects[s.courseId];
       const days = cur && cur.reason === s.reason ? cur.days : [];
       if (!days.includes(today)) {
         v.suspects[s.courseId] = { reason: s.reason, code: s.code, days: [...days, today].slice(-5) };
+        changed = true;
+      }
+      // Access lost before the class ends, seen on two different days: the class is dropped (since Kea 0.94; it used
+      // to ask). The student is told once and can undo it.
+      if (v.suspects[s.courseId].days.length >= 2) {
+        v.log[s.courseId] = { on: true, at: now.toISOString(), by: 'access', reason: s.reason, code: s.code };
+        delete v.suspects[s.courseId];
+        dropped.push({ courseId: s.courseId, code: s.code, reason: s.reason });
         changed = true;
       }
     }
@@ -153,7 +164,7 @@ function record(dir, a, today, now = new Date()) {
     }
   }
   if (changed) write(dir, v);
-  return { changed, ask: asking(v) };
+  return { changed, ask: asking(v), dropped };
 }
 /** The suspicions to ask the student about: seen on two different days, not answered. */
 const asking = (v) => Object.entries(v.suspects || {}).filter(([, s]) => (s.days || []).length >= 2).map(([courseId, s]) => ({ courseId, code: s.code, reason: s.reason }));

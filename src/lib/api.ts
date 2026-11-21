@@ -211,7 +211,7 @@ export interface KeaApi {
     /** Graded work for the Claude tab's assignment picker, soonest due first. */
     assignments(): Promise<AssignmentChoice[]>;
     /** One assignment written out whole for Claude: guide, the class site's instructions and rubric, its files' text. */
-    assignmentBrief(id: string): Promise<(AssignmentChoice & { text: string }) | null>;
+    assignmentBrief(id: string): Promise<(AssignmentChoice & { text: string; courseName?: string; instructor?: string }) | null>;
     /** Write one assignment's guide again now (after the student unlocks its instructions). */
     guideRescan(id: string, code: string): Promise<{ queued: boolean }>;
     /** Which class and chapters a textbook PDF is (for Quiz me), or null. */

@@ -599,7 +599,10 @@ export const SECTIONS: Section[] = [
       { key: 'scholar.curriculumCheck', label: 'Match chapters to each syllabus', type: 'toggle', default: true, help: 'Every day Kea compares each class’s chapters with its syllabus outcomes and topical outline by itself; Claude only fixes a class when something doesn’t match. Shown under each class → Readings → Syllabus.' },
       { key: 'scholar.notifyMessages', group: 'Notifications', label: 'Notify me of new messages', type: 'toggle', default: true, help: 'With who sent it and the whole message. Click it to answer in Kea with the reply box open.' },
       { key: 'scholar.notifyAnnouncements', label: 'Notify me of announcements', type: 'toggle', default: true },
-      { key: 'scholar.notifyGrades', label: 'Notify me of new grades and feedback', type: 'toggle', default: true },
+      { key: 'scholar.notifyGrades', label: 'Notify me of new grades and feedback', type: 'toggle', default: true, help: 'A grade under 95% and any grade with your instructor’s comment pop up. A grade of 95% or more with no comment arrives quietly in Notifications.' },
+      { key: 'scholar.quietGradeAt', label: 'Grades this high (or higher) with no comment arrive quietly', type: 'number', default: 95, min: 50, max: 101, step: 1, unit: '%', advanced: true, when: (v) => v['scholar.notifyGrades'] !== false, help: '101 makes every grade pop up.' },
+      { key: 'scholar.notifyMissing', label: 'Notify me of missing and late work', type: 'toggle', default: true, help: 'Once for each piece of work that passes its due time without being checked off.' },
+      { key: 'scholar.gapAttempts', label: 'Times Claude looks for missing instructions or a rubric before telling you', type: 'number', default: 1, min: 1, max: 3, step: 1, advanced: true, help: 'For upcoming work Kea has no instructions or rubric for. Each look uses your Claude plan; the same gap is never looked for again after this.' },
       { key: 'library.url', label: 'School library', type: 'text', default: '', help: 'Your school library’s web address (for example library.myschool.edu). The assignment bar’s Library button opens it in its own Kea window, where you sign in with your school account and find sources.' },
       { key: 'scholar.notifyQuietClasses', label: 'Classes to keep quiet', type: 'text', default: '', advanced: true, help: 'Class codes, separated by commas (BIO1112, ENG1001). Their news still goes to Notifications.' },
       { key: 'scholar.notifyQuietFrom', label: 'Quiet hours from', type: 'text', default: '', advanced: true, help: 'Like 22:00. Notifications in the quiet hours come without a sound.' },
@@ -907,7 +910,8 @@ export const SECTIONS: Section[] = [
           { value: 'high', label: 'High (most careful)' }
         ]
       },
-      { key: 'assistant.nameFromAssignment', label: 'Name a new, empty file after the assignment it’s for', type: 'toggle', default: true, help: 'Only an untitled document or presentation with nothing in it yet. Files with a name or content keep theirs, and an existing file is never overwritten.' },
+      { key: 'assistant.nameFromAssignment', label: 'Name a file after the assignment it’s for', type: 'toggle', default: true, help: 'A new, empty file, or a saved one that still has a name Kea gave it (“Document 2”, “MLA essay”), is named after the assignment. Files you named keep their name, and an existing file is never overwritten.' },
+      { key: 'templates.fillClass', label: 'Fill in the class and instructor in a template’s heading', type: 'toggle', default: true, help: 'When a document made from the MLA, APA or Chicago template is linked to an assignment, its “Instructor Name” and “Course Name” lines become the real ones.' },
     ]
   },
   {
