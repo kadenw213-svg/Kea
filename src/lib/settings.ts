@@ -8,7 +8,7 @@ import { LIGHT_ACCENTS, themeOf } from './themes';
  * ("files.autosave": true) in settings.json by the main process.
  */
 
-export type FieldType = 'toggle' | 'select' | 'number' | 'range' | 'text' | 'color' | 'folder';
+export type FieldType = 'toggle' | 'select' | 'number' | 'range' | 'text' | 'color' | 'folder' | 'image';
 
 export interface Field {
   key: string;
@@ -208,11 +208,14 @@ export const SECTIONS: Section[] = [
           { value: 'system', label: 'System font' }
         ]
       },
+      { key: 'appearance.background', label: 'Background picture', type: 'image', default: '', help: 'A picture that shows softly behind Kea. Empty: none.' },
+      { key: 'appearance.backgroundStrength', label: 'How much the picture shows', type: 'range', default: 0.18, min: 0.05, max: 0.6, step: 0.01, advanced: true, when: (v) => !!v['appearance.background'] },
+      { key: 'appearance.backgroundBlur', label: 'Blur the picture', type: 'range', default: 0, min: 0, max: 30, step: 1, advanced: true, when: (v) => !!v['appearance.background'] },
       { key: 'appearance.surfaceContrast', label: 'Panel contrast', type: 'range', default: 0, min: -2, max: 3, step: 1, advanced: true, help: 'Makes panels and cards stand out more (or less) from the background.' },
       { key: 'appearance.radius', label: 'Corner roundness', type: 'range', default: 1, min: 0, max: 1.5, step: 0.25, advanced: true },
       { key: 'appearance.toolbarSize', label: 'Toolbar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }, { value: 1.3, label: 'Extra large' }] },
       { key: 'appearance.tabSize', label: 'Tab bar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }] },
-      { key: 'appearance.menuFont', label: 'Menu text size', type: 'number', default: 13.5, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true },
+      { key: 'appearance.menuFont', label: 'Menu text size', type: 'number', default: 13, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true },
       { key: 'ai.sidebarWidth', label: 'Encyclopedia panel width', type: 'number', default: 380, min: 300, max: 640, step: 10, unit: 'px', advanced: true, help: 'You can also drag the panel\u2019s left edge.' },
       { key: 'appearance.aiFont', label: 'Encyclopedia text size', type: 'number', default: 13, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true }
     ]
@@ -1054,6 +1057,38 @@ function hexToRgb(h: string) {
 }
 
 /** Apply look-and-feel settings to the whole window. */
+// The background picture (Appearance): read once per file, shown behind the app through a translucent background.
+let bgPath = '';
+let bgUrl = '';
+async function applyBackground(file: string, strength: number, blur: number) {
+  const root = document.documentElement;
+  if (!file) {
+    root.classList.remove('has-bg');
+    root.style.removeProperty('--app-bg-image');
+    return;
+  }
+  if (file !== bgPath) {
+    bgPath = file;
+    try {
+      const e = await api.readFile(file);
+      const ext = (file.match(/\.(\w+)$/)?.[1] || 'png').toLowerCase();
+      if (bgUrl) URL.revokeObjectURL(bgUrl);
+      bgUrl = URL.createObjectURL(new Blob([e.data as BlobPart], { type: `image/${ext === 'jpg' ? 'jpeg' : ext === 'svg' ? 'svg+xml' : ext}` }));
+    } catch {
+      bgUrl = '';
+    }
+  }
+  if (!bgUrl || bgPath !== file) return;
+  // The window's background turns see-through by `strength`, over the picture; panels and pages stay solid.
+  const solid = root.style.getPropertyValue('--bg').trim() || '#131314';
+  const [r, g, b] = hexToRgb(solid.startsWith('#') ? solid : '#131314');
+  root.style.setProperty('--bg-solid', solid);
+  root.style.setProperty('--bg', `rgba(${r}, ${g}, ${b}, ${1 - Math.max(0.02, Math.min(0.8, strength))})`);
+  root.style.setProperty('--app-bg-image', `url("${bgUrl}")`);
+  root.style.setProperty('--app-bg-blur', `${Math.max(0, Math.min(40, blur))}px`);
+  root.classList.add('has-bg');
+}
+
 function applyAppearance() {
   const v = useSettings.getState().values;
   const root = document.documentElement.style;
@@ -1091,9 +1126,11 @@ function applyAppearance() {
   }
 
   const rad = Number(v['appearance.radius'] ?? 1);
-  root.setProperty('--radius-sm', `${6 * rad}px`);
-  root.setProperty('--radius', `${10 * rad}px`);
-  root.setProperty('--radius-lg', `${16 * rad}px`);
+  // (Small corners since Kea 0.96: 2, 4, 6 and 8 px at the normal setting.)
+  root.setProperty('--radius-sm', `${2 * rad}px`);
+  root.setProperty('--radius', `${4 * rad}px`);
+  root.setProperty('--radius-lg', `${6 * rad}px`);
+  root.setProperty('--radius-xl', `${8 * rad}px`);
   root.setProperty('--r-scale', String(rad));
 
   const fonts: Record<string, string> = {
@@ -1107,7 +1144,8 @@ function applyAppearance() {
   const num = (k: string, d: number) => (Number.isFinite(Number(v[k])) && v[k] !== '' && v[k] != null ? Number(v[k]) : d);
   root.setProperty('--tb-zoom', String(num('appearance.toolbarSize', 1)));
   root.setProperty('--tab-zoom', String(num('appearance.tabSize', 1)));
-  root.setProperty('--menu-font', `${num('appearance.menuFont', 13.5)}px`);
+  root.setProperty('--menu-font', `${num('appearance.menuFont', 13)}px`);
+  applyBackground(String(v['appearance.background'] || ''), num('appearance.backgroundStrength', 0.18), num('appearance.backgroundBlur', 0));
   root.setProperty('--ai-w', `${Math.min(640, Math.max(300, num('ai.sidebarWidth', 380)))}px`);
   root.setProperty('--ai-font', `${num('appearance.aiFont', 13)}px`);
   api.setZoom(Number(v['appearance.scale']) || 1);

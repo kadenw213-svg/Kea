@@ -9,7 +9,7 @@
   min-height: 0;
   margin: 0 10px;
   background: var(--surface);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 .code-host .cm-editor {

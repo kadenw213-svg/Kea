@@ -57,7 +57,7 @@
 .control-config-head .seg {
   display: inline-flex;
   background: var(--surface);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 2px;
 }
 .control-config-head .seg button {
@@ -67,7 +67,7 @@
   font: inherit;
   font-size: 11.5px;
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 .control-config-head .seg button.on {
@@ -106,7 +106,7 @@
   gap: 10px;
   background: var(--accent);
   color: var(--on-accent);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 7px 8px 7px 14px;
   font-size: 13px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);

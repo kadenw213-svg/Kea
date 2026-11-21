@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { mergePdfs, imagesToPdf } from '../../lib/pdfTools';
 import { toast, useTabs } from '../../store';
 import { MenuButton } from '../Popover';
+import { ProjectButton } from './NewProject';
 
 async function merge() {
   const picked = await api.openDialog({ title: 'Choose PDFs to combine', multi: true, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
@@ -54,6 +55,7 @@ export function CreateBar({ tools, onTemplates }: { tools: boolean; onTemplates:
         </span>
         Presentation
       </button>
+      <ProjectButton />
       <MenuButton
         button={() => (
           <button className="create-btn">

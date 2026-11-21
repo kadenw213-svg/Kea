@@ -8,6 +8,7 @@ import { ask, stop, clear } from '../../lib/assistant';
 import { addAttachment, isAttachable, ATTACHABLE, type Attachment } from '../../lib/attachments';
 import { useAssistant, useAssistantOpen, setAssistantOpen, emptyChat, draftOf, setDraft, setFocus, INTERNAL_STEPS, type ChatItem } from './assistantStore';
 import { AssignmentButton, AssignmentChip, AssignmentPicker } from './AssignmentPicker';
+import { ProjectChip } from './ProjectChip';
 import { useAssignments, fileKey } from '../../lib/assignmentContext';
 import { useKeaModes } from '../../lib/modes';
 import '../../styles/ai.css';
@@ -234,6 +235,7 @@ export function AssistantPanel() {
           </div>
         </div>
         {usable && <AssignmentChip tabId={activeId} onOpen={() => setPicking(true)} />}
+        {usable && <ProjectChip tabId={activeId} />}
 
         {onPlan && plan && (!plan.installed || !plan.loggedIn) ? (
           <PlanSetup installed={plan.installed} onDone={() => api.assistant.planStatus().then(setPlan)} />
@@ -435,6 +437,8 @@ function Steps({ items, live, tabId }: { items: ChatItem[]; live?: boolean; tabI
   const changes = edits.reduce((n, i) => n + (i.name === 'apply_edits' ? inBatch(i, 'done') : i.ok === false ? 0 : 1), 0);
   const failed = edits.reduce((n, i) => n + (i.name === 'apply_edits' ? inBatch(i, 'failed') : i.ok === false ? 1 : 0), 0);
   const shown = items.filter((i) => (i.kind === 'tool' ? !INTERNAL_STEPS.has(i.name || '') : i.kind === 'assistant' || (i.kind === 'thinking' && setting('assistant.showThinking'))));
+  // Files from the project Claude read for this answer (shown even when the steps are folded).
+  const read = tools.filter((i) => i.name === 'read_project_file' && i.ok !== false).map((i) => (/file: “([^”]+)/.exec(i.text || '')?.[1] || '').trim()).filter(Boolean);
   const label = live ? `${activity || 'Thinking…'}${tools.length ? ` · ${tools.length} step${tools.length === 1 ? '' : 's'}` : ''}` : changes ? `Made ${changes} change${changes === 1 ? '' : 's'}` : edits.length ? 'Tried to make changes' : tools.length ? 'Looked over the file' : 'Thought it through';
   return (
     <div className={`as-steps ${open ? 'open' : ''}`}>
@@ -442,6 +446,7 @@ function Steps({ items, live, tabId }: { items: ChatItem[]; live?: boolean; tabI
         {live ? <span className="dot-pulse" /> : <Check size={13} />}
         <span>{label}</span>
         {failed > 0 && !live && <span className="bad">{failed} didn’t work</span>}
+        {read.length > 0 && <span className="as-read" title={`Claude read: ${read.join(', ')}`}>Read {read.length > 3 ? `${read.slice(0, 3).join(', ')} +${read.length - 3}` : read.join(', ')}</span>}
         {shown.length > 0 && <ChevronRight size={13} className="chev" />}
       </button>
       {open && (

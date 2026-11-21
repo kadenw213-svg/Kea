@@ -6,11 +6,13 @@ import { api } from './api';
 import { setting } from './settings';
 import { editorRegistry, useTabs, type AiHooks, type AssistantTool, type Tab } from '../store';
 import { designGuideTool } from './design/guide';
+import { projectTools } from './projects';
 
 const DOC_LIMIT = 400_000; // characters of the file read in one go (about 100k tokens)
 
 /** The tools an editor offers from its hooks (reading, inserting, replacing, commenting, looking), plus its own. */
-export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
+/** `tabId`: the tab the tools act for, so a file in a project also gets the project's files. */
+export function toolsFor(hooks: AiHooks | undefined, tabId?: string): AssistantTool[] {
   if (!hooks) return [];
   const t: AssistantTool[] = [];
   const tracked = <T,>(fn: () => T): T => (setting('assistant.track') && hooks.track ? hooks.track(fn) : fn());
@@ -125,7 +127,8 @@ export function toolsFor(hooks: AiHooks | undefined): AssistantTool[] {
       return report;
     }
   });
-  return all;
+  // The project this file is in (projects.ts): its other files, read as they are now.
+  return tabId ? [...all, ...projectTools(tabId)] : all;
 }
 
 // ---------- Kea's other windows: the school library and the class site ----------
@@ -399,4 +402,4 @@ export function listTabs(): { id: string; name: string; kind: Tab['kind']; noun?
 }
 
 export const hooksForTab = (tabId: string) => editorRegistry.get(tabId)?.ai;
-export const toolsForTab = (tabId: string) => toolsFor(editorRegistry.get(tabId)?.ai);
+export const toolsForTab = (tabId: string) => toolsFor(editorRegistry.get(tabId)?.ai, tabId);

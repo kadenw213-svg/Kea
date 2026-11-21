@@ -35,7 +35,7 @@
 .audit-problem {
   padding: 10px 12px;
   border: 1px solid var(--danger);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--danger) 12%, var(--surface-2));
   font-size: 13px;
 }
@@ -45,7 +45,7 @@
   gap: 8px;
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   font-size: 13px;
 }
@@ -81,7 +81,7 @@
 }
 .audit-card {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface-2);
 }
 .audit-card.dismissed {
@@ -123,7 +123,7 @@
 .audit-tag {
   font-size: 11px;
   padding: 2px 8px;
-  border-radius: 99px;
+  border-radius: var(--radius-xl);
   border: 1px solid var(--border);
   white-space: nowrap;
 }
@@ -179,7 +179,7 @@
   margin: 8px 0 0;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg);
 }
 .audit-note,
@@ -188,7 +188,7 @@
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--bg);
   color: inherit;
   padding: 6px 8px;
@@ -214,7 +214,7 @@
   flex-wrap: wrap;
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   font-size: 13px;
 }
@@ -257,7 +257,7 @@
   gap: 8px;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface-2);
 }
 .audit-new input,
@@ -266,7 +266,7 @@
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--bg);
   color: inherit;
   padding: 7px 9px;
@@ -294,7 +294,7 @@
 }
 .audit-entry {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 10px 12px;
   background: var(--surface-2);
 }

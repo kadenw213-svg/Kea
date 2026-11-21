@@ -12,7 +12,7 @@
 .size-val {
   min-width: 38px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--text);
@@ -60,7 +60,7 @@
   margin: 0 auto;
   background: var(--paper);
   color: var(--ink);
-  border-radius: 4px;
+  border-radius: var(--radius);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
   cursor: text;
 }
@@ -208,7 +208,7 @@
 }
 .doc-content pre {
   background: var(--tint);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 10px 12px;
   font-family: Consolas, 'Courier New', monospace;
   font-size: 10pt;
@@ -453,7 +453,7 @@
 .seg {
   display: inline-flex;
   background: var(--surface);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 3px;
   width: fit-content;
 }
@@ -462,7 +462,7 @@
   background: transparent;
   color: var(--text-2);
   padding: 5px 14px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   cursor: pointer;
   font-size: 13px;
 }
@@ -482,7 +482,7 @@
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--text-2);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 3px 10px;
   font-size: 12px;
   cursor: pointer;
@@ -637,7 +637,7 @@
 .doc-content .bibliography,
 .doc-content .toc {
   text-indent: 0;
-  border-radius: 4px;
+  border-radius: var(--radius);
   cursor: default;
   margin: 0 0 var(--doc-after);
 }
@@ -692,7 +692,7 @@
   font: inherit;
   padding: 2px 6px;
   margin: -2px -6px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 .sb-btn:hover {
@@ -760,7 +760,7 @@
 }
 .cite-src {
   padding: 9px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   cursor: pointer;
   border: 1px solid transparent;
   margin-bottom: 4px;
@@ -833,7 +833,7 @@
 .cite-preview {
   margin-top: 12px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface);
   font-size: 13px;
 }
@@ -911,7 +911,7 @@
   align-items: center;
   padding: 6px;
   background: var(--bg);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
 }
 .rv-resolved {
   display: inline-flex;
@@ -930,7 +930,7 @@
   right: 0;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
   font-size: 13px;
   cursor: default;
@@ -1009,7 +1009,7 @@
   margin-top: 8px;
   min-height: 60px;
   resize: vertical;
-  border-radius: 10px;
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
@@ -1039,7 +1039,7 @@
   gap: 6px;
   height: 32px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--text-2);
@@ -1075,7 +1075,7 @@
   gap: 6px;
   margin: 0 12px 6px;
   padding: 6px 10px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--accent-soft);
   font-size: 13px;
 }
@@ -1108,7 +1108,7 @@
   width: 320px;
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   padding: 12px 14px;
   font-size: 13px;
@@ -1180,7 +1180,7 @@
   place-items: center;
   background: #fff;
   color: #000;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 14px;
   margin: 6px 0 10px;
   overflow-x: auto;
@@ -1194,7 +1194,7 @@
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 10px 12px;
   outline: none;
   resize: vertical;
@@ -1242,7 +1242,7 @@
   border-left: 3px solid var(--border-strong);
 }
 .rv-avatar.ai {
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
@@ -1259,7 +1259,7 @@
 .rv-tag b {
   font-weight: 600;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--kind-bg, var(--surface-3));
   color: var(--kind, var(--text-2));
 }
@@ -1290,7 +1290,7 @@
 .rv-rewrite {
   margin: 8px 0 0 34px;
   padding: 7px 9px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface-3);
   display: flex;
   flex-direction: column;

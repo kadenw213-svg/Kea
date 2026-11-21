@@ -22,7 +22,7 @@
 .hi-note {
   margin-bottom: 8px;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, #fdd663 14%, transparent);
   color: var(--text-2);
   font-size: 12.5px;
@@ -36,7 +36,7 @@
 .hi-classes button {
   padding: 3px 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-2);
   font-size: 12.5px;
@@ -62,7 +62,7 @@
   gap: 1px;
   padding: 7px 9px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text);
   text-align: left;

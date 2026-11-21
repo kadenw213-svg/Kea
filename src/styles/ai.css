@@ -18,14 +18,16 @@
   position: relative;
 }
 .ai-sidebar.open {
-  width: calc(var(--ai-w, 380px) + 12px);
+  width: var(--ai-w, 380px);
 }
+/* Flush against the document with a hairline, not a floating card. */
 .ai-inner {
   width: var(--ai-w, 380px);
-  height: calc(100% - 10px);
-  margin: 0 10px 10px 2px;
+  height: 100%;
+  margin: 0;
   background: var(--surface);
-  border-radius: 18px;
+  border-left: var(--hairline);
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -56,7 +58,7 @@
   font-weight: 500;
   color: var(--accent);
   background: var(--accent-soft);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 2px 8px;
 }
 .ai-find {
@@ -65,7 +67,7 @@
   gap: 6px;
   margin: 0 12px 6px;
   background: var(--surface-3);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 0 4px 0 10px;
   height: 34px;
   color: var(--text-3);
@@ -83,7 +85,7 @@
   margin: 4px 12px 8px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 8px 10px 10px;
 }
 .ai-context-head {
@@ -139,7 +141,7 @@
   gap: 6px;
   height: 32px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--text);
@@ -208,7 +210,7 @@
   text-align: left;
   background: var(--accent-soft);
   color: var(--text);
-  border-radius: 14px 14px 4px 14px;
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius) var(--radius-lg);
   padding: 8px 12px;
   white-space: pre-wrap;
   user-select: text;
@@ -257,14 +259,14 @@
 }
 .ai-md code {
   background: var(--surface-3);
-  border-radius: 4px;
+  border-radius: var(--radius);
   padding: 0 4px;
   font-family: Consolas, monospace;
   font-size: 12px;
 }
 .ai-md pre {
   background: var(--surface-3);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 8px 10px;
   overflow-x: auto;
 }
@@ -328,7 +330,7 @@
   gap: 8px;
   margin: 0 12px 12px;
   background: var(--surface-3);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   padding: 8px 8px 8px 12px;
 }
 .ai-composer:focus-within {
@@ -347,7 +349,7 @@
 .ai-send {
   width: 34px;
   height: 34px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   border: none;
   background: var(--accent);
   color: var(--on-accent);
@@ -369,7 +371,7 @@
 /* Reports */
 .grade {
   background: var(--surface-2);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 12px;
 }
 .evidence {
@@ -406,14 +408,14 @@
   background: var(--surface-2);
   border-left: 3px solid var(--border-strong);
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   user-select: text;
 }
 
 /* Setup + settings */
 .setup {
   background: var(--surface-2);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   padding: 16px;
   font-size: 12.5px;
   line-height: 1.5;
@@ -433,7 +435,7 @@
 .setup-icon {
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--accent-soft);
   color: var(--accent);
   display: grid;
@@ -445,7 +447,7 @@
   justify-content: space-between;
   gap: 8px;
   background: var(--surface);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 10px 12px;
   margin-bottom: 12px;
 }
@@ -491,7 +493,7 @@
   gap: 12px;
   align-items: center;
   background: var(--surface);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 10px 14px;
   margin: 14px 0;
 }
@@ -525,7 +527,7 @@
   align-items: center;
   gap: 10px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
   margin-bottom: 8px;
 }
@@ -556,7 +558,7 @@
 }
 .set-section.adv {
   background: var(--surface);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 12px 14px 4px;
 }
 .set-row input[type='checkbox'] {
@@ -573,23 +575,34 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: linear-gradient(135deg, rgba(168, 199, 250, 0.16), rgba(197, 138, 249, 0.16));
-  color: var(--text);
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
   cursor: pointer;
+  font-size: 12.5px;
   font-weight: 500;
   flex-shrink: 0;
   transition: border-color 0.15s, background 0.15s;
 }
 .ai-toolbar-btn svg {
-  color: var(--accent);
+  width: 15px;
+  height: 15px;
+  color: var(--text-2);
 }
-.ai-toolbar-btn:hover,
+.ai-toolbar-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
 .ai-toolbar-btn.on {
-  border-color: rgba(168, 199, 250, 0.5);
+  border-color: var(--border-strong);
+  background: var(--active);
+  color: var(--text);
+}
+.ai-toolbar-btn.on svg {
+  color: var(--accent);
 }
 
 /* How AI edits are applied: Suggest · Ask first · Edit directly */
@@ -628,7 +641,7 @@
 .flashcard {
   width: 100%;
   min-height: 150px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border-strong);
   background: var(--surface-2);
   color: var(--text);
@@ -706,7 +719,7 @@
   background: transparent;
   color: var(--text-2);
   padding: 4px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -739,7 +752,7 @@
 .ai-instr {
   margin: 0 12px 10px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   border: 1px solid var(--border);
 }
@@ -759,7 +772,7 @@
   box-sizing: border-box;
   resize: vertical;
   min-height: 70px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: var(--bg);
   color: var(--text);
@@ -789,7 +802,7 @@
   gap: 10px;
   align-items: flex-start;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   cursor: pointer;
   font-size: 13px;
@@ -807,7 +820,7 @@
   margin-left: auto;
   margin-right: 6px;
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-2);
@@ -864,7 +877,7 @@
 .ai-context {
   margin: 2px 10px 6px;
   padding: 5px 6px 6px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
 }
 .ai-context-head {
   margin-bottom: 3px;
@@ -898,7 +911,7 @@
 .icon-btn.xs {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 .ai-chips {
   flex-wrap: nowrap;
@@ -920,7 +933,7 @@
 .ai-composer {
   margin: 0 10px 10px;
   padding: 5px 5px 5px 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   align-items: center;
 }
 .ai-composer textarea {
@@ -951,7 +964,7 @@
   gap: 8px;
   margin: 0 10px 6px;
   padding: 6px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--accent-soft);
   font-size: 11.5px;
   color: var(--text-2);
@@ -972,7 +985,7 @@
   align-items: center;
   gap: 5px;
   padding: 2px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   font-size: 11.5px;
   color: var(--text-2) !important;
@@ -1004,7 +1017,7 @@
   margin: 0 6px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 2px;
   gap: 2px;
 }
@@ -1014,7 +1027,7 @@
   background: transparent;
   color: var(--text-2);
   padding: 4px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
   font-size: 12px;

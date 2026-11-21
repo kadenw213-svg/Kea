@@ -10,7 +10,7 @@
   display: grid;
   place-items: center;
   margin: 0 10px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background-color: #161718;
   background-image: linear-gradient(45deg, #1d1e20 25%, transparent 25%), linear-gradient(-45deg, #1d1e20 25%, transparent 25%),
     linear-gradient(45deg, transparent 75%, #1d1e20 75%), linear-gradient(-45deg, transparent 75%, #1d1e20 75%);
@@ -34,7 +34,7 @@
   min-width: 56px;
   border: none;
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--text);
   cursor: pointer;
   font-variant-numeric: tabular-nums;

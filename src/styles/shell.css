@@ -61,7 +61,7 @@
   width: 40px;
   height: 40px;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface-3);
   color: var(--accent);
 }
@@ -86,7 +86,7 @@
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   color: var(--on-accent);
 }

@@ -58,7 +58,8 @@ export async function openWithDialog() {
   for (const f of files) await openEntry(f);
 }
 
-export function newFile(kind: EditorKind) {
+/** A new, untitled file. `folder`: made in a project, so it's saved there (and Claude has the project's files). */
+export function newFile(kind: EditorKind, folder?: string) {
   const name = untitledName(kind, useTabs.getState().tabs.filter((t) => !t.path).map((t) => t.name));
-  useTabs.getState().addTab({ kind, name, path: null, data: null });
+  useTabs.getState().addTab({ kind, name, path: null, data: null, ...(folder ? { folder } : {}) });
 }

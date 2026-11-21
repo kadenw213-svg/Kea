@@ -86,7 +86,7 @@ async function callTool(name: string, input: any, pinned?: string): Promise<{ ok
   if (pinned) {
     const hooks = editorRegistry.get(pinned)?.ai;
     if (!hooks) return { ok: false, text: 'That file was closed.' };
-    return runToolHeadless(pinned, toolsFor(hooks), { name, input });
+    return runToolHeadless(pinned, toolsFor(hooks, pinned), { name, input });
   }
   if (name === 'kea_list_tabs') return { ok: true, text: JSON.stringify(listTabs(), null, 1) };
   if (name === 'kea_focus_tab') {
@@ -124,7 +124,7 @@ async function callTool(name: string, input: any, pinned?: string): Promise<{ ok
   const tabId = activeTabId();
   const hooks = editorRegistry.get(tabId)?.ai;
   if (!hooks) return { ok: false, text: 'No editor is active (open or focus a file first). kea_list_tabs shows what’s open.' };
-  return runToolHeadless(tabId, toolsFor(hooks), { name, input });
+  return runToolHeadless(tabId, toolsFor(hooks, tabId), { name, input });
 }
 
 let started = false;
@@ -139,7 +139,7 @@ export function startControlBridge() {
       switch (req.kind) {
         case 'tools_list': {
           // A Claude-tab run sees only its own file's tools; outside apps also get the workspace tools.
-          const tools = req.tabId ? toolsFor(editorRegistry.get(req.tabId)?.ai).map(stripRun) : [...GLOBAL_TOOLS, ...toolsFor(editorRegistry.get(activeTabId())?.ai).map(stripRun)];
+          const tools = req.tabId ? toolsFor(editorRegistry.get(req.tabId)?.ai, req.tabId).map(stripRun) : [...GLOBAL_TOOLS, ...toolsFor(editorRegistry.get(activeTabId())?.ai, activeTabId()).map(stripRun)];
           return done({ tools });
         }
         case 'tools_call':

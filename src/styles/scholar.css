@@ -26,7 +26,7 @@
   padding: 8px 10px;
   margin-bottom: 10px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
   color: var(--text);
   cursor: pointer;
@@ -56,7 +56,7 @@
   width: 100%;
   padding: 8px 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-2);
   font-size: 14px;
@@ -119,7 +119,7 @@
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface-3);
   color: var(--text);
   font-size: 11.5px;
@@ -187,7 +187,7 @@
   gap: 12px;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   cursor: pointer;
   transition: border-color 0.12s;
@@ -236,7 +236,7 @@
 }
 .sch-chip {
   border: 1px solid;
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 0 7px;
   font-size: 11.5px;
   font-weight: 600;
@@ -254,7 +254,7 @@
 .sch-banner {
   border: 1px solid var(--border);
   border-left: 4px solid;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 12px 14px;
   background: var(--surface);
   cursor: pointer;
@@ -309,7 +309,7 @@
   display: flex;
   margin-left: auto;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 .seg-mini button {
@@ -328,7 +328,7 @@
   display: grid;
   grid-template-columns: 1fr;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 .cal-dow {
@@ -350,7 +350,7 @@
 }
 .cal-banner {
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 2px 8px;
   font-size: 12px;
   cursor: pointer;
@@ -385,7 +385,7 @@
   font-weight: 600;
   padding: 2px 4px;
   align-self: flex-start;
-  border-radius: 999px;
+  border-radius: var(--radius);
 }
 .cal-day.today .cal-num {
   background: var(--silver-bg);
@@ -400,7 +400,7 @@
   color: var(--text);
   font-size: 12px;
   padding: 2px 4px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   cursor: pointer;
   text-align: left;
   min-width: 0;
@@ -439,7 +439,7 @@
 .cls-color {
   width: 6px;
   align-self: stretch;
-  border-radius: 6px;
+  border-radius: var(--radius);
   min-height: 48px;
 }
 .cls-name {
@@ -455,7 +455,7 @@
 }
 .tb-ch {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 .tb-row {
@@ -568,7 +568,7 @@
   padding: 48px 24px;
   color: var(--text-2);
   border: 1px dashed var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
 }
 .add-cards {
   display: grid;
@@ -581,7 +581,7 @@
   gap: 6px;
   text-align: left;
   padding: 20px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: linear-gradient(160deg, var(--surface-2), var(--surface));
   color: var(--text);
@@ -615,7 +615,7 @@
   margin-top: 18px;
   padding: 20px 22px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   line-height: 1.55;
 }
@@ -727,7 +727,7 @@
   font-size: 12px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 5px 8px;
 }
 .setup-log {
@@ -736,7 +736,7 @@
   font-size: 11.5px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 8px 10px;
   white-space: pre-wrap;
   color: var(--text-3);
@@ -755,12 +755,12 @@
   margin-top: 14px;
   padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 .news-item {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
   background: var(--surface);
   cursor: pointer;
@@ -826,7 +826,7 @@
   gap: 3px;
   margin-right: 7px;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--danger);
   color: var(--on-danger);
   font-size: 11px;
@@ -854,7 +854,7 @@
   margin: 4px 0 18px;
   padding: 10px 12px 12px;
   border: 1px solid color-mix(in srgb, var(--danger) 50%, var(--border));
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--danger) 5%, transparent);
 }
 .miss-head {
@@ -891,7 +891,7 @@
   align-items: flex-start;
   margin: 6px 0 10px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--danger) 14%, transparent);
   color: var(--danger);
   font-size: 13.5px;
@@ -902,7 +902,7 @@
 }
 .hand-tag {
   padding: 0 7px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--success) 18%, transparent);
   color: var(--success);
   font-size: 11px;
@@ -923,7 +923,7 @@
   align-items: flex-start;
   margin: 6px 0 10px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--success) 14%, transparent);
   color: var(--success);
   font-size: 13.5px;
@@ -943,7 +943,7 @@
 /* On the student's own (extended) due date */
 .ext-tag {
   padding: 0 7px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
   font-size: 11px;
@@ -955,7 +955,7 @@
 /* Work not open yet on the class site */
 .opens-tag {
   padding: 0 7px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--text-2) 16%, transparent);
   color: var(--text-2);
   font-size: 11px;
@@ -965,7 +965,7 @@
   margin: 0 0 18px;
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
 }
 .miss-head.unc {
   color: var(--text-2);
@@ -1007,7 +1007,7 @@
   gap: 9px;
   padding: 7px 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   color: var(--text);
   font-size: 13.5px;
@@ -1020,7 +1020,7 @@
 }
 .ln-main.pill {
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 5px 12px;
   font-size: 13px;
   gap: 6px;
@@ -1061,7 +1061,7 @@
 .ln-tag {
   flex-shrink: 0;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface-3);
   color: var(--text-2);
   font-size: 11px;
@@ -1073,7 +1073,7 @@
   gap: 4px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-2);
   font-size: 12.5px;
@@ -1097,7 +1097,7 @@
   gap: 6px;
   margin: 4px 0 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
   padding-bottom: 8px;
 }
@@ -1116,12 +1116,12 @@
   flex-wrap: wrap;
   gap: 2px;
   background: var(--surface-2);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 3px;
 }
 .st-seg button {
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-3);
   padding: 5px 12px;
@@ -1224,7 +1224,7 @@
   align-items: center;
   gap: 10px;
   padding: 3px 4px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 13.5px;
   cursor: pointer;
 }
@@ -1239,7 +1239,7 @@
   height: 22px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
   cursor: pointer;
 }
@@ -1268,7 +1268,7 @@
 /* Week grid */
 .wk {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 .wk-banners {
@@ -1301,7 +1301,7 @@
   height: 32px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: var(--radius);
 }
 .wk-dow.today b {
   background: var(--silver-bg);
@@ -1338,7 +1338,7 @@
   padding: 2px 6px;
   border: none;
   border-left: 3px solid var(--kc);
-  border-radius: 5px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--kc) 16%, transparent);
   color: var(--text);
   font-size: 11.5px;
@@ -1404,7 +1404,7 @@
   padding: 4px 6px;
   border: none;
   border-left: 3px solid var(--kc);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--kc) 22%, var(--surface));
   color: var(--text);
   font-size: 11.5px;
@@ -1449,7 +1449,7 @@
   min-width: 74px;
   padding: 6px 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -1473,7 +1473,7 @@
   align-items: flex-start;
   padding: 10px 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 .gr-main {
@@ -1518,7 +1518,7 @@
   padding: 10px 14px 10px 13px;
   border: 1px solid var(--border);
   border-left: 3px solid color-mix(in srgb, var(--k) 45%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   cursor: pointer;
 }
@@ -1542,7 +1542,7 @@
 .ib-kind {
   flex-shrink: 0;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -1552,7 +1552,7 @@
 .ib-score {
   flex-shrink: 0;
   padding: 1px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   font-size: 12.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -1572,7 +1572,7 @@
   max-width: 260px;
   padding: 4px 10px;
   border: 1px solid color-mix(in srgb, var(--k) 40%, var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--k) 8%, transparent);
   color: var(--text);
   font: inherit;
@@ -1628,7 +1628,7 @@
   width: 26px;
   height: 26px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: none;
   color: var(--text-3);
   cursor: pointer;
@@ -1752,14 +1752,14 @@
 .kbar {
   position: relative;
   height: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--surface-3);
   overflow: hidden;
 }
 .kbar > i {
   position: absolute;
   inset: 0 auto 0 0;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--accent);
   transition: width 0.9s linear;
   overflow: hidden;
@@ -1784,7 +1784,7 @@
 }
 .pill {
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   font-size: 12px;
   background: var(--surface-3);
   color: var(--text-2);
@@ -1882,7 +1882,7 @@
   align-items: center;
   gap: 4px;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   font-size: 11px;
   font-weight: 500;
   background: var(--surface-3);
@@ -2038,7 +2038,7 @@
   color: var(--text);
   font: inherit;
   padding: 9px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 .ml-row:hover {
@@ -2100,7 +2100,7 @@
   font-size: 14px;
   padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 .ml-status {
@@ -2118,7 +2118,7 @@
 }
 .ml-compose {
   border: 1px solid var(--border-strong);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   padding: 14px 16px;
   display: grid;
@@ -2204,7 +2204,7 @@
 }
 .hs-changes {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 10px 14px;
   margin: 0 0 12px;
   background: var(--surface);
@@ -2236,7 +2236,7 @@
   margin: 0 0 12px;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 .ml-sig textarea {
@@ -2296,7 +2296,7 @@
 }
 .wbw-week {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   padding: 4px 14px;
 }
@@ -2424,7 +2424,7 @@
 .res-list {
   display: grid;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--surface);
 }
@@ -2532,7 +2532,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid color-mix(in srgb, var(--k) 40%, var(--border));
   background: color-mix(in srgb, var(--k) 9%, var(--surface));
   color: var(--text);
@@ -2592,7 +2592,7 @@
 }
 .cls-date-chip {
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface);
   color: var(--text-2);
   font: inherit;
@@ -2661,7 +2661,7 @@
 }
 .gd-chip {
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   border: 1px solid var(--border);
   font-size: 12.5px;
@@ -2673,7 +2673,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   overflow: hidden;
 }
@@ -2710,7 +2710,7 @@
   flex-shrink: 0;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2754,7 +2754,7 @@
   gap: 3px;
   margin-left: 8px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   font-size: 11px;
   font-weight: 600;
   vertical-align: 1px;
@@ -2781,7 +2781,7 @@
   padding: 8px 10px;
   border-left: 2px solid var(--accent);
   background: var(--surface);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
 }
 .gd-md {
   font-size: 13.5px;
@@ -2819,7 +2819,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
 }
 .gd-submit-what {
@@ -2843,7 +2843,7 @@
 }
 .gd-fold {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 0 12px;
 }
 .gd-fold > summary {
@@ -2883,7 +2883,7 @@
   display: flex;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   color: var(--text-2);
   font-size: 13px;
@@ -2922,7 +2922,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   border: 1px solid var(--accent);
   background: var(--accent-soft);
 }
@@ -2993,7 +2993,7 @@
 /* The top of a guide: what it's about and its goal; then the special notes (Guide.tsx GuideView) */
 .gd-about {
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
   background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
@@ -3027,7 +3027,7 @@ summary.gd-label {
 }
 .gd-notes {
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid color-mix(in srgb, var(--warning, #fdd663) 40%, var(--border));
   background: color-mix(in srgb, var(--warning, #fdd663) 6%, transparent);
 }
@@ -3052,7 +3052,7 @@ summary.gd-label {
 }
 .gd-notebook {
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
 }
 .gd-notebook li span {
@@ -3125,7 +3125,7 @@ summary.gd-label {
   flex-wrap: wrap;
   margin: 10px 0 14px;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   border: 1px solid var(--border, var(--surface-3));
 }
@@ -3153,7 +3153,7 @@ summary.gd-label {
 
 /* Calendar → Share (calendar link) */
 .share-cal { position: relative; display: inline-block; }
-.share-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(380px, 90vw); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.share-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(380px, 90vw); background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 12px 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .share-pop p { margin: 0; overflow-wrap: anywhere; }
 .share-head { display: flex; align-items: center; justify-content: space-between; }
 .share-url { width: 100%; box-sizing: border-box; font-size: 12px; }
@@ -3165,7 +3165,7 @@ summary.gd-label {
   margin: 0 0 12px;
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 .fb-first-head {

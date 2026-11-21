@@ -172,7 +172,7 @@ function createWindow() {
     show: false,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     titleBarStyle: 'hidden',
-    titleBarOverlay: process.platform === 'win32' ? { color: windowTheme().bg, symbolColor: windowTheme()['text-2'], height: 44 } : undefined,
+    titleBarOverlay: process.platform === 'win32' ? { color: windowTheme().bg, symbolColor: windowTheme()['text-2'], height: 40 } : undefined,
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -737,7 +737,7 @@ ipcMain.on('app:set-title-overlay', (_e, color, symbolColor) => {
   if (!mainWindow) return;
   try {
     mainWindow.setBackgroundColor(color);
-    if (process.platform === 'win32') mainWindow.setTitleBarOverlay({ color, symbolColor, height: 44 });
+    if (process.platform === 'win32') mainWindow.setTitleBarOverlay({ color, symbolColor, height: 40 });
   } catch {}
 });
 

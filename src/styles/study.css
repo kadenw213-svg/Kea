@@ -13,7 +13,7 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   color: var(--text-2);
 }
@@ -62,12 +62,12 @@
   flex-wrap: wrap;
   gap: 2px;
   background: var(--surface-2);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 3px;
 }
 .st-seg button {
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-3);
   padding: 5px 12px;
@@ -86,7 +86,7 @@
 /* Making a set for chosen chapters */
 .st-maker {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 12px 14px;
   margin: 12px 0 8px;
 }
@@ -100,7 +100,7 @@
   background: var(--surface-2);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 3px 8px;
   font: inherit;
 }
@@ -117,7 +117,7 @@
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--text-2);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 3px 10px;
   font: inherit;
   font-size: 13px;
@@ -362,7 +362,7 @@
 /* Questions */
 .st-q {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 14px 16px;
   margin-bottom: 12px;
   background: var(--surface);
@@ -381,7 +381,7 @@
   flex-shrink: 0;
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: var(--surface-3);
   display: grid;
   place-items: center;
@@ -410,7 +410,7 @@
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 8px 12px;
   font: inherit;
   cursor: pointer;
@@ -447,7 +447,7 @@
   background: var(--surface-2);
   color: var(--text);
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 7px 10px;
   font: inherit;
 }
@@ -501,7 +501,7 @@
   align-items: center;
   gap: 16px;
   padding: 16px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
   margin-bottom: 16px;
   flex-wrap: wrap;
@@ -532,7 +532,7 @@
   width: 100%;
   min-height: 280px;
   padding: 28px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
@@ -582,7 +582,7 @@
 .pn-related { display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; }
 .pn-rel {
   display: flex; align-items: center; gap: 8px; text-align: left;
-  padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
+  padding: 6px 10px; border-radius: var(--radius); border: 1px solid var(--border);
   background: var(--surface-2, transparent); color: var(--text); font-size: 13px; cursor: pointer;
 }
 .pn-rel:hover { border-color: var(--kc, var(--accent)); }
@@ -600,7 +600,7 @@
   position: absolute;
   left: 12px;
   height: 52px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--accent-soft);
   outline: 2px solid var(--accent);
   pointer-events: none;
@@ -644,13 +644,13 @@
 .sm-progress-bar {
   flex: 1;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface-3);
   overflow: hidden;
 }
 .sm-progress-bar > div {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--accent);
   transition: width 0.3s ease;
 }
@@ -676,7 +676,7 @@
   gap: 6px;
   margin: 10px 0;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   border: 1px solid var(--border);
 }
@@ -692,7 +692,7 @@
 }
 .sm-prompt {
   border: 1px solid var(--border-strong);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   padding: 18px 22px 24px;
   margin-bottom: 14px;
@@ -736,7 +736,7 @@
   flex-wrap: wrap;
   margin-top: 14px;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface);
   border: 1px solid var(--border);
 }
@@ -779,7 +779,7 @@
 .sm-tile {
   min-height: 110px;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
@@ -841,7 +841,7 @@
 .sm-new,
 .sm-test {
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface-3);
 }
 .sm-test {
@@ -853,7 +853,7 @@
   gap: 10px;
   padding: 14px 16px;
   margin: 0 0 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--accent-soft);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
@@ -876,7 +876,7 @@
   gap: 4px;
   text-align: left;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
@@ -924,7 +924,7 @@
 .hub-bar {
   display: flex;
   height: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--surface-3);
   overflow: hidden;
 }
@@ -966,7 +966,7 @@
   justify-items: start;
   gap: 4px;
   padding: 14px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
@@ -1007,7 +1007,7 @@ button.hub-mode:hover:not(:disabled) {
 }
 .hub-sizes button {
   padding: 3px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text);
@@ -1048,7 +1048,7 @@ button.hub-mode:hover:not(:disabled) {
 }
 .sm-import {
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--surface);
   margin-bottom: 14px;
@@ -1125,7 +1125,7 @@ button.hub-mode:hover:not(:disabled) {
 .st-steps {
   margin-top: 10px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   border: 1px solid var(--border);
 }
@@ -1196,7 +1196,7 @@ button.hub-mode:hover:not(:disabled) {
   display: grid;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface);
   border: 1px solid var(--border);
 }
@@ -1217,7 +1217,7 @@ button.hub-mode:hover:not(:disabled) {
 .st-image img {
   max-width: 100%;
   max-height: 360px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   object-fit: contain;
   background: #fff;
 }
@@ -1268,7 +1268,7 @@ button.hub-mode:hover:not(:disabled) {
   margin-bottom: 8px;
   padding: 12px 14px;
   border: 1px solid var(--accent);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--accent-soft);
   color: var(--text);
   font: inherit;
@@ -1293,7 +1293,7 @@ button.hub-mode:hover:not(:disabled) {
   gap: 10px;
   padding: 0 12px 0 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 .res-ch.on {
@@ -1340,7 +1340,7 @@ button.hub-mode:hover:not(:disabled) {
   display: grid;
   place-items: center;
   border: 1.5px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: none;
   color: var(--on-accent);
   cursor: pointer;
@@ -1358,7 +1358,7 @@ button.hub-mode:hover:not(:disabled) {
   margin-top: 10px;
   padding: 10px 12px;
   border: 1px solid var(--accent);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
   box-shadow: var(--shadow);
 }
@@ -1410,7 +1410,7 @@ button.hub-mode:hover:not(:disabled) {
   gap: 10px;
   padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 .ls-opt {
@@ -1485,7 +1485,7 @@ button.hub-mode:hover:not(:disabled) {
   min-width: 24px;
   width: auto;
   padding: 0 5px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
 }
 /* The mistake behind the wrong choice the student picked. */
 .st-whynot {
@@ -1582,7 +1582,7 @@ button.hub-mode:hover:not(:disabled) {
   align-items: flex-start;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   line-height: 1.45;
 }
 .ex-verdict svg {
@@ -1635,7 +1635,7 @@ button.hub-mode:hover:not(:disabled) {
   display: flex;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 9px;
+  border-radius: var(--radius);
   border: 1px solid transparent;
 }
 .ex-choices li.picked {
@@ -1664,14 +1664,14 @@ button.hub-mode:hover:not(:disabled) {
   margin-left: 8px;
   font-size: 11px;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface-3);
   color: var(--text-2);
   white-space: nowrap;
 }
 .ex-walk {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 10px 14px;
   background: var(--surface-2);
 }
@@ -1704,7 +1704,7 @@ button.hub-mode:hover:not(:disabled) {
   padding: 10px 12px;
   border-left: 3px solid var(--accent);
   background: var(--surface);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
   line-height: 1.55;
   white-space: pre-wrap;
 }
@@ -1757,7 +1757,7 @@ button.hub-mode:hover:not(:disabled) {
   display: grid;
   gap: 6px;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 .ex-terms > div {
@@ -1785,7 +1785,7 @@ button.hub-mode:hover:not(:disabled) {
 }
 .ex-final {
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface);
   border: 1px solid color-mix(in srgb, var(--success) 45%, var(--border));
   line-height: 1.5;
@@ -1807,7 +1807,7 @@ button.hub-mode:hover:not(:disabled) {
 .hub-practice {
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
   background: var(--accent-soft);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   padding: 16px 18px;
   display: grid;
   gap: 14px;
@@ -1927,7 +1927,7 @@ button.hub-mode:hover:not(:disabled) {
 /* The Study page: chapters, each opening to its topics */
 .hub-tree {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   overflow: hidden;
   margin: 12px 0;
@@ -1961,7 +1961,7 @@ button.hub-mode:hover:not(:disabled) {
   flex-shrink: 0;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1.5px solid var(--border-strong);
   background: transparent;
   color: var(--on-accent);
@@ -2040,7 +2040,7 @@ button.hub-mode:hover:not(:disabled) {
   align-items: center;
   gap: 10px;
   padding: 7px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: none;
   background: transparent;
   color: var(--text);
@@ -2084,7 +2084,7 @@ button.hub-mode:hover:not(:disabled) {
   align-items: center;
   gap: 5px;
   padding: 5px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-2);
@@ -2119,14 +2119,14 @@ button.hub-mode:hover:not(:disabled) {
   gap: 10px;
   align-items: center;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
 }
 .st-match-row select {
   width: 100%;
   min-width: 0;
   padding: 7px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text);
@@ -2348,7 +2348,7 @@ button.hub-mode:hover:not(:disabled) {
 }
 .saved-q {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 .saved-q.open {
@@ -2366,7 +2366,7 @@ button.hub-mode:hover:not(:disabled) {
   font: inherit;
   text-align: left;
   cursor: pointer;
-  border-radius: 10px;
+  border-radius: var(--radius);
 }
 .saved-q-row:hover {
   background: var(--hover);
@@ -2408,7 +2408,7 @@ button.hub-mode:hover:not(:disabled) {
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 0;
   background: none;
   color: var(--text-2);
@@ -2445,7 +2445,7 @@ button.hub-mode:hover:not(:disabled) {
   display: flex;
   gap: 4px;
   padding: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
@@ -2518,7 +2518,7 @@ button.hub-mode:hover:not(:disabled) {
   align-self: flex-start;
   max-width: 100%;
   padding: 6px 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--accent-soft);
   color: var(--text);
   font-size: 13px;
@@ -2568,7 +2568,7 @@ button.hub-mode:hover:not(:disabled) {
 .tc-text code {
   font-size: 13px;
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--surface-2);
 }
 .tc-text blockquote {
@@ -2576,7 +2576,7 @@ button.hub-mode:hover:not(:disabled) {
   padding: 6px 12px;
   border-left: 3px solid var(--accent);
   background: var(--surface-2);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
 }
 .tc-text .tx.display {
   display: block;
@@ -2595,7 +2595,7 @@ button.hub-mode:hover:not(:disabled) {
   margin-top: 6px;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
 }
 .tc-checks-head {
@@ -2620,7 +2620,7 @@ button.hub-mode:hover:not(:disabled) {
   gap: 8px;
   text-align: left;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
@@ -2727,7 +2727,7 @@ button.hub-mode:hover:not(:disabled) {
 
 /* Teach: a real open-licensed picture, with its credit and the parts to find */
 .tc-fig { margin: 8px 0 12px; display: flex; flex-direction: column; gap: 6px; }
-.tc-fig img { max-width: 100%; max-height: 360px; object-fit: contain; align-self: center; background: #fff; border-radius: 8px; border: 1px solid var(--border); }
+.tc-fig img { max-width: 100%; max-height: 360px; object-fit: contain; align-self: center; background: #fff; border-radius: var(--radius); border: 1px solid var(--border); }
 .tc-fig figcaption { font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; }
 .tc-fig-parts { color: var(--text-2); }
 .tc-fig-credit { color: var(--text-3); font-size: 11.5px; overflow-wrap: anywhere; }

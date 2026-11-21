@@ -59,7 +59,7 @@
   display: inline-flex;
   align-items: center;
   padding: 1px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--accent-soft);
   color: var(--text);
   font-size: 12px;
@@ -101,14 +101,14 @@
   min-width: 120px;
   max-width: 320px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface-3);
   overflow: hidden;
 }
 .hubc-bar span {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--accent);
 }
 
@@ -126,7 +126,7 @@
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-left: 4px solid var(--accent);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   color: var(--text);
   font: inherit;
@@ -211,7 +211,7 @@
   gap: 6px;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
 }
 .hubc-qedit .input {
@@ -271,7 +271,7 @@
   gap: 12px;
   padding: 9px 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 .hubc-board li.you {
@@ -281,7 +281,7 @@
 .hubc-rank {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   display: grid;
   place-items: center;
   font-weight: 600;

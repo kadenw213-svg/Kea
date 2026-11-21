@@ -59,6 +59,16 @@ export async function saveTabFile(tabId: string, formats: SaveFormat[], saveAs: 
     if (i > 0) formats = [formats[i], ...formats.filter((_, j) => j !== i)];
   }
 
+  // A new file made in a project goes straight into the project's folder, named after the tab (never over a file).
+  if (!target && !saveAs && tab.folder) {
+    format = formats[0];
+    const sep = tab.folder.includes('\\') ? '\\' : '/';
+    const base = safeFileName(opts.suggestedName || '') || baseName(tab.name);
+    let name = base;
+    for (let i = 2; i < 100 && (await api.fileExists(`${tab.folder}${sep}${name}.${format.ext}`).catch(() => false)); i++) name = `${base} (${i})`;
+    target = `${tab.folder}${sep}${name}.${format.ext}`;
+  }
+
   if (saveAs || !target || !format) {
     if (isSilentSave()) return false;
     const suggested = `${safeFileName(opts.suggestedName || '') || baseName(tab.name)}.${(format || formats[0]).ext}`;

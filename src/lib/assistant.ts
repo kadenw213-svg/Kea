@@ -100,7 +100,7 @@ export async function ask(tabId: string, text: string, opts: AskOpts = {}) {
 
 async function askRun(tabId: string, text: string, opts: AskOpts, run: { stopped: boolean }, live: () => boolean) {
   const hooks = editorRegistry.get(tabId)?.ai;
-  const tools = toolsFor(hooks);
+  const tools = toolsFor(hooks, tabId);
   const content: any[] = [];
   let shown: string | undefined;
   // With "Show Claude a picture with each message", visual editors (photo, video) send what they look like right now;
@@ -179,7 +179,7 @@ async function askApi(tabId: string, content: any[], live: () => boolean, run: {
   try {
     for (let step = 0; step < MAX_STEPS && !run.stopped; step++) {
       // The editor's tools are rebuilt each render (they read its current state): take the latest every step.
-      const tools = toolsFor(editorRegistry.get(tabId)?.ai);
+      const tools = toolsFor(editorRegistry.get(tabId)?.ai, tabId);
       const defs = tools.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
       const reqId = uid();
       patchChat(tabId, { reqId });

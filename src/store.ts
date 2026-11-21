@@ -8,6 +8,8 @@ export interface Tab {
   kind: EditorKind | 'home' | 'scholar' | 'work' | 'audit';
   name: string;
   path: string | null;
+  /** A new file made in a project: the folder its first save goes to (no Save dialog). */
+  folder?: string;
   data: Uint8Array | null;
   dirty: boolean;
   /** A Google Docs/Sheets/Slides file edited in Kea and saved back to Google Drive. */

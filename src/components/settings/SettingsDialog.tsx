@@ -90,6 +90,28 @@ function FieldControl({ f, value, onChange }: { f: Field; value: any; onChange: 
           </button>
         </span>
       );
+    case 'image':
+      return (
+        <span className="num-field">
+          <span className="muted" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={value}>
+            {value ? value.split(/[\\/]/).pop() : 'None'}
+          </span>
+          <button
+            className="btn sm"
+            onClick={async () => {
+              const [f] = await api.openDialog({ title: 'Choose a picture', filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }] });
+              if (f?.path) onChange(f.path);
+            }}
+          >
+            Choose…
+          </button>
+          {value && (
+            <button className="btn sm ghost" onClick={() => onChange('')}>
+              Remove
+            </button>
+          )}
+        </span>
+      );
     default:
       return <input className="input sm" style={{ width: 240 }} value={value} onChange={(e) => onChange(e.target.value)} />;
   }

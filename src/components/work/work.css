@@ -264,7 +264,7 @@ select.input {
   gap: 5px;
   height: 30px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--text-2);
@@ -288,7 +288,7 @@ select.input {
   display: inline-flex;
   align-self: flex-start;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius);
   overflow: hidden;
   flex-wrap: wrap;
 }
@@ -309,7 +309,7 @@ select.input {
   align-items: center;
   gap: 4px;
   padding: 2px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   font-size: 12px;
   background: var(--surface-3);
   color: var(--text-2);
@@ -365,7 +365,7 @@ select.input {
   letter-spacing: 0.04em;
   background: var(--surface-2);
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 .wk-codein {
   font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
@@ -454,7 +454,7 @@ select.input {
 }
 .wk-bar {
   height: 6px;
-  border-radius: 99px;
+  border-radius: var(--radius-xl);
   background: var(--surface-3);
   overflow: hidden;
   display: flex;
@@ -734,7 +734,7 @@ select.input {
   flex-direction: column;
   align-items: flex-start;
   padding: 5px 9px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 12.5px;
   line-height: 1.25;
   border: 1px solid var(--border-strong);
@@ -847,7 +847,7 @@ select.input {
   color: var(--text-2);
   font-size: 11px;
   padding: 2px 6px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -876,7 +876,7 @@ select.input {
   gap: 8px;
   align-items: center;
   padding: 10px 14px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface-3);
   box-shadow: var(--shadow);
   align-self: center;
@@ -957,7 +957,7 @@ select.input {
   align-items: flex-start;
   min-width: 108px;
   padding: 4px 8px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   border: 1px solid transparent;
   background: var(--surface-2);
   color: var(--text);
@@ -1118,7 +1118,7 @@ select.input {
   align-items: center;
   flex-wrap: wrap;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   border-left: 3px solid var(--accent);
 }
@@ -1167,7 +1167,7 @@ select.input {
 }
 .wk-person {
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface-2);
   font-size: 13px;
 }
@@ -1229,7 +1229,7 @@ select.input {
   justify-content: space-between;
   gap: 6px;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--surface);
   border: 1px solid var(--border);
   cursor: grab;
@@ -1281,7 +1281,7 @@ select.input {
   background: var(--surface);
   border: 1px solid var(--border);
   border-left: 3px solid var(--success);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -1323,7 +1323,7 @@ select.input {
   align-items: center;
   gap: 4px;
   padding: 3px 4px 3px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   font-size: 12.5px;
   background: var(--surface-3);
 }
@@ -1361,7 +1361,7 @@ select.input {
   border: 1px solid var(--wk-a-line);
   background: var(--wk-a);
   color: var(--text);
-  border-radius: 999px;
+  border-radius: var(--radius);
   font-size: 11.5px;
   padding: 1px 8px;
   cursor: pointer;
@@ -1612,7 +1612,7 @@ select.input {
 }
 .pc-code.chip {
   padding: 2px 4px 2px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--surface-3);
   font-size: 12.5px;
 }
@@ -1635,7 +1635,7 @@ select.input {
   height: 24px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: none;
   cursor: pointer;
   flex: 0 0 auto;
@@ -1653,7 +1653,7 @@ select.input {
   gap: 8px;
   padding: 8px 12px;
   margin: 8px 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--surface-2);
 }
 .sb-shift.picked {
@@ -1682,7 +1682,7 @@ select.input {
 .wk-card-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 .wk-card.folded > .wk-card-head {
   margin-bottom: 0;

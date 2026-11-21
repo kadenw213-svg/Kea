@@ -22,12 +22,23 @@
   --danger: #f28b82;
   --success: #81c995;
   --warning: #fdd663;
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 16px;
-  --shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
-  --titlebar-h: 44px;
-  --toolbar-h: 48px;
+  /* The look (since Kea 0.96): sharp and compact, like Microsoft 365 / Fluent 2. Small corners (full rounding only
+     where it means something: pictures, dots, switches), a 4 px spacing grid, 1 px hairlines between areas instead of
+     big shadows, and shadows only on things that float (menus, dialogs). Decisions: Kea Suite plans/kea/app-look.md. */
+  --radius-sm: 2px;
+  --radius: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 24px;
+  --hairline: 1px solid var(--border);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.32), 0 0 0 1px var(--border);
+  --titlebar-h: 40px;
+  --toolbar-h: 40px;
   --font: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   /* Motion: one easing and three lengths, for calm movement (off with Reduce animations or the system setting). */
   --ease: cubic-bezier(0.2, 0, 0, 1);
@@ -57,7 +68,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
@@ -84,7 +95,7 @@ button {
   background: var(--scroll, #3a3c3f);
   border: 3px solid transparent;
   background-clip: padding-box;
-  border-radius: 10px;
+  border-radius: var(--radius);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--scroll-hover, #505357);
@@ -118,7 +129,7 @@ button {
 }
 /* Split view: two panes side by side, the focused one outlined. */
 .workspace.is-split .pane {
-  border-radius: 10px;
+  border-radius: var(--radius);
   outline: 1px solid transparent;
   outline-offset: -1px;
   transition: outline-color 0.15s;
@@ -155,7 +166,7 @@ button {
   position: relative;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-2);
@@ -196,7 +207,7 @@ body.col-resizing * {
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: 9px;
+  border-radius: var(--radius);
   padding: 4px;
   margin-right: 2px;
   display: flex;
@@ -210,7 +221,7 @@ body.col-resizing * {
 .brand-mark {
   width: 22px;
   height: 22px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: linear-gradient(135deg, #a8c7fa 0%, #7cacf8 45%, #c58af9 100%);
   display: grid;
   place-items: center;
@@ -238,7 +249,7 @@ body.col-resizing * {
   gap: 8px;
   height: 32px;
   padding: 0 8px 0 12px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   color: var(--text-3);
   cursor: default;
   max-width: 220px;
@@ -268,7 +279,7 @@ body.col-resizing * {
 .tab-close {
   width: 20px;
   height: 20px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   display: grid;
   place-items: center;
   border: none;
@@ -285,7 +296,7 @@ body.col-resizing * {
 .tab-dirty {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: var(--accent);
 }
 .tab-close .tab-dirty {
@@ -315,7 +326,7 @@ body.col-resizing * {
   gap: 8px;
   height: 36px;
   padding: 0 16px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: transparent;
   color: var(--accent);
@@ -363,7 +374,7 @@ body.col-resizing * {
 .icon-btn {
   width: 34px;
   height: 34px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: none;
   background: transparent;
   color: var(--text-2);
@@ -393,15 +404,18 @@ body.col-resizing * {
 }
 
 /* ---------- Toolbar ---------- */
+/* A thin bar, flush across the window under the tabs, with a hairline below: every tool visible, grouped by task
+   (text, paragraph, insert, review) with thin dividers, and small monochrome icons. */
 .toolbar {
   height: var(--toolbar-h);
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 0 10px;
-  margin: 0 10px 8px;
-  background: var(--surface-2);
-  border-radius: 999px;
+  gap: 1px;
+  padding: 0 var(--sp-3);
+  margin: 0;
+  background: var(--surface);
+  border-bottom: var(--hairline);
+  border-radius: 0;
   flex-shrink: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -410,11 +424,29 @@ body.col-resizing * {
 .toolbar::-webkit-scrollbar {
   display: none;
 }
+.toolbar .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+.toolbar .icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.toolbar .select {
+  height: 28px;
+  font-size: 12.5px;
+}
+.toolbar .input {
+  height: 26px;
+}
+.toolbar .btn.sm {
+  height: 28px;
+}
 .tb-sep {
   width: 1px;
-  height: 22px;
-  background: var(--border-strong);
-  margin: 0 6px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 var(--sp-2);
   flex-shrink: 0;
 }
 .tb-spacer {
@@ -430,7 +462,7 @@ body.col-resizing * {
 
 .select {
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: none;
   background: transparent;
   color: var(--text);
@@ -452,7 +484,7 @@ body.col-resizing * {
 
 .input {
   height: 36px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: 1px solid var(--border-strong);
   background: var(--surface);
   padding: 0 12px;
@@ -473,7 +505,7 @@ body.col-resizing * {
   width: 46px;
   height: 28px;
   text-align: center;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: 1px solid transparent;
   background: var(--surface-3);
   outline: none;
@@ -488,7 +520,7 @@ body.col-resizing * {
   position: fixed;
   z-index: 1000;
   background: var(--surface-3);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   padding: 6px;
   min-width: 180px;
@@ -506,7 +538,7 @@ body.col-resizing * {
   gap: 12px;
   width: 100%;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: none;
   background: transparent;
   text-align: left;
@@ -583,7 +615,7 @@ body.col-resizing * {
 }
 .dialog {
   background: var(--surface-2);
-  border-radius: 24px;
+  border-radius: var(--radius-xl);
   padding: 24px;
   min-width: 380px;
   max-width: 560px;
@@ -631,7 +663,7 @@ body.col-resizing * {
   background: var(--text);
   color: var(--bg);
   padding: 12px 18px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
   font-weight: 500;
   animation: pop 0.15s ease-out;
@@ -666,7 +698,7 @@ body.col-resizing * {
   width: 240px;
   flex-shrink: 0;
   background: var(--surface);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   margin: 0 0 10px 10px;
   display: flex;
   flex-direction: column;
@@ -701,7 +733,7 @@ body.col-resizing * {
 .kbd-chip {
   display: inline-block;
   padding: 1px 6px;
-  border-radius: 5px;
+  border-radius: var(--radius);
   background: var(--surface-4);
   color: var(--text-2);
   font-size: 11px;
@@ -739,7 +771,7 @@ body.col-resizing * {
 }
 .drop-overlay > div {
   border: 2px dashed var(--accent);
-  border-radius: 24px;
+  border-radius: var(--radius-xl);
   padding: 48px 72px;
   color: var(--accent);
   font-size: 18px;
@@ -752,7 +784,7 @@ body.col-resizing * {
 .find-bar {
   margin: -2px 10px 8px;
   background: var(--surface);
-  border-radius: 999px;
+  border-radius: var(--radius);
   min-height: 42px;
   display: flex;
   align-items: center;
@@ -766,7 +798,7 @@ body.col-resizing * {
 .find-bar {
   flex-direction: column;
   align-items: stretch;
-  border-radius: 20px;
+  border-radius: var(--radius-lg);
   padding: 4px 10px;
   gap: 0;
   max-width: 560px;
@@ -830,7 +862,7 @@ body.col-resizing * {
   font: inherit;
   font-size: 12.5px;
   background: var(--surface);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 10px 12px;
   max-height: 180px;
   overflow: auto;
@@ -898,16 +930,16 @@ body.col-resizing * {
 /* Primary actions stay pinned to the right of every toolbar, even when space is tight. */
 .tb-end {
   position: sticky;
-  right: -10px;
+  right: calc(-1 * var(--sp-3));
   display: flex;
   align-items: center;
   gap: 4px;
   margin-left: auto;
-  padding: 0 10px 0 10px;
-  background: var(--surface-2);
+  padding: 0 var(--sp-3);
+  background: var(--surface);
   flex-shrink: 0;
   height: 100%;
-  box-shadow: -14px 0 14px -8px var(--surface-2);
+  box-shadow: -14px 0 14px -8px var(--surface);
   z-index: 1;
 }
 
@@ -926,7 +958,7 @@ body.col-resizing * {
   row-gap: 2px;
   padding-top: 4px;
   padding-bottom: 4px;
-  border-radius: 22px;
+  border-radius: var(--radius-xl);
 }
 .toolbar[data-tb-open] .tb-end {
   position: static;
@@ -949,7 +981,7 @@ body.col-resizing * {
   min-width: 360px;
   max-width: min(560px, calc(100vw - 32px));
   padding: 12px 10px 12px 14px;
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow);
@@ -968,13 +1000,13 @@ body.col-resizing * {
 }
 .voice-title {
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: 13px;
   margin-bottom: 2px;
 }
 .voice-mic {
   width: 46px;
   height: 46px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   border: none;
   display: grid;
   place-items: center;
@@ -1026,7 +1058,7 @@ body.col-resizing * {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   margin: 6px 0;
 }
@@ -1090,7 +1122,7 @@ body.col-resizing * {
 .fold-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 .fold-title {
   min-width: 0;
@@ -1119,7 +1151,7 @@ body.col-resizing * {
   height: 18px;
   padding: 0 6px;
   margin-left: 6px;
-  border-radius: 9px;
+  border-radius: var(--radius);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
@@ -1139,7 +1171,7 @@ body.col-resizing * {
   gap: 6px;
   height: 28px;
   padding: 0 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--accent);
   background: transparent;
   color: var(--accent);
@@ -1161,7 +1193,7 @@ body.col-resizing * {
 .update-notice {
   margin: 4px 0 10px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--warning) 14%, transparent);
   font-size: 13px;
   text-align: left;
@@ -1178,7 +1210,7 @@ body.col-resizing * {
   gap: 10px;
   padding: 10px 12px;
   margin-bottom: 12px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--danger) 12%, var(--surface, transparent));
   border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
 }
@@ -1195,4 +1227,19 @@ body.col-resizing * {
 }
 .update-pill:hover {
   filter: brightness(1.08);
+}
+
+/* ---------- Background picture (Settings → Appearance) ---------- */
+html.has-bg body {
+  background: var(--bg-solid);
+  isolation: isolate;
+}
+html.has-bg body::before {
+  content: '';
+  position: fixed;
+  inset: calc(-2 * var(--app-bg-blur, 0px));
+  background: var(--app-bg-image) center / cover no-repeat;
+  filter: blur(var(--app-bg-blur, 0px));
+  z-index: -1;
+  pointer-events: none;
 }

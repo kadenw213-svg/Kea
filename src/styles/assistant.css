@@ -222,7 +222,7 @@
   width: 28px;
   height: 28px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--radius);
 }
 .as-file span {
   overflow: hidden;
@@ -242,7 +242,7 @@
   display: grid;
   place-items: center;
   border: 2px dashed var(--accent);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   color: var(--accent);
   font-weight: 500;
@@ -323,7 +323,7 @@ body.drop-to-claude .drop-overlay {
   inset: 0;
   z-index: 40;
   pointer-events: none;
-  border-radius: 10px;
+  border-radius: var(--radius);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent), inset 0 0 28px color-mix(in srgb, var(--accent) 16%, transparent);
   animation: cw-glow 2.4s ease-in-out infinite;
 }
@@ -336,7 +336,7 @@ body.drop-to-claude .drop-overlay {
   align-items: center;
   gap: 8px;
   padding: 6px 6px 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--surface-3) 92%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
@@ -650,7 +650,7 @@ body.kea-capturing .claude-working {
 }
 .ab-tag {
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   color: var(--text-3);
   font-size: 11px;
@@ -740,7 +740,7 @@ body.kea-capturing .claude-working {
 .ab-check { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
 .ab-check-head { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; padding: 2px 0; text-align: left; }
 .ab-check-count { color: var(--text-3); }
-.ab-check-bar { flex: 0 0 90px; height: 4px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+.ab-check-bar { flex: 0 0 90px; height: 4px; border-radius: var(--radius-xl); background: var(--surface-3); overflow: hidden; }
 .ab-check-bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
 .ab-check-head > svg:last-child { margin-left: auto; }
 .ab-check-list { list-style: none; margin: 6px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
