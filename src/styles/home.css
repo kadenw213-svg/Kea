@@ -1692,3 +1692,56 @@ button.fcard-desc.add:hover {
 .dcard.folded .dcard-head {
   padding-bottom: 0;
 }
+
+/* ---------- Shared work folders (Home → Create → Project, Kea 0.99) ---------- */
+.shared-folders {
+  width: 640px;
+  max-width: calc(100vw - 32px);
+}
+.sf-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.sf-org {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-weight: 600;
+  padding-bottom: var(--sp-2);
+  border-bottom: var(--hairline);
+}
+.sf-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 6px 4px;
+  border-radius: var(--radius);
+}
+.sf-row:hover {
+  background: var(--hover);
+}
+.sf-name {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sf-meta {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.sf-new {
+  margin-top: var(--sp-2);
+}
+.sf-none,
+.sf-empty {
+  padding: var(--sp-3) 4px;
+}

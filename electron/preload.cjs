@@ -415,6 +415,30 @@ contextBridge.exposeInMainWorld('api', {
     save: (e) => ipcRenderer.invoke('personal:save', e),
     remove: (id) => ipcRenderer.invoke('personal:delete', id)
   },
+  // Shared work folders (teamFolders.cjs): answers come as { ok, value } and are unwrapped here.
+  teamFolders: (() => {
+    const call = (ch, arg) => ipcRenderer.invoke(ch, arg).then((r) => (r && r.ok ? r.value : Promise.reject(new Error((r && r.error) || 'Shared folders didn’t answer.'))));
+    return {
+      list: () => call('teamFolders:list'),
+      here: () => call('teamFolders:here'),
+      create: (orgId, name) => call('teamFolders:create', { orgId, name }),
+      open: (orgId, folderId) => call('teamFolders:open', { orgId, folderId }),
+      forget: (orgId, folderId) => call('teamFolders:forget', { orgId, folderId }),
+      update: (orgId, folderId, patch) => call('teamFolders:rename', { orgId, folderId, ...patch }),
+      remove: (orgId, folderId) => call('teamFolders:remove', { orgId, folderId }),
+      access: (orgId, folderId, grants) => call('teamFolders:access', { orgId, folderId, grants }),
+      people: (orgId) => call('teamFolders:people', { orgId }),
+      fileClaude: (file, claude) => call('teamFolders:fileClaude', { file, claude }),
+      whereIs: (file) => call('teamFolders:whereIs', { file }),
+      upload: (file) => call('teamFolders:upload', { file }),
+      syncNow: () => call('teamFolders:syncNow'),
+      onNote: (cb) => {
+        const h = (_e, m) => cb(m);
+        ipcRenderer.on('teamFolders:note', h);
+        return () => ipcRenderer.removeListener('teamFolders:note', h);
+      }
+    };
+  })(),
   contacts: {
     status: () => ipcRenderer.invoke('contacts:status'),
     connect: () => ipcRenderer.invoke('contacts:connect'),

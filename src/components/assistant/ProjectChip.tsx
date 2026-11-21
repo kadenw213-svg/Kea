@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { toast } from '../../store';
 import { useProjects, projectOfTab, projectFiles, saveProject, type Project } from '../../lib/projects';
 import { newFile } from '../../lib/open';
+import { SharedFolderPanel, reloadProject } from './SharedFolder';
 
 type F = Awaited<ReturnType<typeof projectFiles>>[number];
 
@@ -24,26 +25,38 @@ export function ProjectChip({ tabId }: { tabId: string }) {
     return () => {
       live = false;
     };
-  }, [p?.dir, p?.exclude.join('|'), (p?.links || []).map((l) => l.id).join('|'), open]);
+  }, [p?.dir, p?.exclude.join('|'), (p?.links || []).map((l) => l.id).join('|'), (p?.shared?.off || []).join('|'), open]);
   if (!p) return null;
   const used = (files || []).filter((f) => f.used).length;
+  const s = p.shared;
   const toggle = async (f: F) => {
+    // A shared folder you manage: the switch is the folder's own setting for that file, for everyone.
+    if (s?.access === 'manage' && !f.path.startsWith('google:') && (f.locked || !p.exclude.includes(f.rel))) {
+      try {
+        await api.teamFolders.fileClaude(f.path, f.locked ? (s.claude ? null : true) : s.claude ? false : null);
+        await reloadProject(p.dir);
+      } catch (err: any) {
+        toast(String(err?.message || err), 'error');
+      }
+      return;
+    }
     const exclude = f.used ? [...p.exclude, f.rel] : p.exclude.filter((x) => x !== f.rel);
     await saveProject({ ...p, exclude } as Project);
   };
   return (
     <div className={`as-project ${open ? 'open' : ''}`}>
       <button className="as-project-head" onClick={() => setOpen(!open)} title="Claude can read the files in this project when you refer to them">
-        <FolderOpen size={13} />
+        {s ? <Users size={13} /> : <FolderOpen size={13} />}
         <span className="as-project-name">{p.name}</span>
         <span className="muted">{files ? `${used} file${used === 1 ? '' : 's'} Claude can use` : '…'}</span>
         {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
       </button>
       {open && (
         <div className="as-project-body">
+          {s && <SharedFolderPanel p={p} />}
           {(files || []).map((f) => (
-            <label key={f.rel} className="as-project-file" title={f.used ? 'Claude may read this file' : 'Left out: Claude won’t read it'}>
-              <input type="checkbox" checked={f.used} onChange={() => toggle(f)} />
+            <label key={f.rel} className="as-project-file" title={f.locked ? (s?.access === 'manage' ? 'Off for everyone: turn it on to let Claude read it' : `${s?.orgName} doesn’t let Claude use this file`) : f.used ? (s?.access === 'manage' ? 'Claude may read this file (for everyone in the organization)' : 'Claude may read this file') : 'Left out: Claude won’t read it'}>
+              <input type="checkbox" checked={f.used} disabled={!!f.locked && s?.access !== 'manage'} onChange={() => toggle(f)} />
               <span>{f.rel}</span>
             </label>
           ))}

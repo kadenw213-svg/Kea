@@ -2,12 +2,13 @@
 // already have into one. Then a new document opens in it.
 import { useState } from 'react';
 import { create } from 'zustand';
-import { FolderPlus, FolderInput, ChevronDown, FileText, Sheet } from 'lucide-react';
+import { FolderPlus, FolderInput, ChevronDown, FileText, Sheet, Users } from 'lucide-react';
 import { api } from '../../lib/api';
 import { saveProject, findProject, type Project } from '../../lib/projects';
 import { newFile } from '../../lib/open';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
+import { SharedFoldersDialog, useSharedFolders } from './SharedFolders';
 
 const useDialog = create<{ mode: 'new' | 'folder' | null; dir: string }>(() => ({ mode: null, dir: '' }));
 
@@ -59,10 +60,15 @@ export function ProjectButton() {
             >
               <FileText size={16} /> New document in a project…
             </button>
+            <div className="menu-sep" />
+            <button className="menu-item" onClick={() => (close(), useSharedFolders.setState({ open: true }))}>
+              <Users size={16} /> Shared work folders…
+            </button>
           </>
         )}
       </MenuButton>
       <NewProjectDialog />
+      <SharedFoldersDialog />
     </>
   );
 }

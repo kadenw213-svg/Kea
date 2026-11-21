@@ -20,6 +20,12 @@ export interface Project {
   links?: { kind: 'doc' | 'sheet' | 'slides'; id: string; name: string }[];
   /** Claude may look people up in Google Contacts (work projects). */
   contacts?: boolean;
+  /**
+   * An organization's shared folder kept on this PC (electron/teamFoldersCore.cjs writes this; Kea 0.99). `off`: the
+   * files the folder or file setting keeps from Claude, decided by whoever manages it; they're never used, whatever
+   * this PC's own `exclude` says.
+   */
+  shared?: { src: string; orgId: string; orgName: string; folderId: string; folderName: string; access: 'view' | 'edit' | 'manage'; claude: boolean; off: string[] };
 }
 
 export const PROJECT_FILE = '.kea-project.json';
@@ -35,7 +41,7 @@ function parse(dir: string, text: string): Project | null {
   try {
     const j = JSON.parse(text);
     const kind = ['class', 'work', 'personal'].includes(j?.kind) ? j.kind : 'personal';
-    return { dir, name: String(j?.name || dir.split(/[\\/]/).pop() || 'Project').slice(0, 80), kind, ...(j?.course ? { course: String(j.course) } : {}), exclude: Array.isArray(j?.exclude) ? j.exclude.map(String) : [], links: Array.isArray(j?.links) ? j.links.filter((l: any) => l && /^[\w-]{20,}$/.test(String(l.id))).map((l: any) => ({ kind: ['doc', 'sheet', 'slides'].includes(l.kind) ? l.kind : 'doc', id: String(l.id), name: String(l.name || 'Google file').slice(0, 120) })) : [], ...(j?.contacts ? { contacts: true } : {}) };
+    return { dir, name: String(j?.name || dir.split(/[\\/]/).pop() || 'Project').slice(0, 80), kind, ...(j?.course ? { course: String(j.course) } : {}), exclude: Array.isArray(j?.exclude) ? j.exclude.map(String) : [], links: Array.isArray(j?.links) ? j.links.filter((l: any) => l && /^[\w-]{20,}$/.test(String(l.id))).map((l: any) => ({ kind: ['doc', 'sheet', 'slides'].includes(l.kind) ? l.kind : 'doc', id: String(l.id), name: String(l.name || 'Google file').slice(0, 120) })) : [], ...(j?.contacts ? { contacts: true } : {}), ...(j?.shared && typeof j.shared === 'object' && j.shared.orgId ? { shared: { src: String(j.shared.src || ''), orgId: String(j.shared.orgId), orgName: String(j.shared.orgName || 'Organization'), folderId: String(j.shared.folderId || ''), folderName: String(j.shared.folderName || ''), access: ['view', 'edit', 'manage'].includes(j.shared.access) ? j.shared.access : 'view', claude: j.shared.claude !== false, off: Array.isArray(j.shared.off) ? j.shared.off.map(String) : [] } } : {}) };
   } catch {
     return null;
   }
@@ -82,7 +88,7 @@ useTabs.subscribe((s, prev) => {
 
 /** Make a folder a project (or rename it): writes its `.kea-project.json`. */
 export async function saveProject(p: Project): Promise<Project> {
-  const body = { name: p.name, kind: p.kind, ...(p.course ? { course: p.course } : {}), exclude: p.exclude, ...(p.links?.length ? { links: p.links } : {}), ...(p.contacts ? { contacts: true } : {}) };
+  const body = { name: p.name, kind: p.kind, ...(p.course ? { course: p.course } : {}), exclude: p.exclude, ...(p.links?.length ? { links: p.links } : {}), ...(p.contacts ? { contacts: true } : {}), ...(p.shared ? { shared: p.shared } : {}) };
   await api.writeFile(join(p.dir, PROJECT_FILE), new TextEncoder().encode(JSON.stringify(body, null, 2)));
   useProjects.setState((s) => ({ byDir: Object.fromEntries(Object.entries({ ...s.byDir, [p.dir]: p }).map(([d, v]) => [d, v && v.dir === p.dir ? p : v])), version: s.version + 1 }));
   return p;
@@ -92,8 +98,10 @@ const READABLE = /\.(docx|doc|md|txt|csv|tsv|xlsx|xls|pdf|pptx|json|html?)$/i;
 const IMAGES = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 
 /** The project's files, in it and its subfolders (two levels), with whether Claude may use each. */
-export async function projectFiles(p: Project): Promise<{ path: string; rel: string; size: number; mtime: number; used: boolean; image: boolean }[]> {
-  const out: { path: string; rel: string; size: number; mtime: number; used: boolean; image: boolean }[] = [];
+/** A shared folder's own setting keeps this file from Claude (whoever manages the folder decides). */
+export const sharedOff = (p: Project, rel: string) => !!p.shared && p.shared.off.includes(rel);
+export async function projectFiles(p: Project): Promise<{ path: string; rel: string; size: number; mtime: number; used: boolean; image: boolean; locked?: boolean }[]> {
+  const out: { path: string; rel: string; size: number; mtime: number; used: boolean; image: boolean; locked?: boolean }[] = [];
   const walk = async (dir: string, depth: number) => {
     const list = await api.listDir(dir, { allTypes: true }).catch(() => []);
     for (const e of list) {
@@ -104,7 +112,7 @@ export async function projectFiles(p: Project): Promise<{ path: string; rel: str
       }
       if (!READABLE.test(e.name) && !IMAGES.test(e.name)) continue;
       const rel = relPath(p, e.path);
-      out.push({ path: e.path, rel, size: e.size, mtime: e.mtime, used: !p.exclude.includes(rel), image: IMAGES.test(e.name) });
+      out.push({ path: e.path, rel, size: e.size, mtime: e.mtime, used: !p.exclude.includes(rel) && !sharedOff(p, rel), image: IMAGES.test(e.name), ...(sharedOff(p, rel) ? { locked: true } : {}) });
       if (out.length >= 300) return;
     }
   };
@@ -220,6 +228,7 @@ export function projectTools(tabId: string): AssistantTool[] {
         const rel = String(file || '').replace(/\\/g, '/').replace(/^\/+/, '');
         if (!rel || rel.split('/').includes('..')) throw new Error('Name a file from list_project_files.');
         if (p.exclude.includes(rel)) throw new Error(`The student left "${rel}" out of what Claude may use.`);
+        if (sharedOff(p, rel)) throw new Error(`${p.shared!.orgName} doesn’t let Claude use "${rel}".`);
         const link = (p.links || []).find((l) => `Google: ${l.name}` === rel);
         if (link) {
           const g = await api.google.exportText(link.id);

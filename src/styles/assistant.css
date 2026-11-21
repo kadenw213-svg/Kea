@@ -750,3 +750,80 @@ body.kea-capturing .claude-working {
 .ab-check-list li.done .ab-check-box { color: var(--success); }
 .ab-check-text { overflow-wrap: anywhere; }
 .ab-check-detail { margin-left: auto; font-size: 12px; color: var(--text-3); white-space: nowrap; }
+
+/* ---------- A shared work folder in the project panel (Kea 0.99) ---------- */
+.as-shared {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border: var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+.as-shared-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 24px;
+}
+.as-shared-row .grow {
+  flex: 1;
+}
+.as-shared-access {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.as-shared-note {
+  padding: 6px 8px;
+  border-left: 3px solid var(--warning);
+  background: var(--hover);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+}
+.share-dialog {
+  width: 540px;
+}
+.share-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 4px 0;
+  border-bottom: var(--hairline);
+}
+.share-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-row .select {
+  border: var(--hairline);
+}
+.share-pick {
+  flex: 1;
+  min-width: 0;
+}
+.share-always {
+  font-size: 12px;
+  padding-top: var(--sp-2);
+}

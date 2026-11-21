@@ -380,7 +380,16 @@ function createServers({ file, secretsFile, seal = (s) => Buffer.from(s), unseal
     return secretOf(id).token || signIn(entry);
   }
 
-  return { list, join, req, renew, remove, again, session, find, identity, _secretOf: secretOf };
+  /** A joined server's address and a session, for streamed file calls (shared folders): { base, token, renew() }. */
+  async function target(id) {
+    const entry = find(id);
+    if (!entry) throw new ServerError('This server isn’t one of yours on this computer.', 404);
+    if (entry.signedOut) throw signedOutError(entry);
+    const token = secretOf(id).token || (await signIn(entry));
+    return { base: entry.url, token, renew: () => signIn(entry) };
+  }
+
+  return { list, join, req, renew, remove, again, session, find, identity, target, _secretOf: secretOf };
 }
 
 module.exports = { createServers, parseJoin, joinLink, cleanUrl, checkIdentity, serverIdOf, passPayload, ServerError, PASS_RENEW_MS, DAY, LIMITS };

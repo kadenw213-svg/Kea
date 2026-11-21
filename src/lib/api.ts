@@ -6,6 +6,11 @@ export interface PlanUsage {
   status: string;
   at: number;
 }
+export type TeamAccess = 'view' | 'edit' | 'manage';
+export interface TeamFolder { id: string; orgId: string; name: string; access: TeamAccess; claude: boolean; size: number; fileCount: number; updatedAt: number; here?: TeamFolderHere | null }
+export interface TeamFolderGroup { org: { id: string; name: string; src: string }; folders: TeamFolder[]; canCreate: boolean; quota: { limit: number; used: number } | null; error?: string }
+export interface TeamFolderHere { src: string; orgId: string; folderId: string; orgName: string; name: string; access: TeamAccess; claude: boolean; root: string; files: number; lastSync: number; lastError: string | null; gone: boolean }
+export interface TeamFolderGrant { kind: 'account' | 'role' | 'org'; id?: string | null; access: TeamAccess }
 export interface FileEntry {
   path: string;
   name: string;
@@ -365,6 +370,23 @@ export interface KeaApi {
     linkInfo(link: string): Promise<{ id: string; name: string; kind: 'doc' | 'sheet' | 'slides' }>;
     /** That file's text as it is now (a Sheet as CSV). */
     exportText(id: string): Promise<{ name: string; text: string }>;
+  };
+  /** Shared work folders (electron/teamFolders.cjs): an organization's folders, kept on this PC download-only. */
+  teamFolders: {
+    list(): Promise<TeamFolderGroup[]>;
+    here(): Promise<TeamFolderHere[]>;
+    create(orgId: string, name: string): Promise<TeamFolderHere>;
+    open(orgId: string, folderId: string): Promise<TeamFolderHere>;
+    forget(orgId: string, folderId: string): Promise<boolean>;
+    update(orgId: string, folderId: string, patch: { name?: string; claude?: boolean }): Promise<{ folder: TeamFolder }>;
+    remove(orgId: string, folderId: string): Promise<{ ok: true; purgeAt: number }>;
+    access(orgId: string, folderId: string, grants?: TeamFolderGrant[]): Promise<{ grants: (TeamFolderGrant & { name: string; member?: boolean })[]; alwaysManage: { owners: { id: string; name: string }[]; roles: { id: string; name: string }[] } }>;
+    people(orgId: string): Promise<{ members: { id: string; name: string; you: boolean }[]; roles: { id: string; name: string }[] }>;
+    fileClaude(file: string, claude: boolean | null): Promise<unknown>;
+    whereIs(file: string): Promise<(TeamFolderHere & { rel: string }) | null>;
+    upload(file: string): Promise<{ ok?: boolean; same?: boolean; skipped?: boolean; conflict?: boolean; keptAs?: string }>;
+    syncNow(): Promise<TeamFolderHere[]>;
+    onNote(cb: (m: string) => void): () => void;
   };
   /** Google Contacts for work projects, read-only (electron/contacts.cjs). */
   contacts: {

@@ -88,10 +88,24 @@ export async function saveTabFile(tabId: string, formats: SaveFormat[], saveAs: 
     if (!extOf(chosen)) target = `${chosen}.${format.ext}`;
   }
 
+  // A shared work folder (Kea 0.99): view only means a copy elsewhere; otherwise the saved file goes up to the
+  // organization after it's written here (teamFolders.uploadOnSave).
+  const shared = await api.teamFolders?.whereIs(target!).catch(() => null);
+  if (shared && shared.access === 'view' && !shared.gone) {
+    if (isSilentSave()) return false;
+    toast(`You can only view ${shared.name} from ${shared.orgName}. Save a copy somewhere of your own to keep your changes.`);
+    return saveAs ? false : saveTabFile(tabId, formats, true, opts);
+  }
   try {
     const bytes = await format!.build();
     await api.writeFile(target!, bytes);
     const name = target!.split(/[\\/]/).pop()!;
+    if (shared && !shared.gone && setting('teamFolders.uploadOnSave') !== false) {
+      api.teamFolders
+        .upload(target!)
+        .then((r) => r.conflict && toast(`Someone else changed ${name} in ${shared.name} first. Theirs is the file now; yours is kept beside it as ${r.keptAs}.`, 'error'))
+        .catch((e) => toast(`Saved here, but couldn’t send ${name} to ${shared.orgName}: ${String(e?.message || e).replace(/^Error: /, '')}`, 'error'));
+    }
     // Edits made while the file was being written keep the tab marked unsaved.
     useTabs.getState().updateTab(tabId, { path: target!, name, remote: undefined, dirty: (editSeq.get(tabId) || 0) !== seq });
     if (!isSilentSave()) {

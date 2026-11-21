@@ -156,7 +156,10 @@ export const SECTIONS: Section[] = [
         help: 'Only when you’re signed in. Save as… always lets you pick any folder.'
       },
       { key: 'keaCloud.showOnHome', label: 'Show Kea cloud on Home', type: 'toggle', default: true, advanced: true },
-      { key: 'keaCloud.fileBadges', label: 'Show each file’s sync state on Home', type: 'toggle', default: true, advanced: true, help: 'A small mark on files still waiting to go up, or kept on this PC.' }
+      { key: 'keaCloud.fileBadges', label: 'Show each file’s sync state on Home', type: 'toggle', default: true, advanced: true, help: 'A small mark on files still waiting to go up, or kept on this PC.' },
+      { key: 'teamFolders.uploadOnSave', label: 'Send my changes to shared work folders when I save', type: 'toggle', default: true, help: 'In a folder your workplace shares with you (and lets you edit), saving a file in Kea sends it to everyone. If someone changed it first, both versions are kept.' },
+      { key: 'teamFolders.every', label: 'Check shared work folders for changes every', type: 'number', default: 2, min: 1, max: 60, step: 1, unit: 'minutes', advanced: true },
+      { key: 'teamFolders.root', label: 'Keep shared work folders in', type: 'folder', default: '', advanced: true, help: 'Each shared folder is kept as <Organization>\\<Folder> in here. Empty: your Documents folder. Folders already on this PC stay where they are.' }
     ]
   },
   {
