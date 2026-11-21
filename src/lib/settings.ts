@@ -914,6 +914,7 @@ export const SECTIONS: Section[] = [
         ]
       },
       { key: 'assistant.nameFromAssignment', label: 'Name a file after the assignment it’s for', type: 'toggle', default: true, help: 'A new, empty file, or a saved one that still has a name Kea gave it (“Document 2”, “MLA essay”), is named after the assignment. Files you named keep their name, and an existing file is never overwritten.' },
+      { key: 'templates.classFormat', label: 'Start new documents in the class’s format', type: 'toggle', default: true, help: 'When a new document is linked to an assignment, Kea sets the citation style, font, size, spacing and margins its syllabus asks for (only what the syllabus says).' },
       { key: 'templates.fillClass', label: 'Fill in the class and instructor in a template’s heading', type: 'toggle', default: true, help: 'When a document made from the MLA, APA or Chicago template is linked to an assignment, its “Instructor Name” and “Course Name” lines become the real ones.' },
     ]
   },

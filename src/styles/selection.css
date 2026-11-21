@@ -185,3 +185,13 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.as-project-link {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.as-project-link .input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+}

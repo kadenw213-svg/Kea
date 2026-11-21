@@ -404,6 +404,7 @@ app.whenReady().then(() => {
   require('./calendarShare.cjs').register();
   require('./personalEvents.cjs').register();
   require('./gcal.cjs').register();
+  require('./contacts.cjs').register();
   require('./servers.cjs').register();
   // (Only the installed Kea opens kea:// links: a development copy never takes them over.)
   if (app.isPackaged) app.setAsDefaultProtocolClient('kea');

@@ -277,6 +277,30 @@ async function openFile(localPath) {
   return { id, name: meta.name, ext: type.ext, kind: type.kind, google: type.google, canEdit: meta.capabilities?.canEdit !== false, modifiedTime: meta.modifiedTime, data };
 }
 
+/** A Google Doc, Sheet or Slides link (or its id): the file's id. */
+const idFromLink = (s) => (/\/d\/([\w-]{20,})/.exec(String(s)) || /[?&]id=([\w-]{20,})/.exec(String(s)) || /^([\w-]{20,})$/.exec(String(s).trim()) || [])[1] || null;
+
+/** What a linked Google file is (for adding it to a project): { id, name, kind }. */
+async function linkInfo(link) {
+  const id = idFromLink(link);
+  if (!id) throw new Error('That isn’t a Google Docs, Sheets or Slides link.');
+  const meta = await api(`/files/${id}?fields=id,name,mimeType&supportsAllDrives=true`);
+  const kind = Object.values(TYPES).find((t) => t.google === meta.mimeType)?.kind;
+  if (!kind) throw new Error('Kea can read Google Docs, Sheets and Slides from a project.');
+  return { id, name: meta.name, kind };
+}
+
+/**
+ * A Google file's text as it is now, for Claude reading a project: a Sheet as CSV (its first tab), a Doc or Slides as
+ * plain text. Read through the Drive connection (Settings → Google), never stored.
+ */
+async function exportText(id) {
+  const meta = await api(`/files/${id}?fields=name,mimeType&supportsAllDrives=true`);
+  const mime = meta.mimeType === TYPES.gsheet.google ? 'text/csv' : 'text/plain';
+  const res = await api(`/files/${id}/export?mimeType=${encodeURIComponent(mime)}`, {}, true);
+  return { name: meta.name, text: await res.text() };
+}
+
 /** Upload new contents; Google converts the .docx/.xlsx/.pptx back into its own format. */
 async function saveFile(id, kindExt, data) {
   const type = Object.values(TYPES).find((t) => t.ext === kindExt);
@@ -315,6 +339,8 @@ function register({ log }) {
     return true;
   });
   handleApp(ipcMain, 'google:open', wrap((_e, p) => openFile(p)));
+  handleApp(ipcMain, 'google:linkInfo', wrap((_e, link) => linkInfo(String(link || ''))));
+  handleApp(ipcMain, 'google:exportText', wrap((_e, id) => exportText(String(id || '').replace(/[^\w-]/g, ''))));
   handleApp(ipcMain, 'google:save', wrap((_e, id, ext, data) => saveFile(id, ext, data)));
 }
 
@@ -333,4 +359,4 @@ function status() {
 /** The Google account signed in to Kea, if any (its email). */
 const signedInEmail = () => loadSession()?.email || null;
 
-module.exports = { register, signedInEmail, authorize, refreshed, _drive: { client, clientFor, driveAuthorizeUrl, status, keaGoogleEmail, refusedError, REFUSED, NOT_HERE } };
+module.exports = { register, signedInEmail, authorize, refreshed, _drive: { idFromLink, client, clientFor, driveAuthorizeUrl, status, keaGoogleEmail, refusedError, REFUSED, NOT_HERE } };

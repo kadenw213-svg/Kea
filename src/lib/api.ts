@@ -211,7 +211,7 @@ export interface KeaApi {
     /** Graded work for the Claude tab's assignment picker, soonest due first. */
     assignments(): Promise<AssignmentChoice[]>;
     /** One assignment written out whole for Claude: guide, the class site's instructions and rubric, its files' text. */
-    assignmentBrief(id: string): Promise<(AssignmentChoice & { text: string; courseName?: string; instructor?: string }) | null>;
+    assignmentBrief(id: string): Promise<(AssignmentChoice & { text: string; courseName?: string; instructor?: string; format?: { style?: 'mla' | 'apa' | 'chicago'; font?: string; sizePt?: number; lineHeight?: number; margins?: number; text: string } | null }) | null>;
     /** Write one assignment's guide again now (after the student unlocks its instructions). */
     guideRescan(id: string, code: string): Promise<{ queued: boolean }>;
     /** Which class and chapters a textbook PDF is (for Quiz me), or null. */
@@ -361,6 +361,17 @@ export interface KeaApi {
     signOut(): Promise<boolean>;
     open(localPath: string): Promise<{ id: string; name: string; ext: string; kind: 'doc' | 'sheet' | 'slides'; google: string; canEdit: boolean; modifiedTime: string; data: Uint8Array }>;
     save(id: string, ext: string, data: Uint8Array): Promise<{ id: string; modifiedTime: string }>;
+    /** A Google Docs/Sheets/Slides link added to a project: its id, name and kind. */
+    linkInfo(link: string): Promise<{ id: string; name: string; kind: 'doc' | 'sheet' | 'slides' }>;
+    /** That file's text as it is now (a Sheet as CSV). */
+    exportText(id: string): Promise<{ name: string; text: string }>;
+  };
+  /** Google Contacts for work projects, read-only (electron/contacts.cjs). */
+  contacts: {
+    status(): Promise<{ connected: boolean }>;
+    connect(): Promise<{ connected: boolean }>;
+    disconnect(): Promise<{ connected: boolean }>;
+    search(q: string): Promise<{ name: string; emails: string[]; phones: string[]; org: string }[]>;
   };
   recovery: {
     put(meta: Omit<RecoveryEntry, 'savedAt'>, data: Uint8Array): Promise<boolean>;

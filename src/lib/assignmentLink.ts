@@ -3,7 +3,7 @@
 // an open file or a file in the save folder already has. Files with a name or content of their own are left alone.
 import { api } from './api';
 import { setting } from './settings';
-import { useTabs, editorRegistry } from '../store';
+import { useTabs, editorRegistry, toast } from '../store';
 import { setAssignment, type AssignmentRef } from './assignmentContext';
 import { isEmptyContent, nameForAssignment, safeFileName, uniqueName, classFieldReplacements, GENERIC_NAME } from './fileNames';
 
@@ -26,15 +26,32 @@ export async function linkAssignment(tabId: string, ref: AssignmentRef | null): 
  * the student wrote is touched. (The student's name and the date are filled when the template opens.)
  */
 async function fillClassFields(tabId: string, id: string) {
-  if (setting('templates.fillClass') === false) return;
   const hooks = editorRegistry.get(tabId)?.ai;
   if (!hooks?.replaceQuote || hooks.noun !== 'document') return;
   const doc = await hooks.getDocument();
   const lines = new Set(doc.sections.map((s) => s.text.trim()));
-  if (!['Instructor Name', 'Course Name', 'Course Number: Course Name'].some((l) => lines.has(l))) return;
+  const heading = setting('templates.fillClass') !== false && ['Instructor Name', 'Course Name', 'Course Number: Course Name'].some((l) => lines.has(l));
+  // A new document (never saved, or still only a template's heading) starts in the class's paper format.
+  const tab = useTabs.getState().tabs.find((t) => t.id === tabId);
+  const fresh = setting('templates.classFormat') !== false && (!tab?.path || doc.full.trim().length < 400);
+  if (!heading && !fresh) return;
   const b = await api.scholar.assignmentBrief(id);
   if (!b) return;
-  for (const [from, to] of classFieldReplacements(b)) if (lines.has(from) && to) hooks.replaceQuote(from, to);
+  if (heading) for (const [from, to] of classFieldReplacements(b)) if (lines.has(from) && to) hooks.replaceQuote(from, to);
+  const f = b.format;
+  if (fresh && f) {
+    const tool = (name: string) => hooks.tools?.find((t) => t.name === name);
+    const setup: Record<string, unknown> = {};
+    if (f.font) setup.font = f.font;
+    if (f.sizePt) setup.font_size = f.sizePt;
+    if (f.lineHeight) setup.line_spacing = f.lineHeight;
+    if (f.margins) setup.margins = f.margins;
+    try {
+      if (Object.keys(setup).length) await tool('page_setup')?.run(setup);
+      if (f.style) await tool('set_citation_style')?.run({ style: f.style });
+      toast(`Set up in ${b.course}'s format from its syllabus: ${f.text}`, 'success');
+    } catch {}
+  }
 }
 
 /**

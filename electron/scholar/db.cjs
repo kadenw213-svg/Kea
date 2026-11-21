@@ -1131,6 +1131,20 @@ async function searchSources(file, words) {
 }
 
 /** One class-site document's whole text. */
+/**
+ * A class's documents that set rules for its papers: its syllabus first, then any document with "format",
+ * "guidelines" or "style" in its title (classFormat.cjs reads the paper format from them).
+ */
+async function syllabusTexts(file, courseId) {
+  const db = await open(file);
+  if (!db || !courseId) return [];
+  return rows(
+    db,
+    "SELECT title, substr(raw_text, 1, 120000) AS text FROM sources WHERE course_id = ? AND superseded_by_id IS NULL AND raw_text IS NOT NULL AND (lower(title) LIKE '%syllabus%' OR lower(source_type) LIKE '%syllabus%' OR lower(title) LIKE '%format%' OR lower(title) LIKE '%guideline%' OR lower(title) LIKE '%style%') ORDER BY CASE WHEN lower(title) LIKE '%syllabus%' OR lower(source_type) LIKE '%syllabus%' THEN 0 ELSE 1 END LIMIT 6",
+    [courseId]
+  );
+}
+
 async function sourceText(file, id) {
   const db = await open(file);
   if (!db) return null;
@@ -1138,4 +1152,4 @@ async function sourceText(file, id) {
   return r || null;
 }
 
-module.exports = { termCourses, searchSources, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { sameChapter, outcomesOf, handIn, norm, relateItems, labNumber, postBase, DUE_KINDS } };
+module.exports = { termCourses, searchSources, syllabusTexts, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { sameChapter, outcomesOf, handIn, norm, relateItems, labNumber, postBase, DUE_KINDS } };

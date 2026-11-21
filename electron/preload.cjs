@@ -376,6 +376,8 @@ contextBridge.exposeInMainWorld('api', {
     signIn: () => ipcRenderer.invoke('google:sign-in'),
     signOut: () => ipcRenderer.invoke('google:sign-out'),
     open: (p) => ipcRenderer.invoke('google:open', p),
+    linkInfo: (link) => ipcRenderer.invoke('google:linkInfo', link),
+    exportText: (id) => ipcRenderer.invoke('google:exportText', id),
     save: (id, ext, data) => ipcRenderer.invoke('google:save', id, ext, data)
   },
   recovery: {
@@ -412,6 +414,12 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('personal:list'),
     save: (e) => ipcRenderer.invoke('personal:save', e),
     remove: (id) => ipcRenderer.invoke('personal:delete', id)
+  },
+  contacts: {
+    status: () => ipcRenderer.invoke('contacts:status'),
+    connect: () => ipcRenderer.invoke('contacts:connect'),
+    disconnect: () => ipcRenderer.invoke('contacts:disconnect'),
+    search: (q) => ipcRenderer.invoke('contacts:search', q)
   },
   gcal: {
     status: () => ipcRenderer.invoke('gcal:status'),

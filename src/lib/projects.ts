@@ -16,6 +16,10 @@ export interface Project {
   kind: 'class' | 'work' | 'personal';
   course?: string;
   exclude: string[];
+  /** Google Docs, Sheets and Slides that are part of the project (read live through the Drive connection). */
+  links?: { kind: 'doc' | 'sheet' | 'slides'; id: string; name: string }[];
+  /** Claude may look people up in Google Contacts (work projects). */
+  contacts?: boolean;
 }
 
 export const PROJECT_FILE = '.kea-project.json';
@@ -31,7 +35,7 @@ function parse(dir: string, text: string): Project | null {
   try {
     const j = JSON.parse(text);
     const kind = ['class', 'work', 'personal'].includes(j?.kind) ? j.kind : 'personal';
-    return { dir, name: String(j?.name || dir.split(/[\\/]/).pop() || 'Project').slice(0, 80), kind, ...(j?.course ? { course: String(j.course) } : {}), exclude: Array.isArray(j?.exclude) ? j.exclude.map(String) : [] };
+    return { dir, name: String(j?.name || dir.split(/[\\/]/).pop() || 'Project').slice(0, 80), kind, ...(j?.course ? { course: String(j.course) } : {}), exclude: Array.isArray(j?.exclude) ? j.exclude.map(String) : [], links: Array.isArray(j?.links) ? j.links.filter((l: any) => l && /^[\w-]{20,}$/.test(String(l.id))).map((l: any) => ({ kind: ['doc', 'sheet', 'slides'].includes(l.kind) ? l.kind : 'doc', id: String(l.id), name: String(l.name || 'Google file').slice(0, 120) })) : [], ...(j?.contacts ? { contacts: true } : {}) };
   } catch {
     return null;
   }
@@ -78,7 +82,7 @@ useTabs.subscribe((s, prev) => {
 
 /** Make a folder a project (or rename it): writes its `.kea-project.json`. */
 export async function saveProject(p: Project): Promise<Project> {
-  const body = { name: p.name, kind: p.kind, ...(p.course ? { course: p.course } : {}), exclude: p.exclude };
+  const body = { name: p.name, kind: p.kind, ...(p.course ? { course: p.course } : {}), exclude: p.exclude, ...(p.links?.length ? { links: p.links } : {}), ...(p.contacts ? { contacts: true } : {}) };
   await api.writeFile(join(p.dir, PROJECT_FILE), new TextEncoder().encode(JSON.stringify(body, null, 2)));
   useProjects.setState((s) => ({ byDir: Object.fromEntries(Object.entries({ ...s.byDir, [p.dir]: p }).map(([d, v]) => [d, v && v.dir === p.dir ? p : v])), version: s.version + 1 }));
   return p;
@@ -105,7 +109,13 @@ export async function projectFiles(p: Project): Promise<{ path: string; rel: str
     }
   };
   await walk(p.dir, 0);
-  return out.sort((a, b) => a.rel.localeCompare(b.rel));
+  out.sort((a, b) => a.rel.localeCompare(b.rel));
+  // Linked Google files come last, named "Google: <name>".
+  for (const l of p.links || []) {
+    const rel = `Google: ${l.name}`;
+    out.push({ path: `google:${l.id}`, rel, size: 0, mtime: Date.now(), used: !p.exclude.includes(rel), image: false });
+  }
+  return out;
 }
 
 const LIMIT = 60_000;
@@ -176,7 +186,22 @@ export async function readProjectText(full: string): Promise<string> {
 export function projectTools(tabId: string): AssistantTool[] {
   const p = projectOfTab(tabId);
   if (!p) return [];
+  const contacts: AssistantTool[] = p.contacts
+    ? [
+        {
+          name: 'search_contacts',
+          description: 'Look people up in the student’s Google Contacts (name, emails, phones, organization), for this work project: e.g. to find how to reach the people on a sheet. Every word of `query` must match; leave it empty to list everyone (up to 50).',
+          input_schema: { type: 'object', properties: { query: { type: 'string' } } },
+          async run({ query }) {
+            const list = await api.contacts.search(String(query || ''));
+            if (!list.length) return 'No one in Google Contacts matches that.';
+            return list.map((c) => `- ${c.name || '(no name)'}${c.org ? ` · ${c.org}` : ''}${c.emails.length ? ` · ${c.emails.join(', ')}` : ''}${c.phones.length ? ` · ${c.phones.join(', ')}` : ''}`).join('\n');
+          }
+        }
+      ]
+    : [];
   return [
+    ...contacts,
     {
       name: 'list_project_files',
       description: `List the files in the project "${p.name}" that this file belongs to (a ${p.kind === 'class' ? 'class: its syllabus, rubrics, instructions, earlier papers and feedback' : p.kind === 'work' ? 'work project: its sheets, contacts, schedules and templates' : 'folder of related files'}). Use it when the student refers to other files ("using the contact sheet", "build on my Essay 1", "the images in this folder") instead of asking them to attach anything.`,
@@ -195,6 +220,12 @@ export function projectTools(tabId: string): AssistantTool[] {
         const rel = String(file || '').replace(/\\/g, '/').replace(/^\/+/, '');
         if (!rel || rel.split('/').includes('..')) throw new Error('Name a file from list_project_files.');
         if (p.exclude.includes(rel)) throw new Error(`The student left "${rel}" out of what Claude may use.`);
+        const link = (p.links || []).find((l) => `Google: ${l.name}` === rel);
+        if (link) {
+          const g = await api.google.exportText(link.id);
+          const text = g.text.length > LIMIT ? `${g.text.slice(0, LIMIT)}\n\n[The rest was cut off.]` : g.text;
+          return `# ${rel} (Google ${link.kind === 'sheet' ? 'Sheet, first tab as CSV' : link.kind === 'slides' ? 'Slides' : 'Doc'}, read now)\n${text}`;
+        }
         const full = join(p.dir, rel.split('/').join(sepOf(p.dir)));
         if (IMAGES.test(rel)) return `"${rel}" is an image. To use it in the file, place it with an image tool's path input: ${full}`;
         return `# ${rel}\n${await readProjectText(full)}`;

@@ -62,11 +62,15 @@ async function brief(id) {
   // What this instructor said about the student's earlier work in the class: so the same mistakes aren't repeated.
   const past = pastFeedback(it.courseCode, it.title);
   if (past.length) out.push(`The instructor's comments on the student's earlier graded work in this class (newest first). Use them: point out where this draft repeats a mistake the instructor already marked, and build on what they praised:\n${past.map((p) => `- ${p.title}${p.grade ? ` (${p.grade})` : ''}: ${p.comment}`).join('\n')}`);
+  // The class's paper format from its syllabus (classFormat.cjs): new documents start in it, and Claude checks it.
+  const CF = require('./classFormat.cjs');
+  const format = CF.merge(await db.syllabusTexts(P.db, it.courseId).catch(() => []));
+  if (format) out.push(`The class's paper format, from its syllabus (check the draft against it): ${CF.describe(format)}.\n${format.quotes.map((q) => `- ${q}`).join('\n')}`);
   let text = out.join('\n\n---\n\n');
   if (text.length > MAX) text = `${text.slice(0, MAX)}\n[… cut here: the rest is on the class site]`;
   // The class's details, for filling in a document's heading (templates): the course and its instructor.
   const course = (await db.courses(P.db, P.textbooks, {}).catch(() => [])).find((c) => c.id === it.courseId);
-  return { id, course: it.courseCode, courseName: course?.name || '', instructor: course?.instructor || '', title: it.title, due: when(it), points: it.points ?? null, guide: !!g, text };
+  return { id, course: it.courseCode, courseName: course?.name || '', instructor: course?.instructor || '', format: format ? { style: format.style, font: format.font, sizePt: format.sizePt, lineHeight: format.lineHeight, margins: format.margins, text: CF.describe(format) } : null, title: it.title, due: when(it), points: it.points ?? null, guide: !!g, text };
 }
 
 /** The instructor's comments on earlier graded work in a class (grades.json from the daily check), newest first. */

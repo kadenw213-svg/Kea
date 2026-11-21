@@ -96,6 +96,7 @@ test('to-dos and the calendar from every server; a snooze goes back where the it
   assert.deepEqual(hubSent, ['POST /v1/todo/snooze']);
   const ev = await handlers['hubOrg:events'](APP, { from: '2026-11-30T00:00:00Z', to: '2026-12-31T00:00:00Z' });
   assert.deepEqual(ev.value.events.map((e) => e.orgId).sort(), ['org-hub', orgId].sort());
+  assert.ok(hubSent.some((x) => x.startsWith('GET /v1/orgs-calendar') && x.includes('certs=1')), 'asks for certification expiry dates too');
 });
 
 test('a server offline: the other organizations still show, and its shifts come from the copy on this PC', async () => {

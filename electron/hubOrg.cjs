@@ -168,7 +168,8 @@ function readCache() {
 /** Shifts and org class sessions between two times (ISO), from the Hub, or the copy on this PC when offline. */
 async function events(from, to) {
   try {
-    const q = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
+    // (certs=1: my certifications' expiry dates too; servers too old for it just leave them out.)
+    const q = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}), certs: '1' }).toString();
     const res = await all('GET', `/v1/orgs-calendar${q ? `?${q}` : ''}`);
     if (!res.some((x) => x.ok)) throw noneAnswered(res);
     const r = { events: res.filter((x) => x.ok).flatMap((x) => (x.value.events || []).map((e) => ({ ...e, source: x.src }))) };
@@ -285,6 +286,9 @@ function calendarItems({ from, to } = {}) {
     .events.map((e) => {
       const s = new Date(e.start);
       const t = new Date(e.end);
+      // A certification expiring: an all-day deadline on its date (renew it before then).
+      if (e.kind === 'cert')
+        return { id: `work:${e.id}`, courseId: `work:${e.orgId}`, courseCode: e.orgName || 'Work', type: 'administrative_deadline', title: e.title, date: e.date, dateEnd: null, start: null, end: null, due: null, module: null, location: null, locationUsual: false, instructor: null, contact: null, description: `Renew it with ${e.orgName || 'your organization'} before this date.`, sourceWording: null, links: [], weeklyLinks: [], covered: [], studyFocus: [], points: null, optional: false, tentative: false, done: null, handIn: null, readings: [] };
       return {
         id: `work:${e.id}`,
         courseId: `work:${e.orgId}`,

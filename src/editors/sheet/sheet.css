@@ -18,10 +18,11 @@
   display: flex;
   align-items: center;
   gap: 0;
-  margin: 0 10px 8px;
-  height: 36px;
+  margin: 0;
+  height: 32px;
   background: var(--surface);
-  border-radius: var(--radius-lg);
+  border-bottom: var(--hairline);
+  border-radius: 0;
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -72,8 +73,8 @@
   position: relative;
   overflow: auto;
   background: var(--grid-bg);
-  margin: 0 10px;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  margin: 0;
+  border-radius: 0;
   outline: none;
   --sx: 0px;
   --sy: 0px;
@@ -359,14 +360,15 @@
 
 /* Sheet tabs */
 .sheet-tabs {
-  height: 40px;
+  height: 34px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 0 10px 10px;
+  gap: 4px;
+  margin: 0;
   padding: 0 8px;
   background: var(--surface);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  border-top: var(--hairline);
+  border-radius: 0;
   flex-shrink: 0;
 }
 .sheet-tab-list {
