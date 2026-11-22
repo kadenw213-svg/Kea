@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { goPlace } from './NavRail';
+import { CalendarDays, GraduationCap, Briefcase, Bell } from 'lucide-react';
 import { create } from 'zustand';
 import { toggleVoice } from './VoiceTyping';
 import { Search, FileText, Sheet, Presentation, FileCode2, FolderOpen, Settings, History, RefreshCw, BookOpen, Home, LayoutTemplate, FileSearch, Loader2, AppWindow, Columns2, Mic, Save, Printer, FileDown, X } from 'lucide-react';
@@ -93,7 +95,11 @@ export function CommandPalette() {
           ]
         : []),
       { id: 'open', group: 'Files', label: 'Open a file…', hint: 'Ctrl+O', icon: <FolderOpen size={16} />, run: act(() => openWithDialog()) },
-      { id: 'home', group: 'Files', label: 'Go to Home', icon: <Home size={16} />, run: act(() => useTabs.getState().setActive('home')) },
+      { id: 'home', group: 'Go to', label: 'Go to Home', hint: 'Ctrl+1', icon: <Home size={16} />, run: act(() => goPlace('home')) },
+      { id: 'calendar', group: 'Go to', label: 'Go to Calendar', hint: 'Ctrl+2', icon: <CalendarDays size={16} />, run: act(() => goPlace('calendar')) },
+      { id: 'school', group: 'Go to', label: 'Go to School', hint: 'Ctrl+3', icon: <GraduationCap size={16} />, run: act(() => goPlace('school')) },
+      { id: 'work', group: 'Go to', label: 'Go to Work', hint: 'Ctrl+4', icon: <Briefcase size={16} />, run: act(() => goPlace('work')) },
+      { id: 'alerts', group: 'Go to', label: 'Go to Notifications', icon: <Bell size={16} />, run: act(() => goPlace('notifications')) },
       { id: 'history', group: 'Files', label: 'Version history of this file', hint: 'Ctrl+Shift+H', icon: <History size={16} />, run: act(() => openHistory()) },
       // (Not offered in the photo and video editors.)
       ...(['image', 'video'].includes(tabs.find((t) => t.id === useTabs.getState().activeId)?.kind || '')

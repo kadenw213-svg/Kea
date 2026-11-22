@@ -6,7 +6,7 @@ interface Props {
   open: boolean;
   onClose(): void;
   children: ReactNode;
-  align?: 'left' | 'right';
+  align?: 'left' | 'right' | 'side';
 }
 
 export function Popover({ anchor, open, onClose, children, align = 'left' }: Props) {
@@ -21,6 +21,8 @@ export function Popover({ anchor, open, onClose, children, align = 'left' }: Pro
     let top = a.bottom + 6;
     left = Math.max(8, Math.min(left, window.innerWidth - p.width - 8));
     if (top + p.height > window.innerHeight - 8) top = Math.max(8, a.top - p.height - 6);
+    // (Beside the anchor, for the navigation rail: to its right, level with it, kept on screen.)
+    if (align === 'side') (left = a.right + 6), (top = Math.max(8, Math.min(a.top, window.innerHeight - p.height - 8)));
     setPos({ top, left });
   }, [open, anchor, align]);
 
@@ -66,7 +68,7 @@ export function MenuButton({
 }: {
   button: (open: boolean) => ReactNode;
   children: (close: () => void) => ReactNode;
-  align?: 'left' | 'right';
+  align?: 'left' | 'right' | 'side';
   title?: string;
 }) {
   const [open, setOpen] = useState(false);

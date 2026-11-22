@@ -2,7 +2,10 @@ import { create } from 'zustand';
 import { useTabs } from '../../store';
 
 /** What the Scholar tab shows. */
-export type ScholarView = { name: 'inbox' } | { name: 'messages'; id?: string; reply?: boolean } | { name: 'calendar' } | { name: 'class'; courseId: string; tab?: 'weeks' | 'textbook' } | { name: 'library' } | { name: 'add' } | { name: 'scans' } | { name: 'resources' } | { name: 'account' } | { name: 'hub'; classId?: string; set?: string };
+// 'school': School's own start (the class looked at last, or the first; resolved by ScholarScreen). Calendar and
+// Notifications ('calendar', 'inbox') are places of their own in the navigation rail since Kea 0.100: they show
+// without School's list.
+export type ScholarView = { name: 'school' } | { name: 'inbox' } | { name: 'messages'; id?: string; reply?: boolean } | { name: 'calendar' } | { name: 'class'; courseId: string; tab?: 'weeks' | 'textbook' } | { name: 'library' } | { name: 'add' } | { name: 'scans' } | { name: 'resources' } | { name: 'account' } | { name: 'hub'; classId?: string; set?: string };
 
 interface ScholarStore {
   view: ScholarView;

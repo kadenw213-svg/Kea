@@ -1284,25 +1284,31 @@ html.bg-acrylic .dialog {
 /* The picture or colour behind the whole window, a scrim over it, and every screen's dead space see-through to it. */
 html.has-bg {
   --canvas: transparent;
-  --canvas-cover: linear-gradient(var(--scrim), var(--scrim)) center / cover fixed, var(--app-bg-image, none) center / cover fixed no-repeat, var(--app-bg-color, var(--bg));
+  /* (The study player hides the screen under it instead: .scholar.studying.) */
+  --canvas-cover: transparent;
 }
 html.has-bg body {
   background: var(--app-bg-color, var(--bg));
   isolation: isolate;
 }
-html.has-bg body::before,
-html.has-bg body::after {
-  content: '';
+/* The picture or photos (components/Backdrop.tsx): two layers that cross-fade, and the scrim over them. */
+.backdrop {
   position: fixed;
-  pointer-events: none;
+  inset: 0;
   z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
 }
-html.has-bg body::before {
-  inset: calc(-2 * var(--app-bg-blur, 0px));
-  background: var(--app-bg-image, none) center / cover no-repeat;
-  filter: blur(var(--app-bg-blur, 0px));
+.backdrop-layer {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  will-change: opacity;
 }
-html.has-bg body::after {
+.backdrop-scrim {
+  position: absolute;
   inset: 0;
   background: var(--scrim);
 }

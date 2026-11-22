@@ -289,6 +289,7 @@ function AboutPanel() {
           </a>
         </div>
       </div>
+      <PhotoCredits />
       <div className="about-card">
         <div className="about-title">Open-source software</div>
         <p>Kea is built on hundreds of open-source projects, including Electron, React, pdf.js, pdf-lib, TipTap, ExcelJS, SheetJS, PptxGenJS, CodeMirror, llama.cpp and node-llama-cpp. Their licenses and copyright notices are included with the app.</p>
@@ -698,6 +699,37 @@ export function SettingsDialog() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** The background photos' authors and licences (public/backdrops/credits.json, from scripts/make-photo-backdrops.cjs). */
+function PhotoCredits() {
+  const [list, setList] = useState<{ name: string; place: string; artist: string; license: string; licenseUrl: string; source: string; changes: string }[]>([]);
+  useEffect(() => {
+    fetch('/backdrops/credits.json')
+      .then((r) => r.json())
+      .then(setList)
+      .catch(() => {});
+  }, []);
+  if (!list.length) return null;
+  return (
+    <div className="about-card">
+      <div className="about-title">Background photos</div>
+      <p>From Wikimedia Commons, used under their Creative Commons licences. Each was cropped and its colour softened for Kea.</p>
+      <ul className="about-credits">
+        {list.map((c) => (
+          <li key={c.source}>
+            <a href={c.source} target="_blank">
+              {c.name}, {c.place}
+            </a>{' '}
+            by {c.artist},{' '}
+            <a href={c.licenseUrl} target="_blank">
+              {c.license}
+            </a>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

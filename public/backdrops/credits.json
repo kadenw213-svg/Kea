@@ -1,0 +1,52 @@
+[
+  {
+    "file": "photo-1.jpg",
+    "name": "Lake Clearwater",
+    "place": "Canterbury, New Zealand",
+    "artist": "Michal Klajban",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Lake_Clearwater%2C_Canterbury%2C_New_Zealand_02.jpg",
+    "changes": "Cropped and colour-softened for Kea"
+  },
+  {
+    "file": "photo-2.jpg",
+    "name": "Fog over Loch Tay",
+    "place": "Scottish Highlands",
+    "artist": "Michal Klajban",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Trees_in_fog_on_the_northern_side_of_Loch_Tay%2C_Scottish_Highlands%2C_Scotland.jpg",
+    "changes": "Cropped and colour-softened for Kea"
+  },
+  {
+    "file": "photo-3.jpg",
+    "name": "Valley in fog",
+    "place": "Vosges, France",
+    "artist": "Thomas Bresson",
+    "license": "CC BY 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/3.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Vallee-brouillard.jpg",
+    "changes": "Cropped and colour-softened for Kea"
+  },
+  {
+    "file": "photo-4.jpg",
+    "name": "Driftwood at dusk",
+    "place": "Kaikōura, New Zealand",
+    "artist": "Michal Klajban",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Driftwood_on_the_beach_north_of_Kaikoura%2C_Canterbury%2C_New_Zealand_02.jpg",
+    "changes": "Cropped and colour-softened for Kea"
+  },
+  {
+    "file": "photo-5.jpg",
+    "name": "Breiðamerkurjökull glacier",
+    "place": "Iceland",
+    "artist": "Jakub Hałun",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Brei%C3%B0amerkurj%C3%B6kull_glacier%2C_Iceland%2C_20240719_1514_2687.jpg",
+    "changes": "Cropped and colour-softened for Kea"
+  }
+]

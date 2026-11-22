@@ -31,6 +31,8 @@ import { openEntry, openPaths, openWithDialog, newFile } from './lib/open';
 import { requestCloseTab, requestQuit } from './lib/closing';
 import { modKey } from './lib/util';
 import { VoiceTypingPanel, toggleVoice } from './components/VoiceTyping';
+import { Backdrop } from './components/Backdrop';
+import { NavRail, goPlace, type Place } from './components/NavRail';
 
 const PdfEditor = lazy(() => import('./editors/pdf/PdfEditor'));
 const ScholarScreen = lazy(() => import('./components/scholar/ScholarScreen').then((m) => ({ default: m.ScholarScreen })));
@@ -136,6 +138,13 @@ export function App() {
         e.preventDefault();
         e.stopPropagation();
         toggleVoice();
+        return;
+      }
+      // The places in the navigation rail: Ctrl+1 Home, 2 Calendar, 3 School, 4 Work (unless the editor uses the keys,
+      // like zoom to 100% in the photo editor).
+      if (!e.shiftKey && !e.altKey && ['1', '2', '3', '4'].includes(k) && !ownsShortcut(e.target, k) && useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)?.kind !== 'image') {
+        e.preventDefault();
+        goPlace((['home', 'calendar', 'school', 'work'] as Place[])[Number(k) - 1]);
         return;
       }
       if (k === ',') {
@@ -255,8 +264,10 @@ export function App() {
 
   return (
     <div className="app">
+      <Backdrop />
       <TitleBar />
       <div className="workspace-row">
+      <NavRail />
       <div className={`workspace ${split ? 'is-split' : ''}`} ref={workspaceRef}>
         {tabs.map((t) => (
           <div

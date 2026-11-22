@@ -130,6 +130,8 @@ async function openReading(r: ScholarReading) {
 }
 
 // ---------- The screen ----------
+// (School's last view, so School in the navigation rail opens where you were.)
+let lastSchoolView: ScholarView | null = null;
 export function ScholarScreen() {
   const { view, version, inboxTick, set, study } = useScholar();
   const [hasData, setHasData] = useState<boolean | null>(null);
@@ -207,6 +209,16 @@ export function ScholarScreen() {
   const hubClasses = showHub ? hubList : [];
   const colors = useColors([...courses.map((c) => c.id), ...hubClasses.map((c) => `hub:${c.id}`)]);
   const go = (v: ScholarView) => (set({ view: v }), setItem(null));
+  // Calendar and Notifications are places of their own (the navigation rail): no School list beside them.
+  const schoolPlace = view.name !== 'calendar' && view.name !== 'inbox';
+  // School's start: the class (or Kea class) looked at last, else the first one, else Add a class.
+  useEffect(() => {
+    if (schoolPlace && view.name !== 'school' && view.name !== 'add') lastSchoolView = view;
+    if (view.name !== 'school' || hasData === null) return;
+    const last = lastSchoolView;
+    const stillThere = last && (last.name !== 'class' || courses.some((c) => c.id === last.courseId));
+    set({ view: stillThere ? last! : courses[0] ? { name: 'class', courseId: courses[0].id } : hubClasses[0] ? { name: 'hub', classId: hubClasses[0].id } : { name: 'add' } });
+  }, [view, hasData, courses.length, hubClasses.length]);
   const toggleDone = async (it: ScholarItem) => {
     await api.scholar.setDone(it.id, !it.done);
     if (item?.id === it.id) setItem({ ...it, done: it.done ? null : new Date().toISOString() });
@@ -222,7 +234,11 @@ export function ScholarScreen() {
       <div className="center-fill">
         <div className="spinner" />
       </div>
-    ) : (!hasData && !hubClasses.length && !(hasOwn && view.name === 'calendar') && !['scans', 'library', 'inbox', 'resources', 'account', 'hub'].includes(view.name)) || view.name === 'add' ? (
+    ) : view.name === 'school' ? (
+      <div className="center-fill">
+        <div className="spinner" />
+      </div>
+    ) : (!hasData && !hubClasses.length && !['calendar', 'scans', 'library', 'inbox', 'resources', 'account', 'hub'].includes(view.name)) || view.name === 'add' ? (
       <AddClass first={!hasData} />
     ) : view.name === 'hub' && showHub ? (
       <HubView classId={view.classId} />
@@ -253,31 +269,10 @@ export function ScholarScreen() {
     );
 
   return (
-    <div className="scholar">
+    <div className={`scholar ${study ? 'studying' : ''}`}>
+      {schoolPlace && (
       <nav className="sch-nav">
-        <button className="sch-profile" title="Your account" onClick={() => openAccount()}>
-          {account ? <Avatar account={account} size={26} /> : <span className="sch-avatar">K</span>}
-          <span className="sch-profile-name">
-            {account?.name || 'Your account'}
-            <VerifiedBadge account={account} size={13} />
-          </span>
-        </button>
-
-        <button className={`sch-link ${view.name === 'calendar' ? 'on' : ''}`} onClick={() => go({ name: 'calendar' })} disabled={!hasData && !hubClasses.length && !hasOwn}>
-          <CalendarDays size={17} /> Calendar
-          {missing > 0 && (
-            <span className="sch-badge alert" title={`${missing} missing`}>
-              {missing}
-            </span>
-          )}
-        </button>
-        <button className={`sch-link ${view.name === 'messages' ? 'on' : ''}`} onClick={() => go({ name: 'messages' })} disabled={!hasData}>
-          <Mail size={17} /> Messages
-        </button>
-        <button className={`sch-link ${view.name === 'inbox' ? 'on' : ''}`} onClick={() => go({ name: 'inbox' })}>
-          <Bell size={17} /> Notifications
-          {unread > 0 && <span className="sch-badge strong">{unread}</span>}
-        </button>
+        <div className="sch-nav-title">School</div>
         <div className="sch-head">Classes</div>
         {courses.map((c) => (
           <button key={c.id} className={`sch-link sch-course ${view.name === 'class' && view.courseId === c.id ? 'on' : ''}`} onClick={() => go({ name: 'class', courseId: c.id })} title={c.name}>
@@ -298,10 +293,14 @@ export function ScholarScreen() {
         </button>
         {showHub && <HubNav classId={view.name === 'hub' ? view.classId : undefined} on={view.name === 'hub'} />}
         <div className="sch-spacer" />
+        <button className={`sch-link ${view.name === 'messages' ? 'on' : ''}`} onClick={() => go({ name: 'messages' })} disabled={!hasData}>
+          <Mail size={17} /> Messages
+        </button>
         <button className={`sch-link ${view.name === 'scans' ? 'on' : ''}`} onClick={() => go({ name: 'scans' })}>
           {scanning ? <Loader2 size={17} className="spin" /> : <Activity size={17} />} {scanning ? 'Scanning…' : 'Scans'}
         </button>
       </nav>
+      )}
       <main className="sch-main">
         {main}
       </main>

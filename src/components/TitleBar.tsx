@@ -2,10 +2,8 @@ import { Logo } from './Logo';
 import { useRef, useState } from 'react';
 import { Popover } from './Popover';
 import { Columns2, PanelRightClose, XSquare } from 'lucide-react';
-import { Home, Plus, X, GraduationCap, Briefcase, Radar } from 'lucide-react';
-import { useAreas, useSetupDone } from '../lib/areas';
-import { openScholar } from './scholar/scholarStore';
-import { openAudit, openWork, useAuditOn, useKeaModes, workAvailable } from '../lib/modes';
+import { Plus, X } from 'lucide-react';
+import { useSetupDone } from '../lib/areas';
 import { useTabs, editorRegistry } from '../store';
 import { FileIcon } from './FileIcon';
 import { MenuButton } from './Popover';
@@ -25,7 +23,11 @@ import { AccountButton } from './account/AccountButton';
 import { openAccount } from './account/hubStore';
 import { UserCircle } from 'lucide-react';
 
+// Places (Home, School, Work, the audit) are in the navigation rail; the tabs are only open files.
+const PLACE_KINDS = new Set(['home', 'scholar', 'work', 'audit']);
+
 export function TitleBar() {
+  const setupDone = useSetupDone();
   const { tabs, activeId, setActive, moveTab, split } = useTabs();
   const dragFrom = useRef<number | null>(null);
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null);
@@ -117,9 +119,9 @@ export function TitleBar() {
           )}
         </MenuButton>
       )}
-      <AreaButtons />
+      {/* (School and Work are in the navigation rail since Kea 0.100: NavRail.tsx.) */}
       <div className="tabs">
-        {tabs.map((t, i) => (
+        {tabs.map((t, i) => PLACE_KINDS.has(t.kind) ? null : (
           <div
             key={t.id}
             className={`tab ${t.id === activeId ? 'active' : ''} ${inSplit(t.id) && t.id !== activeId ? 'split-other' : ''}`}
@@ -149,7 +151,7 @@ export function TitleBar() {
             onDragEnd={() => (dragFrom.current = null)}
             title={t.path ? friendlyPath(t.path) : t.name}
           >
-            {t.kind === 'home' ? <Home size={16} /> : t.kind === 'scholar' ? <GraduationCap size={15} /> : t.kind === 'work' ? <Briefcase size={15} /> : t.kind === 'audit' ? <Radar size={15} /> : <FileIcon name={t.name} kind={t.kind} size={15} />}
+            <FileIcon name={t.name} kind={t.kind as any} size={15} />
             {t.kind !== 'home' && <span className="tab-label">{t.name}</span>}
             {t.kind !== 'home' && (
               <button
@@ -199,7 +201,7 @@ export function TitleBar() {
       </div>
       <span className="titlebar-fill" />
       <UpdatePill />
-      <AccountButton />
+      {!setupDone && <AccountButton />}
       {tabMenu && (
         <>
           <div ref={setTabMenuAnchor} style={{ position: 'fixed', left: tabMenu.x, top: tabMenu.y, width: 1, height: 1 }} />
@@ -244,32 +246,6 @@ export function TitleBar() {
           </Popover>
         </>
       )}
-    </div>
-  );
-}
-
-/** One button per area that has its own screen (School, Work), only when that area is on. */
-function AreaButtons() {
-  const areas = useAreas();
-  const setupDone = useSetupDone();
-  const tabs = useTabs((s) => s.tabs);
-  const activeId = useTabs((s) => s.activeId);
-  const activeKind = tabs.find((t) => t.id === activeId)?.kind;
-  const modes = useKeaModes();
-  const auditOn = useAuditOn();
-  const items = [
-    areas.includes('school') && { kind: 'scholar', label: 'School', icon: <GraduationCap size={16} />, open: () => openScholar() },
-    modes.work && workAvailable && { kind: 'work', label: 'Work', icon: <Briefcase size={16} />, open: () => openWork() },
-    auditOn && { kind: 'audit', label: 'Product audit', icon: <Radar size={16} />, open: () => openAudit() },
-  ].filter(Boolean) as { kind: string; label: string; icon: JSX.Element; open: () => void }[];
-  if (!setupDone || !items.length) return null;
-  return (
-    <div className="area-buttons">
-      {items.map((it) => (
-        <button key={it.kind} className={`icon-btn sm area-btn ${activeKind === it.kind ? 'on' : ''}`} title={it.label} aria-label={it.label} onClick={it.open}>
-          {it.icon}
-        </button>
-      ))}
     </div>
   );
 }

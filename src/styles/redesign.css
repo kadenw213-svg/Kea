@@ -1,0 +1,629 @@
+/* ===========================================================================================================
+   Kea 0.100: the redesign (plan: Kea Suite plans/kea/redesign.md).
+   Sleek, small and square: no rounded corners and no big blocky buttons. Panels are glass set into the background
+   (clearly see-through, a strong blur, a faint top-lit gradient and a hairline edge), not solid boxes floating on it.
+   A navigation rail for places, tabs only for files, Segoe UI Variable with a clear type ramp, sentence-case headings.
+   Loaded last from main.tsx; rules start with `html` so they win over stylesheets that load later with their screens.
+   =========================================================================================================== */
+
+/* ---------- Tokens ---------- */
+:root {
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI Variable Text', var(--font);
+  --t-display: 600 34px/44px var(--font-display);
+  --t-title: 600 24px/32px var(--font-display);
+  --t-subtitle: 600 16px/22px var(--font-display);
+  --t-body-strong: 600 13px/18px var(--font);
+  --rail-w: 60px;
+  /* Glass: a faint light from above, a hairline edge, a brighter line along the top. */
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.012) 42%, rgba(255, 255, 255, 0));
+  --glass-line: rgba(255, 255, 255, 0.09);
+  --glass-top: rgba(255, 255, 255, 0.16);
+  --glass-blur: blur(14px) saturate(1.3);
+}
+html[data-theme='light'] {
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.15) 42%, rgba(255, 255, 255, 0));
+  --glass-line: rgba(0, 0, 0, 0.09);
+  --glass-top: rgba(255, 255, 255, 0.9);
+}
+html body {
+  font-size: 13.5px;
+}
+
+/* ---------- Glass: every panel and card ---------- */
+html .dcard,
+html .st-stream-card,
+html .acct-card,
+html .about-card,
+html .sch-panel,
+html .cls-head,
+html .wk,
+html .cal-grid,
+html .files-area,
+html .ai-inner,
+html .st-player-body > .st-side,
+html .sch-nav {
+  border: 1px solid var(--glass-line);
+  border-top-color: var(--glass-top);
+  border-radius: 0;
+  background: var(--glass-sheen), var(--card);
+  box-shadow: none;
+}
+html.bg-acrylic .dcard,
+html.bg-acrylic .st-stream-card,
+html.bg-acrylic .cls-head,
+html.bg-acrylic .wk,
+html.bg-acrylic .cal-grid,
+html.bg-acrylic .files-area,
+html.bg-acrylic .ai-inner,
+html.bg-acrylic .st-player-body > .st-side,
+html.bg-acrylic .sch-nav,
+html.bg-acrylic .st-player-head,
+html.bg-acrylic .toolbar {
+  backdrop-filter: var(--glass-blur);
+}
+
+/* ---------- Controls: small, square, quiet ---------- */
+html .btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 0;
+  font-weight: 500;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--glass-line);
+}
+html[data-theme='light'] .btn {
+  background: rgba(255, 255, 255, 0.6);
+}
+html .btn:hover {
+  background: rgba(255, 255, 255, 0.11);
+}
+html[data-theme='light'] .btn:hover {
+  background: rgba(255, 255, 255, 0.85);
+}
+html .btn.primary {
+  background: var(--accent);
+  border-color: transparent;
+}
+html .btn.sm {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12.5px;
+}
+html .btn.ghost,
+html .btn.tonal {
+  background: transparent;
+  border-color: transparent;
+}
+html .btn.ghost:hover,
+html .btn.tonal:hover {
+  background: var(--hover);
+  filter: none;
+}
+html .icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 0;
+}
+html .input,
+html .select,
+html .search-box {
+  border-radius: 0;
+}
+
+/* ---------- The shell: title bar with file tabs, the navigation rail ---------- */
+html .titlebar {
+  padding-left: 0;
+  gap: 2px;
+  background: transparent;
+}
+html .titlebar > :first-child {
+  width: var(--rail-w);
+  display: flex;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+html .brand {
+  margin: 0;
+  padding: 6px;
+  border-radius: 0;
+}
+html .brand:hover {
+  background: var(--hover);
+}
+html .tabs {
+  align-self: stretch;
+  align-items: flex-end;
+  padding-top: 8px;
+}
+html .tab {
+  height: 32px;
+  padding: 0 8px 0 12px;
+  border-radius: 0;
+  color: var(--text-2);
+  border-top: 2px solid transparent;
+}
+html .tab.active {
+  background: var(--glass-sheen), var(--pane);
+  color: var(--text);
+  border-top-color: var(--accent);
+}
+html .tab-label {
+  font-size: 12.5px;
+}
+html .rail {
+  width: var(--rail-w);
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 0 8px;
+}
+html .rail-item {
+  position: relative;
+  width: var(--rail-w);
+  min-height: 48px;
+  padding: 6px 2px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  font: inherit;
+  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+html .rail-item svg {
+  width: 18px;
+  height: 18px;
+}
+html .rail-item:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+html .rail-item.on {
+  color: var(--text);
+}
+html .rail-item.on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  background: var(--accent);
+}
+html .rail-item.on svg {
+  color: var(--accent);
+}
+html .rail-item:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -3px;
+}
+html .rail-label {
+  font-size: 10.5px;
+  line-height: 13px;
+  font-weight: 500;
+}
+html .rail-fill {
+  flex: 1;
+}
+html .rail-badge {
+  position: absolute;
+  top: 5px;
+  left: 33px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 9.5px;
+  line-height: 15px;
+  font-weight: 700;
+  text-align: center;
+}
+html .rail-account .update-dot {
+  top: 6px;
+  right: 16px;
+}
+html .rail-item.waits {
+  opacity: 0.6;
+}
+html .workspace-row > .workspace {
+  border-top: 1px solid var(--glass-line);
+  border-left: 1px solid var(--glass-line);
+}
+
+/* ---------- Headings: sentence case, small, a hairline rule after them ---------- */
+html .section-head h2,
+html .src-head,
+html .sch-head,
+html .sch-h2,
+html .tb-h,
+html .hs-group-head,
+html .cls-dates-label,
+html .sgroup-title,
+html .cp-group,
+html .sstart-sec,
+html .as-pick-group,
+html .fc-side,
+html .opt-label,
+html .today-label,
+html .ve-section-title,
+html .ve-insp-section-head,
+html .fm-title,
+html .spk-label,
+html .ex-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font: var(--t-body-strong);
+  color: var(--text-2);
+}
+html .section-head {
+  align-items: center;
+  margin-bottom: 10px;
+}
+html .section-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--glass-line), transparent);
+}
+html .section-head h2 {
+  color: var(--text);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- Home ---------- */
+html .home-inner {
+  max-width: 1200px;
+  padding: 0 36px 56px;
+}
+html .home-head {
+  padding: 44px 0 26px;
+  margin: 0;
+}
+html .home .home-title {
+  font: var(--t-display);
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.4);
+}
+html[data-theme='light'] .home .home-title,
+html[data-theme='light'] .home-head .home-sub,
+html[data-theme='light'] .section-head h2 {
+  text-shadow: 0 1px 10px rgba(255, 255, 255, 0.7);
+}
+html .home-head .home-sub {
+  margin-top: 2px;
+  font-size: 14px;
+  color: var(--text-2);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+html .dash,
+html .dash-main,
+html .dash-side {
+  gap: 14px;
+}
+html .dash {
+  margin-bottom: 28px;
+}
+html .dcard {
+  padding: 12px 6px 6px;
+}
+html .dcard-head {
+  padding: 0 10px 8px;
+}
+html .dcard-head h3 {
+  font: var(--t-subtitle);
+  font-size: 14px;
+}
+html .dcard-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 0;
+  background: transparent;
+}
+html .home section.home-create,
+html .home section.home-docs {
+  margin-bottom: 28px;
+}
+/* Create: one slim row of icon-and-label buttons on a glass strip. */
+html .create-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--glass-line);
+  border-top-color: var(--glass-top);
+  background: var(--glass-sheen), var(--card);
+}
+html.bg-acrylic .create-bar {
+  backdrop-filter: var(--glass-blur);
+}
+html .create-bar > span {
+  display: flex;
+}
+html .create-btn,
+html .create-btn.quiet {
+  height: 34px;
+  min-height: 0;
+  padding: 0 14px 0 10px;
+  gap: 8px;
+  border: none;
+  border-right: 1px solid var(--glass-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  transform: none;
+}
+html .create-bar > :last-child,
+html .create-bar > :last-child > .create-btn {
+  border-right: none;
+}
+html .create-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  transform: none;
+}
+html .create-ic {
+  width: 18px;
+  height: 18px;
+  border-radius: 0;
+  background: transparent;
+}
+html .create-ic svg,
+html .create-btn.quiet > svg:first-child {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: transparent;
+}
+/* Files: one glass panel; its places down the left inside it. */
+html .files-area {
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+  min-height: 380px;
+}
+html .sources {
+  position: static;
+  align-self: stretch;
+  padding: 8px 0;
+  border-right: 1px solid var(--glass-line);
+}
+html .src {
+  height: 30px;
+  border-radius: 0;
+  padding: 0 10px 0 14px;
+  font-weight: 400;
+}
+html .src-head {
+  margin: 14px 0 4px 14px;
+}
+html .files-main {
+  padding: 10px 16px 16px;
+}
+/* The kind filter: underlined tabs, not boxed chips. */
+html .filter-tabs {
+  gap: 2px;
+  border-bottom: 1px solid var(--glass-line);
+}
+html .ftab {
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-2);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-weight: 500;
+}
+html .ftab:hover {
+  background: transparent;
+  color: var(--text);
+}
+html .ftab.on {
+  background: transparent;
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+html .recent-empty {
+  border: none;
+  background: transparent !important;
+}
+
+/* ---------- School ---------- */
+html .sch-nav {
+  width: 240px;
+  padding: 16px 0 10px;
+  border-width: 0 1px 0 0;
+}
+html .sch-nav-title {
+  font: var(--t-title);
+  font-weight: 300;
+  padding: 0 18px 12px;
+}
+html .sch-link {
+  min-height: 32px;
+  border-radius: 0;
+  padding: 6px 18px;
+  font-size: 13.5px;
+}
+html .sch-course {
+  min-height: 46px;
+}
+html .sch-head {
+  margin: 10px 18px 4px;
+}
+html .sch-page {
+  padding: 28px 36px 56px;
+}
+html .sch-title,
+html .cls-name {
+  font: var(--t-title);
+  font-weight: 400;
+}
+html .cls-head {
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+/* ---------- Study: the question in the middle, calm ---------- */
+html .st-stream {
+  max-width: 740px;
+  padding-top: 32px;
+}
+html .st-stream-card {
+  padding: 6px 2px 14px;
+}
+html .st-stream .st-stem {
+  font: var(--t-subtitle);
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 26px;
+}
+html .st-choice {
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 0;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--glass-line);
+}
+html .st-choice:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+html .st-letter {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  color: var(--text-3);
+  font-weight: 600;
+  font-size: 12px;
+  border-right: 1px solid var(--glass-line);
+  margin-right: 6px;
+}
+html .st-player-head {
+  min-height: 44px;
+  background: var(--glass-sheen), var(--pane);
+  border-bottom: 1px solid var(--glass-line);
+}
+html .st-player-title {
+  font: var(--t-body-strong);
+  font-size: 14px;
+}
+
+/* ---------- Settings: each setting its own glass row ---------- */
+html .settings-dialog {
+  border-radius: 0;
+}
+html .snav-title {
+  font: var(--t-title);
+  font-weight: 300;
+}
+html .snav-item {
+  min-height: 34px;
+  border-radius: 0;
+}
+html .srow {
+  margin: 0 0 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.03);
+}
+html[data-theme='light'] .srow {
+  background: rgba(255, 255, 255, 0.5);
+}
+html .srow:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+html .srow-label {
+  font-weight: 400;
+}
+html .srow-help {
+  font-size: 12px;
+  line-height: 16px;
+}
+html .sgroup-title {
+  margin: 18px 0 6px;
+}
+html .about-card {
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+html .about-credits {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 20px;
+}
+
+/* ---------- The Claude panel ---------- */
+html .ai-inner {
+  border-width: 0 0 0 1px;
+}
+html .ai-composer {
+  margin: 6px 8px 8px;
+  border: 1px solid var(--glass-line);
+  border-top-color: var(--glass-top);
+  border-radius: 0;
+  background: var(--glass-sheen), var(--surface-2);
+}
+html .ai-composer:focus-within {
+  border-bottom-color: var(--accent);
+}
+
+/* ---------- Menus, dialogs, calendar ---------- */
+html .popover,
+html .dialog {
+  border-radius: 0;
+  border: 1px solid var(--glass-line);
+  border-top-color: var(--glass-top);
+  background: var(--glass-sheen), var(--flyout);
+}
+html .dialog h2 {
+  font: var(--t-subtitle);
+  font-size: 18px;
+}
+html .menu-item {
+  border-radius: 0;
+}
+html .cal-legend {
+  padding: 6px 10px;
+  background: var(--glass-sheen), var(--card);
+  width: fit-content;
+}
+
+/* ---------- Narrow windows: the rail stays, labels go ---------- */
+@media (max-width: 860px) {
+  :root {
+    --rail-w: 48px;
+  }
+  html .rail-label {
+    display: none;
+  }
+  html .home-inner {
+    padding: 0 16px 40px;
+  }
+  html .files-area {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  html .sources {
+    display: none;
+  }
+}

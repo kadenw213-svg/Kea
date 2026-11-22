@@ -7,13 +7,21 @@ import { Avatar, VerifiedBadge, useAccount } from '../scholar/Account';
 import { signOutAsked } from '../scholar/HubAccount';
 import { SIGN_IN_WAITS, openAccount, signInWaits, signInWithGoogle, useHubNotifications, useHubStatus } from './hubStore';
 
-export function AccountButton() {
+/** `rail`: the navigation rail's version (Kea 0.100): an icon over a label, the menu opening beside it. */
+export function AccountButton({ rail = false }: { rail?: boolean } = {}) {
   const status = useHubStatus();
   const [account] = useAccount();
   const notes = useHubNotifications();
   const update = useUpdates((s) => s.state.status);
   if (status && status.state === 'none') {
     const waits = signInWaits(status);
+    if (rail)
+      return (
+        <button className={`rail-item ${waits ? 'waits' : ''}`} title={waits ? `${SIGN_IN_WAITS} Kea tries again by itself.` : 'Sign in with Google to use Kea cloud, classes and organizations. Everything on this computer works without it.'} onClick={() => signInWithGoogle()}>
+          <LogIn size={20} />
+          <span className="rail-label">Sign in</span>
+        </button>
+      );
     return (
       <button className={`btn sm acct-tb-signin ${waits ? 'waits' : ''}`} title={waits ? `${SIGN_IN_WAITS} Kea tries again by itself.` : 'Sign in with Google to use Kea cloud, classes and organizations. Everything on this computer works without it.'} onClick={() => signInWithGoogle()}>
         <LogIn size={14} /> Sign in with Google
@@ -25,13 +33,21 @@ export function AccountButton() {
   return (
     <MenuButton
       title={`${account.name || account.email} · Your Kea account`}
-      align="right"
-      button={() => (
-        <button className="icon-btn sm acct-tb" aria-label="Your Kea account">
-          <Avatar account={account} size={24} />
-          {unread > 0 && <span className="update-dot" />}
-        </button>
-      )}
+      align={rail ? "side" : "right"}
+      button={() =>
+        rail ? (
+          <button className="rail-item rail-account" aria-label="Your Kea account">
+            <Avatar account={account} size={26} />
+            {unread > 0 && <span className="update-dot" />}
+            <span className="rail-label">Account</span>
+          </button>
+        ) : (
+          <button className="icon-btn sm acct-tb" aria-label="Your Kea account">
+            <Avatar account={account} size={24} />
+            {unread > 0 && <span className="update-dot" />}
+          </button>
+        )
+      }
     >
       {(close) => (
         <>

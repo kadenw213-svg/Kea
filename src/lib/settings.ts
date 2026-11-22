@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useBackdrop } from '../components/Backdrop';
 import { api } from './api';
 import { LIGHT_ACCENTS, themeOf } from './themes';
 
@@ -203,11 +204,11 @@ export const SECTIONS: Section[] = [
         key: 'appearance.uiFont',
         label: 'Interface font',
         type: 'select',
-        default: 'inter',
+        default: 'segoe',
         advanced: true,
         options: [
-          { value: 'inter', label: 'Inter (default)' },
-          { value: 'segoe', label: 'Segoe UI' },
+          { value: 'segoe', label: 'Segoe UI Variable (Windows 11, default)' },
+          { value: 'inter', label: 'Inter' },
           { value: 'system', label: 'System font' }
         ]
       },
@@ -215,23 +216,44 @@ export const SECTIONS: Section[] = [
         key: 'appearance.backdrop',
         label: 'Background',
         type: 'select',
-        default: 'mountains',
+        default: 'photos',
         help: 'What shows behind Kea, in the space around pages, cards and panels. Pages and text stay on solid colour.',
         options: [
-          { value: 'mountains', label: 'Snowy mountains (Kea’s own)' },
+          { value: 'photos', label: 'Nature photos, changing slowly' },
+          { value: 'mountains', label: 'Snowy mountains (drawn)' },
           { value: 'color', label: 'A solid colour' },
           { value: 'picture', label: 'Your own picture' },
           { value: 'none', label: 'None (plain)' }
         ]
       },
+      {
+        key: 'appearance.photo',
+        label: 'Photo',
+        type: 'select',
+        default: 'all',
+        when: (v) => backdropOf(v) === 'photos',
+        help: 'Kea’s five photos fade slowly from one to the next. Photos: Michal Klajban (CC BY-SA 4.0), Thomas Bresson (CC BY 3.0), Jakub Hałun (CC BY 4.0), via Wikimedia Commons; cropped and colour-softened. Settings → Help & about lists each one.',
+        options: [
+          { value: 'all', label: 'All five, changing slowly' },
+          { value: '1', label: 'Lake Clearwater, New Zealand' },
+          { value: '2', label: 'Fog over Loch Tay, Scotland' },
+          { value: '3', label: 'Valley in fog, France' },
+          { value: '4', label: 'Driftwood at dusk, New Zealand' },
+          { value: '5', label: 'Breiðamerkurjökull glacier, Iceland' }
+        ]
+      },
+      { key: 'appearance.photoEvery', label: 'Change the photo every', type: 'number', default: 5, min: 1, max: 120, step: 1, unit: 'minutes', advanced: true, when: (v) => backdropOf(v) === 'photos' && (v['appearance.photo'] ?? 'all') === 'all' },
+      { key: 'appearance.photoFade', label: 'Fade between photos over', type: 'number', default: 20, min: 0, max: 60, step: 1, unit: 'seconds', advanced: true, when: (v) => backdropOf(v) === 'photos' && (v['appearance.photo'] ?? 'all') === 'all' },
+      { key: 'appearance.photoOrder', label: 'Order', type: 'select', default: 'turn', advanced: true, when: (v) => backdropOf(v) === 'photos' && (v['appearance.photo'] ?? 'all') === 'all', options: [{ value: 'turn', label: 'In turn' }, { value: 'shuffle', label: 'Shuffled' }] },
       { key: 'appearance.backdropColor', label: 'Background colour', type: 'color', default: '#1b2330', when: (v) => backdropOf(v) === 'color' },
       { key: 'appearance.background', label: 'Your picture', type: 'image', default: '', help: 'Any picture from your computer. It’s darkened (or lightened, on light themes) so text stays readable.', when: (v) => backdropOf(v) === 'picture' },
-      { key: 'appearance.backgroundStrength', label: 'How much the background shows', type: 'range', default: 0.6, min: 0.1, max: 1, step: 0.05, advanced: true, when: (v) => backdropOf(v) === 'mountains' || backdropOf(v) === 'picture' },
-      { key: 'appearance.backgroundBlur', label: 'Blur the background', type: 'range', default: 0, min: 0, max: 30, step: 1, advanced: true, when: (v) => backdropOf(v) === 'mountains' || backdropOf(v) === 'picture' },
-      { key: 'appearance.acrylic', label: 'See-through panels', type: 'toggle', default: true, advanced: true, when: (v) => backdropOf(v) !== 'none', help: 'Side panels, bars and menus let the background show softly through them, like Windows 11. Off: solid panels. Windows’ own “Transparency effects” turned off also makes them solid.' },
+      { key: 'appearance.backgroundStrength', label: 'How much the background shows', type: 'range', default: 0.38, min: 0.1, max: 1, step: 0.05, advanced: true, when: (v) => ['photos', 'mountains', 'picture'].includes(backdropOf(v)) },
+      { key: 'appearance.backgroundBlur', label: 'Blur the background', type: 'range', default: 0, min: 0, max: 30, step: 1, advanced: true, when: (v) => ['photos', 'mountains', 'picture'].includes(backdropOf(v)) },
+      { key: 'appearance.acrylic', label: 'See-through panels', type: 'toggle', default: true, advanced: true, when: (v) => backdropOf(v) !== 'none', help: 'Panels, cards, bars and menus are glass the background shows softly through. Off: solid panels.' },
+      { key: 'appearance.followWindowsTransparency', label: 'Solid panels when Windows’ Transparency effects is off', type: 'toggle', default: false, advanced: true, when: (v) => backdropOf(v) !== 'none' && v['appearance.acrylic'] !== false, help: 'Windows Settings → Personalization → Colors → Transparency effects. High contrast themes always use solid panels.' },
       { key: 'appearance.backdropLight', label: 'Daytime mountains on light themes', type: 'toggle', default: true, advanced: true, when: (v) => backdropOf(v) === 'mountains' },
       { key: 'appearance.surfaceContrast', label: 'Panel contrast', type: 'range', default: 0, min: -2, max: 3, step: 1, advanced: true, help: 'Makes panels and cards stand out more (or less) from the background.' },
-      { key: 'appearance.radius', label: 'Corner roundness', type: 'range', default: 1, min: 0, max: 1.5, step: 0.25, advanced: true },
+      { key: 'appearance.radius', label: 'Corner roundness', type: 'range', default: 0, min: 0, max: 1.5, step: 0.25, advanced: true },
       { key: 'appearance.toolbarSize', label: 'Toolbar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }, { value: 1.3, label: 'Extra large' }] },
       { key: 'appearance.tabSize', label: 'Tab bar size', type: 'select', default: 1, advanced: true, options: [{ value: 0.85, label: 'Compact' }, { value: 1, label: 'Normal' }, { value: 1.15, label: 'Large' }] },
       { key: 'appearance.menuFont', label: 'Menu text size', type: 'number', default: 13, min: 11, max: 20, step: 0.5, unit: 'px', advanced: true },
@@ -1083,13 +1105,15 @@ function hexToRgb(h: string) {
 // (--canvas), side panels and bars are frosted (--pane, with a blur), cards nearly solid (--card), menus and dialogs
 // frosted (--flyout). Pages, sheets, inputs and reading panes keep their solid surfaces: long text never sits on the
 // picture. Without a backdrop all of these are the theme's ordinary solid colours. (styles/global.css, "Backdrop".)
-export type Backdrop = 'mountains' | 'color' | 'picture' | 'none';
+export type Backdrop = 'photos' | 'mountains' | 'color' | 'picture' | 'none';
 /** The backdrop chosen: someone who picked a picture before 0.98 (no backdrop setting yet) keeps it. */
 export function backdropOf(v: Record<string, any> = useSettings.getState().values): Backdrop {
   const b = v['appearance.backdrop'];
-  if (b === 'mountains' || b === 'color' || b === 'picture' || b === 'none') return b;
-  return v['appearance.background'] ? 'picture' : 'mountains';
+  if (b === 'photos' || b === 'mountains' || b === 'color' || b === 'picture' || b === 'none') return b;
+  return v['appearance.background'] ? 'picture' : 'photos';
 }
+/** Kea's photos (scripts/make-photo-backdrops.cjs; credits in public/backdrops/credits.json). */
+export const PHOTOS = [1, 2, 3, 4, 5].map((n) => `/backdrops/photo-${n}.jpg`);
 let bgPath = '';
 let bgUrl = '';
 const rgba = (hex: string, a: number) => {
@@ -1100,16 +1124,21 @@ async function applyBackground(v: Record<string, any>, theme: { dark: boolean; c
   const html = document.documentElement;
   const root = html.style;
   const kind = backdropOf(v);
-  // (Windows' "Transparency effects" off, or high contrast: solid panels, as accessibility asks.)
-  const solidOnly = !!(window.matchMedia?.('(prefers-reduced-transparency: reduce)').matches || window.matchMedia?.('(forced-colors: active)').matches);
+  // (High contrast: solid panels, always. Windows' "Transparency effects" turned off: solid too, but only when
+  // Advanced → Follow Windows' transparency setting is on; Kea's own See-through panels decides otherwise.)
+  const solidOnly = !!(window.matchMedia?.('(forced-colors: active)').matches || (v['appearance.followWindowsTransparency'] === true && window.matchMedia?.('(prefers-reduced-transparency: reduce)').matches));
   const off = () => {
     html.classList.remove('has-bg', 'bg-acrylic');
-    root.removeProperty('--app-bg-image');
     root.removeProperty('--app-bg-color');
+    useBackdrop.setState({ images: [] });
   };
   if (kind === 'none') return off();
   let image = '';
-  if (kind === 'mountains') image = `url("/backdrops/snowy-ridge-${theme.dark || v['appearance.backdropLight'] === false ? 'dark' : 'light'}.jpg")`;
+  let images: string[] = [];
+  if (kind === 'photos') {
+    const one = Number(v['appearance.photo']);
+    images = one >= 1 && one <= PHOTOS.length ? [PHOTOS[one - 1]] : PHOTOS;
+  } else if (kind === 'mountains') image = `/backdrops/snowy-ridge-${theme.dark || v['appearance.backdropLight'] === false ? 'dark' : 'light'}.jpg`;
   else if (kind === 'picture') {
     const file = String(v['appearance.background'] || '');
     if (!file) return off();
@@ -1125,19 +1154,26 @@ async function applyBackground(v: Record<string, any>, theme: { dark: boolean; c
       }
     }
     if (!bgUrl || bgPath !== file) return off();
-    image = `url("${bgUrl}")`;
+    image = bgUrl;
   }
+  if (image) images = [image];
   const c = theme.c;
   // How much shows: the scrim over the picture is the theme's background at (1 - strength). A solid colour is itself.
-  const strength = Math.max(0.05, Math.min(1, num('appearance.backgroundStrength', 0.6)));
-  root.setProperty('--app-bg-image', image || 'none');
+  const strength = Math.max(0.05, Math.min(1, num('appearance.backgroundStrength', 0.38)));
+  useBackdrop.setState({
+    images,
+    every: Math.max(1, Math.min(120, num('appearance.photoEvery', 5))) * 60_000,
+    fade: Math.max(0, Math.min(60, num('appearance.photoFade', 20))) * 1000,
+    shuffle: v['appearance.photoOrder'] === 'shuffle',
+    blur: Math.max(0, Math.min(40, num('appearance.backgroundBlur', 0)))
+  });
   root.setProperty('--app-bg-color', kind === 'color' ? String(v['appearance.backdropColor'] || '#1b2330') : c.bg);
-  root.setProperty('--app-bg-blur', `${Math.max(0, Math.min(40, num('appearance.backgroundBlur', 0)))}px`);
   root.setProperty('--scrim', kind === 'color' ? 'transparent' : rgba(c.bg, 1 - strength));
   const acrylic = !solidOnly && v['appearance.acrylic'] !== false;
-  root.setProperty('--pane', acrylic ? rgba(c.surface, theme.dark ? 0.78 : 0.8) : c.surface);
-  root.setProperty('--card', acrylic ? rgba(c.surface, theme.dark ? 0.86 : 0.88) : c.surface);
-  root.setProperty('--flyout', acrylic ? rgba(c['surface-2'], 0.94) : c['surface-2']);
+  // Glass (Kea 0.100): clearly see-through, with a strong blur behind it, so panels belong to the scene.
+  root.setProperty('--pane', acrylic ? rgba(c.surface, theme.dark ? 0.4 : 0.48) : c.surface);
+  root.setProperty('--card', acrylic ? rgba(c.surface, theme.dark ? 0.42 : 0.5) : c.surface);
+  root.setProperty('--flyout', acrylic ? rgba(c['surface-2'], 0.86) : c['surface-2']);
   html.classList.add('has-bg');
   html.classList.toggle('bg-acrylic', acrylic);
 }
@@ -1178,7 +1214,8 @@ function applyAppearance() {
     });
   }
 
-  const rad = Number(v['appearance.radius'] ?? 1);
+  // (Square by default since Kea 0.100; switches, dots and pictures stay round whatever this says.)
+  const rad = Number(v['appearance.radius'] ?? 0);
   // (Small corners since Kea 0.96: 2, 4, 6 and 8 px at the normal setting.)
   root.setProperty('--radius-sm', `${2 * rad}px`);
   root.setProperty('--radius', `${4 * rad}px`);
@@ -1188,10 +1225,10 @@ function applyAppearance() {
 
   const fonts: Record<string, string> = {
     inter: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif",
-    segoe: "'Segoe UI', system-ui, -apple-system, sans-serif",
+    segoe: "'Segoe UI Variable Text', 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif",
     system: 'system-ui, -apple-system, sans-serif'
   };
-  root.setProperty('--font', fonts[v['appearance.uiFont']] || fonts.inter);
+  root.setProperty('--font', fonts[v['appearance.uiFont']] || fonts.segoe);
   document.documentElement.classList.toggle('reduce-motion', !!v['appearance.reduceMotion']);
   // Sizes of individual parts (Appearance → advanced).
   const num = (k: string, d: number) => (Number.isFinite(Number(v[k])) && v[k] !== '' && v[k] != null ? Number(v[k]) : d);

@@ -2778,3 +2778,7 @@ html.bg-acrylic .st-player-head,
 html.bg-acrylic .st-stream-card {
   backdrop-filter: blur(24px) saturate(1.2);
 }
+/* Studying: the School screen under the player is hidden, so the background shows straight through. */
+.scholar.studying > :not(.st-player) {
+  visibility: hidden;
+}
