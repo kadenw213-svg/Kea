@@ -262,7 +262,7 @@ export function AssistantPanel({ tabId: pinned, page = false }: { tabId?: string
                   {usable && hooks && (
                     <div className="as-starters">
                       {starters(hooks.noun, { linked, paras }).map((s) => (
-                        <button key={s} className="ai-chip" onClick={() => ask(activeId, s)}>
+                        <button key={s} className="ai-chip" onClick={() => ask(activeId, s, { quiet: true })}>
                           {s}
                         </button>
                       ))}
@@ -469,6 +469,7 @@ function Steps({ items, live, tabId }: { items: ChatItem[]; live?: boolean; tabI
 }
 
 function Item({ it, tabId }: { it: ChatItem; tabId: string }) {
+  if (it.hidden) return null;
   if (it.kind === 'draft') return <DraftCard it={it} tabId={tabId} />;
   return <ItemBody it={it} tabId={tabId} />;
 }

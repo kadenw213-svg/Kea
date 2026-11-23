@@ -1624,7 +1624,8 @@ function askAboutComment(tabId: string, t: CommentThread, quote: string, text: s
       `The passage: "${quote.slice(0, 600)}"`,
       `The thread so far:\n${thread}\nMe: ${text}`,
       `Answer me in that comment's thread with reply_to_comment (id ${t.id}). If I asked for a change, make just that change to this passage (keep everything else as it is), then say in the thread what you changed. Keep it short.`
-    ].join('\n\n')
+    ].join('\n\n'),
+    { quiet: true }
   );
   toast('Sent to Claude. Its answer comes in the comment thread.');
 }

@@ -43,14 +43,14 @@ export function checkAgainstRubric(tabId: string, rubric: boolean, comments: boo
   if (chatOf(tabId).busy) return toast('Claude is still working on this file. Try again when it’s done.');
   setAssistantOpen(true);
   const what = rubric ? 'my assignment’s rubric' : 'my assignment’s instructions';
-  ask(tabId, comments ? `Review this against ${what}` : `Review this against ${what}. Don’t leave margin comments or change the document: answer in the chat with the estimated level for each criterion and the top fixes.`);
+  ask(tabId, comments ? `Review this against ${what}` : `Review this against ${what}. Don’t leave margin comments or change the document: answer in the chat with the estimated level for each criterion and the top fixes.`, { quiet: true });
 }
 
 /** Ask Claude to gather everything the assignment says to do into one clearly marked section at the top of the file. */
 export function gatherInstructions(tabId: string) {
   if (chatOf(tabId).busy) return toast('Claude is still working on this file. Try again when it’s done.');
   setAssistantOpen(true);
-  ask(tabId, 'Put this assignment’s instructions at the top of this document as one section headed “Instructions (delete when finished)”: the steps, what to hand in, the requirements (length, sources, format) and how it’s graded, from the assignment above, with nothing invented. Don’t change anything else in the document.');
+  ask(tabId, 'Put this assignment’s instructions at the top of this document as one section headed “Instructions (delete when finished)”: the steps, what to hand in, the requirements (length, sources, format) and how it’s graded, from the assignment above, with nothing invented. Don’t change anything else in the document.', { quiet: true });
 }
 
 /**
@@ -64,7 +64,7 @@ export function writingSuggestions(tabId: string) {
   ask(
     tabId,
     'Give me writing suggestions for the whole document, like a proofreader: every spelling, grammar and punctuation mistake, plus sentences that are unclear, wordy or awkward. Leave each one as its own margin comment (add_comments) anchored to exactly that passage, with kind fix for errors and consider for style, a one-sentence reason, and a rewrite of exactly that passage so I can fix it in one click. Don’t change the document yourself, don’t comment on ideas or structure, and don’t leave more than 30. Then tell me in one line how many you found of each kind.',
-    { tier: 'standard' }
+    { tier: 'standard', quiet: true }
   );
 }
 
@@ -78,7 +78,7 @@ export function preSubmitCheck(tabId: string) {
   ask(
     tabId,
     'Do a final check before I submit this. Go through every requirement in the assignment (length, format, citation style and Works Cited, required sections and sources, what to hand in) and say for each one whether it’s met, with a ✓ or ✗. Then give an honest estimated score for each rubric criterion against its top level, and the fixes that would gain the most points, in order. Answer in the chat only: don’t change the document or leave comments.',
-    { tier: 'deep' }
+    { tier: 'deep', quiet: true }
   );
 }
 
@@ -86,7 +86,7 @@ export function preSubmitCheck(tabId: string) {
 export function outlineHelp(tabId: string) {
   if (chatOf(tabId).busy) return toast('Claude is still working on this file. Try again when it’s done.');
   setAssistantOpen(true);
-  ask(tabId, 'Help me outline this assignment. Don’t write any of my paper. Give me an outline where every part is a question for me to answer (for the intro, each main point, the evidence for it, and the conclusion), based on what the assignment and rubric ask for. Put it in the chat, and ask if I want it inserted in the document.');
+  ask(tabId, 'Help me outline this assignment. Don’t write any of my paper. Give me an outline where every part is a question for me to answer (for the intro, each main point, the evidence for it, and the conclusion), based on what the assignment and rubric ask for. Put it in the chat, and ask if I want it inserted in the document.', { quiet: true });
 }
 
 /**

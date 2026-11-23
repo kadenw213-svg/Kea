@@ -71,6 +71,11 @@ export interface AskOpts {
   look?: boolean;
   attachments?: Attachment[];
   tier?: Tier;
+  /**
+   * Sent by a button (a starter, Suggestions, Review against the rubric): the prompt goes to Claude but isn't shown in
+   * the chat, only Claude's answer is (Kea 0.102).
+   */
+  quiet?: boolean;
 }
 
 /** Send what the student typed and let Claude work until it's done (or is stopped). */
@@ -144,6 +149,7 @@ async function askRun(tabId: string, text: string, opts: AskOpts, run: { stopped
         : route({ text, selection: focus ? focus.text.length : sel.length, assignment: !!assignment, attachments: files.length, noun: hooks?.noun || 'file' }, chosen, effort);
   addItem(tabId, {
     kind: 'user',
+    ...(opts.quiet ? { hidden: true } : {}),
     text,
     image: shown,
     focus: focus?.text,

@@ -38,7 +38,7 @@ export function ChatEmpty({ tabId }: { tabId: string }) {
       </p>
       <div className="as-starters">
         {startersFor(project?.kind, !!folder).map((s) => (
-          <button key={s} className="ai-chip" onClick={() => ask(tabId, s)}>
+          <button key={s} className="ai-chip" onClick={() => ask(tabId, s, { quiet: true })}>
             {s}
           </button>
         ))}

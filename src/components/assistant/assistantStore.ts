@@ -7,6 +7,8 @@ import { fileKey, onFileKeyChange } from '../../lib/assignmentContext';
 export interface ChatItem {
   id: string;
   kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'error' | 'draft';
+  /** A prompt a button sent: it goes to Claude but the chat doesn't show it. */
+  hidden?: boolean;
   /** A message Claude drafted (draft_message): shown for the person to approve before anything is sent. */
   draft?: { subject: string; body: string; recipients: { name: string; email: string }[]; state?: 'sent' | 'opened' | 'cancelled'; note?: string };
   text: string;
