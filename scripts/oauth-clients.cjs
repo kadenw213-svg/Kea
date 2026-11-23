@@ -10,7 +10,15 @@ const os = require('os');
 const path = require('path');
 
 const OUT = path.join(__dirname, '..', 'electron', 'buildConfig.json');
-const ownerFile = () => process.env.KEA_OAUTH_CLIENTS || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'KeaBuild', 'oauth-clients.json');
+// Where the owner's file is: KEA_OAUTH_CLIENTS, else %LOCALAPPDATA%\KeaBuild\oauth-clients.json on this PC, else the
+// Kea Suite drive's keys\oauth-clients.json (beside the Android signing keys, git-ignored), so any PC working from the
+// drive builds releases with sign-in (Kea 0.102.1: releases built on a PC without the file had no Google).
+const ownerFile = () => {
+  if (process.env.KEA_OAUTH_CLIENTS) return process.env.KEA_OAUTH_CLIENTS;
+  const local = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'KeaBuild', 'oauth-clients.json');
+  const drive = path.join(__dirname, '..', '..', '..', 'keys', 'oauth-clients.json');
+  return fs.existsSync(local) || !fs.existsSync(drive) ? local : drive;
+};
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 
 /** The owner's file, read: { config, warning }. config is what goes into buildConfig.json ({} without the file). */

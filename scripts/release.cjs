@@ -31,6 +31,15 @@ run('node scripts/assets.cjs');
 run('node scripts/engine-vendor.cjs');
 // The built-in sign-in clients (electron/buildConfig.json, from the owner's file outside the repo; a warning without it).
 run('node scripts/oauth-clients.cjs');
+// A release without the built-in Google client has no "Sign in with Google" and no Google Drive for anyone who updates
+// to it (Kea 0.101 and 0.102.0 went out that way): refuse, unless that's really meant (KEA_ALLOW_NO_SIGNIN=1).
+{
+  const built = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'electron', 'buildConfig.json'), 'utf8') || '{}');
+  if (!built.google?.desktopClientId && !built.google?.id && process.env.KEA_ALLOW_NO_SIGNIN !== '1') {
+    console.error(`\nNot releasing: this build has no Google client, so Google sign-in and Google Drive wouldn't work in it.\nPut oauth-clients.json in %LOCALAPPDATA%\\KeaBuild\\ or in the Kea Suite drive's keys\\ folder, then run this again.\n`);
+    process.exit(1);
+  }
+}
 run('npx vite build');
 run(`npx electron-builder --win --x64 --publish always -c.directories.output="${OUT}"`, { GH_TOKEN: token });
 // Kea for Android rides along on every release, so ".../releases/latest/download/Kea-Android.apk" always works.
