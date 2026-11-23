@@ -23,6 +23,8 @@ interface GradeStore {
   error: Record<string, string | undefined>;
 }
 export const useGrades = create<GradeStore>(() => ({ byKey: load(), running: {}, error: {} }));
+// (The screenshot harness, KEA_EVAL, shows a sample estimate through this: like window.__kea in store.ts.)
+(window as any).__keaGrades = useGrades;
 
 function persist(byKey: Record<string, GradeEstimate>) {
   useGrades.setState({ byKey });

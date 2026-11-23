@@ -18,6 +18,8 @@ const load = (): Record<string, AssignmentRef> => {
 };
 
 export const useAssignments = create<{ byFile: Record<string, AssignmentRef> }>(() => ({ byFile: load() }));
+// (The screenshot harness, KEA_EVAL, links a test assignment through this: like window.__kea in store.ts.)
+(window as any).__keaAssignments = { set: (tabId: string, ref: AssignmentRef | null) => setAssignment(tabId, ref), key: (tabId: string) => fileKey(tabId), sig: (r: AssignmentRef) => assignmentSig(r) };
 
 /** The key a tab's file is remembered by: its path (or Drive id); an unsaved file only for as long as it's open. */
 export const fileKey = (tabId: string) => {

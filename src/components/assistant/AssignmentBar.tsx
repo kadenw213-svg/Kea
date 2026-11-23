@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { ClipboardList, RefreshCw, ChevronDown, ChevronUp, X, Sparkles, ListChecks, Square, MessageSquare, FileText, ListOrdered, Library, SendHorizontal } from 'lucide-react';
+import { ClipboardList, RefreshCw, ChevronDown, X, Sparkles, ListChecks, Square, MessageSquare, FileText, ListOrdered, Library, SendHorizontal, MoreHorizontal, Check, Gauge, Replace } from 'lucide-react';
+import { MenuButton } from '../Popover';
 import { useSetting } from '../../lib/settings';
 import { useAssignments, fileKey, assignmentSig, type AssignmentRef } from '../../lib/assignmentContext';
 import { linkAssignment } from '../../lib/assignmentLink';
@@ -91,7 +92,7 @@ export function outlineHelp(tabId: string) {
 
 /**
  * The assignment bar, the one place for assignment-aware Claude features in Docs and Slides: what the file is for,
- * the estimated grade (Refresh, and how it was worked out), and Check against rubric. Shown only on a file linked to
+ * the estimated grade (Refresh, and how it was worked out), the checklist and Check my work. Shown only on a file linked to
  * an assignment; nothing at all otherwise (the link is made from the file's menu or the Claude tab).
  */
 export function AssignmentBar({ tabId, active }: { tabId: string; active: boolean }) {
@@ -122,7 +123,6 @@ function Bar({ tabId, active, assignment, onChange }: { tabId: string; active: b
   const grades = useSetting<boolean>('assistant.gradeEstimate') !== false;
   const roughOk = useSetting<boolean>('assistant.gradeFromInstructions') !== false;
   const autoFirst = useSetting<boolean>('assistant.gradeAutoFirst') === true;
-  const [open, setOpen] = useState(false);
   const [pointers, setPointers] = useState(() => pointerComments(tabId));
   // What Kea knows: whether the assignment has a rubric, and whether Claude is connected (null while finding out).
   const [rubric, setRubric] = useState<boolean | null>(null);
@@ -176,108 +176,148 @@ function Bar({ tabId, active, assignment, onChange }: { tabId: string; active: b
 
   const changed = !!result && !!hash && hash !== result.docHash;
   const refresh = () => estimateGrade(tabId, { rough: result ? result.rough : !rubric });
+  const togglePointers = () => {
+    setPointers(!pointers);
+    setPointerComments(tabId, !pointers);
+  };
+  const against = rubric === false ? 'instructions' : 'rubric';
 
+  // One quiet line: what it's for, the estimated grade, the checklist, then one main action and a menu for the rest.
+  // The grade's breakdown and the checklist open as small cards under their chip instead of taking the page's width.
   return (
     <div className="assignment-bar" role="region" aria-label="Assignment">
-      <div className="ab-row">
-        <button className="ab-for" title="Change which assignment this is for" onClick={onChange}>
-          <ClipboardList size={14} />
-          <span className="ab-label">{assignment.label}</span>
-        </button>
-        {grades && (
-          <div className="ab-grade">
-            {ready === false ? (
-              <button className="ab-link" title="Estimates run on your own Claude" onClick={() => setAssistantOpen(true)}>
-                <Sparkles size={13} /> Connect Claude to estimate a grade
-              </button>
-            ) : running ? (
-              <span className="ab-status">
-                <span className="dot-pulse" /> Estimating…
-                <button className="icon-btn sm" title="Stop" onClick={() => stopGrade(tabId)}>
-                  <Square size={11} />
-                </button>
-              </span>
-            ) : result ? (
-              <>
-                <span className="ab-score" title="An estimate from Claude, not a grade. Your teacher decides the grade.">
-                  Estimated grade: <b>{result.letter}</b> ({result.percent}%)
-                </span>
-                <span className={`ab-tag ${result.rough ? 'rough' : ''}`}>{result.rough ? 'Rough draft estimate' : 'Draft estimate'}</span>
-                <span className="ab-meta">
-                  Checked {checkedAgo(result.at)}
-                  {changed ? ' · changed since' : ''}
-                </span>
-                <button className="icon-btn sm" title="Estimate again" onClick={refresh}>
-                  <RefreshCw size={13} />
-                </button>
-                <button className="ab-link" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-                  How {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                </button>
-              </>
-            ) : rubric ? (
-              <button className="ab-link" onClick={() => estimateGrade(tabId)}>
-                <RefreshCw size={13} /> Estimate my grade
-              </button>
-            ) : rubric === false && roughOk ? (
-              <button className="ab-link" title="There’s no rubric, so this is a rough guess from the instructions" onClick={() => estimateGrade(tabId, { rough: true })}>
-                <RefreshCw size={13} /> Estimate from the assignment instructions (rough)
-              </button>
-            ) : null}
-            {error && !running && <span className="ab-error" title={error}>Couldn’t estimate: {error}</span>}
-          </div>
+      <MenuButton
+        title="This file's assignment"
+        button={(o) => (
+          <button className={`ab-chip ab-for ${o ? 'open' : ''}`}>
+            <ClipboardList size={14} />
+            <span className="ab-label">{assignment.label}</span>
+            <ChevronDown size={12} className="ab-caret" />
+          </button>
         )}
-        <span className="ab-grow" />
-        <button className="ab-link" disabled={chatBusy} title="Gathers everything the assignment says to do into one section at the top of this document" onClick={() => gatherInstructions(tabId)}>
-          <FileText size={14} /> Instructions
-        </button>
-        <button className="ab-link" disabled={chatBusy} title="An outline made of questions for you to answer. Claude doesn’t write your paper" onClick={() => outlineHelp(tabId)}>
-          <ListOrdered size={14} /> Outline help
-        </button>
-        <button className="ab-link" title="Open your school library in its own window to find sources" onClick={() => api.library.open().catch((err: any) => toast(err?.message || 'Couldn’t open the library.', 'error'))}>
-          <Library size={14} /> Library
-        </button>
-        <label className="ab-toggle" title="When on, Claude leaves short comments in the margin pointing at what to change to meet the rubric. When off, it answers in the chat only.">
-          <input
-            type="checkbox"
-            checked={pointers}
-            onChange={(e) => {
-              setPointers(e.target.checked);
-              setPointerComments(tabId, e.target.checked);
-            }}
-          />
-          <MessageSquare size={13} /> Comments
-        </label>
-        <button className="ab-link" disabled={chatBusy} title={(rubric === false ? 'Claude goes through your file against the instructions' : 'Claude goes through your file against the rubric') + (pointers ? ' and leaves comments' : '')} onClick={() => checkAgainstRubric(tabId, rubric !== false, pointers)}>
-          <ListChecks size={14} /> {rubric === false ? 'Check against instructions' : 'Check against rubric'}
-        </button>
-        <button className="ab-link" disabled={chatBusy} title="A final pass before you turn it in: every requirement (length, format, citations) checked, and an estimated score for each part of the rubric" onClick={() => preSubmitCheck(tabId)}>
-          <SendHorizontal size={14} /> Before I submit
-        </button>
-        <button className="icon-btn sm" title="Not for an assignment" onClick={() => linkAssignment(tabId, null)}>
-          <X size={13} />
-        </button>
-      </div>
+      >
+        {(close) => (
+          <>
+            <div className="menu-title">For this assignment</div>
+            <button className="menu-item" onClick={() => (close(), onChange())}>
+              <Replace size={16} /> Change assignment…
+            </button>
+            <button className="menu-item" disabled={chatBusy} title="Gathers everything the assignment says to do into one section at the top of this document" onClick={() => (close(), gatherInstructions(tabId))}>
+              <FileText size={16} /> Put the instructions in the document
+            </button>
+            <div className="menu-sep" />
+            <button className="menu-item" onClick={() => (close(), linkAssignment(tabId, null))}>
+              <X size={16} /> Not for an assignment
+            </button>
+          </>
+        )}
+      </MenuButton>
+
+      {grades &&
+        (ready === false ? (
+          <button className="ab-chip" title="Estimates run on your own Claude" onClick={() => setAssistantOpen(true)}>
+            <Sparkles size={13} /> Connect Claude
+          </button>
+        ) : running ? (
+          <span className="ab-chip busy">
+            <span className="dot-pulse" /> Estimating…
+            <button className="ab-chip-x" title="Stop" onClick={() => stopGrade(tabId)}>
+              <Square size={10} />
+            </button>
+          </span>
+        ) : result ? (
+          <MenuButton
+            title="Estimated grade: how it was worked out"
+            button={(o) => (
+              <button className={`ab-chip ab-grade ${o ? 'open' : ''}`}>
+                <span className="ab-letter">{result.letter}</span>
+                <span className="ab-pct">{result.percent}%</span>
+                {changed && <span className="ab-stale" title="The file changed since this estimate" />}
+                <ChevronDown size={12} className="ab-caret" />
+              </button>
+            )}
+          >
+            {() => (
+              <div className="ab-card ab-how">
+                <div className="ab-card-head">
+                  <div>
+                    <div className="ab-card-title">
+                      Estimated grade <b>{result.letter}</b> · {result.percent}%
+                    </div>
+                    <div className="ab-card-sub">
+                      {result.rough ? 'Rough estimate from the instructions' : 'From the rubric'} · checked {checkedAgo(result.at)}
+                      {changed ? ' · the file changed since' : ''}
+                    </div>
+                  </div>
+                  <button className="btn sm" onClick={refresh}>
+                    <RefreshCw size={13} /> Estimate again
+                  </button>
+                </div>
+                <div className="ab-rows">
+                  {result.rows.map((r, i) => (
+                    <div className="ab-crow" key={i}>
+                      <div className="ab-crow-top">
+                        <span className="ab-crit">{r.criterion}</span>
+                        <span className="ab-pts">
+                          {fmt(r.earned)} / {fmt(r.possible)}
+                        </span>
+                      </div>
+                      <div className="ab-meter" aria-hidden>
+                        <span style={{ width: `${r.possible ? Math.min(100, (r.earned / r.possible) * 100) : 0}%` }} />
+                      </div>
+                      {r.reason && <div className="ab-why">{r.reason}</div>}
+                    </div>
+                  ))}
+                </div>
+                <div className="ab-note">An estimate from Claude, not a grade. Your teacher decides.</div>
+              </div>
+            )}
+          </MenuButton>
+        ) : rubric || (rubric === false && roughOk) ? (
+          <button
+            className={`ab-chip ${error ? 'warn' : ''}`}
+            title={error ? `Couldn’t estimate: ${error}` : rubric ? 'Claude estimates a grade against the rubric' : 'There’s no rubric, so this is a rough guess from the instructions'}
+            onClick={() => estimateGrade(tabId, rubric ? undefined : { rough: true })}
+          >
+            <Gauge size={13} /> {error ? 'Try the estimate again' : 'Estimate grade'}
+          </button>
+        ) : null)}
+
       <AssignmentChecklist tabId={tabId} file={fileKey(tabId)} assignment={assignment} active={active} />
-      {open && result && (
-        <div className="ab-how">
-          <table>
-            <tbody>
-              {result.rows.map((r, i) => (
-                <tr key={i}>
-                  <td className="ab-crit">{r.criterion}</td>
-                  <td className="ab-pts">
-                    {fmt(r.earned)} / {fmt(r.possible)}
-                  </td>
-                  <td className="ab-why">{r.reason}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="ab-note">
-            {fmt(result.earned)} of {fmt(result.possible)} points. {result.rough ? 'There’s no rubric, so this is a rough guess from the instructions. ' : ''}An estimate from Claude, not a grade: a draft for you to review, and your teacher decides.
-          </div>
-        </div>
-      )}
+
+      <span className="ab-grow" />
+
+      <button className="ab-main" disabled={chatBusy} title={`Claude goes through your file against the ${against}` + (pointers ? ' and leaves comments in the margin' : ' and answers in the chat')} onClick={() => checkAgainstRubric(tabId, rubric !== false, pointers)}>
+        <ListChecks size={14} /> Check my work
+      </button>
+      <MenuButton
+        align="right"
+        title="More for this assignment"
+        button={(o) => (
+          <button className={`ab-more ${o ? 'open' : ''}`} aria-label="More for this assignment">
+            <MoreHorizontal size={16} />
+          </button>
+        )}
+      >
+        {(close) => (
+          <>
+            <button className="menu-item" disabled={chatBusy} title="Every requirement (length, format, citations) checked, and an estimated score for each part of the rubric" onClick={() => (close(), preSubmitCheck(tabId))}>
+              <SendHorizontal size={16} /> Final check before I submit
+            </button>
+            <button className="menu-item" disabled={chatBusy} title="An outline made of questions for you to answer. Claude doesn’t write your paper" onClick={() => (close(), outlineHelp(tabId))}>
+              <ListOrdered size={16} /> Help me outline
+            </button>
+            <button className="menu-item" onClick={() => (close(), api.library.open().catch((err: any) => toast(err?.message || 'Couldn’t open the library.', 'error')))}>
+              <Library size={16} /> Find sources in my library
+            </button>
+            <div className="menu-sep" />
+            <button className={`menu-item ${pointers ? 'checked' : ''}`} role="menuitemcheckbox" aria-checked={pointers} title="When on, Check my work leaves short comments in the margin. When off, it answers in the chat only." onClick={togglePointers}>
+              <MessageSquare size={16} /> <span className="menu-grow">Leave comments in the margin</span>
+              {pointers && <Check size={14} />}
+            </button>
+          </>
+        )}
+      </MenuButton>
     </div>
   );
 }
