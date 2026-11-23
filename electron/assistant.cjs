@@ -8,9 +8,9 @@ const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const keyFile = () => path.join(app.getPath('userData'), 'assistant-key.bin');
-const MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
+const MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-2'];
 // The models whose refusals can be re-run on another model inside the same request (server-side fallback).
-const FALLBACK = new Set(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1']);
+const FALLBACK = new Set(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-2']);
 
 function readKey() {
   try {
