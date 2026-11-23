@@ -15,6 +15,45 @@ import { toast } from '../../store';
 const NONE: KnownProject[] = []; // (one empty list: a new [] each render would re-render forever)
 const KIND_ICON = { class: GraduationCap, work: Briefcase, personal: Folder } as const;
 
+/** Folders other people shared with you (Kea 0.102): add one and it's a context folder here too. */
+function SharedWithMe({ onPick }: { onPick: (dir: string) => void }) {
+  const [list, setList] = useState<{ orgId: string; folderId: string; name: string; owner: { name: string; email: string }; access: string }[]>([]);
+  const [kept, setKept] = useState<{ orgId: string; folderId: string; root: string }[]>([]);
+  useEffect(() => {
+    api.contextShare
+      ?.available()
+      .then((a) => (a.ok && a.value ? api.contextShare.withMe() : null))
+      .then((r) => r && r.ok && setList(r.value))
+      .catch(() => {});
+    api.teamFolders?.here().then(setKept).catch(() => {});
+  }, []);
+  if (!list.length) return null;
+  const open = async (f: (typeof list)[number]) => {
+    let root = kept.find((k) => k.orgId === f.orgId && k.folderId === f.folderId)?.root;
+    if (!root) {
+      const r = await api.contextShare.add({ orgId: f.orgId, folderId: f.folderId });
+      if (!r.ok) return toast(r.error, 'error');
+      root = r.value.root;
+      toast(`Added ${f.name}, shared by ${f.owner.name || f.owner.email}`, 'success');
+    }
+    const p = await loadProject(root);
+    if (p) rememberProject(p, true);
+    onPick(root);
+  };
+  return (
+    <>
+      <div className="menu-sep" />
+      <div className="menu-title">Shared with you</div>
+      {list.map((f) => (
+        <button key={`${f.orgId}/${f.folderId}`} className="menu-item" title={`From ${f.owner.name || ''} ${f.owner.email}`} onClick={() => open(f)}>
+          <Users size={16} /> <span className="menu-grow">{f.name}</span>
+          <span className="muted">{f.owner.name?.split(' ')[0] || f.owner.email}</span>
+        </button>
+      ))}
+    </>
+  );
+}
+
 export function AskBar() {
   const known: KnownProject[] = useSettings((s) => (Array.isArray(s.values['projects.known']) ? s.values['projects.known'] : NONE));
   const chosen: string = useSettings((s) => s.values['home.askFolder']) || '';
@@ -50,7 +89,15 @@ export function AskBar() {
     if (!q) return;
     let dir: string | null = current?.dir || null;
     if (dir) {
-      const p = await loadProject(dir).catch(() => null);
+      let p = await loadProject(dir).catch(() => null);
+      // Shared, so it moved to Kea cloud: use the shared copy from now on.
+      if (p?.movedTo && p.dir === dir) {
+        const moved = p.movedTo;
+        forgetProject(dir);
+        p = await loadProject(moved).catch(() => null);
+        dir = moved;
+        if (p) choose(moved);
+      }
       if (!p) {
         toast(`${current!.name} isn’t there any more, so Claude will answer without it.`, 'error');
         forgetProject(dir);
@@ -98,6 +145,7 @@ export function AskBar() {
                 </button>
               );
             })}
+            <SharedWithMe onPick={(dir) => (choose(dir), close())} />
             <div className="menu-sep" />
             {current && (
               <button className="menu-item" onClick={() => (close(), manageContextFolder(current.dir))}>

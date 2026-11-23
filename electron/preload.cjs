@@ -403,6 +403,23 @@ contextBridge.exposeInMainWorld('api', {
     copyIn: (dir, paths) => ipcRenderer.invoke('context:copy-in', dir, paths),
     trash: (p) => ipcRenderer.invoke('context:trash', p)
   },
+  // Sharing context folders with other Kea accounts (electron/contextShares.cjs, Kea 0.102).
+  contextShare: {
+    available: () => ipcRenderer.invoke('contextShare:available'),
+    preview: (dir) => ipcRenderer.invoke('contextShare:preview', { dir }),
+    status: (dir) => ipcRenderer.invoke('contextShare:status', { dir }),
+    share: (a) => ipcRenderer.invoke('contextShare:share', a),
+    unshare: (a) => ipcRenderer.invoke('contextShare:unshare', a),
+    withMe: () => ipcRenderer.invoke('contextShare:withMe'),
+    add: (a) => ipcRenderer.invoke('contextShare:add', a),
+    leave: (a) => ipcRenderer.invoke('contextShare:leave', a),
+    removeFile: (file) => ipcRenderer.invoke('contextShare:removeFile', { file }),
+    onProgress: (fn) => {
+      const h = (_e, p) => fn(p);
+      ipcRenderer.on('contextShare:progress', h);
+      return () => ipcRenderer.removeListener('contextShare:progress', h);
+    }
+  },
   openPath: (p) => ipcRenderer.invoke('shell:open-path', p),
   clearPreviews: () => ipcRenderer.invoke('preview:clear'),
   clearMeta: () => ipcRenderer.invoke('meta:clear'),

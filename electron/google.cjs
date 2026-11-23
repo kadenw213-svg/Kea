@@ -301,6 +301,18 @@ async function exportText(id) {
   return { name: meta.name, text: await res.text() };
 }
 
+/**
+ * A Google Doc, Sheet or Slides as an Office file (.docx / .xlsx / .pptx), for a context folder that is being shared
+ * (Kea 0.102): everyone it's shared with gets the same copy, kept in Kea cloud.
+ */
+async function exportOffice(id) {
+  const meta = await api(`/files/${id}?fields=name,mimeType&supportsAllDrives=true`);
+  const t = Object.values(TYPES).find((x) => x.google === meta.mimeType);
+  if (!t) throw new Error(`${meta.name} isn’t a Google Doc, Sheet or Slides file.`);
+  const res = await api(`/files/${id}/export?mimeType=${encodeURIComponent(t.mime)}`, {}, true);
+  return { name: `${meta.name}.${t.ext}`, data: Buffer.from(await res.arrayBuffer()) };
+}
+
 /** Upload new contents; Google converts the .docx/.xlsx/.pptx back into its own format. */
 async function saveFile(id, kindExt, data) {
   const type = Object.values(TYPES).find((t) => t.ext === kindExt);
@@ -359,4 +371,4 @@ function status() {
 /** The Google account signed in to Kea, if any (its email). */
 const signedInEmail = () => loadSession()?.email || null;
 
-module.exports = { register, signedInEmail, authorize, refreshed, _drive: { idFromLink, client, clientFor, driveAuthorizeUrl, status, keaGoogleEmail, refusedError, REFUSED, NOT_HERE } };
+module.exports = { register, signedInEmail, authorize, refreshed, exportOffice, _drive: { idFromLink, client, clientFor, driveAuthorizeUrl, status, keaGoogleEmail, refusedError, REFUSED, NOT_HERE } };

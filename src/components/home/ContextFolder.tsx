@@ -4,13 +4,14 @@
 // Opened from Home's Ask Claude bar (Manage files) and from the project strip in the Claude panel.
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
-import { FileText, Sheet as SheetIcon, Image as ImageIcon, Film, Music, File as FileIcon, Link2, Cloud, HardDrive, Trash2, X, FilePlus2, Users, Plus } from 'lucide-react';
+import { FileText, Sheet as SheetIcon, Image as ImageIcon, Film, Music, File as FileIcon, Link2, Cloud, HardDrive, Trash2, X, FilePlus2, Users, Plus, Share2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast } from '../../store';
 import { findProject, kindWord, projectFiles, saveProject, useProjects, type Project } from '../../lib/projects';
 import { friendlyPath, useKeaCloud } from '../../lib/keaCloud';
 import { newFile } from '../../lib/open';
 import { MenuButton } from '../Popover';
+import { SharePanel } from './SharePanel';
 
 const useManager = create<{ dir: string | null }>(() => ({ dir: null }));
 /** Open the manager for a context folder. */
@@ -40,6 +41,7 @@ export function ContextFolderDialog() {
   const [gLink, setGLink] = useState('');
   const cloudRoot = useKeaCloud((s) => s.status?.root);
   const [tick, setTick] = useState(0);
+  const [sharing, setSharing] = useState(false);
   const refresh = () => setTick((t) => t + 1);
 
   useEffect(() => {
@@ -47,6 +49,8 @@ export function ContextFolderDialog() {
     let live = true;
     findProject(dir).then(async (found) => {
       if (!live) return;
+      // Shared, so it moved: manage the copy kept in Kea cloud.
+      if (found?.movedTo && found.dir === dir) return manageContextFolder(found.movedTo);
       setP(found);
       setFiles(found ? await projectFiles(found).catch(() => []) : []);
     });
@@ -56,7 +60,7 @@ export function ContextFolderDialog() {
   }, [dir, tick, useProjects.getState().version]);
 
   if (!dir) return null;
-  const close = () => (useManager.setState({ dir: null }), setFiles(null), setGLink(''));
+  const close = () => (useManager.setState({ dir: null }), setFiles(null), setGLink(''), setSharing(false));
   if (!p)
     return (
       <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
@@ -75,8 +79,10 @@ export function ContextFolderDialog() {
     if (!paths.length) return;
     setBusy(true);
     try {
-      if (copy) {
+      if (copy || p.shared) {
         const names = await api.context.copyIn(p.dir, paths);
+        // A shared folder: what's added goes up for everyone.
+        if (p.shared) for (const n of names) await api.teamFolders.upload(`${p.dir}${p.dir.includes('\\') ? '\\' : '/'}${n}`).catch((err: any) => toast(String(err?.message || err), 'error'));
         toast(names.length === 1 ? `Added ${names[0]}` : `Added ${names.length} files`, 'success');
       } else {
         const refs = [...(p.refs || [])];
@@ -112,8 +118,14 @@ export function ContextFolderDialog() {
       else if (f.rel.startsWith('Linked: ')) await save({ ...p, refs: (p.refs || []).filter((r) => `Linked: ${r.name}` !== f.rel), exclude: p.exclude.filter((x) => x !== f.rel) });
       else {
         if (p.shared && p.shared.access === 'view') return toast(`${p.shared.orgName} lets you view this folder, not change it.`, 'error');
-        await api.context.trash(f.path);
-        toast(`${f.rel} went to the Recycle Bin.`);
+        if (p.shared) {
+          const r = await api.contextShare.removeFile(f.path);
+          if (!r.ok) throw new Error(r.error);
+          toast(`${f.rel} was removed for everyone (it can be restored for 30 days).`);
+        } else {
+          await api.context.trash(f.path);
+          toast(`${f.rel} went to the Recycle Bin.`);
+        }
         refresh();
       }
     } catch (err: any) {
@@ -152,10 +164,18 @@ export function ContextFolderDialog() {
               {where.startsWith('Kea cloud') ? <Cloud size={12} /> : <HardDrive size={12} />} {where}
             </div>
           </div>
-          <button className="icon-btn" title="Close" onClick={close}>
-            <X size={16} />
-          </button>
+          <div className="cf-head-acts">
+            {(!p.shared || p.shared.personal) && (
+              <button className={`btn sm ${sharing ? 'on' : ''}`} onClick={() => setSharing(!sharing)} title="Let other Kea accounts use this folder">
+                <Share2 size={13} /> {p.shared?.personal ? 'Shared' : 'Share'}
+              </button>
+            )}
+            <button className="icon-btn" title="Close" onClick={close}>
+              <X size={16} />
+            </button>
+          </div>
         </div>
+        {sharing && <SharePanel p={p} onMoved={(root) => (setSharing(true), manageContextFolder(root))} />}
 
         <div className="cf-add">
           <MenuButton
@@ -185,16 +205,16 @@ export function ContextFolderDialog() {
               </>
             )}
           </MenuButton>
-          <label className="cf-copy" title="Copied: the folder keeps its own copy (it travels with the folder, in Kea cloud too). Linked: Kea reads the original where it is, as it changes.">
+          {!p.shared && <label className="cf-copy" title="Copied: the folder keeps its own copy (it travels with the folder, in Kea cloud too). Linked: Kea reads the original where it is, as it changes.">
             <input type="checkbox" checked={copy} onChange={(e) => setCopy(e.target.checked)} /> Copy into the folder
-          </label>
+          </label>}
           <span className="cf-grow" />
-          <div className="cf-google">
+          {!p.shared && <div className="cf-google">
             <input className="input sm" value={gLink} placeholder="Google Doc or Sheet link" onChange={(e) => setGLink(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && gLink.trim() && addGoogle()} />
             <button className="btn sm" disabled={busy || !gLink.trim()} onClick={addGoogle}>
               <Link2 size={13} /> Add
             </button>
-          </div>
+          </div>}
         </div>
 
         <div className="cf-list">

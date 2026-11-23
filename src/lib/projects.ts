@@ -21,6 +21,8 @@ export interface Project {
   links?: { kind: 'doc' | 'sheet' | 'slides'; id: string; name: string }[];
   /** Files kept where they are (on this PC, a drive or Kea cloud) and read live from there (Kea 0.101.2). */
   refs?: { path: string; name: string }[];
+  /** This folder was shared, so it moved to Kea cloud: the copy kept here is at this path now (Kea 0.102). */
+  movedTo?: string;
   /** Claude may look people up in Google Contacts (work projects). */
   contacts?: boolean;
   /**
@@ -28,7 +30,7 @@ export interface Project {
    * files the folder or file setting keeps from Claude, decided by whoever manages it; they're never used, whatever
    * this PC's own `exclude` says.
    */
-  shared?: { src: string; orgId: string; orgName: string; folderId: string; folderName: string; access: 'view' | 'edit' | 'manage'; claude: boolean; off: string[] };
+  shared?: { src: string; orgId: string; orgName: string; folderId: string; folderName: string; access: 'view' | 'edit' | 'manage'; claude: boolean; off: string[]; personal?: boolean };
 }
 
 export const PROJECT_FILE = '.kea-project.json';
@@ -44,7 +46,7 @@ function parse(dir: string, text: string): Project | null {
   try {
     const j = JSON.parse(text);
     const kind = ['class', 'work', 'personal'].includes(j?.kind) ? j.kind : 'personal';
-    return { dir, name: String(j?.name || dir.split(/[\\/]/).pop() || 'Project').slice(0, 80), kind, ...(j?.course ? { course: String(j.course) } : {}), exclude: Array.isArray(j?.exclude) ? j.exclude.map(String) : [], links: Array.isArray(j?.links) ? j.links.filter((l: any) => l && /^[\w-]{20,}$/.test(String(l.id))).map((l: any) => ({ kind: ['doc', 'sheet', 'slides'].includes(l.kind) ? l.kind : 'doc', id: String(l.id), name: String(l.name || 'Google file').slice(0, 120) })) : [], ...(Array.isArray(j?.refs) ? { refs: j.refs.filter((r: any) => r && typeof r.path === 'string' && r.path).map((r: any) => ({ path: String(r.path), name: String(r.name || String(r.path).split(/[\\/]/).pop()).slice(0, 160) })) } : {}), ...(j?.contacts ? { contacts: true } : {}), ...(j?.shared && typeof j.shared === 'object' && j.shared.orgId ? { shared: { src: String(j.shared.src || ''), orgId: String(j.shared.orgId), orgName: String(j.shared.orgName || 'Organization'), folderId: String(j.shared.folderId || ''), folderName: String(j.shared.folderName || ''), access: ['view', 'edit', 'manage'].includes(j.shared.access) ? j.shared.access : 'view', claude: j.shared.claude !== false, off: Array.isArray(j.shared.off) ? j.shared.off.map(String) : [] } } : {}) };
+    return { dir, name: String(j?.name || dir.split(/[\\/]/).pop() || 'Project').slice(0, 80), kind, ...(j?.course ? { course: String(j.course) } : {}), exclude: Array.isArray(j?.exclude) ? j.exclude.map(String) : [], links: Array.isArray(j?.links) ? j.links.filter((l: any) => l && /^[\w-]{20,}$/.test(String(l.id))).map((l: any) => ({ kind: ['doc', 'sheet', 'slides'].includes(l.kind) ? l.kind : 'doc', id: String(l.id), name: String(l.name || 'Google file').slice(0, 120) })) : [], ...(Array.isArray(j?.refs) ? { refs: j.refs.filter((r: any) => r && typeof r.path === 'string' && r.path).map((r: any) => ({ path: String(r.path), name: String(r.name || String(r.path).split(/[\\/]/).pop()).slice(0, 160) })) } : {}), ...(j?.contacts ? { contacts: true } : {}), ...(typeof j?.movedTo === 'string' && j.movedTo ? { movedTo: j.movedTo } : {}), ...(j?.shared && typeof j.shared === 'object' && j.shared.orgId ? { shared: { src: String(j.shared.src || ''), orgId: String(j.shared.orgId), orgName: String(j.shared.orgName || 'Organization'), folderId: String(j.shared.folderId || ''), folderName: String(j.shared.folderName || ''), access: ['view', 'edit', 'manage'].includes(j.shared.access) ? j.shared.access : 'view', claude: j.shared.claude !== false, off: Array.isArray(j.shared.off) ? j.shared.off.map(String) : [], ...(j.shared.personal ? { personal: true } : {}) } } : {}) };
   } catch {
     return null;
   }

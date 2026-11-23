@@ -73,7 +73,17 @@ const client = {
   },
   async orgName(src, orgId) {
     const { orgs } = await hubOrg().listOrgs();
-    return (orgs.find((o) => o.id === orgId) || {}).name || null;
+    const o = orgs.find((x) => x.id === orgId);
+    if (o) return o.name;
+    // A shared context folder (a personal organization, Kea 0.102): never in the org list.
+    if (src === hubOrg().HUB) {
+      const mine = await json(src, 'GET', `/v1/orgs/${encodeURIComponent(orgId)}`).catch(() => null);
+      if (mine?.org?.name || mine?.name) return mine.org?.name || mine.name;
+      const withMe = await json(src, 'GET', '/v1/shared-with-me').catch(() => null);
+      const f = (withMe?.folders || []).find((x) => x.orgId === orgId);
+      if (f) return `Shared by ${f.owner?.name || f.owner?.email || 'someone'}`;
+    }
+    return null;
   }
 };
 
@@ -186,4 +196,4 @@ function register() {
   timer = setTimeout(tick, 20_000);
 }
 
-module.exports = { register, stop: () => clearTimeout(timer) };
+module.exports = { register, stop: () => clearTimeout(timer), _internal: { core, client, raw } };

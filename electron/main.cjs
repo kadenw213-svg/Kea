@@ -408,6 +408,7 @@ app.whenReady().then(() => {
   require('./teamFolders.cjs').register();
   require('./usageTally.cjs').register();
   require('./mail.cjs').register();
+  require('./contextShares.cjs').register();
   require('./servers.cjs').register();
   // (Only the installed Kea opens kea:// links: a development copy never takes them over.)
   if (app.isPackaged) app.setAsDefaultProtocolClient('kea');

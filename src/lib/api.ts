@@ -50,6 +50,13 @@ export interface UsageSummary {
   byFeature: Record<string, UsageTotals>;
   byModel: Record<string, UsageTotals>;
 }
+export type ShareResult<T> = { ok: true; value: T } | { ok: false; error: string; status: number | null };
+export interface SharePerson {
+  id: string;
+  name: string;
+  email: string;
+  access: 'view' | 'edit' | 'manage';
+}
 export interface KnownFolder {
   id: string;
   label: string;
@@ -439,6 +446,19 @@ export interface KeaApi {
     pickFiles(opts?: { title?: string; from?: string }): Promise<string[]>;
     copyIn(dir: string, paths: string[]): Promise<string[]>;
     trash(p: string): Promise<boolean>;
+  };
+  /** Sharing context folders with other Kea accounts (electron/contextShares.cjs). */
+  contextShare: {
+    available(): Promise<ShareResult<boolean>>;
+    preview(dir: string): Promise<ShareResult<{ shared: boolean; files: number; bytes: number; refs: number; google: string[] }>>;
+    status(dir: string): Promise<ShareResult<{ shared: false } | { shared: true; orgId: string; folderId: string; root: string; people: SharePerson[] }>>;
+    share(a: { dir: string; email?: string; access?: 'view' | 'edit' }): Promise<ShareResult<{ orgId: string; folderId: string; root: string; moved: boolean; skipped: string[]; people: SharePerson[] }>>;
+    unshare(a: { orgId: string; folderId: string; accountId: string }): Promise<ShareResult<SharePerson[]>>;
+    withMe(): Promise<ShareResult<{ orgId: string; folderId: string; name: string; owner: { id: string; name: string; email: string }; access: 'view' | 'edit'; files: number; updatedAt: number }[]>>;
+    add(a: { orgId: string; folderId: string }): Promise<ShareResult<TeamFolderHere>>;
+    leave(a: { orgId: string; folderId: string }): Promise<ShareResult<boolean>>;
+    removeFile(file: string): Promise<ShareResult<boolean>>;
+    onProgress(fn: (p: { msg: string; n: number; total: number }) => void): () => void;
   };
   /** An installed font's file, for embedding in a PDF (null if the family isn't installed). */
   fontFile(family: string, bold: boolean, italic: boolean): Promise<{ file: string; name: string; data: Uint8Array } | null>;

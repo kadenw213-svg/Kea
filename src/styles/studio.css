@@ -597,3 +597,52 @@ html .as-draft.finished {
 html .as-draft.finished.cancelled {
   border-left-color: var(--glass-line);
 }
+
+/* ---------- Sharing a context folder (0.102) ---------- */
+html .cf-head-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+html .cf-share {
+  margin: 0 20px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-line);
+  background: var(--glass-sheen), color-mix(in srgb, var(--surface) 40%, transparent);
+  display: grid;
+  gap: 8px;
+  font-size: 12.5px;
+}
+html .cf-share-warn {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  line-height: 1.5;
+}
+html .cf-share-warn svg {
+  color: var(--accent);
+  margin-top: 2px;
+}
+html .cf-share-warn ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--text-2);
+}
+html .cf-share-add {
+  display: flex;
+  gap: 6px;
+}
+html .cf-share-add .input {
+  flex: 1;
+}
+html .cf-share-people {
+  display: grid;
+  gap: 2px;
+}
+html .cf-share-person {
+  display: grid;
+  grid-template-columns: auto 1fr auto 28px;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}

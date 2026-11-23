@@ -111,9 +111,10 @@ function createTeamFolders({ stateFile, rootDir, client, now = Date.now, log = (
     const next = {
       ...j,
       name: j.name || m.name,
-      kind: 'work',
+      // (A shared context folder keeps its own kind; Kea 0.102.)
+      kind: j.shared?.personal && j.kind ? j.kind : 'work',
       exclude: Array.isArray(j.exclude) ? j.exclude : [],
-      shared: { src: m.src, orgId: m.orgId, orgName: m.orgName, folderId: m.folderId, folderName: m.name, access: m.access, claude: m.claude !== false, off },
+      shared: { src: m.src, orgId: m.orgId, orgName: m.orgName, folderId: m.folderId, folderName: m.name, access: m.access, claude: m.claude !== false, off, ...(j.shared?.personal ? { personal: true } : {}) },
     };
     const text = JSON.stringify(next, null, 2);
     try {
