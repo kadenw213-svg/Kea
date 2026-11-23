@@ -5,7 +5,8 @@ import { setting } from './lib/settings';
 
 export interface Tab {
   id: string;
-  kind: EditorKind | 'home' | 'scholar' | 'work' | 'audit';
+  /** 'claude': a full-page chat with Claude (Kea 0.101, Home's Ask Claude bar); `folder` is its context folder. */
+  kind: EditorKind | 'home' | 'scholar' | 'work' | 'audit' | 'claude';
   name: string;
   path: string | null;
   /** A new file made in a project: the folder its first save goes to (no Save dialog). */
@@ -44,6 +45,10 @@ export interface DocSection {
 export interface AiHooks {
   /** Short noun for the UI: "document", "PDF", "sheet", "presentation", "file". */
   noun: string;
+  /** A Claude page (no file of its own): only its own tools, the project's and Kea's shared ones, none of the file tools. */
+  workspace?: boolean;
+  /** What Claude is told about where it is, in place of "[Open document: name]". */
+  context?(): string;
   /** `annotated`: the text as Claude should read it (structure and formatting noted), when it differs from the sections. */
   getDocument(): Promise<{ full: string; sections: DocSection[]; annotated?: string }>;
   /** Replace the current selection; false if this editor can't. */

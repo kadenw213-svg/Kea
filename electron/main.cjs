@@ -172,7 +172,7 @@ function createWindow() {
     show: false,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     titleBarStyle: 'hidden',
-    titleBarOverlay: process.platform === 'win32' ? { color: windowTheme().bg, symbolColor: windowTheme()['text-2'], height: 40 } : undefined,
+    titleBarOverlay: process.platform === 'win32' ? { color: '#00000000', symbolColor: windowTheme()['text-2'], height: 40 } : undefined,
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -406,6 +406,7 @@ app.whenReady().then(() => {
   require('./gcal.cjs').register();
   require('./contacts.cjs').register();
   require('./teamFolders.cjs').register();
+  require('./usageTally.cjs').register();
   require('./servers.cjs').register();
   // (Only the installed Kea opens kea:// links: a development copy never takes them over.)
   if (app.isPackaged) app.setAsDefaultProtocolClient('kea');
@@ -739,7 +740,7 @@ ipcMain.on('app:set-title-overlay', (_e, color, symbolColor) => {
   if (!mainWindow) return;
   try {
     mainWindow.setBackgroundColor(color);
-    if (process.platform === 'win32') mainWindow.setTitleBarOverlay({ color, symbolColor, height: 40 });
+    if (process.platform === 'win32') mainWindow.setTitleBarOverlay({ color: '#00000000', symbolColor, height: 40 }); // over Kea's own title bar and background (0.101), not a solid block
   } catch {}
 });
 

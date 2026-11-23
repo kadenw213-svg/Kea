@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld('api', {
   clearRecent: () => ipcRenderer.invoke('recent:clear'),
   setZoom: (f) => webFrame.setZoomFactor(f),
   setTitleOverlay: (color, symbolColor) => ipcRenderer.send('app:set-title-overlay', color, symbolColor),
+  // Approximate Claude usage on this PC (electron/usageTally.cjs, Kea 0.101).
+  usage: {
+    summary: (days) => ipcRenderer.invoke('usage:summary', days),
+    add: (a) => ipcRenderer.invoke('usage:add', a),
+    forget: () => ipcRenderer.invoke('usage:forget')
+  },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     set: (patch) => ipcRenderer.invoke('settings:set', patch),

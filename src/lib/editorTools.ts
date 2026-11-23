@@ -7,6 +7,7 @@ import { setting } from './settings';
 import { editorRegistry, useTabs, type AiHooks, type AssistantTool, type Tab } from '../store';
 import { designGuideTool } from './design/guide';
 import { projectTools } from './projects';
+import { noteTool } from './activity';
 
 const DOC_LIMIT = 400_000; // characters of the file read in one go (about 100k tokens)
 
@@ -14,6 +15,9 @@ const DOC_LIMIT = 400_000; // characters of the file read in one go (about 100k 
 /** `tabId`: the tab the tools act for, so a file in a project also gets the project's files. */
 export function toolsFor(hooks: AiHooks | undefined, tabId?: string): AssistantTool[] {
   if (!hooks) return [];
+  // A Claude page (Home's Ask Claude): Kea's modules through the workspace tools, the context folder's files, and the
+  // shared tools (sources, classes); none of the one-file tools.
+  if (hooks.workspace) return [...(hooks.tools || []), findAssignmentTool, ...sourceTools, ...windowTools, ...classTools, ...(tabId ? projectTools(tabId) : [])];
   const t: AssistantTool[] = [];
   const tracked = <T,>(fn: () => T): T => (setting('assistant.track') && hooks.track ? hooks.track(fn) : fn());
   t.push({
@@ -371,6 +375,7 @@ export async function runToolHeadless(tabId: string, tools: AssistantTool[], use
   if (!tool) return { ok: false, text: `There's no tool called ${use.name} here.` };
   const bad = invalid(tool, use.input);
   if (bad) return { ok: false, text: `INVALID_INPUT: ${bad}` };
+  noteTool(use.name);
   try {
     if (use.name === 'look') {
       const img = await picture(tabId);

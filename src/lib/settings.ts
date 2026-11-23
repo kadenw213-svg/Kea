@@ -198,6 +198,23 @@ export const SECTIONS: Section[] = [
         ]
       },
       { key: 'appearance.accentCustom', label: 'Custom accent colour', type: 'color', default: '#a8c7fa', when: (v) => v['appearance.accent'] === 'custom' },
+      {
+        key: 'appearance.logoColor',
+        label: 'Logo colour',
+        type: 'select',
+        default: 'silver',
+        options: [
+          { value: 'silver', label: 'Silver' },
+          { value: 'accent', label: 'Accent colour' },
+          { value: 'white', label: 'White' },
+          { value: 'green', label: 'Kea green' },
+          { value: 'orange', label: 'Kea orange (the underwing)' },
+          { value: 'gold', label: 'Gold' },
+          { value: 'custom', label: 'Custom…' }
+        ],
+        help: 'The colour of the kea in the corner of the window and on Kea’s own pages.'
+      },
+      { key: 'appearance.logoCustom', label: 'Custom logo colour', type: 'color', default: '#8fae6b', when: (v) => v['appearance.logoColor'] === 'custom' },
       { key: 'appearance.scale', label: 'Size of everything', type: 'select', default: 1, options: pct([0.8, 0.9, 1, 1.1, 1.25, 1.5]) },
       { key: 'appearance.reduceMotion', label: 'Reduce animations', type: 'toggle', default: false },
       {
@@ -232,15 +249,17 @@ export const SECTIONS: Section[] = [
         type: 'select',
         default: 'all',
         when: (v) => backdropOf(v) === 'photos',
-        help: 'Kea’s five photos fade slowly from one to the next. Photos: Michal Klajban (CC BY-SA 4.0), Thomas Bresson (CC BY 3.0), Jakub Hałun (CC BY 4.0), via Wikimedia Commons; cropped and colour-softened. Settings → Help & about lists each one.',
-        options: [
-          { value: 'all', label: 'All five, changing slowly' },
-          { value: '1', label: 'Lake Clearwater, New Zealand' },
-          { value: '2', label: 'Fog over Loch Tay, Scotland' },
-          { value: '3', label: 'Valley in fog, France' },
-          { value: '4', label: 'Driftwood at dusk, New Zealand' },
-          { value: '5', label: 'Breiðamerkurjökull glacier, Iceland' }
-        ]
+        help: 'Kea’s five photos fade slowly from one to the next: muted ones on dark themes, bright daytime ones on light themes. From Wikimedia Commons under Creative Commons licences, cropped and colour-softened; Settings → Help & about lists each one with its author.',
+        // (The photos of the theme in use: dark and light themes have their own five, PHOTO_SETS.)
+        get options() {
+          let dark = true;
+          try {
+            dark = themeDark();
+          } catch {
+            // (Read while the settings module is still loading: the dark set.)
+          }
+          return [{ value: 'all', label: 'All five, changing slowly' }, ...PHOTO_SETS[dark ? 'dark' : 'light'].map((p, i) => ({ value: String(i + 1), label: p.label }))];
+        }
       },
       { key: 'appearance.photoEvery', label: 'Change the photo every', type: 'number', default: 5, min: 1, max: 120, step: 1, unit: 'minutes', advanced: true, when: (v) => backdropOf(v) === 'photos' && (v['appearance.photo'] ?? 'all') === 'all' },
       { key: 'appearance.photoFade', label: 'Fade between photos over', type: 'number', default: 20, min: 0, max: 60, step: 1, unit: 'seconds', advanced: true, when: (v) => backdropOf(v) === 'photos' && (v['appearance.photo'] ?? 'all') === 'all' },
@@ -313,6 +332,7 @@ export const SECTIONS: Section[] = [
       { key: 'audit.enabled', group: 'Owner tools', label: 'Product audit tab', type: 'toggle', default: false, help: 'A tab that keeps a specs list of Kea and sends research out (through your own Claude Code) to see what newer and older apps do, then plans what Kea could copy. Off for everyone else.' },
       { key: 'areas.setupDone', label: 'First-run setup finished', type: 'toggle', default: false, advanced: true, help: 'Turn off to see the "How do you use Kea?" screen again.' },
       { key: 'home.greeting', group: 'Today', label: 'Show greeting and date', type: 'toggle', default: true },
+      { key: 'home.askBar', label: 'Show the Ask Claude bar', type: 'toggle', default: true, help: 'Ask Claude anything from Home, about one of your folders (a class, a work team, a project). It opens a Claude tab that can read the folder and make or edit files in Kea.' },
       { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from School and your Kea classes.' },
       { key: 'home.showClasses', label: 'Show my classes', type: 'toggle', default: true },
       { key: 'home.showWork', label: 'Show Work (to-do and next shift)', type: 'toggle', default: true, when: (v) => v['modes.work'] === true },
@@ -1008,6 +1028,8 @@ export const SECTIONS: Section[] = [
     blurb: 'Kea talks to your Kea account online (its address is under Kea account → Advanced) while you’re signed in: it checks for account notifications every few minutes, syncs Kea cloud documents about every 15 seconds while you use them, and loads classes, shifts and forms when you open School or Work. Signing in goes through Google or Microsoft; Kea has no password of its own. Otherwise Kea only goes online to check GitHub for updates, to read Wikipedia and Wiktionary when you use the Encyclopedia, to download models you choose, and to set up cloud drives you sign in to.',
     fields: [
       { key: 'privacy.citeLookup', label: 'Allow citation look-ups', type: 'toggle', default: true, help: 'When you click "Look up" in Citations, Kea asks Crossref (DOIs), Open Library (ISBNs) or the web page itself for the details. Nothing is sent otherwise.' },
+      { key: 'privacy.shareUsage', label: 'Share approximate Claude usage with Kea', type: 'toggle', default: true, help: 'How many tokens each part of Kea used on your Claude (counts, feature names, models and tool names; never your prompts, files or answers) goes to your Kea account, so Kea’s developer can make the expensive parts leaner. You can see the same numbers in the Claude panel’s Usage menu.' },
+      { key: 'feedback.includeActivity', label: 'Include what I was doing with feedback', type: 'toggle', default: true, help: 'A bug report or suggestion also says where you were in Kea and the last things you did there (screens, tools; never file contents), so it can be reproduced. You can untick it on each report.' },
       { key: 'privacy.log', label: 'Keep a troubleshooting log', type: 'toggle', default: true, advanced: true, help: 'A small local file (kea.log) with errors and file names. Never sent anywhere.' }
     ]
   },
@@ -1112,8 +1134,31 @@ export function backdropOf(v: Record<string, any> = useSettings.getState().value
   if (b === 'photos' || b === 'mountains' || b === 'color' || b === 'picture' || b === 'none') return b;
   return v['appearance.background'] ? 'picture' : 'photos';
 }
-/** Kea's photos (scripts/make-photo-backdrops.cjs; credits in public/backdrops/credits.json). */
-export const PHOTOS = [1, 2, 3, 4, 5].map((n) => `/backdrops/photo-${n}.jpg`);
+/**
+ * Kea's photos (scripts/make-photo-backdrops.cjs; credits in public/backdrops/credits.json): five muted ones for dark
+ * themes and, since 0.101, five bright daytime ones for light themes. "Keep one photo" picks by number in the set of
+ * the theme in use.
+ */
+export const PHOTO_SETS = {
+  dark: [
+    { src: '/backdrops/photo-1.jpg', label: 'Lake Clearwater, New Zealand' },
+    { src: '/backdrops/photo-2.jpg', label: 'Fog over Loch Tay, Scotland' },
+    { src: '/backdrops/photo-3.jpg', label: 'Valley in fog, France' },
+    { src: '/backdrops/photo-4.jpg', label: 'Driftwood at dusk, New Zealand' },
+    { src: '/backdrops/photo-5.jpg', label: 'Breiðamerkurjökull glacier, Iceland' }
+  ],
+  light: [
+    { src: '/backdrops/light-1.jpg', label: 'Winter in the Tatra Mountains, Poland' },
+    { src: '/backdrops/light-2.jpg', label: 'Lac de Veret, France' },
+    { src: '/backdrops/light-3.jpg', label: 'Second Beach, Washington' },
+    { src: '/backdrops/light-4.jpg', label: 'Scheideggseeli, Switzerland' },
+    { src: '/backdrops/light-5.jpg', label: 'Mont Blanc from Lac de Joux Plane, France' }
+  ]
+};
+/** The photos for a dark or a light theme. */
+export const photosFor = (dark: boolean) => PHOTO_SETS[dark ? 'dark' : 'light'].map((p) => p.src);
+/** The dark themes' photos (kept for older callers). */
+export const PHOTOS = photosFor(true);
 let bgPath = '';
 let bgUrl = '';
 const rgba = (hex: string, a: number) => {
@@ -1136,8 +1181,9 @@ async function applyBackground(v: Record<string, any>, theme: { dark: boolean; c
   let image = '';
   let images: string[] = [];
   if (kind === 'photos') {
+    const set = photosFor(theme.dark);
     const one = Number(v['appearance.photo']);
-    images = one >= 1 && one <= PHOTOS.length ? [PHOTOS[one - 1]] : PHOTOS;
+    images = one >= 1 && one <= set.length ? [set[one - 1]] : set;
   } else if (kind === 'mountains') image = `/backdrops/snowy-ridge-${theme.dark || v['appearance.backdropLight'] === false ? 'dark' : 'light'}.jpg`;
   else if (kind === 'picture') {
     const file = String(v['appearance.background'] || '');
@@ -1168,11 +1214,13 @@ async function applyBackground(v: Record<string, any>, theme: { dark: boolean; c
     blur: Math.max(0, Math.min(40, num('appearance.backgroundBlur', 0)))
   });
   root.setProperty('--app-bg-color', kind === 'color' ? String(v['appearance.backdropColor'] || '#1b2330') : c.bg);
-  root.setProperty('--scrim', kind === 'color' ? 'transparent' : rgba(c.bg, 1 - strength));
+  // (Light themes' bright daytime photos need less of a white veil to show at all; the glass below is a little more
+  // solid there instead, so text keeps its contrast.)
+  root.setProperty('--scrim', kind === 'color' ? 'transparent' : rgba(c.bg, (1 - strength) * (theme.dark ? 1 : 0.72)));
   const acrylic = !solidOnly && v['appearance.acrylic'] !== false;
   // Glass (Kea 0.100): clearly see-through, with a strong blur behind it, so panels belong to the scene.
-  root.setProperty('--pane', acrylic ? rgba(c.surface, theme.dark ? 0.4 : 0.48) : c.surface);
-  root.setProperty('--card', acrylic ? rgba(c.surface, theme.dark ? 0.42 : 0.5) : c.surface);
+  root.setProperty('--pane', acrylic ? rgba(c.surface, theme.dark ? 0.4 : 0.58) : c.surface);
+  root.setProperty('--card', acrylic ? rgba(c.surface, theme.dark ? 0.42 : 0.62) : c.surface);
   root.setProperty('--flyout', acrylic ? rgba(c['surface-2'], 0.86) : c['surface-2']);
   html.classList.add('has-bg');
   html.classList.toggle('bg-acrylic', acrylic);
@@ -1202,6 +1250,20 @@ function applyAppearance() {
   root.setProperty('--accent-strong', strong);
   root.setProperty('--on-accent', on);
   root.setProperty('--accent-soft', `rgba(${r}, ${g}, ${b}, 0.14)`);
+  // The logo's colour (a gradient from light to deep): Settings → Look & feel → Logo colour.
+  const shade = (hex: string, k: number) => {
+    const [lr, lg, lb] = hexToRgb(hex);
+    const ch = (x: number) => Math.max(0, Math.min(255, Math.round(k > 1 ? x + (255 - x) * (k - 1) : x * k)));
+    return `rgb(${ch(lr)}, ${ch(lg)}, ${ch(lb)})`;
+  };
+  const LOGO: Record<string, [string, string]> = { silver: ['#f6f7f8', '#8b9199'], white: ['#ffffff', '#d4d7db'], green: ['#a9c487', '#5f7d45'], orange: ['#f6b26b', '#c2652b'], gold: ['#f3dc9a', '#b08a3e'] };
+  const lc = v['appearance.logoColor'] || 'silver';
+  const logoBase = lc === 'accent' ? (accent.startsWith('#') ? accent : '#a8c7fa') : lc === 'custom' ? v['appearance.logoCustom'] || '#8fae6b' : '';
+  let [l1, l2] = LOGO[lc] || LOGO.silver;
+  if (logoBase) [l1, l2] = [shade(logoBase, 1.25), shade(logoBase, 0.72)];
+  if (!theme.dark && (lc === 'silver' || lc === 'white')) [l1, l2] = ['#5b6470', '#2a3038'];
+  root.setProperty('--logo-1', l1);
+  root.setProperty('--logo-2', l2);
 
   // Panel contrast: the theme's own panels, moved away from the background (lighter on dark themes, darker on light).
   const c = Number(v['appearance.surfaceContrast']) || 0;

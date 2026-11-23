@@ -18,6 +18,12 @@ import { newPlaceholders, placeholderComment } from './placeholders';
 
 const MAX_STEPS = 40;
 
+/** Where a run counts in the Usage menu: "assistant.doc", "assistant.video", "home.chat" (a Claude page). */
+function featureOf(tabId: string) {
+  if (editorRegistry.get(tabId)?.ai?.workspace) return 'home.chat';
+  return `assistant.${useTabs.getState().tabs.find((t) => t.id === tabId)?.kind || 'other'}`;
+}
+
 // What Claude is told about working in Kea: one file per topic in ./guidelines (core rules, writing feedback, academic
 // writing, classes, documents, design), read in this order.
 import core from './guidelines/core.md?raw';
@@ -36,7 +42,7 @@ export const SYSTEM = [core, writing, academic, classes, documents, design].map(
 function context(tabId: string, hooks: AiHooks | undefined, focus: Focus | null) {
   const tab = useTabs.getState().tabs.find((t) => t.id === tabId);
   const sel = useLookup.getState().selections[tabId] || '';
-  const lines = [`[Open ${hooks?.noun || 'file'}: ${tab?.name || 'untitled'}]`];
+  const lines = [hooks?.context ? hooks.context() : `[Open ${hooks?.noun || 'file'}: ${tab?.name || 'untitled'}]`];
   if (!hooks) lines.push('[This view has no tools: Claude can only talk about it.]');
   if (focus) lines.push(`[Focus passage${focus.where ? ` (${focus.where})` : ''}: the student highlighted this and sent it to you; work on exactly this]\n«${focus.text.slice(0, 8000)}»`);
   else if (sel) lines.push(`[Selected: «${sel.slice(0, 2000)}»]`);
@@ -222,6 +228,12 @@ async function askApi(tabId: string, content: any[], live: () => boolean, run: {
         break;
       }
       const uses = r.content.filter((b: any) => b.type === 'tool_use');
+      if (r.usage) {
+        const u = r.usage;
+        api.usage
+          ?.add({ feature: featureOf(tabId), byModel: { [way.model]: { input: u.input_tokens || 0, output: u.output_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, cacheWrite: u.cache_creation_input_tokens || 0 } }, tools: uses.map((x: any) => x.name) })
+          .catch(() => {});
+      }
       if (!uses.length) break;
       if (r.stop_reason === 'max_tokens') {
         // Every tool_use needs a tool_result, or the next message in this chat is refused.
@@ -250,6 +262,7 @@ async function askPlan(tabId: string, content: any[], live: () => boolean, run: 
   const reqId = uid();
   patchChat(tabId, { reqId, via: 'plan' });
   const steps = new Map<string, string>(); // tool_use id -> panel item id
+  const toolNames: string[] = []; // (for the Usage menu)
   const streamedMsgs = new Set<string>();
   let msgId = '';
   let textItem = '';
@@ -285,7 +298,10 @@ async function askPlan(tabId: string, content: any[], live: () => boolean, run: 
         if (b.type === 'tool_use') {
           const name = String(b.name).replace(/^mcp__kea__/, '');
           setActivity(tabId, doing(name));
-          if (!steps.has(b.id)) steps.set(b.id, addItem(tabId, { kind: 'tool', name, text: summary(b.input) }));
+          if (!steps.has(b.id)) {
+            toolNames.push(name);
+            steps.set(b.id, addItem(tabId, { kind: 'tool', name, text: summary(b.input) }));
+          }
         } else if (!streamedMsgs.has(m.id)) {
           // Not streamed (older Claude Code): show the finished blocks.
           if (b.type === 'text' && b.text) addItem(tabId, { kind: 'assistant', text: b.text });
@@ -301,6 +317,7 @@ async function askPlan(tabId: string, content: any[], live: () => boolean, run: 
         patchItem(tabId, item, { ok: !b.is_error, result: r.text.length > 300 ? `${r.text.slice(0, 300)}…` : r.text, ...(r.image ? { image: r.image } : {}) });
       }
     } else if (ev.type === 'result' && ev.usage) {
+      api.usage?.add({ feature: featureOf(tabId), ev, model: way.model, tools: toolNames.splice(0) }).catch(() => {});
       const u = ev.usage;
       patchChat(tabId, (c) => ({ usage: { input: c.usage.input + (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0), output: c.usage.output + (u.output_tokens || 0), cached: c.usage.cached + (u.cache_read_input_tokens || 0) } }));
     }

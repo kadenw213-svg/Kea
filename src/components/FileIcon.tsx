@@ -1,4 +1,4 @@
-import { FileText, Sheet, FileCode2, Image as ImageIcon, File, FileType2, Presentation, Clapperboard } from 'lucide-react';
+import { FileText, Sheet, FileCode2, Image as ImageIcon, File, FileType2, Presentation, Clapperboard, MessageSquareText } from 'lucide-react';
 import { kindFor } from '../lib/fileTypes';
 
 export const KIND_COLORS: Record<string, string> = {
@@ -9,6 +9,7 @@ export const KIND_COLORS: Record<string, string> = {
   image: '#fdd663',
   video: '#ff8bcb',
   code: '#c58af9',
+  claude: '#d9a07a',
   unsupported: '#9aa0a6'
 };
 
@@ -31,6 +32,8 @@ export function FileIcon({ name, kind, size = 18 }: { name?: string; kind?: stri
       return <Clapperboard {...props} />;
     case 'code':
       return <FileCode2 {...props} />;
+    case 'claude':
+      return <MessageSquareText {...props} />;
     default:
       return <File {...props} />;
   }

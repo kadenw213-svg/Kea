@@ -120,7 +120,7 @@ export function doing(name = '') {
 }
 
 /** Tabs that aren't a file (Home, the school dashboard, the work space): the panel never shows there. */
-const NOT_A_FILE = new Set(['home', 'scholar', 'work', 'audit']);
+const NOT_A_FILE = new Set(['home', 'scholar', 'work', 'audit', 'claude']);
 const canHold = (tabId: string) => {
   const t = useTabs.getState().tabs.find((x) => x.id === tabId);
   return !!t && !NOT_A_FILE.has(t.kind);

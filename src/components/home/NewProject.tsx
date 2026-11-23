@@ -10,7 +10,15 @@ import { toast } from '../../store';
 import { MenuButton } from '../Popover';
 import { SharedFoldersDialog, useSharedFolders } from './SharedFolders';
 
-const useDialog = create<{ mode: 'new' | 'folder' | null; dir: string }>(() => ({ mode: null, dir: '' }));
+const useDialog = create<{ mode: 'new' | 'folder' | null; dir: string; onMade?: (p: Project) => void }>(() => ({ mode: null, dir: '' }));
+
+/**
+ * Make a context folder (Home's Ask Claude bar, Kea 0.101): a new one, or an existing folder (`dir`). `onMade` gets the
+ * project instead of a new document opening in it.
+ */
+export function makeContextFolder(onMade: (p: Project) => void, dir?: string) {
+  useDialog.setState({ mode: dir ? 'folder' : 'new', dir: dir || '', onMade });
+}
 
 async function pick(): Promise<string | null> {
   return api.openFolderDialog().catch(() => null);
@@ -67,19 +75,19 @@ export function ProjectButton() {
           </>
         )}
       </MenuButton>
-      <NewProjectDialog />
       <SharedFoldersDialog />
     </>
   );
 }
 
-function NewProjectDialog() {
-  const { mode, dir } = useDialog();
+/** Rendered once, by Home. */
+export function NewProjectDialog() {
+  const { mode, dir, onMade } = useDialog();
   const [name, setName] = useState('');
   const [kind, setKind] = useState<Project['kind']>('class');
   const [busy, setBusy] = useState(false);
   if (!mode) return null;
-  const close = () => (useDialog.setState({ mode: null, dir: '' }), setName(''));
+  const close = () => (useDialog.setState({ mode: null, dir: '', onMade: undefined }), setName(''));
   const shown = name || (mode === 'folder' ? dir.split(/[\\/]/).pop() || '' : '');
   const go = async (then: 'doc' | 'sheet' | null) => {
     const n = shown.trim();
@@ -94,7 +102,8 @@ function NewProjectDialog() {
       }
       const p = await saveProject({ dir: folder, name: n, kind, exclude: [] });
       toast(`${p.name} is a project. Files you make or open in it share it with Claude.`, 'success');
-      if (then) newFile(then, p.dir);
+      if (onMade) onMade(p);
+      else if (then) newFile(then, p.dir);
       close();
     } catch (err: any) {
       toast(String(err?.message || err), 'error');
@@ -105,7 +114,7 @@ function NewProjectDialog() {
   return (
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="dialog pe-dialog" role="dialog" aria-label="Project">
-        <h2>{mode === 'new' ? 'New project' : 'Use this folder as a project'}</h2>
+        <h2>{onMade ? (mode === 'new' ? 'New context folder' : 'Use this folder for context') : mode === 'new' ? 'New project' : 'Use this folder as a project'}</h2>
         <p>A project is a folder of files Claude can use together: a class’s syllabus, rubrics and earlier papers, or a team’s contact sheet, availability and templates. Ask “using the contact sheet…” or “build on my Essay 1” and Claude reads those files as they are now.</p>
         <label className="field-label">Name</label>
         <input className="input" autoFocus value={shown} placeholder="ENG 102, Front desk team…" onChange={(e) => setName(e.target.value)} />
@@ -124,12 +133,20 @@ function NewProjectDialog() {
           <button className="btn sm" onClick={close}>
             Cancel
           </button>
+          {onMade ? (
+            <button className="btn primary sm" disabled={busy || !shown.trim()} onClick={() => go(null)}>
+              {mode === 'new' ? 'Choose where to make it' : 'Use this folder'}
+            </button>
+          ) : (
+          <>
           <button className="btn sm" disabled={busy || !shown.trim()} onClick={() => go('sheet')}>
             <Sheet size={13} /> {mode === 'new' ? 'Make it, with a spreadsheet' : 'Save, new spreadsheet'}
           </button>
           <button className="btn primary sm" disabled={busy || !shown.trim()} onClick={() => go('doc')}>
             {mode === 'new' ? 'Choose where, then start a document' : 'Save, new document'}
           </button>
+          </>
+          )}
         </div>
       </div>
     </div>

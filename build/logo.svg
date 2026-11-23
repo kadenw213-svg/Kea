@@ -10,7 +10,7 @@
       <stop offset="1" stop-color="#8b9199"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="63" height="63" rx="15" fill="url(#kea-bg)" stroke="#ffffff" stroke-opacity="0.08"/>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="0" fill="url(#kea-bg)" stroke="#ffffff" stroke-opacity="0.08"/>
   <g fill="none" stroke="url(#kea-silver)" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7">
     <!-- skull -->
     <path d="M30 15.6c-1.6-3-5.2-4.4-8.4-3.2-2 .8-3.4 2.4-4 4.4"/>

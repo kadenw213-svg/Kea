@@ -1275,6 +1275,11 @@ async function begin(job) {
             if (inWorker()) {
               workerTally.add(ev);
               backendTally[ranOn].add(ev);
+            } else {
+              // (The person's own Claude: counted for the Usage menu, Kea 0.101.)
+              try {
+                require('../usageTally.cjs').recordResult(`scholar.${String(entry.task || 'job')}`, ev);
+              } catch {}
             }
             if (ev.num_turns) entry.turns = ev.num_turns;
           } else if (ev.type === 'assistant') {

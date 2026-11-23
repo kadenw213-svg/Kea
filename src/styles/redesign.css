@@ -627,3 +627,243 @@ html .cal-legend {
     display: none;
   }
 }
+
+/* ===========================================================================================================
+   Kea 0.101 polish: what the screenshot audit of every place (dark and light) found clashing.
+   =========================================================================================================== */
+
+/* ---------- Document surfaces on dark themes: a soft slate that sits with the muted photos ---------- */
+/* (Was #1e1f20 / #18191a, near black, which read as a hole in the scene. The black theme keeps its blacks.) */
+html[data-theme='dark']:not([data-palette='black']) {
+  --doc-paper: #26292d;
+  --doc-paper-2: #2e3135;
+  --doc-rule: #474b51;
+}
+html[data-theme='dark']:not([data-palette='black']) .doc-page:not(.paper-light) {
+  --paper: var(--doc-paper);
+  --tint: var(--doc-paper-2);
+  --rule: var(--doc-rule);
+  --ink: #e6e7e8;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+html[data-theme='dark']:not([data-palette='black']) .sheet-editor {
+  --grid-bg: var(--doc-paper);
+  --grid-line: #363a3f;
+  --head-bg: var(--doc-paper-2);
+}
+/* PDF and textbook pages on dark: inverted a little less (white paper becomes #242424, not #1a1a1a). */
+html[data-theme='dark']:not([data-palette='black']) .pdf-canvas.dark,
+html[data-theme='dark']:not([data-palette='black']) .pdf-scroll.dark .text-ann.cover,
+html[data-theme='dark']:not([data-palette='black']) .st-reading-pages.dark .rp-page {
+  filter: invert(0.86) hue-rotate(180deg);
+}
+html[data-theme='dark']:not([data-palette='black']) .pdf-scroll.dark .pdf-page {
+  background: #242424;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+html[data-theme='dark']:not([data-palette='black']) .pdf-scroll.dark .ann-whiteout {
+  fill: #242424;
+}
+/* Slides: the stage around the slide is the scene, not a black box; square. */
+html .slide-stage,
+html .slide-frame {
+  border-radius: 0;
+}
+html.has-bg[data-theme] .slide-stage {
+  background: transparent;
+}
+/* The photo editor's pasteboard: a neutral grey of the theme, not a black slab on light themes. */
+html .ph-stage {
+  border-radius: 0;
+  background: #25272a;
+}
+html[data-theme='light'] .ph-stage {
+  background: #d7d9dd;
+}
+
+/* ---------- Leftover rounding ---------- */
+html .seg-toggle,
+html .seg-toggle button,
+html .ai-sidebar .seg,
+html .hub-tabs .chip,
+html .hub-count,
+html .ml-count,
+html .cls-go-btn,
+html .grade-big,
+html .needs-online,
+html .welcome-card,
+html .welcome-icon,
+html .welcome-check,
+html .sstart-box,
+html .scat-mini .chip,
+html .scat-card,
+html .cal-num,
+html .wk-dow b {
+  border-radius: 0;
+}
+html .seg-toggle {
+  padding: 0;
+  gap: 0;
+  border: 1px solid var(--glass-line);
+  background: transparent;
+}
+html .seg-toggle button {
+  width: 28px;
+  height: 26px;
+}
+html .seg-toggle button.on {
+  background: var(--active);
+  color: var(--text);
+}
+
+/* ---------- Home: the Kea cloud row lines up with the others ---------- */
+/* (".src span" made the logo's own span stretch, centring the mark and pushing the label right.) */
+html .src .kea-logo {
+  flex: 0 0 auto;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* ---------- Boxes that were solid: glass like every other panel ---------- */
+html .needs-online,
+html .grade-big,
+html .welcome-card {
+  border: 1px solid var(--glass-line);
+  border-top-color: var(--glass-top);
+  background: var(--glass-sheen), var(--card);
+  box-shadow: none;
+}
+html.bg-acrylic .needs-online,
+html.bg-acrylic .grade-big,
+html.bg-acrylic .welcome-card,
+html.bg-acrylic .cls-go-btn {
+  backdrop-filter: var(--glass-blur);
+}
+html .grade-big:hover,
+html .welcome-card:hover {
+  background: var(--glass-sheen), var(--card);
+  box-shadow: inset 0 0 0 999px var(--hover);
+}
+/* Class page "Study" / "Readings": a glass strip with the class colour as a left bar, not a tinted slab. */
+html .cls-go-btn {
+  padding: 10px 14px;
+  border: 1px solid var(--glass-line);
+  border-top-color: var(--glass-top);
+  border-left: 3px solid var(--k);
+  background: var(--glass-sheen), var(--card);
+}
+html .cls-go-btn:hover,
+html .cls-go-btn.on {
+  background: var(--glass-sheen), var(--card);
+  box-shadow: inset 0 0 0 999px var(--hover);
+}
+html .cls-go-btn b {
+  font-size: 14px;
+}
+
+/* ---------- First run: slim choices, not big slabs ---------- */
+html .welcome-card {
+  padding: 12px 14px;
+  gap: 12px;
+  align-items: center;
+}
+html .welcome-card.on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 999px var(--accent-soft);
+}
+html .welcome-icon {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+}
+html .welcome-text strong {
+  font: var(--t-body-strong);
+  font-size: 14px;
+}
+html .welcome-text span {
+  font-size: 12.5px;
+  line-height: 17px;
+}
+html .welcome-check {
+  width: 16px;
+  height: 16px;
+}
+html .welcome h1 {
+  font: var(--t-title);
+  font-weight: 400;
+}
+html .welcome-go {
+  min-width: 160px;
+}
+
+/* ---------- Settings: a normal-size search box, rows of one height ---------- */
+html .sstart-hero h2 {
+  font: var(--t-subtitle);
+  font-size: 18px;
+}
+html .sstart-box {
+  height: 36px;
+  padding: 0 8px 0 12px;
+  border-color: var(--glass-line);
+  border-bottom-color: var(--border-strong);
+}
+html .sstart-box:focus-within {
+  border-color: var(--glass-line);
+  border-bottom-color: var(--accent);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+html .sstart-box input {
+  font-size: 14px;
+}
+html .srow {
+  min-height: 48px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+html .select,
+html .input {
+  height: 28px;
+}
+html textarea.input {
+  height: auto;
+}
+html .snav-item {
+  min-height: 32px;
+}
+html .scat-card {
+  min-height: 0;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+/* ---------- Calendar: today in the accent (Windows' calendar), not a black or white tile ---------- */
+html .cal-day.today .cal-num,
+html .wk-dow.today b {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* ---------- Background photo credits (Settings → Help & about) ---------- */
+html .about-credits-head {
+  margin: 10px 0 0;
+  font: var(--t-body-strong);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+/* ---------- Status bars: a slim pane, so their small text never sits on a bright photo ---------- */
+html.has-bg .statusbar {
+  background: var(--glass-sheen), var(--pane);
+  border-top: 1px solid var(--glass-line);
+  color: var(--text-2);
+}
+html.bg-acrylic .statusbar {
+  backdrop-filter: var(--glass-blur);
+}
+/* Light themes over bright daytime photos: the rail's quieter labels need a step more contrast. */
+html[data-theme='light'] .rail-item {
+  color: var(--text-2);
+}
+html[data-theme='light'] .rail-item:hover {
+  background: rgba(255, 255, 255, 0.45);
+}

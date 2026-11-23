@@ -7,6 +7,7 @@ import './styles/settings.css';
 import './styles/shell.css';
 import './styles/hub.css';
 import './styles/redesign.css';
+import './styles/studio.css';
 import { loadSettings } from './lib/settings';
 
 // Settings load first so the app starts with the right look and behaviour.

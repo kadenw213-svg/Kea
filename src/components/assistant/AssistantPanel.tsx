@@ -9,6 +9,8 @@ import { addAttachment, isAttachable, ATTACHABLE, type Attachment } from '../../
 import { useAssistant, useAssistantOpen, setAssistantOpen, emptyChat, draftOf, setDraft, setFocus, INTERNAL_STEPS, type ChatItem } from './assistantStore';
 import { AssignmentButton, AssignmentChip, AssignmentPicker } from './AssignmentPicker';
 import { ProjectChip } from './ProjectChip';
+import { ChatTitle, ChatEmpty } from './ChatPage';
+import { UsageMenu } from './UsageMenu';
 import { useAssignments, fileKey } from '../../lib/assignmentContext';
 import { useKeaModes } from '../../lib/modes';
 import '../../styles/ai.css';
@@ -54,12 +56,17 @@ const NAMES: Record<string, string> = {
 };
 const stepName = (n = '') => NAMES[n] || n.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
-/** The Claude Assistant (Ctrl+Shift+J): talk to Claude about the open file, and let it read and edit it. */
-export function AssistantPanel() {
-  const open = useAssistantOpen();
+/**
+ * The Claude Assistant (Ctrl+Shift+J): talk to Claude about the open file, and let it read and edit it. `page`: the
+ * same chat filling a Claude tab (Home's Ask Claude bar, Kea 0.101), pinned to that tab (`tabId`).
+ */
+export function AssistantPanel({ tabId: pinned, page = false }: { tabId?: string; page?: boolean } = {}) {
+  const openHere = useAssistantOpen();
+  const open = page || openHere;
   const key = useAssistant((s) => s.key);
-  const activeId = useTabs((s) => s.activeId);
-  const tab = useTabs((s) => s.tabs.find((t) => t.id === s.activeId));
+  const frontId = useTabs((s) => s.activeId);
+  const activeId = pinned ?? frontId;
+  const tab = useTabs((s) => s.tabs.find((t) => t.id === activeId));
   const chat = useAssistant((s) => s.chats[activeId]) || emptyChat();
   const hooks = editorRegistry.get(activeId)?.ai;
   // Each file has its own unsent message.
@@ -190,7 +197,7 @@ export function AssistantPanel() {
 
   return (
     <aside
-      className={`ai-sidebar assistant ${open ? 'open' : ''} ${dropHere ? 'drop-here' : ''}`}
+      className={`ai-sidebar assistant ${open ? 'open' : ''} ${page ? 'page' : ''} ${dropHere ? 'drop-here' : ''}`}
       aria-hidden={!open}
       onDragOver={(e) => {
         if (!hasFiles(e) || !usable) return;
@@ -212,29 +219,28 @@ export function AssistantPanel() {
       }}
     >
       {dropHere && <div className="as-drop">Drop to give Claude {usable ? 'these files' : ''}</div>}
-      <div className="ai-resize" title="Drag to resize" onPointerDown={startResize} onDoubleClick={() => useSettings.getState().set({ 'ai.sidebarWidth': 380 })} />
+      {!page && <div className="ai-resize" title="Drag to resize" onPointerDown={startResize} onDoubleClick={() => useSettings.getState().set({ 'ai.sidebarWidth': 380 })} />}
       <div className="ai-inner">
         <div className="ai-head as-head">
+          {page && <ChatTitle tabId={activeId} />}
           <div className="as-head-tools">
             {chat.items.length > 0 && (
               <button className="icon-btn sm" title="New conversation" onClick={() => clear(activeId)}>
                 <Trash2 size={15} />
               </button>
             )}
-            {onPlan && (
-              <button className={`icon-btn sm ${showBars ? 'on' : ''}`} title={showBars ? 'Hide plan usage' : 'Show your plan’s 5-hour and weekly usage'} onClick={() => useSettings.getState().set({ 'assistant.usageBars': !showBars })}>
-                <Gauge size={15} />
-              </button>
-            )}
+            <UsageMenu onPlan={onPlan} showBars={showBars} />
             <button className="icon-btn sm" title={`Assistant settings (${modelName(model)} ${onPlan ? `on your Claude plan${plan?.email ? `, ${plan.email}` : ''}` : 'on your API key'})`} onClick={() => openSettings('assistant')}>
               <Settings2 size={15} />
             </button>
-            <button className="icon-btn sm" title="Close (Ctrl+Shift+J)" onClick={() => setAssistantOpen(false)}>
-              <X size={16} />
-            </button>
+            {!page && (
+              <button className="icon-btn sm" title="Close (Ctrl+Shift+J)" onClick={() => setAssistantOpen(false)}>
+                <X size={16} />
+              </button>
+            )}
           </div>
         </div>
-        {usable && <AssignmentChip tabId={activeId} onOpen={() => setPicking(true)} />}
+        {usable && !page && <AssignmentChip tabId={activeId} onOpen={() => setPicking(true)} />}
         {usable && <ProjectChip tabId={activeId} />}
 
         {onPlan && plan && (!plan.installed || !plan.loggedIn) ? (
@@ -245,6 +251,9 @@ export function AssistantPanel() {
           <>
             <div className="ai-list as-list" ref={listRef}>
               {!chat.items.length && (
+                page ? (
+                  <ChatEmpty tabId={activeId} />
+                ) : (
                 <div className="ai-empty">
                   <div>{usable ? `Ask Claude about this ${hooks?.noun || 'file'}, or tell it what to change.` : 'Open a file to work on it with Claude.'}</div>
                   <div className="muted">
@@ -260,6 +269,7 @@ export function AssistantPanel() {
                     </div>
                   )}
                 </div>
+                )
               )}
               {setting('assistant.showSteps')
                 ? chat.items.map((it) => <Item key={it.id} it={it} tabId={activeId} />)
@@ -304,7 +314,7 @@ export function AssistantPanel() {
             )}
             {picking && usable && <AssignmentPicker tabId={activeId} onClose={() => setPicking(false)} />}
             <div className="ai-composer">
-              {usable && !chat.busy && classes && <AssignmentButton tabId={activeId} onOpen={() => setPicking((v) => !v)} />}
+              {usable && !page && !chat.busy && classes && <AssignmentButton tabId={activeId} onOpen={() => setPicking((v) => !v)} />}
               {usable && !chat.busy && (
                 <button className="icon-btn sm" title="Attach an image or PDF: a flier to recreate, concept art, a brief (or paste / drop it here)" onClick={pickFiles}>
                   <Paperclip size={16} />
@@ -315,7 +325,7 @@ export function AssistantPanel() {
                 rows={1}
                 value={input}
                 disabled={!usable}
-                placeholder={usable ? `Message Claude about this ${hooks?.noun || 'file'}…` : 'Open a file first'}
+                placeholder={page ? 'Message Claude…' : usable ? `Message Claude about this ${hooks?.noun || 'file'}…` : 'Open a file first'}
                 onChange={(e) => {
                   setInput(e.target.value);
                   e.target.style.height = 'auto';

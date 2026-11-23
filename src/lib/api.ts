@@ -36,6 +36,20 @@ export interface DirEntry {
   /** Cloud file that isn't downloaded to this PC yet. */
   online?: boolean;
 }
+export interface UsageTotals {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  calls: number;
+  cost: number;
+}
+export interface UsageSummary {
+  days: number;
+  total: UsageTotals;
+  byFeature: Record<string, UsageTotals>;
+  byModel: Record<string, UsageTotals>;
+}
 export interface KnownFolder {
   id: string;
   label: string;
@@ -99,6 +113,12 @@ export interface KeaApi {
   setZoom(factor: number): void;
   /** The window's caption buttons (Windows): the theme's background and text colours. */
   setTitleOverlay?(color: string, symbolColor: string): void;
+  /** Approximate Claude usage on this PC (electron/usageTally.cjs). */
+  usage: {
+    summary(days: number): Promise<UsageSummary>;
+    add(a: { feature: string; ev?: any; byModel?: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>; model?: string; tools?: string[]; calls?: number }): Promise<boolean>;
+    forget(): Promise<{ ok: boolean; deleted?: number; error?: string }>;
+  };
   settings: {
     get(): Promise<Record<string, any>>;
     set(patch: Record<string, any>): Promise<Record<string, any>>;
@@ -708,7 +728,7 @@ export interface HubApi {
    * Settings → Feedback, to the Kea account server's owner (signed in only). 404: the server is too old for it; 429:
    * too many reports (data.until, when sending works again, for the per-minute pause).
    */
-  feedback(a: { kind: 'bug' | 'idea' | 'other'; summary: string; details: string; info?: string; log?: string }): Promise<HubResult<{ ok: true; id: string }>>;
+  feedback(a: { kind: 'bug' | 'idea' | 'other'; summary: string; details: string; info?: string; log?: string; context?: any }): Promise<HubResult<{ ok: true; id: string }>>;
   openSupport(): Promise<HubResult<boolean>>;
   changes(): Promise<HubResult<HubTermsChanges>>;
   openTerms(since?: number): Promise<HubResult<void>>;

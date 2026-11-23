@@ -237,6 +237,7 @@ async function teach(id, req, onText = () => {}) {
     const ask = String(req.ask || '').trim().slice(0, 2000);
     if (!ask) return { error: 'Type a question first.' };
     const r = await turn(id, ask, lesson.session, onText);
+    tallied(r);
     if (r.error || r.stopped) return fallback(r);
     const next = { ...lesson, session: r.session || lesson.session, followups: [...(lesson.followups || []), { ask, text: bodyOf(r.text), checks: checksOf(r.text), at: new Date().toISOString() }] };
     study.saveLesson(k, next);
@@ -245,10 +246,18 @@ async function teach(id, req, onText = () => {}) {
   const w = study.questionOf(k) || (req.question ? { item: req.question, courseCode: req.courseCode || '', chapter: req.question.chapter || null } : null);
   if (!w) return { error: 'Kea couldn’t find this question.' };
   const r = await turn(id, lessonPrompt(w, req), null, onText);
+  tallied(r);
   if (r.error || r.stopped) return fallback(r);
   const lesson = { id: `t${Date.now().toString(36)}`, focus: req.focus ? String(req.focus).slice(0, 300) : '', model: settings.get('study.teach.model', 'claude-sonnet-5-5'), at: new Date().toISOString(), session: r.session, text: bodyOf(r.text), checks: checksOf(r.text), followups: [] };
   study.saveLesson(k, lesson);
   return { lesson };
+}
+
+/** A lesson on the person's own Claude, counted for the Usage menu (Kea 0.101). */
+function tallied(r) {
+  try {
+    if (r?.usage?.byModel) require('../usageTally.cjs').record('study.teach', r.usage.byModel);
+  } catch {}
 }
 
 function stop(id) {

@@ -3,7 +3,8 @@
 // Work and the owner's audit, then Notifications, Settings and the account at the bottom. Places are the Home,
 // School (scholar) and Work tabs underneath; the tab strip no longer shows them.
 import { useEffect, useState } from 'react';
-import { Home, CalendarDays, GraduationCap, Briefcase, Radar, Bell, Settings as SettingsIcon } from 'lucide-react';
+import { Home, CalendarDays, GraduationCap, Briefcase, Radar, Bell, Settings as SettingsIcon, MessageSquareWarning } from 'lucide-react';
+import { noteAction, snapshotActivity } from '../lib/activity';
 import { useTabs } from '../store';
 import { useAreas, useSetupDone } from '../lib/areas';
 import { openAudit, openWork, useAuditOn, useKeaModes, workAvailable } from '../lib/modes';
@@ -29,6 +30,7 @@ export function usePlace(): Place | null {
 
 /** Go to a place (also from the shortcuts and the command palette). */
 export function goPlace(p: Place) {
+  noteAction(`went to ${p}`);
   if (p === 'home') return useTabs.getState().setActive('home');
   if (p === 'calendar') return openScholar({ name: 'calendar' });
   if (p === 'notifications') return openScholar({ name: 'inbox' });
@@ -90,6 +92,17 @@ export function NavRail() {
         <Bell size={20} strokeWidth={place === 'notifications' ? 2.1 : 1.7} />
         {unread > 0 && <span className="rail-badge">{unread > 99 ? '99+' : unread}</span>}
         <span className="rail-label">Alerts</span>
+      </button>
+      <button
+        className="rail-item rail-feedback"
+        title="Report a bug or suggest something: it goes straight to Kea’s developer"
+        onClick={() => {
+          snapshotActivity();
+          openSettings('feedback');
+        }}
+      >
+        <MessageSquareWarning size={20} strokeWidth={1.7} />
+        <span className="rail-label">Feedback</span>
       </button>
       <button className="rail-item" title="Settings (Ctrl+,)" onClick={() => openSettings()}>
         <SettingsIcon size={20} strokeWidth={1.7} />

@@ -9,6 +9,7 @@
 import { create } from 'zustand';
 import { api } from './api';
 import { useTabs, type AssistantTool } from '../store';
+import { useSettings } from './settings';
 
 export interface Project {
   dir: string;
@@ -75,6 +76,37 @@ export function projectOfTab(tabId: string): Project | null {
 async function look(dir: string) {
   const p = await findProject(dir);
   useProjects.setState((s) => ({ byDir: { ...s.byDir, [dir]: p }, version: s.version + 1 }));
+  if (p) rememberProject(p);
+}
+
+/** A context folder Kea knows, for Home's Ask Claude bar (setting `projects.known`, newest first). */
+export interface KnownProject {
+  dir: string;
+  name: string;
+  kind: Project['kind'];
+  at: number;
+}
+export const knownProjects = (): KnownProject[] => (Array.isArray(useSettings.getState().values['projects.known']) ? useSettings.getState().values['projects.known'] : []);
+
+/** Remember a project (made, opened or found) so Home's bar lists it. At most 40, the most recently used first. */
+export function rememberProject(p: Pick<Project, 'dir' | 'name' | 'kind'>, used = false) {
+  const list = knownProjects();
+  const old = list.find((k) => k.dir.toLowerCase() === p.dir.toLowerCase());
+  if (old && !used && old.name === p.name && old.kind === p.kind) return;
+  const next = [{ dir: p.dir, name: p.name, kind: p.kind, at: used || !old ? Date.now() : old.at }, ...list.filter((k) => k !== old)].sort((a, b) => b.at - a.at).slice(0, 40);
+  useSettings.getState().set({ 'projects.known': next });
+}
+
+/** Forget a context folder (Home's bar; the folder and its files stay as they are). */
+export function forgetProject(dir: string) {
+  useSettings.getState().set({ 'projects.known': knownProjects().filter((k) => k.dir !== dir) });
+}
+
+/** Look a folder up now (the Ask Claude bar, before a chat about it opens). */
+export async function loadProject(dir: string) {
+  const p = await findProject(dir);
+  useProjects.setState((s) => ({ byDir: { ...s.byDir, [dir]: p }, version: s.version + 1 }));
+  return p;
 }
 // Every open file's folder is looked up once (and again after its project file changes through Kea).
 useTabs.subscribe((s, prev) => {
@@ -91,6 +123,7 @@ export async function saveProject(p: Project): Promise<Project> {
   const body = { name: p.name, kind: p.kind, ...(p.course ? { course: p.course } : {}), exclude: p.exclude, ...(p.links?.length ? { links: p.links } : {}), ...(p.contacts ? { contacts: true } : {}), ...(p.shared ? { shared: p.shared } : {}) };
   await api.writeFile(join(p.dir, PROJECT_FILE), new TextEncoder().encode(JSON.stringify(body, null, 2)));
   useProjects.setState((s) => ({ byDir: Object.fromEntries(Object.entries({ ...s.byDir, [p.dir]: p }).map(([d, v]) => [d, v && v.dir === p.dir ? p : v])), version: s.version + 1 }));
+  rememberProject(p, true);
   return p;
 }
 

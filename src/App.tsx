@@ -12,6 +12,7 @@ import { openScholar } from './components/scholar/scholarStore';
 import { UpdateDialog, initUpdates } from './components/Updates';
 import { LookupPanel } from './components/lookup/LookupPanel';
 import { AssistantPanel } from './components/assistant/AssistantPanel';
+import { ClaudePage } from './components/ClaudePage';
 import { ClaudeWorking } from './components/assistant/ClaudeWorking';
 import { toggleAssistant, askAboutSelection } from './components/assistant/assistantStore';
 import { SettingsDialog } from './components/settings/SettingsDialog';
@@ -291,6 +292,8 @@ export function App() {
               >
                 <ScholarScreen />
               </Suspense>
+            ) : t.kind === 'claude' ? (
+              <ClaudePage tab={t} />
             ) : t.kind === 'audit' ? (
               <Suspense
                 fallback={

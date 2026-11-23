@@ -3,7 +3,7 @@
 // then show white. So solid dark areas, too big to be text, keep their real colour: a redaction stays black.
 
 /** The page filter Kea's PDF viewer uses on dark pages. */
-export const DARK_PAGE_FILTER = 'invert(0.9) hue-rotate(180deg)';
+export const DARK_PAGE_FILTER = 'invert(0.86) hue-rotate(180deg)';
 
 /**
  * Which pixels of an RGBA picture are in a solid dark area at least `minRun` pixels wide and tall (a 1 per pixel):

@@ -12,7 +12,7 @@ import { timeAgo } from '../../lib/util';
 
 export function KeaCloudMark({ size = 17 }: { size?: number }) {
   // Kea's own logo, the same mark Kea cloud has in Settings → Where your things sync (each drive shows its own logo).
-  return <Logo size={size} className="kc-mark" />;
+  return <Logo size={size} className="kc-mark" bare />;
 }
 
 export function StateIcon({ s, size = 14 }: { s: KeaCloudStatus['state']; size?: number }) {

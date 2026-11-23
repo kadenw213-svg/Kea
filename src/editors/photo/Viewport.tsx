@@ -39,8 +39,8 @@ export function Viewport({ engine: e, active }: { engine: Engine; active: boolea
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
-    g.fillStyle = '#161718';
-    g.fillRect(0, 0, W, H);
+    // (The pasteboard around the picture is the stage's own colour, .ph-stage in CSS, so it follows the theme.)
+    g.clearRect(0, 0, W, H);
     const dw = e.doc.w * zoom,
       dh = e.doc.h * zoom;
     // Checkerboard shows through transparent areas.

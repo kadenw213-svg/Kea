@@ -35,6 +35,8 @@ import { kindFor, extOf } from '../lib/fileTypes';
 import { Preview } from './home/Preview';
 import { ConnectDrives } from './home/ConnectDrives';
 import { DriveLogo } from './home/DriveLogo';
+import { AskBar } from './home/AskBar';
+import { NewProjectDialog } from './home/NewProject';
 import { TemplateGallery } from './home/Templates';
 import { Dashboard } from './home/Dashboard';
 import { CreateBar } from './home/Create';
@@ -433,6 +435,8 @@ export function HomeScreen({ visible }: { visible: boolean }) {
             <p className="home-sub">{today}</p>
           </header>
         )}
+        <AskBar />
+        <NewProjectDialog />
 
         <Dashboard showSchool={showScholar} />
 

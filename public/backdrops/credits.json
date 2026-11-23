@@ -1,6 +1,7 @@
 [
   {
     "file": "photo-1.jpg",
+    "set": "dark",
     "name": "Lake Clearwater",
     "place": "Canterbury, New Zealand",
     "artist": "Michal Klajban",
@@ -11,6 +12,7 @@
   },
   {
     "file": "photo-2.jpg",
+    "set": "dark",
     "name": "Fog over Loch Tay",
     "place": "Scottish Highlands",
     "artist": "Michal Klajban",
@@ -21,6 +23,7 @@
   },
   {
     "file": "photo-3.jpg",
+    "set": "dark",
     "name": "Valley in fog",
     "place": "Vosges, France",
     "artist": "Thomas Bresson",
@@ -31,6 +34,7 @@
   },
   {
     "file": "photo-4.jpg",
+    "set": "dark",
     "name": "Driftwood at dusk",
     "place": "Kaikōura, New Zealand",
     "artist": "Michal Klajban",
@@ -41,12 +45,68 @@
   },
   {
     "file": "photo-5.jpg",
+    "set": "dark",
     "name": "Breiðamerkurjökull glacier",
     "place": "Iceland",
     "artist": "Jakub Hałun",
     "license": "CC BY 4.0",
     "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
     "source": "https://commons.wikimedia.org/wiki/File:Brei%C3%B0amerkurj%C3%B6kull_glacier%2C_Iceland%2C_20240719_1514_2687.jpg",
+    "changes": "Cropped and colour-softened for Kea"
+  },
+  {
+    "file": "light-1.jpg",
+    "set": "light",
+    "name": "Winter in the Tatra Mountains",
+    "place": "Poland",
+    "artist": "Radek Kucharski",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Winter_in_Tatry_Mountains_-_Poland.jpg",
+    "changes": "Cropped and colour-softened for Kea"
+  },
+  {
+    "file": "light-2.jpg",
+    "set": "light",
+    "name": "Lac de Veret",
+    "place": "Haute-Savoie, France",
+    "artist": "Tournasol7",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Pointe_de_Veret_from_Lac_de_Veret_(5).jpg",
+    "changes": "Cropped and colour-softened for Kea"
+  },
+  {
+    "file": "light-3.jpg",
+    "set": "light",
+    "name": "Second Beach",
+    "place": "Olympic National Park, Washington",
+    "artist": "King of Hearts",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Second_Beach_Olympic_June_2018_008.jpg",
+    "changes": "Cropped and colour-softened for Kea"
+  },
+  {
+    "file": "light-4.jpg",
+    "set": "light",
+    "name": "Scheideggseeli",
+    "place": "Graubünden, Switzerland",
+    "artist": "Dominicus Johannes Bergsma",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Scheideggseeli_(1).jpg",
+    "changes": "Cropped and colour-softened for Kea"
+  },
+  {
+    "file": "light-5.jpg",
+    "set": "light",
+    "name": "Mont Blanc from Lac de Joux Plane",
+    "place": "Haute-Savoie, France",
+    "artist": "Krzysztof Golik",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+    "source": "https://commons.wikimedia.org/wiki/File:Massif_du_Mont-Blanc_from_Lac_de_Joux_Plane_03.jpg",
     "changes": "Cropped and colour-softened for Kea"
   }
 ]

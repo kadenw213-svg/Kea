@@ -1400,16 +1400,22 @@ function register() {
   }));
   // Settings → Feedback: a bug report, idea or anything else, to the Kea account server's owner (POST /v1/feedback,
   // signed in only). A server too old for it answers 404, and the panel opens the GitHub page instead.
-  handleApp(ipcMain, 'hub:feedback', wrap((a) => {
+  handleApp(ipcMain, 'hub:feedback', wrap(async (a) => {
     if (!isSignedIn()) throw new HubError('Sign in to your Kea account to send feedback.', 401, { needsOnline: true });
     const text = (v, max, tail = false) => (typeof v === 'string' && v.trim() ? (tail ? v.slice(-max) : v.slice(0, max)) : undefined);
-    return req('POST', '/v1/feedback', {
+    const body = {
       kind: ['bug', 'idea', 'other'].includes(a.kind) ? a.kind : 'other',
       summary: text(a.summary, 120) ?? '',
       details: text(a.details, 10_000) ?? '',
       info: text(a.info, 1000),
       log: text(a.log, 8000, true),
-    });
+    };
+    // What they were doing (Kea 0.101), when they left it ticked: only to a server that takes it (features:
+    // feedbackContext), kept under 8 KB.
+    const ctx = a.context && typeof a.context === 'object' ? JSON.stringify(a.context) : '';
+    const takes = ctx ? (await require('./hubOrg.cjs').accountFeatures().catch(() => [])).includes('feedbackContext') : false;
+    if (ctx && ctx.length <= 8000 && takes) body.context = JSON.parse(ctx);
+    return req('POST', '/v1/feedback', body);
   }));
   handleApp(ipcMain, 'hub:changes', wrap(() => req('GET', '/v1/terms/changes')));
   handleApp(ipcMain, 'hub:openTerms', wrap(({ since }) => shell.openExternal(`${hubUrl()}/terms${since ? `?since=${Number(since)}` : ''}`)));

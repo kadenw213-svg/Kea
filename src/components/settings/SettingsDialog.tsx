@@ -7,7 +7,7 @@ import { BookOpen, Circle, Clapperboard, Sparkles, Cloud, FileCode2, FileText, F
 // Only the icons the sections use (importing the whole icon set put ~1,500 icons into Kea's start-up code).
 const Icons = { BookOpen, Circle, Clapperboard, Sparkles, Cloud, FileCode2, FileText, FileType2, GraduationCap, Home, Info, Mic, Palette, Plug, Presentation, RefreshCw, Save, Settings, Sheet, Shield, SpellCheck, Wand2, UserCircle };
 import { X, Search, RotateCcw, FolderOpen, ExternalLink } from 'lucide-react';
-import { SECTIONS, Field, Section, useSettings, DEFAULTS } from '../../lib/settings';
+import { SECTIONS, Field, Section, useSettings, DEFAULTS, useThemeDark } from '../../lib/settings';
 import { CATEGORIES, POPULAR, Hit, categoryOf, sectionById, searchSettings, suggestChange, hintOf, modelAvailable, askModel } from '../../lib/settingsSearch';
 import { api } from '../../lib/api';
 import { ModelSettings } from '../lookup/ModelSettings';
@@ -703,9 +703,14 @@ export function SettingsDialog() {
   );
 }
 
-/** The background photos' authors and licences (public/backdrops/credits.json, from scripts/make-photo-backdrops.cjs). */
+/**
+ * The background photos' authors and licences (public/backdrops/credits.json, from scripts/make-photo-backdrops.cjs):
+ * the set the theme in use shows first, then the other theme's.
+ */
+type PhotoCredit = { file: string; set?: 'dark' | 'light'; name: string; place: string; artist: string; license: string; licenseUrl: string; source: string; changes: string };
 function PhotoCredits() {
-  const [list, setList] = useState<{ name: string; place: string; artist: string; license: string; licenseUrl: string; source: string; changes: string }[]>([]);
+  const [list, setList] = useState<PhotoCredit[]>([]);
+  const dark = useThemeDark();
   useEffect(() => {
     fetch('/backdrops/credits.json')
       .then((r) => r.json())
@@ -713,23 +718,30 @@ function PhotoCredits() {
       .catch(() => {});
   }, []);
   if (!list.length) return null;
+  const setOf = (c: PhotoCredit) => c.set || (c.file.startsWith('light-') ? 'light' : 'dark');
+  const groups = (dark ? (['dark', 'light'] as const) : (['light', 'dark'] as const)).map((set) => ({ set, items: list.filter((c) => setOf(c) === set) })).filter((g) => g.items.length);
   return (
     <div className="about-card">
       <div className="about-title">Background photos</div>
       <p>From Wikimedia Commons, used under their Creative Commons licences. Each was cropped and its colour softened for Kea.</p>
-      <ul className="about-credits">
-        {list.map((c) => (
-          <li key={c.source}>
-            <a href={c.source} target="_blank">
-              {c.name}, {c.place}
-            </a>{' '}
-            by {c.artist},{' '}
-            <a href={c.licenseUrl} target="_blank">
-              {c.license}
-            </a>
-          </li>
-        ))}
-      </ul>
+      {groups.map((g) => (
+        <Fragment key={g.set}>
+          <div className="about-credits-head">{g.set === 'dark' ? 'On dark themes' : 'On light themes'}</div>
+          <ul className="about-credits">
+            {g.items.map((c) => (
+              <li key={c.source}>
+                <a href={c.source} target="_blank">
+                  {c.name}, {c.place}
+                </a>{' '}
+                by {c.artist},{' '}
+                <a href={c.licenseUrl} target="_blank">
+                  {c.license}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </Fragment>
+      ))}
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { api } from '../../lib/api';
 import { toast, useTabs } from '../../store';
 import { NeedsOnline } from '../account/NeedsOnline';
 import { loadLocal, refreshHub, useHubStatus } from '../account/hubStore';
+import { feedbackContext } from '../../lib/activity';
+import { setting } from '../../lib/settings';
 
 const REPO = 'https://github.com/kadenw213-svg/kea';
 // Browsers and GitHub cut off very long links; longer reports go through the clipboard instead.
@@ -34,6 +36,9 @@ export function FeedbackPanel() {
   const [details, setDetails] = useState('');
   const [withInfo, setWithInfo] = useState(true);
   const [withLog, setWithLog] = useState(false);
+  // What they were doing (Kea 0.101): where they were and their last screens and tools. Settings → Privacy sets the default.
+  const [withDoing, setWithDoing] = useState(setting('feedback.includeActivity') !== false);
+  const [showDoing, setShowDoing] = useState(false);
   const [sending, setSending] = useState(false);
   // A plain line under the buttons: the limit was reached, or the report went to GitHub instead.
   const [note, setNote] = useState<{ text: string; warn?: boolean } | null>(null);
@@ -72,6 +77,12 @@ export function FeedbackPanel() {
     }
     window.open(url);
   };
+  const doing = () =>
+    feedbackContext({
+      version: info?.version,
+      os: info?.os,
+      settings: { theme: String(setting('appearance.theme') || 'dark'), backdrop: String(setting('appearance.backdrop') || 'photos'), provider: String(setting('assistant.provider') || 'plan') }
+    });
   const send = async () => {
     setSending(true);
     setNote(null);
@@ -82,7 +93,8 @@ export function FeedbackPanel() {
         details: details.trim(),
         info: withInfo && info ? infoLine().slice(0, MAX_INFO) : undefined,
         // (The end of the log: the newest lines.)
-        log: includeLog ? info!.logTail!.slice(-MAX_LOG) : undefined
+        log: includeLog ? info!.logTail!.slice(-MAX_LOG) : undefined,
+        context: withDoing ? doing() : undefined
       });
       if (r.ok) {
         toast('Sent. Thanks — the developer reads every report.', 'success');
@@ -131,6 +143,17 @@ export function FeedbackPanel() {
         <input type="checkbox" checked={withInfo} onChange={(e) => setWithInfo(e.target.checked)} /> Include Kea version and PC details
         {info && <span className="muted"> ({info.version}, {info.os}, {info.ramGb} GB RAM)</span>}
       </label>
+      <label className="fb-check">
+        <input type="checkbox" checked={withDoing} onChange={(e) => setWithDoing(e.target.checked)} /> Include what I was doing in Kea
+        <span className="muted">
+          {' '}
+          (where you were and your last screens and tools; never file names or contents){' '}
+          <a href="#" onClick={(e) => (e.preventDefault(), setShowDoing(!showDoing))}>
+            {showDoing ? 'Hide' : 'See it'}
+          </a>
+        </span>
+      </label>
+      {showDoing && <pre className="fb-doing">{JSON.stringify(doing(), null, 2)}</pre>}
       {kind === 'bug' && (
         <label className="fb-check">
           <input type="checkbox" checked={withLog} onChange={(e) => setWithLog(e.target.checked)} /> Include the troubleshooting log
