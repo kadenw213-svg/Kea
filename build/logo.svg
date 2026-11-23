@@ -1,38 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0.6 3.2 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="plume" x1="0.2" y1="0" x2="0.8" y2="1">
-      <stop offset="0" stop-color="#acc777"/>
-      <stop offset="0.55" stop-color="#7c984b"/>
-      <stop offset="1" stop-color="#55702f"/>
+    <linearGradient id="kea-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#17191c"/>
+      <stop offset="1" stop-color="#070809"/>
     </linearGradient>
-    <linearGradient id="wing" x1="0" y1="0" x2="0.4" y2="1">
-      <stop offset="0" stop-color="#6b8740"/>
-      <stop offset="1" stop-color="#3b5220"/>
-    </linearGradient>
-    <linearGradient id="beak" x1="0" y1="0" x2="0.5" y2="1">
-      <stop offset="0" stop-color="#e5e8ec"/>
-      <stop offset="1" stop-color="#6c737b"/>
-    </linearGradient>
-    <linearGradient id="flash" x1="0" y1="0" x2="1" y2="0.6">
-      <stop offset="0" stop-color="#ffbe74"/>
-      <stop offset="1" stop-color="#e0601c"/>
-    </linearGradient>
-    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.3"/>
-      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    <linearGradient id="kea-silver" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#f6f7f8"/>
+      <stop offset="0.5" stop-color="#c9ccd1"/>
+      <stop offset="1" stop-color="#8b9199"/>
     </linearGradient>
   </defs>
-  <!-- beak first; the head overlaps its base -->
-  <path d="M24 18.5 C15.2 16.5 7.8 21 6.2 29 C5.5 33 6.4 37.4 8.4 40.8 C9.8 36.4 12.6 33.2 17.5 31.9 L24 31 Z" fill="url(#beak)"/>
-  <path d="M16.6 32.7 C14.3 34.3 13.8 36.7 14.7 38.6 C17.7 38.1 20.8 36.2 22.5 34.2 Z" fill="#555c64"/>
-  <!-- the orange underwing, showing below the folded wing -->
-  <path d="M35 48.6 C43 46.8 52 47.8 59.8 51 C56.4 57.6 47.4 61.2 37.6 60.6 Z" fill="url(#flash)"/>
-  <!-- head and body -->
-  <path d="M19 27 C18.6 17.6 26.8 10 36.2 10.4 C45.2 10.8 50.2 18.2 50.6 26.8 C50.9 33.6 52.4 40 54.6 46.4 C48 50.6 40 53.4 33.4 57.6 C30 58.6 28 58.4 26.2 57.2 C25.4 48.6 23.2 40.8 19 33.4 Z" fill="url(#plume)"/>
-  <path d="M21.5 22 C24 14.6 30 11.4 36.2 11.6 C42 11.8 46 14.8 48 19.2 C43 16 36 15 30 17 C26 18.4 23.4 20.4 21.5 22 Z" fill="url(#shine)"/>
-  <!-- the folded wing with its feather tips -->
-  <path d="M38.5 29 C46 29.5 51.5 36 54 43 C55.6 47.4 56.6 50 57.4 52.4 L52.6 51.2 L51.2 54.6 L47.4 52.6 L45.4 56 L42 53 L39.4 56.4 C37.2 47.4 36.4 37.4 38.5 29 Z" fill="url(#wing)"/>
-  <path d="M41 33 C44 38 45.6 44.6 46.2 50.6 M44.6 32.6 C48.4 37.2 50.6 42.6 51.6 48.6" fill="none" stroke="#a9c27a" stroke-opacity="0.35" stroke-width="0.8" stroke-linecap="round"/>
-  <circle cx="29.2" cy="20.6" r="2.7" fill="#14171a"/>
-  <circle cx="30" cy="19.8" r="0.85" fill="#fff" fill-opacity="0.9"/>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15" fill="url(#kea-bg)" stroke="#ffffff" stroke-opacity="0.08"/>
+  <g fill="none" stroke="url(#kea-silver)" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7">
+    <!-- skull -->
+    <path d="M30 15.6c-1.6-3-5.2-4.4-8.4-3.2-2 .8-3.4 2.4-4 4.4"/>
+    <!-- long hooked upper beak (the kea's), and the short lower one -->
+    <path d="M17.6 16.8c-3.6.2-6.4 2.8-6.8 6.6-.2 2.2.6 4.2 2 5.6"/>
+    <path d="M17.6 16.8c1.4 1.6 1.8 3.8 1 5.8"/>
+    <path d="M15.4 25.6c-.8.8-1.2 2-1.2 3.2"/>
+    <circle cx="23.4" cy="16.2" r="1.25" stroke-width="1.3"/>
+    <!-- neck vertebrae -->
+    <path d="M29.6 18.2l.6 1.8M30.6 21.8l.8 1.8M31.9 25.3l1 1.7" stroke-width="1.9"/>
+    <!-- spine, sweeping into the tail -->
+    <path d="M34 28.6c5.2 2.4 9 6.6 11 12 1.4 3.8 2.6 8.6 6.2 14.4"/>
+    <!-- ribs -->
+    <path d="M35.6 30c-2 2.6-2.4 5.8-1.2 8.8M38.6 32c-1.8 2.8-2 6-.6 9M41.4 34.6c-1.4 2.8-1.4 5.8 0 8.4M43.6 37.8c-1 2.4-.8 4.8.4 7" stroke-width="1.3"/>
+    <!-- folded wing: leading edge and three feather shafts -->
+    <path d="M34.6 27.4c6.2-1.4 12.4.6 16.4 5.2"/>
+    <path d="M40 28.4c4 3.2 7.6 7.4 10.4 12.6M44 29.6c2.8 3.8 5 8.2 6.4 13.2M47.6 31.2c1.6 3.6 2.6 7.6 2.8 11.8" stroke-width="1.3"/>
+    <!-- leg and zygodactyl foot on a perch -->
+    <path d="M40.6 44.8l-1.4 4.8 2.6 3.4M39.2 49.6l-2.8 2.8"/>
+    <path d="M27.5 53.6h27" stroke="#7d838b" stroke-width="1.2"/>
+  </g>
 </svg>
