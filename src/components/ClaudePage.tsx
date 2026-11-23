@@ -4,7 +4,9 @@
 // (src/lib/workspaceTools.ts).
 import { useEffect } from 'react';
 import { editorRegistry, useTabs, type Tab } from '../store';
-import { workspaceTools } from '../lib/workspaceTools';
+import { workspaceTools, takeHandoff } from '../lib/workspaceTools';
+import { setting } from '../lib/settings';
+import { useAssistant, chatOf, moveChat, setAssistantOpen } from './assistant/assistantStore';
 import { useProjects } from '../lib/projects';
 import { AssistantPanel } from './assistant/AssistantPanel';
 import { ask } from '../lib/assistant';
@@ -22,7 +24,41 @@ export function openClaudeChat(folder: string | null, first?: string) {
   return id;
 }
 
+/**
+ * Hand the conversation to the file Claude made or opened (Kea 0.103): when Claude finishes a turn that made or opened
+ * a file, the chat moves into that file's sidebar, whole (what was said, what Claude was told, its session), the file
+ * takes the chat's context folder (the folder bar shows on it), and this Claude tab closes: it isn't needed any more.
+ * A turn that only answered stays here. Off with Settings → Home → "Move the chat into the file Claude makes".
+ */
+function handOff(chatId: string) {
+  if (setting('home.handoff') === false) return;
+  const file = takeHandoff(chatId);
+  if (!file) return;
+  const t = useTabs.getState();
+  const chatTab = t.tabs.find((x) => x.id === chatId);
+  const fileTab = t.tabs.find((x) => x.id === file);
+  if (!chatTab || !fileTab) return;
+  const inSplit = !!t.split && [t.split.left, t.split.right].includes(chatId);
+  const watching = t.activeId === chatId || t.activeId === file || inSplit;
+  if (chatTab.folder && !fileTab.folder) t.updateTab(file, { folder: chatTab.folder });
+  moveChat(chatId, file);
+  if (inSplit) t.closeSplit();
+  t.closeTab(chatId);
+  setAssistantOpen(true, file);
+  if (watching) useTabs.getState().setActive(file);
+}
+
 export function ClaudePage({ tab }: { tab: Tab }) {
+  // When a turn ends (busy goes off), hand the chat to the file Claude worked on, if it worked on one.
+  useEffect(() => {
+    const id = tab.id;
+    let was = chatOf(id).busy;
+    return useAssistant.subscribe((s) => {
+      const busy = !!s.chats[id]?.busy;
+      if (was && !busy) setTimeout(() => handOff(id), 50);
+      was = busy;
+    });
+  }, [tab.id]);
   useEffect(() => {
     const id = tab.id;
     editorRegistry.set(id, {

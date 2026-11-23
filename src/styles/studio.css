@@ -676,3 +676,83 @@ html .gcard-acts {
   gap: 6px;
   align-items: stretch;
 }
+
+/* ---------- The model menu (Kea 0.103): sidebar header and Home's Ask bar ---------- */
+html .model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+html .model-chip:hover,
+html .model-chip.open {
+  background: var(--hover);
+  color: var(--text);
+}
+html .model-chip svg:first-child {
+  color: var(--accent);
+}
+html .model-chip .model-caret {
+  opacity: 0.55;
+}
+html .ask-bar .model-chip {
+  height: 100%;
+  padding: 0 12px;
+  border-left: 1px solid var(--glass-line);
+}
+html .model-menu {
+  width: 270px;
+}
+html .model-menu .menu-item {
+  align-items: flex-start;
+  min-height: 0;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+html .model-menu .menu-grow {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  white-space: normal;
+}
+html .model-note {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+html .model-foot {
+  padding: 6px 10px 4px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.4;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+/* ---------- The folder bar (Kea 0.103): same line as the assignment bar ---------- */
+html .folder-bar + .assignment-bar {
+  border-top: 0;
+}
+html .fb-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 4px;
+  color: var(--text-3);
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+@media (max-width: 900px) {
+  html .fb-tag {
+    display: none;
+  }
+}

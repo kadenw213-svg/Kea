@@ -94,6 +94,8 @@ import { LookupButton } from '../../components/lookup/LookupButton';
 import { AssistantButton } from '../../components/assistant/AssistantPanel';
 import { publishSelection } from '../../components/lookup/lookupStore';
 import { proxyAi, AiHooks } from '../../store';
+import { cellColors, lineColor, useDarkTheme } from '../../lib/readableColor';
+import { AssignmentBar } from '../../components/assistant/AssignmentBar';
 
 interface Pos {
   r: number;
@@ -1825,6 +1827,7 @@ function SheetEditorInner({ tab, active, initial }: { tab: Tab; active: boolean;
         onDedupe={removeDuplicates}
         onPivot={() => setDlg('pivot')}
       />
+      <AssignmentBar tabId={tab.id} active={active} />
       {chartEdit && (
         <ChartDialog
           chart={chartEdit.chart}
@@ -2270,10 +2273,10 @@ const measure = (s: string) => measureCtx.measureText(s).width;
 // ---------- Cells ----------
 const BORDER_W: Record<string, number> = { thin: 1, medium: 2, thick: 3, dashed: 1, dotted: 1, double: 3 };
 /** Cell borders drawn as inset shadows, so they never change the cell's size. */
-function borderShadow(s?: CellStyle): string | undefined {
+function borderShadow(s?: CellStyle, dark = false): string | undefined {
   if (!s || (!s.bt && !s.bb && !s.bl && !s.br)) return undefined;
   const out: string[] = [];
-  const col = (b: Border) => b.color || '#000';
+  const col = (b: Border) => lineColor(b.color || '#000', dark);
   if (s.bt) out.push(`inset 0 ${BORDER_W[s.bt.style] || 1}px 0 ${col(s.bt)}`);
   if (s.bb) out.push(`inset 0 -${BORDER_W[s.bb.style] || 1}px 0 ${col(s.bb)}`);
   if (s.bl) out.push(`inset ${BORDER_W[s.bl.style] || 1}px 0 0 ${col(s.bl)}`);
@@ -2285,7 +2288,8 @@ function borderShadow(s?: CellStyle): string | undefined {
 function ChartBox({ chart, sheet, calc, selected, onSelect, onEdit, onChange, onDelete }: { chart: Chart; sheet: Sheet; calc: Calc; selected: boolean; onSelect(): void; onEdit(): void; onChange(c: Chart): void; onDelete(): void }) {
   const [live, setLive] = useState<Chart | null>(null);
   const c = live || chart;
-  const svg = useMemo(() => chartSvg(c, chartData(c, sheet, calc), c.w, c.h, 'dark'), [c.type, c.range, c.title, c.w, c.h, c.legend, c.stacked, c.smooth, c.showValues, c.headerRow, c.labelCol, c.seriesBy, c.xTitle, c.yTitle, sheet, calc]);
+  const dark = useDarkTheme();
+  const svg = useMemo(() => chartSvg(c, chartData(c, sheet, calc), c.w, c.h, dark ? 'dark' : 'light'), [dark, c.type, c.range, c.title, c.w, c.h, c.legend, c.stacked, c.smooth, c.showValues, c.headerRow, c.labelCol, c.seriesBy, c.xTitle, c.yTitle, sheet, calc]);
   const start = (e: React.MouseEvent, mode: 'move' | 'resize') => {
     e.preventDefault();
     e.stopPropagation();
@@ -2364,6 +2368,8 @@ const CellsLayer = memo(function CellsLayer({
   cf: (r: number, c: number) => CfResult | null;
   checkboxAt: (r: number, c: number) => boolean;
 }) {
+  // Fills, text and borders made for white paper stay readable in dark mode (readableColor.ts): display only.
+  const dark = useDarkTheme();
   const out: JSX.Element[] = [];
   const lastCol = cols[cols.length - 1];
   for (const r of rows) {
@@ -2381,11 +2387,11 @@ const CellsLayer = memo(function CellsLayer({
       const height = m ? geo.rowStart[m.r2 + 1] - geo.rowStart[r] : geo.rh(r);
       const cls = `cell${fr ? ' fr' : ''}${fc ? ' fc' : ''}${m ? ' merged' : ''}`;
       const cfr = cf(r, c);
-      const shadow = borderShadow(cell?.s);
+      const shadow = borderShadow(cell?.s, dark);
       const isCb = checkboxAt(r, c);
       const spilled = !cell ? calc.value(sheet, r, c) : null;
       if ((!cell && (spilled === null || spilled === undefined) && !isCb) || k === editingKey) {
-        out.push(<div key={k} className={cls} style={{ left, top, width, height, background: cfr?.bg ?? cell?.s?.bg, boxShadow: shadow }} />);
+        out.push(<div key={k} className={cls} style={{ left, top, width, height, background: cellColors(cfr?.bg ?? cell?.s?.bg, undefined, dark).bg, boxShadow: shadow }} />);
         continue;
       }
       const v = cell ? calc.value(sheet, r, c) : spilled;
@@ -2393,7 +2399,7 @@ const CellsLayer = memo(function CellsLayer({
       if (isCb) {
         const on = v === true || v === 1 || (typeof v === 'string' && v.toUpperCase() === 'TRUE');
         out.push(
-          <div key={k} className={cls} style={{ left, top, width, height, background: cfr?.bg ?? s.bg, boxShadow: shadow, justifyContent: 'center', alignItems: 'center' }}>
+          <div key={k} className={cls} style={{ left, top, width, height, background: cellColors(cfr?.bg ?? s.bg, undefined, dark).bg, boxShadow: shadow, justifyContent: 'center', alignItems: 'center' }}>
             <span className={`cb ${on ? 'on' : ''}`} data-cb={`${r},${c}`}>
               {on ? '✓' : ''}
             </span>
@@ -2414,16 +2420,17 @@ const CellsLayer = memo(function CellsLayer({
           spill += geo.cw(nc);
         }
       }
+      const shown = cellColors(cfr?.bg ?? s.bg, cfr?.color ?? s.color, dark);
       const style: React.CSSProperties = {
         left,
         top,
         width,
         height,
         background: cfr?.bar
-          ? `linear-gradient(90deg, ${cfr.bar.color}cc ${cfr.bar.pct}%, transparent ${cfr.bar.pct}%)${cfr.bg ?? s.bg ? `, ${cfr.bg ?? s.bg}` : ''}`
-          : cfr?.bg ?? s.bg,
+          ? `linear-gradient(90deg, ${cfr.bar.color}cc ${cfr.bar.pct}%, transparent ${cfr.bar.pct}%)${shown.bg ? `, ${shown.bg}` : ''}`
+          : shown.bg,
         boxShadow: shadow,
-        color: isErr ? 'var(--danger)' : cfr?.color ?? s.color,
+        color: isErr ? 'var(--danger)' : shown.color,
         fontWeight: s.b || cfr?.b ? 600 : undefined,
         fontStyle: s.i || cfr?.i ? 'italic' : undefined,
         textDecoration: [s.u ? 'underline' : '', s.s || cfr?.s ? 'line-through' : ''].filter(Boolean).join(' ') || undefined,

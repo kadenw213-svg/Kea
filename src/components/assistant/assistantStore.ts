@@ -89,7 +89,24 @@ export function patchChat(tabId: string, p: Partial<Chat> | ((c: Chat) => Partia
   s.set({ chats: { ...s.chats, [tabId]: { ...cur, ...(typeof p === 'function' ? p(cur) : p) } } });
 }
 
-export const setActivity = (tabId: string, text: string | undefined) => {
+/**
+ * Move a whole conversation to another tab (Home's Ask Claude handing off to the file it made, Kea 0.103): what the
+ * panel shows, what Claude was told, and the Claude Code session, so the chat goes on in that file's sidebar as if it
+ * had started there. The tab it leaves has no chat afterwards.
+ */
+export function moveChat(from: string, to: string) {
+  const s = useAssistant.getState();
+  const c = s.chats[from];
+  if (!c || from === to) return;
+  const chats = { ...s.chats, [to]: { ...c, busy: false, reqId: undefined } };
+  delete chats[from];
+  const drafts = { ...s.drafts };
+  if (drafts[from] && !drafts[to]) drafts[to] = drafts[from];
+  delete drafts[from];
+  s.set({ chats, drafts });
+}
+
+export const setActivity =(tabId: string, text: string | undefined) => {
   const s = useAssistant.getState();
   if (s.activity[tabId] !== text) s.set({ activity: { ...s.activity, [tabId]: text } });
 };

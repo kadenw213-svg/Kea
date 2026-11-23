@@ -333,6 +333,7 @@ export const SECTIONS: Section[] = [
       { key: 'areas.setupDone', label: 'First-run setup finished', type: 'toggle', default: false, advanced: true, help: 'Turn off to see the "How do you use Kea?" screen again.' },
       { key: 'home.greeting', group: 'Today', label: 'Show greeting and date', type: 'toggle', default: true },
       { key: 'home.askBar', label: 'Show the Ask Claude bar', type: 'toggle', default: true, help: 'Ask Claude anything from Home, about one of your folders (a class, a work team, a project). It opens a Claude tab that can read the folder and make or edit files in Kea.' },
+      { key: 'home.handoff', label: 'Move the chat into the file Claude makes', type: 'toggle', default: true, help: 'When Claude makes or opens a file for something you asked on Home, the conversation carries on in that file’s Claude sidebar (with everything said so far) and the separate Claude tab closes.' },
       { key: 'home.showToday', label: 'Show what’s due', type: 'toggle', default: true, help: 'Assignments, tests and class sessions coming up, from School and your Kea classes.' },
       { key: 'home.showClasses', label: 'Show my classes', type: 'toggle', default: true },
       { key: 'home.showWork', label: 'Show Work (to-do and next shift)', type: 'toggle', default: true, when: (v) => v['modes.work'] === true },
@@ -908,7 +909,7 @@ export const SECTIONS: Section[] = [
           { value: 'claude-opus-5-5', label: 'Claude Opus 5.5 (best for most work)' },
           { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (faster, half the price)' },
           { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (quickest and cheapest)' },
-          { value: 'claude-fable-5-1', label: 'Claude Fable 5.1 (most capable, costs the most)' }
+          { value: 'claude-fable-5-2', label: 'Claude Fable 5.2 (most capable, costs the most)' }
         ],
         help: 'With “Pick the right model for each message” on, this is the model for the hard work (grading, reviews, research, design); quick and ordinary messages use Haiku and Sonnet.'
       },
@@ -943,6 +944,7 @@ export const SECTIONS: Section[] = [
       { key: 'assistant.showThinking', label: 'Show Claude’s reasoning (folded)', type: 'toggle', default: false, advanced: true },
       { key: 'assistant.showSteps', label: 'List every step Claude takes', type: 'toggle', default: false, advanced: true, help: 'Off: the steps fold into one line you can open. On: each step is listed as it happens.' },
       { key: 'assistant.showUsage', label: 'Show tokens used under the conversation', type: 'toggle', default: true, advanced: true },
+      { key: 'assistant.folderBar', group: 'Context folders', label: 'Show the folder bar on files in a context folder', type: 'toggle', default: true, help: 'A line under the toolbar in documents, sheets and presentations: the context folder, how many of its files Claude uses, where it’s kept and who it’s shared with.' },
       { key: 'assistant.assignmentBar', group: 'Assignments', label: 'Show the assignment bar in documents and presentations', type: 'toggle', default: true, help: 'Only on a file linked to an assignment: what it’s for, an estimated grade, the checklist and Check my work. Link a file from its menu or the Claude tab.' },
       { key: 'assistant.gradeEstimate', label: 'Show an estimated grade', type: 'toggle', default: true, when: (v) => v['assistant.assignmentBar'] !== false, help: 'Claude compares the rubric with your file when you press Refresh, on your own Claude. It’s a draft estimate, not a grade.' },
       { key: 'assistant.gradeAutoFirst', label: 'Estimate once when the bar first appears', type: 'toggle', default: false, advanced: true, when: (v) => v['assistant.assignmentBar'] !== false && v['assistant.gradeEstimate'] !== false, help: 'Off: only when you press Refresh.' },
@@ -959,7 +961,7 @@ export const SECTIONS: Section[] = [
           { value: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
           { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
           { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (quickest)' },
-          { value: 'claude-fable-5-1', label: 'Claude Fable 5.1' }
+          { value: 'claude-fable-5-2', label: 'Claude Fable 5.2' }
         ]
       },
       {

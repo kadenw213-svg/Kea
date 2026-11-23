@@ -17,6 +17,15 @@ type Made = 'doc' | 'sheet' | 'slides' | 'video' | 'code';
 const KIND_NAME: Record<Made, string> = { doc: 'document', sheet: 'spreadsheet', slides: 'presentation', video: 'video project', code: 'text or code file' };
 const PLACES = new Set(['home', 'scholar', 'work', 'audit', 'claude']);
 
+// The file each Claude page last made or opened: when Claude finishes, the chat hands off to it (ClaudePage.tsx).
+const lastFile = new Map<string, string>();
+/** The file a chat should continue in, if Claude made or opened one (taken once). */
+export function takeHandoff(chatId: string): string | null {
+  const id = lastFile.get(chatId) || null;
+  lastFile.delete(chatId);
+  return id && useTabs.getState().tabs.some((t) => t.id === id) ? id : null;
+}
+
 /** Kea's modules, as Claude is told about them. */
 export const MODULES: { id: string; name: string; what: string }[] = [
   { id: 'doc', name: 'Documents', what: 'Word-style documents: write, format, headings, tables, images, comments, citations and a bibliography. Opens .docx, .odt, .md, .txt.' },
@@ -71,7 +80,7 @@ async function defaultFolder() {
 }
 
 export function workspaceTools(chatId: string): AssistantTool[] {
-  const folderOf = () => useTabs.getState().tabs.find((t) => t.id === chatId)?.folder || '';
+  const folderOf = () => useTabs.getState().tabs.find((t) => t.id === chatId)?.folder || projectOfTab(chatId)?.dir || '';
   return [
     {
       name: 'kea_modules',
@@ -108,6 +117,7 @@ export function workspaceTools(chatId: string): AssistantTool[] {
         const title = safeFileName(String(name || '')) || `New ${KIND_NAME[k]}`;
         const id = useTabs.getState().addTab({ kind: k, name: k === 'code' && !/\.\w+$/.test(title) ? `${title}.txt` : title, path: null, data: null, ...(folder ? { folder } : {}) });
         showBeside(chatId, id, was);
+        lastFile.set(chatId, id);
         await hooksOf(id);
         return `Made a new ${KIND_NAME[k]} “${title}” (file id ${id}), open beside the chat. Next: editor_tools with file "${id}".`;
       }
@@ -140,6 +150,7 @@ export function workspaceTools(chatId: string): AssistantTool[] {
         }
         if (!tab) throw new Error(`Kea couldn’t open ${f}.`);
         showBeside(chatId, tab.id, was);
+        lastFile.set(chatId, tab.id);
         const h = await hooksOf(tab.id);
         return `Opened “${tab.name}” (file id ${tab.id}, a ${h.noun}) beside the chat. Next: editor_tools with file "${tab.id}".`;
       }

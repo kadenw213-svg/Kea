@@ -1,6 +1,7 @@
 // Home's Ask Claude bar (Kea 0.101): one slim line under the greeting. On the left, the context folder (a class, a work
 // team, any project folder, or none), which is also where new context folders are made; then the question. Enter opens
-// a Claude tab about that folder (src/components/ClaudePage.tsx).
+// a Claude tab about that folder (src/components/ClaudePage.tsx), which hands the chat to the file Claude makes or
+// opens (Kea 0.103). The model menu picks which Claude answers (Auto, or one model for everything).
 import { useEffect, useState } from 'react';
 import { ArrowUp, Briefcase, FolderCog, ChevronDown, Folder, FolderInput, FolderPlus, GraduationCap, Users, X } from 'lucide-react';
 import { MenuButton } from '../Popover';
@@ -10,6 +11,7 @@ import { forgetProject, loadProject, rememberProject, type KnownProject } from '
 import { makeContextFolder } from './NewProject';
 import { manageContextFolder } from './ContextFolder';
 import { openClaudeChat } from '../ClaudePage';
+import { ModelMenu } from '../assistant/ModelMenu';
 import { toast } from '../../store';
 
 const NONE: KnownProject[] = []; // (one empty list: a new [] each render would re-render forever)
@@ -178,6 +180,7 @@ export function AskBar() {
           }
         }}
       />
+      <ModelMenu compact />
       <button className="ask-go" title="Ask (Enter)" disabled={!text.trim()} onClick={go}>
         <ArrowUp size={16} />
       </button>

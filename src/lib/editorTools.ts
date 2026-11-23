@@ -6,7 +6,8 @@ import { api } from './api';
 import { setting } from './settings';
 import { editorRegistry, useTabs, type AiHooks, type AssistantTool, type Tab } from '../store';
 import { designGuideTool } from './design/guide';
-import { projectTools } from './projects';
+import { projectTools, projectOfTab } from './projects';
+import { workspaceTools } from './workspaceTools';
 import { noteTool } from './activity';
 
 const DOC_LIMIT = 400_000; // characters of the file read in one go (about 100k tokens)
@@ -134,8 +135,12 @@ export function toolsFor(hooks: AiHooks | undefined, tabId?: string): AssistantT
       return report;
     }
   });
-  // The project this file is in (projects.ts): its other files, read as they are now.
-  return tabId ? [...all, ...projectTools(tabId)] : all;
+  // The project this file is in (projects.ts): its other files, read as they are now. A file in a context folder also
+  // gets Kea's modules (make and open other files, draft messages), so a chat handed off from Home carries on here.
+  if (!tabId) return all;
+  const more = [...projectTools(tabId), ...(projectOfTab(tabId) ? workspaceTools(tabId) : [])];
+  const merged = [...all, ...more];
+  return merged.filter((x, i) => merged.findIndex((y) => y.name === x.name) === i);
 }
 
 // ---------- Kea's other windows: the school library and the class site ----------

@@ -15,8 +15,26 @@ import { contentBlock, describeAttachment, type Attachment } from './attachments
 import { assignmentOf, assignmentSig, assignmentText } from './assignmentContext';
 import { route, routeFor, type Route, type Tier } from './funnel';
 import { newPlaceholders, placeholderComment } from './placeholders';
+import { projectOfTab } from './projects';
 
 const MAX_STEPS = 40;
+
+/**
+ * The models people can pick (the model menu under the message box and on Home's Ask bar). On their own Claude plan
+ * every model is there; on an API key (pay per use) Opus is the top choice, and anything above it runs on Opus.
+ */
+export const MODEL_CHOICES: { id: string; label: string; note: string; planOnly?: boolean }[] = [
+  { id: 'claude-haiku-5-5', label: 'Haiku 5.5', note: 'Quickest' },
+  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', note: 'Fast and capable' },
+  { id: 'claude-opus-5-5', label: 'Opus 5.5', note: 'Best for most work' },
+  { id: 'claude-fable-5-2', label: 'Fable 5.2', note: 'Most capable', planOnly: true }
+];
+export const onOwnPlan = () => setting('assistant.provider') !== 'api';
+/** A model this person may use right now (an older or plan-only model becomes the nearest one they can). */
+export function capModel(model: string): string {
+  if (/^claude-fable/.test(model)) return onOwnPlan() ? 'claude-fable-5-2' : 'claude-opus-5-5';
+  return MODEL_CHOICES.some((m) => m.id === model) ? model : 'claude-opus-5-5';
+}
 
 /** Where a run counts in the Usage menu: "assistant.doc", "assistant.video", "home.chat" (a Claude page). */
 function featureOf(tabId: string) {
@@ -44,6 +62,8 @@ function context(tabId: string, hooks: AiHooks | undefined, focus: Focus | null)
   const sel = useLookup.getState().selections[tabId] || '';
   const lines = [hooks?.context ? hooks.context() : `[Open ${hooks?.noun || 'file'}: ${tab?.name || 'untitled'}]`];
   if (!hooks) lines.push('[This view has no tools: Claude can only talk about it.]');
+  const folder = hooks && !hooks.workspace ? projectOfTab(tabId) : null;
+  if (folder) lines.push(`[This file is in the context folder "${folder.name}" (${folder.dir}). list_project_files and read_project_file read its other files; create_file, open_file, editor_tools and use_editor make or change other files; draft_message drafts messages for the person to approve.]`);
   if (focus) lines.push(`[Focus passage${focus.where ? ` (${focus.where})` : ''}: the student highlighted this and sent it to you; work on exactly this]\n«${focus.text.slice(0, 8000)}»`);
   else if (sel) lines.push(`[Selected: «${sel.slice(0, 2000)}»]`);
   return lines.join('\n');
@@ -138,7 +158,7 @@ async function askRun(tabId: string, text: string, opts: AskOpts, run: { stopped
   setFocus(tabId, null);
   content.push({ type: 'text', text: `${context(tabId, hooks, focus)}${named ? `\n${named}` : ''}\n\n${text || (focus ? 'Help me with this passage.' : 'Here are the files.')}` });
   // Which model this message needs (the funnel), or the one chosen in Settings when the funnel is off.
-  const chosen = String(setting('assistant.model') || 'claude-opus-5-5');
+  const chosen = capModel(String(setting('assistant.model') || 'claude-opus-5-5'));
   const effort = String(setting('assistant.effort') || 'medium');
   const sel = useLookup.getState().selections[tabId] || '';
   const way: Route =

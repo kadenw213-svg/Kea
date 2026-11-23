@@ -11,6 +11,9 @@ import { AssignmentChip, AssignmentPicker } from './AssignmentPicker';
 import { ProjectChip } from './ProjectChip';
 import { ChatTitle, ChatEmpty } from './ChatPage';
 import { UsageMenu } from './UsageMenu';
+import { ModelMenu } from './ModelMenu';
+
+const BAR_KINDS = new Set(['doc', 'sheet', 'slides']);
 import { DraftCard } from './DraftCard';
 import { useAssignments, fileKey } from '../../lib/assignmentContext';
 import { useKeaModes } from '../../lib/modes';
@@ -80,6 +83,8 @@ export function AssistantPanel({ tabId: pinned, page = false }: { tabId?: string
   const model = useSettings((s) => s.values['assistant.model']) || 'claude-opus-5-5';
   const onPlan = useSettings((s) => s.values['assistant.provider']) !== 'api';
   const showBars = useSettings((s) => s.values['assistant.usageBars']) !== false;
+  const folderBar = useSettings((s) => s.values['assistant.folderBar']) !== false;
+  const activeKind = useTabs((s) => s.tabs.find((t) => t.id === activeId)?.kind);
   const [plan, setPlan] = useState<{ installed: boolean; loggedIn: boolean; email: string; plan: string } | null>(null);
   const [usage, setUsage] = useState<PlanUsage | null>(null);
   // Files waiting to go with the next message (a flier to recreate, concept images, a PDF brief).
@@ -230,6 +235,7 @@ export function AssistantPanel({ tabId: pinned, page = false }: { tabId?: string
                 <Trash2 size={15} />
               </button>
             )}
+            <ModelMenu />
             <UsageMenu onPlan={onPlan} showBars={showBars} />
             <button className="icon-btn sm" title={`Assistant settings (${modelName(model)} ${onPlan ? `on your Claude plan${plan?.email ? `, ${plan.email}` : ''}` : 'on your API key'})`} onClick={() => openSettings('assistant')}>
               <Settings2 size={15} />
@@ -241,7 +247,8 @@ export function AssistantPanel({ tabId: pinned, page = false }: { tabId?: string
             )}
           </div>
         </div>
-        {usable && <ProjectChip tabId={activeId} />}
+        {/* (Docs, Sheets and Slides show the folder in the folder bar on the file instead: FolderBar.tsx.) */}
+        {usable && !(folderBar && BAR_KINDS.has(activeKind || '')) && <ProjectChip tabId={activeId} />}
 
         {onPlan && plan && (!plan.installed || !plan.loggedIn) ? (
           <PlanSetup installed={plan.installed} onDone={() => api.assistant.planStatus().then(setPlan)} />

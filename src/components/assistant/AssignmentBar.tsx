@@ -14,6 +14,7 @@ import { toast } from '../../store';
 import { api } from '../../lib/api';
 import { useKeaModes } from '../../lib/modes';
 import { AssignmentChecklist } from './AssignmentChecklist';
+import { FolderBar } from './FolderBar';
 import '../../styles/assistant.css';
 
 /** Which tab's assignment picker is open from its editor (the File menu's "For an assignment…"). */
@@ -100,9 +101,9 @@ export function AssignmentBar({ tabId, active }: { tabId: string; active: boolea
   const show = useSetting<boolean>('assistant.assignmentBar') !== false;
   const picking = usePicker((s) => s.tabId === tabId);
   const close = () => usePicker.setState({ tabId: null });
-  if (!(ref && show) && !picking) return null;
   return (
     <div className="ab-wrap">
+      <FolderBar tabId={tabId} />
       {ref && show && <Bar tabId={tabId} active={active} assignment={ref} onChange={() => openAssignmentPicker(tabId)} />}
       {picking && (
         <div className="ab-picker-pop">

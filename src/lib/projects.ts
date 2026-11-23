@@ -73,8 +73,10 @@ export async function findProject(dir: string): Promise<Project | null> {
 /** The project of an open tab's file (from what's been looked up; null when it isn't in one or isn't known yet). */
 export function projectOfTab(tabId: string): Project | null {
   const t = useTabs.getState().tabs.find((x) => x.id === tabId);
+  const by = useProjects.getState().byDir;
   const dir = t?.path ? parentOf(t.path) : t?.folder || null;
-  return dir ? useProjects.getState().byDir[dir] ?? null : null;
+  // A file handed a context folder (Home's Ask Claude, or opened from one of its subfolders) belongs to that folder.
+  return (dir ? by[dir] : null) ?? (t?.folder ? by[t.folder] : null) ?? null;
 }
 
 async function look(dir: string) {
@@ -117,8 +119,7 @@ useTabs.subscribe((s, prev) => {
   if (s.tabs === prev.tabs) return;
   const known = useProjects.getState().byDir;
   for (const t of s.tabs) {
-    const dir = t.path ? parentOf(t.path) : t.folder;
-    if (dir && !(dir in known)) look(dir).catch(() => {});
+    for (const dir of [t.path ? parentOf(t.path) : null, t.folder]) if (dir && !(dir in known)) look(dir).catch(() => {});
   }
 });
 

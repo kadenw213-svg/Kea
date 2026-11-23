@@ -13,9 +13,9 @@ import { newFile } from '../../lib/open';
 import { MenuButton } from '../Popover';
 import { SharePanel } from './SharePanel';
 
-const useManager = create<{ dir: string | null }>(() => ({ dir: null }));
-/** Open the manager for a context folder. */
-export const manageContextFolder = (dir: string) => useManager.setState({ dir });
+const useManager = create<{ dir: string | null; share?: boolean }>(() => ({ dir: null }));
+/** Open the manager for a context folder (`share`: with its Share panel open). */
+export const manageContextFolder = (dir: string, opts?: { share?: boolean }) => useManager.setState({ dir, share: !!opts?.share });
 
 type F = Awaited<ReturnType<typeof projectFiles>>[number];
 
@@ -43,6 +43,7 @@ export function ContextFolderDialog() {
   const [tick, setTick] = useState(0);
   const [sharing, setSharing] = useState(false);
   const refresh = () => setTick((t) => t + 1);
+  useEffect(() => setSharing(!!useManager.getState().share), [dir]);
 
   useEffect(() => {
     if (!dir) return setP(null);
