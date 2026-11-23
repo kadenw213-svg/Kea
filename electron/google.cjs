@@ -174,6 +174,7 @@ function authorize(scopes = SCOPES) {
  * its own copy of the connection, so disconnecting one leaves the others.
  */
 async function connectAll() {
+  await oauthClients.ensure();
   const s = await authorize([...SCOPES, 'https://www.googleapis.com/auth/contacts.readonly', 'https://www.googleapis.com/auth/gmail.send']);
   saveSession(s);
   try {
@@ -189,6 +190,7 @@ async function connectAll() {
 }
 
 async function signIn() {
+  await oauthClients.ensure();
   const s = await authorize(SCOPES);
   saveSession(s);
   try {
@@ -360,7 +362,11 @@ function register({ log }) {
       throw new Error(`${err.code ? `[${err.code}] ` : ''}${err.message || err}`);
     }
   };
-  handleApp(ipcMain, 'google:status', () => status());
+  handleApp(ipcMain, 'google:status', async () => {
+    // (No client yet: fetch it from the Kea account server first, so Settings doesn't say Google isn't available.)
+    if (!oauthClients.clients().google.id) await oauthClients.ensure();
+    return status();
+  });
   handleApp(ipcMain, 'google:sign-in', wrap(() => signIn()));
   handleApp(ipcMain, 'google:connect-all', wrap(() => connectAll()));
   handleApp(ipcMain, 'google:sign-out', async () => {

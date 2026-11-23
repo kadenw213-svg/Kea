@@ -409,6 +409,8 @@ app.whenReady().then(() => {
   require('./usageTally.cjs').register();
   require('./mail.cjs').register();
   require('./contextShares.cjs').register();
+  // Sign-in clients from the Kea account server when this build has none (Kea 0.102.1).
+  require('./oauthClients.cjs').ensure();
   require('./servers.cjs').register();
   // (Only the installed Kea opens kea:// links: a development copy never takes them over.)
   if (app.isPackaged) app.setAsDefaultProtocolClient('kea');

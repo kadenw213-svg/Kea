@@ -49,6 +49,56 @@ function resolveClients({ get = () => '', env = process.env, build = readBuildCo
   return { google: { id: gid.value, secret, from: gid.from }, microsoft: { id: ms.value, from: ms.from } };
 }
 
+// ---------- From the Kea account server (Kea 0.102.1, KeaC 0.14 GET /v1/sign-in-clients) ----------
+// A build without the owner's file has no clients built in. Then Kea asks its Kea account server once, keeps the
+// answer in userData/sign-in-clients.json, and uses it like build config: so "Sign in with Google", Drive, Contacts
+// and Gmail work in every copy of Kea, wherever it was built. Clients built in (or set by hand) always come first.
+const serverFile = () => path.join(require('electron').app.getPath('userData'), 'sign-in-clients.json');
+function readServerClients() {
+  try {
+    const j = JSON.parse(fs.readFileSync(serverFile(), 'utf8'));
+    return j && typeof j === 'object' ? j : {};
+  } catch {
+    return {};
+  }
+}
+/** The build's clients, with the server's filling in what the build lacks. */
+function effectiveBuild(b = readBuildConfig(), s = readServerClients()) {
+  return { google: str(b.google?.desktopClientId) ? b.google : s.google, microsoft: str(b.microsoft?.clientId) ? b.microsoft : s.microsoft };
+}
+/** Clean what the server answered: only the fields Kea uses, as strings. */
+function cleanServerAnswer(j) {
+  const out = {};
+  const g = j?.google || {};
+  if (str(g.desktopClientId)) out.google = { desktopClientId: str(g.desktopClientId), ...(str(g.desktopClientSecret) ? { desktopClientSecret: str(g.desktopClientSecret) } : {}) };
+  if (str(j?.microsoft?.clientId)) out.microsoft = { clientId: str(j.microsoft.clientId) };
+  return out;
+}
+let asking = null;
+/**
+ * Make sure the clients are here: when the build lacks them, ask the Kea account server (once at a time) and keep the
+ * answer. Never throws (offline or an older server: Kea goes on without, as before).
+ */
+async function ensure() {
+  const b = readBuildConfig();
+  if (str(b.google?.desktopClientId) && str(b.microsoft?.clientId)) return;
+  if (asking) return asking;
+  asking = (async () => {
+    try {
+      const base = require('./hub.cjs').url();
+      const r = await require('electron').net.fetch(`${base}/v1/sign-in-clients`, { headers: { 'x-kea': '1' } });
+      if (!r.ok) return;
+      const got = cleanServerAnswer(await r.json());
+      if (!got.google && !got.microsoft) return;
+      if (JSON.stringify(got) !== JSON.stringify(readServerClients())) fs.writeFileSync(serverFile(), JSON.stringify(got));
+    } catch {
+    } finally {
+      asking = null;
+    }
+  })();
+  return asking;
+}
+
 /** The clients as Kea's settings say now (settings.cjs is required lazily, so the tests can use this without Electron). */
 function clients() {
   let get = () => '';
@@ -56,7 +106,11 @@ function clients() {
     const settings = require('./settings.cjs');
     get = (k) => settings.get(k, '');
   } catch {}
-  return resolveClients({ get });
+  let build = readBuildConfig();
+  try {
+    build = effectiveBuild(build);
+  } catch {}
+  return resolveClients({ get, build });
 }
 
-module.exports = { BUILD_FILE, readBuildConfig, resolveClients, clients };
+module.exports = { BUILD_FILE, readBuildConfig, resolveClients, clients, ensure, _test: { effectiveBuild, cleanServerAnswer } };

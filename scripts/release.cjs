@@ -31,14 +31,11 @@ run('node scripts/assets.cjs');
 run('node scripts/engine-vendor.cjs');
 // The built-in sign-in clients (electron/buildConfig.json, from the owner's file outside the repo; a warning without it).
 run('node scripts/oauth-clients.cjs');
-// A release without the built-in Google client has no "Sign in with Google" and no Google Drive for anyone who updates
-// to it (Kea 0.101 and 0.102.0 went out that way): refuse, unless that's really meant (KEA_ALLOW_NO_SIGNIN=1).
+// Without the built-in Google client, Kea gets it from the Kea account server instead (KeaC 0.14 /v1/sign-in-clients,
+// electron/oauthClients.cjs ensure()), so a build without it still signs in. Say so, so it's never a surprise.
 {
   const built = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'electron', 'buildConfig.json'), 'utf8') || '{}');
-  if (!built.google?.desktopClientId && !built.google?.id && process.env.KEA_ALLOW_NO_SIGNIN !== '1') {
-    console.error(`\nNot releasing: this build has no Google client, so Google sign-in and Google Drive wouldn't work in it.\nPut oauth-clients.json in %LOCALAPPDATA%\\KeaBuild\\ or in the Kea Suite drive's keys\\ folder, then run this again.\n`);
-    process.exit(1);
-  }
+  if (!built.google?.desktopClientId) console.warn('\nNote: no Google client built in. Kea will get it from the Kea account server (KeaC 0.14 or newer).\n');
 }
 run('npx vite build');
 run(`npx electron-builder --win --x64 --publish always -c.directories.output="${OUT}"`, { GH_TOKEN: token });

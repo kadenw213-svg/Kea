@@ -623,6 +623,8 @@ async function oauthSignIn({ provider = 'google', expect = null } = {}) {
   const label = core.PROVIDERS[provider]?.label;
   if (!label) throw new HubError('Pick Google or Microsoft.', 400);
   pending = null;
+  // (A build without its own sign-in clients gets them from the Kea account server first: Kea 0.102.1.)
+  if (!idTokenFn && !clientId(provider)) await require('./oauthClients.cjs').ensure();
   if (!idTokenFn && !clientId(provider)) throw new HubError(NOT_SET_UP, 503, { notSetUp: true });
   await serverAnswers();
   const idToken = await idTokenFor(provider, expect || undefined);
