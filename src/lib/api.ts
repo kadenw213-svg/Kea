@@ -415,6 +415,14 @@ export interface KeaApi {
     disconnect(): Promise<{ connected: boolean }>;
     search(q: string): Promise<{ name: string; emails: string[]; phones: string[]; org: string }[]>;
   };
+  /** Messages Claude drafted, sent only after the person approves (electron/mail.cjs). */
+  mail: {
+    status(): Promise<{ connected: boolean }>;
+    connect(): Promise<{ connected: boolean }>;
+    disconnect(): Promise<{ connected: boolean }>;
+    send(a: { subject: string; body: string; recipients: { name: string; email: string }[] }): Promise<{ sent: string[]; failed: { email: string; error: string }[] }>;
+    compose(a: { subject: string; body: string; recipients: { name: string; email: string }[] }): Promise<boolean>;
+  };
   recovery: {
     put(meta: Omit<RecoveryEntry, 'savedAt'>, data: Uint8Array): Promise<boolean>;
     drop(tabId: string): Promise<boolean>;
@@ -426,6 +434,12 @@ export interface KeaApi {
   saveDialog(opts?: { title?: string; defaultPath?: string; filters?: FileFilter[] }): Promise<string | null>;
   readFile(p: string): Promise<FileEntry>;
   writeFile(p: string, data: Uint8Array): Promise<boolean>;
+  /** Context folders: pick files (paths only), copy them in, move one to the Recycle Bin. */
+  context: {
+    pickFiles(opts?: { title?: string; from?: string }): Promise<string[]>;
+    copyIn(dir: string, paths: string[]): Promise<string[]>;
+    trash(p: string): Promise<boolean>;
+  };
   /** An installed font's file, for embedding in a PDF (null if the family isn't installed). */
   fontFile(family: string, bold: boolean, italic: boolean): Promise<{ file: string; name: string; data: Uint8Array } | null>;
   fileExists(p: string): Promise<boolean>;

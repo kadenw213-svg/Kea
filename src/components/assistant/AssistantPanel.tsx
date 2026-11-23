@@ -7,10 +7,11 @@ import { api, type PlanUsage } from '../../lib/api';
 import { ask, stop, clear } from '../../lib/assistant';
 import { addAttachment, isAttachable, ATTACHABLE, type Attachment } from '../../lib/attachments';
 import { useAssistant, useAssistantOpen, setAssistantOpen, emptyChat, draftOf, setDraft, setFocus, INTERNAL_STEPS, type ChatItem } from './assistantStore';
-import { AssignmentButton, AssignmentChip, AssignmentPicker } from './AssignmentPicker';
+import { AssignmentChip, AssignmentPicker } from './AssignmentPicker';
 import { ProjectChip } from './ProjectChip';
 import { ChatTitle, ChatEmpty } from './ChatPage';
 import { UsageMenu } from './UsageMenu';
+import { DraftCard } from './DraftCard';
 import { useAssignments, fileKey } from '../../lib/assignmentContext';
 import { useKeaModes } from '../../lib/modes';
 import '../../styles/ai.css';
@@ -240,7 +241,6 @@ export function AssistantPanel({ tabId: pinned, page = false }: { tabId?: string
             )}
           </div>
         </div>
-        {usable && !page && <AssignmentChip tabId={activeId} onOpen={() => setPicking(true)} />}
         {usable && <ProjectChip tabId={activeId} />}
 
         {onPlan && plan && (!plan.installed || !plan.loggedIn) ? (
@@ -313,8 +313,8 @@ export function AssistantPanel({ tabId: pinned, page = false }: { tabId?: string
               </div>
             )}
             {picking && usable && <AssignmentPicker tabId={activeId} onClose={() => setPicking(false)} />}
+            {usable && !page && classes && <AssignmentChip tabId={activeId} open={picking} onOpen={() => setPicking((v) => !v)} />}
             <div className="ai-composer">
-              {usable && !page && !chat.busy && classes && <AssignmentButton tabId={activeId} onOpen={() => setPicking((v) => !v)} />}
               {usable && !chat.busy && (
                 <button className="icon-btn sm" title="Attach an image or PDF: a flier to recreate, concept art, a brief (or paste / drop it here)" onClick={pickFiles}>
                   <Paperclip size={16} />
@@ -421,7 +421,7 @@ function group(items: ChatItem[], busy: boolean): { key: string; it?: ChatItem; 
     const after: ChatItem[] = [];
     turn.forEach((it, i) => {
       if (it.kind === 'user') out.push({ key: it.id, it });
-      else if (it.kind === 'error') after.push(it);
+      else if (it.kind === 'error' || it.kind === 'draft') after.push(it);
       else if (i === final) after.unshift(it);
       else work.push(it);
     });
@@ -469,6 +469,10 @@ function Steps({ items, live, tabId }: { items: ChatItem[]; live?: boolean; tabI
 }
 
 function Item({ it, tabId }: { it: ChatItem; tabId: string }) {
+  if (it.kind === 'draft') return <DraftCard it={it} tabId={tabId} />;
+  return <ItemBody it={it} tabId={tabId} />;
+}
+function ItemBody({ it, tabId }: { it: ChatItem; tabId: string }) {
   const [open, setOpen] = useState(false);
   const html = useMemo(() => (it.kind === 'assistant' || it.kind === 'thinking' ? md.render(it.text) : ''), [it.kind, it.text]);
   if (it.kind === 'user')

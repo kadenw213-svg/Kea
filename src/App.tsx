@@ -13,6 +13,7 @@ import { UpdateDialog, initUpdates } from './components/Updates';
 import { LookupPanel } from './components/lookup/LookupPanel';
 import { AssistantPanel } from './components/assistant/AssistantPanel';
 import { ClaudePage } from './components/ClaudePage';
+import { ContextFolderDialog } from './components/home/ContextFolder';
 import { ClaudeWorking } from './components/assistant/ClaudeWorking';
 import { toggleAssistant, askAboutSelection } from './components/assistant/assistantStore';
 import { SettingsDialog } from './components/settings/SettingsDialog';
@@ -345,6 +346,7 @@ export function App() {
       )}
       <UpdateDialog />
       <SettingsDialog />
+      <ContextFolderDialog />
       <CommandPalette />
       <VoiceTypingPanel />
       <VersionHistoryDialog />

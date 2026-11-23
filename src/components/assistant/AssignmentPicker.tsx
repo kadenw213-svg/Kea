@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardList, X, Search, ClipboardPaste, BookOpenCheck } from 'lucide-react';
+import { ClipboardList, X, Search, ClipboardPaste, BookOpenCheck, ChevronDown } from 'lucide-react';
 import { api, type AssignmentChoice } from '../../lib/api';
 import { assignmentOf, setAssignment, useAssignments, fileKey, assignmentSig, type AssignmentRef } from '../../lib/assignmentContext';
 import { useGrades } from '../../lib/gradeRun';
@@ -50,16 +50,27 @@ export function useDueDate(ref: AssignmentRef | null | undefined): string | null
  * The chosen assignment, in its own small section at the top of the chat: what it is, the estimated grade from the
  * assignment bar, and how long until it's due.
  */
-export function AssignmentChip({ tabId, onOpen }: { tabId: string; onOpen: () => void }) {
+export function AssignmentChip({ tabId, onOpen, open = false }: { tabId: string; onOpen: () => void; open?: boolean }) {
   const ref = useAssignments((s) => s.byFile[fileKey(tabId)]);
   const sig = ref ? assignmentSig(ref) : '';
   const grade = useGrades((s) => (ref ? readCached(s.byKey[gradeKey(fileKey(tabId), sig)], sig) : null));
   const due = useDueDate(ref);
-  if (!ref) return null;
   const days = due ? daysUntil(due) : null;
+  // (Kea 0.101.2: a slim strip just above the message box, not part of the header.)
+  if (!ref)
+    return (
+      <div className="as-assignment empty" role="region" aria-label="Assignment">
+        <button className={`as-assignment-main ${open ? 'on' : ''}`} title="Which assignment is this for? Choose one from your classes or paste its rubric" onClick={onOpen}>
+          <ClipboardList size={13} />
+          <span className="as-assignment-label">Choose the assignment</span>
+          <ChevronDown size={12} />
+        </button>
+      </div>
+    );
   return (
     <div className="as-assignment" role="region" aria-label="Assignment">
-      <button className="as-assignment-main" title="Claude works against this assignment's guidelines and rubric (click to change)" onClick={onOpen}>
+      <button className={`as-assignment-main ${open ? 'on' : ''}`} title="Claude works against this assignment's guidelines and rubric (click to change)" onClick={onOpen}>
+        <ClipboardList size={13} />
         <span className="as-assignment-label">{ref.label}</span>
         <span className="as-assignment-meta">
           {grade && (

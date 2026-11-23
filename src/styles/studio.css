@@ -326,3 +326,274 @@ html .kea-logo.tile svg {
   width: 76%;
   height: 76%;
 }
+
+/* ---------- A context folder's files, managed in Kea (0.101.2) ---------- */
+html .cf-dialog {
+  position: relative;
+  width: min(760px, calc(100vw - 48px));
+  max-height: min(680px, calc(100vh - 80px));
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+html .cf-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 10px 20px;
+}
+html .cf-name {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: 600 20px/28px 'Segoe UI Variable Display', 'Segoe UI', sans-serif;
+  padding: 0;
+  width: 100%;
+  box-shadow: inset 0 -1px 0 transparent;
+}
+html .cf-name:hover,
+html .cf-name:focus {
+  box-shadow: inset 0 -1px 0 var(--glass-line);
+}
+html .cf-where {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  margin-top: 2px;
+}
+html .cf-add {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px 12px;
+  border-bottom: 1px solid var(--glass-line);
+  flex-wrap: wrap;
+}
+html .cf-grow {
+  flex: 1;
+}
+html .cf-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+html .cf-google {
+  display: flex;
+  gap: 6px;
+}
+html .cf-google .input {
+  width: 220px;
+}
+html .cf-list {
+  flex: 1;
+  min-height: 160px;
+  overflow: auto;
+  padding: 6px 8px;
+}
+html .cf-row {
+  display: grid;
+  grid-template-columns: 24px 1fr auto auto 28px;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 8px 0 12px;
+}
+html .cf-row:hover {
+  background: var(--hover);
+}
+html .cf-row.off .cf-file {
+  color: var(--text-3);
+}
+html .cf-ic {
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+html .cf-file {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html .cf-src {
+  font-size: 11.5px;
+}
+html .cf-use {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+html .cf-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 48px 24px;
+  text-align: center;
+  font-size: 13px;
+}
+html .cf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 12px 20px;
+  border-top: 1px solid var(--glass-line);
+  font-size: 12.5px;
+}
+html .cf-drop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: 2px dashed var(--accent);
+  outline-offset: -8px;
+  font-weight: 600;
+  pointer-events: none;
+}
+html .dialog.cf-dialog {
+  max-width: none;
+}
+html .cf-where {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 600px;
+}
+
+/* ---------- The assignment strip (0.101.2): one slim line just above the message box ---------- */
+html .as-assignment {
+  margin: 0 12px 6px;
+  padding: 0;
+  gap: 0;
+  border: 1px solid var(--glass-line);
+  border-top-color: var(--glass-top);
+  background: var(--glass-sheen), color-mix(in srgb, var(--surface) 35%, transparent);
+  font-size: 12px;
+}
+html .as-assignment-main {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 0;
+  color: var(--text-2);
+}
+html .as-assignment-main:hover,
+html .as-assignment-main.on {
+  background: var(--hover);
+}
+html .as-assignment-main svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+html .as-assignment-label {
+  flex: 1;
+  font-weight: 500;
+}
+html .as-assignment.empty .as-assignment-label {
+  color: var(--text-2);
+  font-weight: 400;
+}
+html .as-assignment-meta {
+  flex-shrink: 0;
+  gap: 8px;
+  font-size: 11.5px;
+}
+html .as-assignment > .icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 0;
+}
+
+/* ---------- A drafted message to approve (0.101.2) ---------- */
+html .as-draft {
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--glass-line);
+  border-top-color: var(--glass-top);
+  border-left: 3px solid var(--accent);
+  background: var(--glass-sheen), var(--card);
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+html .as-draft-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+html .as-draft-head .muted {
+  font-weight: 400;
+  font-size: 12px;
+  margin-left: auto;
+}
+html .as-draft-to {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  align-items: start;
+  gap: 8px;
+}
+html .as-draft-k {
+  color: var(--text-3);
+  font-size: 12px;
+  padding-top: 5px;
+}
+html .as-draft-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+html .as-draft-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 4px;
+  border: 1px solid var(--glass-line);
+  font-size: 12px;
+  cursor: pointer;
+}
+html .as-draft-person.off {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+html .as-draft-person .muted {
+  font-size: 11px;
+}
+html .as-draft-body {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
+}
+html .as-draft-hint {
+  font-size: 11.5px;
+}
+html .as-draft-acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+html .as-draft.finished {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-2);
+}
+html .as-draft.finished.cancelled {
+  border-left-color: var(--glass-line);
+}

@@ -7,6 +7,7 @@ import { toast } from '../../store';
 import { useProjects, projectOfTab, projectFiles, saveProject, type Project } from '../../lib/projects';
 import { newFile } from '../../lib/open';
 import { SharedFolderPanel, reloadProject } from './SharedFolder';
+import { manageContextFolder } from '../home/ContextFolder';
 
 type F = Awaited<ReturnType<typeof projectFiles>>[number];
 
@@ -64,6 +65,9 @@ export function ProjectChip({ tabId }: { tabId: string }) {
           <LinkGoogle p={p} />
           {p.kind === 'work' && <ContactsSwitch p={p} />}
           <div className="as-project-new">
+            <button className="link-btn sm" onClick={() => manageContextFolder(p.dir)}>
+              <FolderOpen size={13} /> Add or remove files…
+            </button>
             <button className="link-btn sm" onClick={() => newFile('doc', p.dir)}>
               <FilePlus2 size={13} /> New document here
             </button>

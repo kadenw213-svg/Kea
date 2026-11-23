@@ -397,6 +397,12 @@ contextBridge.exposeInMainWorld('api', {
   statMany: (paths) => ipcRenderer.invoke('fs:stat-many', paths),
   knownFolders: () => ipcRenderer.invoke('fs:known-folders'),
   openFolderDialog: () => ipcRenderer.invoke('dialog:open-folder'),
+  // Context folders (Kea 0.101.2): add and remove their files in Kea.
+  context: {
+    pickFiles: (opts) => ipcRenderer.invoke('context:pick-files', opts),
+    copyIn: (dir, paths) => ipcRenderer.invoke('context:copy-in', dir, paths),
+    trash: (p) => ipcRenderer.invoke('context:trash', p)
+  },
   openPath: (p) => ipcRenderer.invoke('shell:open-path', p),
   clearPreviews: () => ipcRenderer.invoke('preview:clear'),
   clearMeta: () => ipcRenderer.invoke('meta:clear'),
@@ -450,6 +456,14 @@ contextBridge.exposeInMainWorld('api', {
     connect: () => ipcRenderer.invoke('contacts:connect'),
     disconnect: () => ipcRenderer.invoke('contacts:disconnect'),
     search: (q) => ipcRenderer.invoke('contacts:search', q)
+  },
+  // Messages Claude drafted, sent after the person approves (electron/mail.cjs).
+  mail: {
+    status: () => ipcRenderer.invoke('mail:status'),
+    connect: () => ipcRenderer.invoke('mail:connect'),
+    disconnect: () => ipcRenderer.invoke('mail:disconnect'),
+    send: (a) => ipcRenderer.invoke('mail:send', a),
+    compose: (a) => ipcRenderer.invoke('mail:compose', a)
   },
   gcal: {
     status: () => ipcRenderer.invoke('gcal:status'),

@@ -6,7 +6,9 @@ import { fileKey, onFileKeyChange } from '../../lib/assignmentContext';
 /** One line in the Assistant panel: what you asked, Claude's answer, its reasoning, or a step it took in the file. */
 export interface ChatItem {
   id: string;
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'error';
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'error' | 'draft';
+  /** A message Claude drafted (draft_message): shown for the person to approve before anything is sent. */
+  draft?: { subject: string; body: string; recipients: { name: string; email: string }[]; state?: 'sent' | 'opened' | 'cancelled'; note?: string };
   text: string;
   /** Tool steps: the tool's name, and what it reported (or why it failed). */
   name?: string;

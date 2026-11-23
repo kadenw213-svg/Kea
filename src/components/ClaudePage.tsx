@@ -38,8 +38,8 @@ export function ClaudePage({ tab }: { tab: Tab }) {
           const t = useTabs.getState().tabs.find((x) => x.id === id);
           const p = t?.folder ? useProjects.getState().byDir[t.folder] : null;
           return t?.folder
-            ? `[Kea's Claude page, about the context folder "${p?.name || t.folder.split(/[\\/]/).pop()}" (${t.folder}). Use list_project_files and read_project_file for its files before answering questions about them. Make or change files with Kea's modules: kea_modules, create_file, open_file, editor_tools, use_editor, save_file.]`
-            : `[Kea's Claude page (no context folder). Make or change files with Kea's modules: kea_modules, create_file, open_file, editor_tools, use_editor, save_file.]`;
+            ? `[Kea's Claude page, about the context folder "${p?.name || t.folder.split(/[\\/]/).pop()}" (${t.folder}). Use list_project_files and read_project_file for its files before answering questions about them. Make or change files with Kea's modules: kea_modules, create_file, open_file, editor_tools, use_editor, save_file. To message people, find their addresses (the files, search_contacts) and use draft_message: the person approves before anything is sent.]`
+            : `[Kea's Claude page (no context folder). Make or change files with Kea's modules: kea_modules, create_file, open_file, editor_tools, use_editor, save_file. To message people, find their addresses (the files, search_contacts) and use draft_message: the person approves before anything is sent.]`;
         }
       }
     });

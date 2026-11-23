@@ -10,6 +10,8 @@ import { editorRegistry, useTabs, type AssistantTool, type Tab } from '../store'
 import { toolsFor, runToolHeadless, summary } from './editorTools';
 import { safeFileName } from './fileNames';
 import { projectOfTab } from './projects';
+import { uid } from './util';
+import { patchChat } from '../components/assistant/assistantStore';
 
 type Made = 'doc' | 'sheet' | 'slides' | 'video' | 'code';
 const KIND_NAME: Record<Made, string> = { doc: 'document', sheet: 'spreadsheet', slides: 'presentation', video: 'video project', code: 'text or code file' };
@@ -118,7 +120,10 @@ export function workspaceTools(chatId: string): AssistantTool[] {
         const f = String(file || '').trim();
         const p = projectOfTab(chatId);
         let path = f;
-        if (!/^([a-z]:[\\/]|\/|\\\\)/i.test(f)) {
+        const ref = p && f.startsWith('Linked: ') ? (p.refs || []).find((r) => `Linked: ${r.name}` === f) : null;
+        if (f.startsWith('Google: ')) throw new Error('Google files are read with read_project_file; Kea opens local files.');
+        if (ref) path = ref.path;
+        else if (!/^([a-z]:[\\/]|\/|\\\\)/i.test(f)) {
           if (!p) throw new Error('Give the full path (this chat has no context folder).');
           const rel = f.replace(/\\/g, '/').replace(/^\/+/, '');
           if (rel.split('/').includes('..')) throw new Error('Name a file inside the context folder.');
@@ -165,6 +170,40 @@ export function workspaceTools(chatId: string): AssistantTool[] {
         const out = await runToolHeadless(t.id, toolsFor(hooks, t.id), { name: String(tool), input: input || {} });
         if (!out.ok) throw new Error(`${tool} on “${t.name}”: ${out.text}`);
         return `${t.name} · ${tool}${input ? ` (${short(summary(input), 80)})` : ''}: ${out.text}`;
+      }
+    },
+    {
+      name: 'search_contacts',
+      description: 'Look people up in the person’s Google Contacts (name, emails, phones, organization): e.g. to find how to reach the people on a sheet. Every word of `query` must match; leave it empty to list everyone (up to 50).',
+      input_schema: { type: 'object', properties: { query: { type: 'string' } } },
+      async run({ query }) {
+        if (!(await api.contacts.status()).connected) throw new Error('Google Contacts isn’t connected. Tell the person they can connect it in the context folder’s files window (Look people up in Google Contacts) or Settings → Google; meanwhile use emails from the folder’s files.');
+        const list = await api.contacts.search(String(query || ''));
+        if (!list.length) return 'No one in Google Contacts matches that.';
+        return list.map((c) => `- ${c.name || '(no name)'}${c.org ? ` · ${c.org}` : ''}${c.emails.length ? ` · ${c.emails.join(', ')}` : ''}${c.phones.length ? ` · ${c.phones.join(', ')}` : ''}`).join('\n');
+      }
+    },
+    {
+      name: 'draft_message',
+      description:
+        'Draft an email to one or more people for the person to approve. It appears in the chat with the message and every recipient; NOTHING is sent until they press Send (each person gets their own email; they can edit it first). Use it whenever they ask you to message, email, remind or contact people. Find addresses in the folder’s files or search_contacts first; never guess an address. `{first}` in the subject or body becomes each person’s first name.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          subject: { type: 'string' },
+          body: { type: 'string', description: 'Plain text, signed as the person would sign it' },
+          recipients: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, email: { type: 'string' } }, required: ['email'] } }
+        },
+        required: ['subject', 'body', 'recipients']
+      },
+      run({ subject, body, recipients }) {
+        const people = (Array.isArray(recipients) ? recipients : [])
+          .map((r: any) => ({ name: String(r?.name || '').trim(), email: String(r?.email || '').trim() }))
+          .filter((r) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email));
+        if (!people.length) throw new Error('Give at least one recipient with a real email address.');
+        const unique = people.filter((r, i) => people.findIndex((x) => x.email.toLowerCase() === r.email.toLowerCase()) === i).slice(0, 200);
+        patchChat(chatId, (c) => ({ items: [...c.items, { id: uid(), kind: 'draft', text: '', draft: { subject: String(subject || ''), body: String(body || ''), recipients: unique } }] }));
+        return `The draft is shown to the person with its ${unique.length} recipient${unique.length === 1 ? '' : 's'}. Nothing has been sent: they review it and press Send themselves. Tell them it's ready to check; don't say it was sent.`;
       }
     },
     {

@@ -17,7 +17,10 @@ export function toolsFor(hooks: AiHooks | undefined, tabId?: string): AssistantT
   if (!hooks) return [];
   // A Claude page (Home's Ask Claude): Kea's modules through the workspace tools, the context folder's files, and the
   // shared tools (sources, classes); none of the one-file tools.
-  if (hooks.workspace) return [...(hooks.tools || []), findAssignmentTool, ...sourceTools, ...windowTools, ...classTools, ...(tabId ? projectTools(tabId) : [])];
+  if (hooks.workspace) {
+    const all = [...(hooks.tools || []), findAssignmentTool, ...sourceTools, ...windowTools, ...classTools, ...(tabId ? projectTools(tabId) : [])];
+    return all.filter((x, i) => all.findIndex((y) => y.name === x.name) === i);
+  }
   const t: AssistantTool[] = [];
   const tracked = <T,>(fn: () => T): T => (setting('assistant.track') && hooks.track ? hooks.track(fn) : fn());
   t.push({

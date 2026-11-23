@@ -2,12 +2,13 @@
 // team, any project folder, or none), which is also where new context folders are made; then the question. Enter opens
 // a Claude tab about that folder (src/components/ClaudePage.tsx).
 import { useEffect, useState } from 'react';
-import { ArrowUp, Briefcase, ChevronDown, Folder, FolderInput, FolderPlus, GraduationCap, Users, X } from 'lucide-react';
+import { ArrowUp, Briefcase, FolderCog, ChevronDown, Folder, FolderInput, FolderPlus, GraduationCap, Users, X } from 'lucide-react';
 import { MenuButton } from '../Popover';
 import { api } from '../../lib/api';
 import { useSettings } from '../../lib/settings';
 import { forgetProject, loadProject, rememberProject, type KnownProject } from '../../lib/projects';
 import { makeContextFolder } from './NewProject';
+import { manageContextFolder } from './ContextFolder';
 import { openClaudeChat } from '../ClaudePage';
 import { toast } from '../../store';
 
@@ -98,6 +99,11 @@ export function AskBar() {
               );
             })}
             <div className="menu-sep" />
+            {current && (
+              <button className="menu-item" onClick={() => (close(), manageContextFolder(current.dir))}>
+                <FolderCog size={16} /> Files in {current.name}…
+              </button>
+            )}
             <button className="menu-item" onClick={() => (close(), makeContextFolder((p) => choose(p.dir)))}>
               <FolderPlus size={16} /> New context folder…
             </button>
@@ -115,7 +121,7 @@ export function AskBar() {
       <input
         className="ask-input"
         value={text}
-        placeholder={current ? `Ask Claude about ${current.name}…` : 'Ask Claude anything…'}
+        placeholder="What do you need?"
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {

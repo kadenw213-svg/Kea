@@ -19,6 +19,8 @@ export interface Project {
   exclude: string[];
   /** Google Docs, Sheets and Slides that are part of the project (read live through the Drive connection). */
   links?: { kind: 'doc' | 'sheet' | 'slides'; id: string; name: string }[];
+  /** Files kept where they are (on this PC, a drive or Kea cloud) and read live from there (Kea 0.101.2). */
+  refs?: { path: string; name: string }[];
   /** Claude may look people up in Google Contacts (work projects). */
   contacts?: boolean;
   /**
@@ -42,7 +44,7 @@ function parse(dir: string, text: string): Project | null {
   try {
     const j = JSON.parse(text);
     const kind = ['class', 'work', 'personal'].includes(j?.kind) ? j.kind : 'personal';
-    return { dir, name: String(j?.name || dir.split(/[\\/]/).pop() || 'Project').slice(0, 80), kind, ...(j?.course ? { course: String(j.course) } : {}), exclude: Array.isArray(j?.exclude) ? j.exclude.map(String) : [], links: Array.isArray(j?.links) ? j.links.filter((l: any) => l && /^[\w-]{20,}$/.test(String(l.id))).map((l: any) => ({ kind: ['doc', 'sheet', 'slides'].includes(l.kind) ? l.kind : 'doc', id: String(l.id), name: String(l.name || 'Google file').slice(0, 120) })) : [], ...(j?.contacts ? { contacts: true } : {}), ...(j?.shared && typeof j.shared === 'object' && j.shared.orgId ? { shared: { src: String(j.shared.src || ''), orgId: String(j.shared.orgId), orgName: String(j.shared.orgName || 'Organization'), folderId: String(j.shared.folderId || ''), folderName: String(j.shared.folderName || ''), access: ['view', 'edit', 'manage'].includes(j.shared.access) ? j.shared.access : 'view', claude: j.shared.claude !== false, off: Array.isArray(j.shared.off) ? j.shared.off.map(String) : [] } } : {}) };
+    return { dir, name: String(j?.name || dir.split(/[\\/]/).pop() || 'Project').slice(0, 80), kind, ...(j?.course ? { course: String(j.course) } : {}), exclude: Array.isArray(j?.exclude) ? j.exclude.map(String) : [], links: Array.isArray(j?.links) ? j.links.filter((l: any) => l && /^[\w-]{20,}$/.test(String(l.id))).map((l: any) => ({ kind: ['doc', 'sheet', 'slides'].includes(l.kind) ? l.kind : 'doc', id: String(l.id), name: String(l.name || 'Google file').slice(0, 120) })) : [], ...(Array.isArray(j?.refs) ? { refs: j.refs.filter((r: any) => r && typeof r.path === 'string' && r.path).map((r: any) => ({ path: String(r.path), name: String(r.name || String(r.path).split(/[\\/]/).pop()).slice(0, 160) })) } : {}), ...(j?.contacts ? { contacts: true } : {}), ...(j?.shared && typeof j.shared === 'object' && j.shared.orgId ? { shared: { src: String(j.shared.src || ''), orgId: String(j.shared.orgId), orgName: String(j.shared.orgName || 'Organization'), folderId: String(j.shared.folderId || ''), folderName: String(j.shared.folderName || ''), access: ['view', 'edit', 'manage'].includes(j.shared.access) ? j.shared.access : 'view', claude: j.shared.claude !== false, off: Array.isArray(j.shared.off) ? j.shared.off.map(String) : [] } } : {}) };
   } catch {
     return null;
   }
@@ -120,7 +122,7 @@ useTabs.subscribe((s, prev) => {
 
 /** Make a folder a project (or rename it): writes its `.kea-project.json`. */
 export async function saveProject(p: Project): Promise<Project> {
-  const body = { name: p.name, kind: p.kind, ...(p.course ? { course: p.course } : {}), exclude: p.exclude, ...(p.links?.length ? { links: p.links } : {}), ...(p.contacts ? { contacts: true } : {}), ...(p.shared ? { shared: p.shared } : {}) };
+  const body = { name: p.name, kind: p.kind, ...(p.course ? { course: p.course } : {}), exclude: p.exclude, ...(p.links?.length ? { links: p.links } : {}), ...(p.refs?.length ? { refs: p.refs } : {}), ...(p.contacts ? { contacts: true } : {}), ...(p.shared ? { shared: p.shared } : {}) };
   await api.writeFile(join(p.dir, PROJECT_FILE), new TextEncoder().encode(JSON.stringify(body, null, 2)));
   useProjects.setState((s) => ({ byDir: Object.fromEntries(Object.entries({ ...s.byDir, [p.dir]: p }).map(([d, v]) => [d, v && v.dir === p.dir ? p : v])), version: s.version + 1 }));
   rememberProject(p, true);
@@ -129,6 +131,10 @@ export async function saveProject(p: Project): Promise<Project> {
 
 const READABLE = /\.(docx|doc|md|txt|csv|tsv|xlsx|xls|pdf|pptx|json|html?)$/i;
 const IMAGES = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
+const MEDIA = /\.(mp4|mov|m4v|webm|mkv|avi|mp3|wav|m4a|aac|flac|ogg)$/i;
+const AUDIO = /\.(mp3|wav|m4a|aac|flac|ogg)$/i;
+/** What a file is, in a word, when Claude can't read it as text: "video", "audio", "image" or "file" ('' if it can). */
+export const kindWord = (name: string) => (IMAGES.test(name) ? 'image' : AUDIO.test(name) ? 'audio' : MEDIA.test(name) ? 'video' : READABLE.test(name) ? '' : 'file');
 
 /** The project's files, in it and its subfolders (two levels), with whether Claude may use each. */
 /** A shared folder's own setting keeps this file from Claude (whoever manages the folder decides). */
@@ -143,7 +149,6 @@ export async function projectFiles(p: Project): Promise<{ path: string; rel: str
         if (depth < 2) await walk(e.path, depth + 1);
         continue;
       }
-      if (!READABLE.test(e.name) && !IMAGES.test(e.name)) continue;
       const rel = relPath(p, e.path);
       out.push({ path: e.path, rel, size: e.size, mtime: e.mtime, used: !p.exclude.includes(rel) && !sharedOff(p, rel), image: IMAGES.test(e.name), ...(sharedOff(p, rel) ? { locked: true } : {}) });
       if (out.length >= 300) return;
@@ -151,6 +156,11 @@ export async function projectFiles(p: Project): Promise<{ path: string; rel: str
   };
   await walk(p.dir, 0);
   out.sort((a, b) => a.rel.localeCompare(b.rel));
+  // Files linked where they are, named "Linked: <name>".
+  for (const r of p.refs || []) {
+    const rel = `Linked: ${r.name}`;
+    out.push({ path: r.path, rel, size: 0, mtime: Date.now(), used: !p.exclude.includes(rel), image: IMAGES.test(r.name) });
+  }
   // Linked Google files come last, named "Google: <name>".
   for (const l of p.links || []) {
     const rel = `Google: ${l.name}`;
@@ -250,7 +260,13 @@ export function projectTools(tabId: string): AssistantTool[] {
       async run() {
         const files = (await projectFiles(p)).filter((f) => f.used);
         if (!files.length) return `The project "${p.name}" has no other files Kea can read.`;
-        return `Project "${p.name}" (${files.length} files; read one with read_project_file):\n${files.map((f) => `- ${f.rel}${f.image ? ' (image)' : ''} · changed ${new Date(f.mtime).toLocaleDateString()}`).join('\n')}`;
+        return `Project "${p.name}" (${files.length} files; read one with read_project_file):\n${files
+          .map((f) => {
+            const k = kindWord(f.rel);
+            const what = k ? ` (${k}${k === 'video' || k === 'audio' ? ': open it in the video editor with open_file' : ''})` : '';
+            return `- ${f.rel}${what}${/^(Google|Linked): /.test(f.rel) ? '' : ` · changed ${new Date(f.mtime).toLocaleDateString()}`}`;
+          })
+          .join('\n')}`;
       }
     },
     {
@@ -262,6 +278,11 @@ export function projectTools(tabId: string): AssistantTool[] {
         if (!rel || rel.split('/').includes('..')) throw new Error('Name a file from list_project_files.');
         if (p.exclude.includes(rel)) throw new Error(`The student left "${rel}" out of what Claude may use.`);
         if (sharedOff(p, rel)) throw new Error(`${p.shared!.orgName} doesn’t let Claude use "${rel}".`);
+        const ref = (p.refs || []).find((r) => `Linked: ${r.name}` === rel);
+        if (ref) {
+          if (kindWord(ref.name) && kindWord(ref.name) !== 'file') return `"${rel}" is ${kindWord(ref.name) === 'image' ? 'an image' : kindWord(ref.name) === 'audio' ? 'an audio file' : 'a video'} at ${ref.path}.`;
+          return `# ${rel} (read where it is: ${ref.path})\n${await readProjectText(ref.path).catch(() => '(It isn’t there any more.)')}`;
+        }
         const link = (p.links || []).find((l) => `Google: ${l.name}` === rel);
         if (link) {
           const g = await api.google.exportText(link.id);
@@ -270,6 +291,7 @@ export function projectTools(tabId: string): AssistantTool[] {
         }
         const full = join(p.dir, rel.split('/').join(sepOf(p.dir)));
         if (IMAGES.test(rel)) return `"${rel}" is an image. To use it in the file, place it with an image tool's path input: ${full}`;
+        if (MEDIA.test(rel)) return `"${rel}" is ${AUDIO.test(rel) ? 'an audio file' : 'a video'} at ${full}. Open it in the video editor with open_file (Kea transcribes it there, with word timings).`;
         return `# ${rel}\n${await readProjectText(full)}`;
       }
     }

@@ -394,6 +394,39 @@ function register({ log, getWindow }) {
   });
   ipcMain.handle('shell:open-path', appOnly((_e, p) => shell.openPath(p)));
 
+  // Context folders (Kea 0.101.2): files are added and removed in Kea, never by hand in File Explorer.
+  // Pick files anywhere (only their paths come back: a video isn't read into the window).
+  handleApp(ipcMain, 'context:pick-files', async (_e, opts = {}) => {
+    const r = await dialog.showOpenDialog(getWindow(), { title: opts.title || 'Add files', defaultPath: opts.from || undefined, properties: ['openFile', 'multiSelections'] });
+    return r.canceled ? [] : r.filePaths;
+  });
+  // Copy files into a folder, never over one that's there ("name (2).ext"). Returns the names given.
+  handleApp(ipcMain, 'context:copy-in', async (_e, dir, paths) => {
+    if (typeof dir !== 'string' || !Array.isArray(paths)) throw new Error('Nothing to add.');
+    fs.mkdirSync(dir, { recursive: true });
+    const names = [];
+    for (const src of paths.slice(0, 500)) {
+      const st = fs.statSync(src);
+      if (!st.isFile()) continue;
+      const ext = path.extname(src);
+      const base = path.basename(src, ext);
+      let name = `${base}${ext}`;
+      for (let i = 2; fs.existsSync(path.join(dir, name)); i++) name = `${base} (${i})${ext}`;
+      if (path.resolve(src) === path.resolve(path.join(dir, `${base}${ext}`))) {
+        names.push(`${base}${ext}`); // (already in the folder)
+        continue;
+      }
+      await fs.promises.copyFile(src, path.join(dir, name), fs.constants.COPYFILE_EXCL);
+      names.push(name);
+    }
+    return names;
+  });
+  // Take a file out of a context folder: to the Recycle Bin, so it can be restored.
+  handleApp(ipcMain, 'context:trash', async (_e, p) => {
+    await shell.trashItem(p);
+    return true;
+  });
+
   handleApp(ipcMain, 'preview:get', (_e, p) => getPreview(p));
   handleApp(ipcMain, 'preview:clear', () => {
     fs.rmSync(previewDir(), { recursive: true, force: true });

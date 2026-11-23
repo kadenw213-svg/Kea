@@ -8,6 +8,8 @@ import { saveProject, findProject, type Project } from '../../lib/projects';
 import { newFile } from '../../lib/open';
 import { toast } from '../../store';
 import { MenuButton } from '../Popover';
+import { cloudUsable, useKeaCloud } from '../../lib/keaCloud';
+import { manageContextFolder } from './ContextFolder';
 import { SharedFoldersDialog, useSharedFolders } from './SharedFolders';
 
 const useDialog = create<{ mode: 'new' | 'folder' | null; dir: string; onMade?: (p: Project) => void }>(() => ({ mode: null, dir: '' }));
@@ -86,8 +88,12 @@ export function NewProjectDialog() {
   const [name, setName] = useState('');
   const [kind, setKind] = useState<Project['kind']>('class');
   const [busy, setBusy] = useState(false);
+  // Where a new one lives (Kea 0.101.2): Kea cloud unless you choose otherwise (on this PC when Kea cloud isn't set up).
+  const cloud = useKeaCloud((s) => s.status);
+  const [place, setPlace] = useState<'cloud' | 'pc' | 'choose' | null>(null);
+  const where = place ?? (cloudUsable(cloud) ? 'cloud' : 'pc');
   if (!mode) return null;
-  const close = () => (useDialog.setState({ mode: null, dir: '', onMade: undefined }), setName(''));
+  const close = () => (useDialog.setState({ mode: null, dir: '', onMade: undefined }), setName(''), setPlace(null));
   const shown = name || (mode === 'folder' ? dir.split(/[\\/]/).pop() || '' : '');
   const go = async (then: 'doc' | 'sheet' | null) => {
     const n = shown.trim();
@@ -96,15 +102,26 @@ export function NewProjectDialog() {
     try {
       let folder = dir;
       if (mode === 'new') {
-        const parent = await pick();
+        let parent: string | null = null;
+        if (where === 'cloud' && cloudUsable(cloud)) parent = `${cloud.root.replace(/[\\/]+$/, '')}\\Context folders`;
+        else if (where === 'choose') parent = await pick();
+        else {
+          const docs = (await api.knownFolders().catch(() => [])).find((k) => k.id === 'documents')?.path;
+          parent = docs ? `${docs}\\Kea\\Context folders` : await pick();
+        }
         if (!parent) return;
-        folder = `${parent.replace(/[\\/]+$/, '')}${parent.includes('\\') ? '\\' : '/'}${n.replace(/[<>:"/\\|?*]+/g, '-').trim()}`;
+        const sep = parent.includes('\\') ? '\\' : '/';
+        const base = `${parent.replace(/[\\/]+$/, '')}${sep}${n.replace(/[<>:"/\\|?*]+/g, '-').trim()}`;
+        folder = base;
+        for (let i = 2; i < 50 && (await api.fileExists(`${folder}${sep}.kea-project.json`).catch(() => false)); i++) folder = `${base} (${i})`;
       }
       const p = await saveProject({ dir: folder, name: n, kind, exclude: [] });
-      toast(`${p.name} is a project. Files you make or open in it share it with Claude.`, 'success');
+      toast(onMade ? `${p.name} is ready. Add its files here.` : `${p.name} is a project. Files you make or open in it share it with Claude.`, 'success');
       if (onMade) onMade(p);
       else if (then) newFile(then, p.dir);
       close();
+      // A new one starts empty: its files are added in Kea, not in File Explorer.
+      if (mode === 'new' && !then) manageContextFolder(p.dir);
     } catch (err: any) {
       toast(String(err?.message || err), 'error');
     } finally {
@@ -128,6 +145,20 @@ export function NewProjectDialog() {
             </select>
           </div>
         </div>
+        {mode === 'new' && (
+          <div className="pe-row">
+            <div>
+              <label className="field-label">Keep it</label>
+              <select className="select" value={where} onChange={(e) => setPlace(e.target.value as 'cloud' | 'pc' | 'choose')}>
+                <option value="cloud" disabled={!cloudUsable(cloud)}>
+                  In Kea cloud{cloudUsable(cloud) ? ' (on all your devices)' : ' (sign in to your Kea account first)'}
+                </option>
+                <option value="pc">On this PC (Documents › Kea)</option>
+                <option value="choose">In a folder I choose…</option>
+              </select>
+            </div>
+          </div>
+        )}
         {mode === 'folder' && <p className="muted">{dir}</p>}
         <div className="dialog-actions">
           <button className="btn sm" onClick={close}>
@@ -135,7 +166,7 @@ export function NewProjectDialog() {
           </button>
           {onMade ? (
             <button className="btn primary sm" disabled={busy || !shown.trim()} onClick={() => go(null)}>
-              {mode === 'new' ? 'Choose where to make it' : 'Use this folder'}
+              {mode === 'new' ? 'Make it' : 'Use this folder'}
             </button>
           ) : (
           <>
@@ -143,7 +174,7 @@ export function NewProjectDialog() {
             <Sheet size={13} /> {mode === 'new' ? 'Make it, with a spreadsheet' : 'Save, new spreadsheet'}
           </button>
           <button className="btn primary sm" disabled={busy || !shown.trim()} onClick={() => go('doc')}>
-            {mode === 'new' ? 'Choose where, then start a document' : 'Save, new document'}
+            {mode === 'new' ? 'Make it, with a document' : 'Save, new document'}
           </button>
           </>
           )}
