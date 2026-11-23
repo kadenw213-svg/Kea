@@ -96,4 +96,10 @@ function register() {
   handleApp(ipcMain, 'contacts:search', wrap(async (_e, q) => search(await people(), String(q || ''))));
 }
 
-module.exports = { register, _test: { simplify, search } };
+/** Use a connection made by Connect Google (one consent for Drive, Contacts and Gmail sending). */
+function adopt(s) {
+  save(s);
+  cache = null;
+}
+
+module.exports = { register, adopt, _test: { simplify, search } };

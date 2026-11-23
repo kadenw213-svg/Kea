@@ -380,6 +380,7 @@ contextBridge.exposeInMainWorld('api', {
   google: {
     status: () => ipcRenderer.invoke('google:status'),
     signIn: () => ipcRenderer.invoke('google:sign-in'),
+    connectAll: () => ipcRenderer.invoke('google:connect-all'),
     signOut: () => ipcRenderer.invoke('google:sign-out'),
     open: (p) => ipcRenderer.invoke('google:open', p),
     linkInfo: (link) => ipcRenderer.invoke('google:linkInfo', link),

@@ -21,7 +21,7 @@ export function DraftCard({ it, tabId }: { it: ChatItem; tabId: string }) {
     if (!to.length) return;
     setBusy(true);
     try {
-      if (!(await api.mail.status()).connected) await api.mail.connect();
+      if (!(await api.mail.status()).connected) await api.google.connectAll();
       const r = await api.mail.send({ subject, body, recipients: to });
       const note = r.failed.length ? `Sent to ${r.sent.length}; not sent to ${r.failed.map((f) => f.email).join(', ')} (${r.failed[0].error})` : `Sent to ${r.sent.length} ${r.sent.length === 1 ? 'person' : 'people'}`;
       done('sent', note);

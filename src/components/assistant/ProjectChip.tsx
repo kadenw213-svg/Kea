@@ -115,7 +115,7 @@ function ContactsSwitch({ p }: { p: Project }) {
   const toggle = async (on: boolean) => {
     setBusy(true);
     try {
-      if (on && !(await api.contacts.status()).connected) await api.contacts.connect();
+      if (on && !(await api.contacts.status()).connected) await api.google.connectAll();
       await saveProject({ ...p, contacts: on });
     } catch (err: any) {
       toast(/REFUSED/.test(String(err?.message)) ? 'Google didn’t let Kea read your contacts yet.' : String(err?.message || err).replace(/^.*?\[\w+\]\s*/, ''), 'error');

@@ -110,4 +110,9 @@ function register() {
   });
 }
 
-module.exports = { register, _test: { address, personal, rawMessage } };
+/** Use a connection made by Connect Google (one consent for Drive, Contacts and Gmail sending). */
+function adopt(s) {
+  save(s);
+}
+
+module.exports = { register, adopt, _test: { address, personal, rawMessage } };

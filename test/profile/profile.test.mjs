@@ -293,7 +293,7 @@ test('Google Drive uses the built-in Kea client: one consent added to the Kea si
 test('Settings → Google account is one card: no client-id or secret boxes, no setup steps', () => {
   const panel = read('src/components/settings/GooglePanel.tsx');
   assert.ok(!/clientId|clientSecret|Client ID|Client secret|Google Cloud|console\.cloud\.google|5 minutes|five minutes|<input/i.test(panel), 'nothing to set up');
-  for (const t of ['Connected', 'Connect Google Drive', 'Disconnect']) assert.ok(panel.includes(t), t);
+  for (const t of ['Connected', 'Connect Google', 'connectAll', 'Disconnect']) assert.ok(panel.includes(t), t);
   assert.ok(!/google\.clientId|google\.clientSecret/.test(read('src/lib/settings.ts')), 'no client fields under Advanced either');
   const lib = read('src/lib/google.ts');
   assert.ok(lib.includes('Open in browser instead'), 'when Google says no, the browser');

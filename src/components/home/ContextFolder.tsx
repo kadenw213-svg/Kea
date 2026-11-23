@@ -256,7 +256,7 @@ export function ContextFolderDialog() {
                 onChange={async (e) => {
                   const on = e.target.checked;
                   try {
-                    if (on && !(await api.contacts.status()).connected) await api.contacts.connect();
+                    if (on && !(await api.contacts.status()).connected) await api.google.connectAll();
                     await save({ ...p, contacts: on });
                   } catch (err: any) {
                     toast(String(err?.message || err).replace(/^.*?\[\w+\]\s*/, ''), 'error');

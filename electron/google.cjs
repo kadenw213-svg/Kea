@@ -168,6 +168,26 @@ function authorize(scopes = SCOPES) {
 }
 
 /** Connect Google Drive: ask for access, keep it, and note which Google account it is. */
+/**
+ * Connect Google (Kea 0.102.1): one consent for everything Kea uses Google for: Drive (Docs, Sheets, Slides), Contacts
+ * (read-only, to find people) and Gmail send-only (messages Claude drafted, after you approve them). Each part keeps
+ * its own copy of the connection, so disconnecting one leaves the others.
+ */
+async function connectAll() {
+  const s = await authorize([...SCOPES, 'https://www.googleapis.com/auth/contacts.readonly', 'https://www.googleapis.com/auth/gmail.send']);
+  saveSession(s);
+  try {
+    const about = await api('/about?fields=user(emailAddress,displayName)');
+    s.email = about.user?.emailAddress;
+    s.name = about.user?.displayName;
+    saveSession(s);
+  } catch {}
+  const has = (scope) => !s.scope || String(s.scope).includes(scope);
+  if (has('contacts.readonly')) require('./contacts.cjs').adopt({ ...s });
+  if (has('gmail.send')) require('./mail.cjs').adopt({ ...s });
+  return { email: s.email, name: s.name, contacts: has('contacts.readonly'), mail: has('gmail.send') };
+}
+
 async function signIn() {
   const s = await authorize(SCOPES);
   saveSession(s);
@@ -342,6 +362,7 @@ function register({ log }) {
   };
   handleApp(ipcMain, 'google:status', () => status());
   handleApp(ipcMain, 'google:sign-in', wrap(() => signIn()));
+  handleApp(ipcMain, 'google:connect-all', wrap(() => connectAll()));
   handleApp(ipcMain, 'google:sign-out', async () => {
     const s = loadSession();
     if (s?.refresh_token) net.fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(s.refresh_token)}`, { method: 'POST' }).catch(() => {});

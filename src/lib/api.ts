@@ -390,6 +390,8 @@ export interface KeaApi {
   google: {
     status(): Promise<{ configured: boolean; signedIn: boolean; email: string | null; name: string | null }>;
     signIn(): Promise<{ email?: string; name?: string }>;
+    /** Connect Google: Drive, Contacts and Gmail sending in one consent. */
+    connectAll(): Promise<{ email?: string; name?: string; contacts: boolean; mail: boolean }>;
     signOut(): Promise<boolean>;
     open(localPath: string): Promise<{ id: string; name: string; ext: string; kind: 'doc' | 'sheet' | 'slides'; google: string; canEdit: boolean; modifiedTime: string; data: Uint8Array }>;
     save(id: string, ext: string, data: Uint8Array): Promise<{ id: string; modifiedTime: string }>;
