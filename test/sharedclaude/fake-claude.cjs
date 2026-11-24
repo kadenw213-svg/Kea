@@ -19,7 +19,7 @@ process.stdin.on('end', async () => {
   } catch {}
   if (process.env.FAKE_CLAUDE_LOG) fs.appendFileSync(process.env.FAKE_CLAUDE_LOG, `${JSON.stringify({ args, message })}\n`);
   out({ type: 'system', subtype: 'init', session_id: 'fake-session', model });
-  const pieces = ['## Neutral water\n', 'Pure water has equal H+ and OH-, ', 'so its pH is 7.\n\n### Remember\nNeutral means 7 at 25 C.\n', '```check\n[{"q":"pH of 0.1 M HCl?","choices":["1","7","13"],"answer":0,"why":"Strong acid."}]\n```'];
+  const pieces = process.env.FAKE_CLAUDE_TEXT ? [process.env.FAKE_CLAUDE_TEXT] : ['## Neutral water\n', 'Pure water has equal H+ and OH-, ', 'so its pH is 7.\n\n### Remember\nNeutral means 7 at 25 C.\n', '```check\n[{"q":"pH of 0.1 M HCl?","choices":["1","7","13"],"answer":0,"why":"Strong acid."}]\n```'];
   for (const p of process.env.FAKE_CLAUDE_FAIL ? [] : pieces) {
     if (delay) await wait(delay);
     out({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: p } }, session_id: 'fake-session' });

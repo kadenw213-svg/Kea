@@ -155,7 +155,9 @@ export function StudyStream({ scope, set }: { scope?: StreamScope; set?: StudySe
     );
     // "I don't know": Claude's lesson on it starts straight away (Settings → Study, on by default).
     // A wrong answer too (study.teachOnWrong); a right one never starts a lesson (Teach me is still there).
-    const wants = dunno ? setting('study.teachOnDontKnow') !== false : result === false && setting('study.teachOnWrong') !== false;
+    // A typed answer always gets a lesson once it's marked, right or wrong (study.teachTyped).
+    const typed = q.type === 'short' && result != null && setting('study.teachTyped') !== false;
+    const wants = dunno ? setting('study.teachOnDontKnow') !== false : typed || (result === false && setting('study.teachOnWrong') !== false);
     if (wants && side?.canTeach && taught.current !== card.served.at) {
       taught.current = card.served.at;
       side.teach('');

@@ -228,6 +228,8 @@ export interface KeaApi {
     /** Teach: a new lesson on an answered question, or a follow-up to one (`lessonId` + `ask`). The text streams to onTeach. On the phone: asked of the PC ({ queued }). */
     teach(id: string, req: TeachRequest): Promise<{ lesson?: Lesson; error?: string; stopped?: boolean; queued?: boolean; /** Kea's shared Claude wrote it because this PC's own couldn't. */ note?: string }>;
     teachStop(id: string): Promise<boolean>;
+    /** Claude marks a typed answer against the model answer (PC only; none on the phone: the student marks it). */
+    markShort?(id: string, req: { question: StudyQuestion; answer: string }): Promise<{ right?: boolean; why?: string; error?: string }>;
     /** Where a lesson is written now: this PC's own Claude, Kea's shared Claude (Kea account), or neither. (PC only.) */
     teachRoute?(): Promise<{ via: 'own' | 'shared' | 'none'; model?: string; error: string | null }>;
     /** The saved lessons on a question, oldest first. */

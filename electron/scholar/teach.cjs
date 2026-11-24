@@ -90,7 +90,7 @@ async function turn(id, message, session, onText, lock = null) {
   const model = lock ? lock.model : settings.get('study.teach.model', 'claude-sonnet-5-5');
   const effort = lock ? lock.effort : settings.get('study.teach.effort', 'medium');
   const checks = Math.max(0, Math.min(5, Number(lock ? lock.checks : settings.get('study.teach.checks', 2)) || 0));
-  const system = systemFor(checks);
+  const system = lock?.system || systemFor(checks);
   const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--strict-mcp-config', '--tools', '', '--permission-mode', 'dontAsk', '--setting-sources', 'project', '--system-prompt', system, '--model', model, '--effort', effort];
   if (session) args.push('--resume', session);
   return new Promise((resolve) => {
@@ -253,6 +253,38 @@ async function teach(id, req, onText = () => {}) {
   return { lesson };
 }
 
+// ---------- Marking a typed answer ----------
+const MARK_SYSTEM = `You mark one college student's typed answer to a practice question against the model answer. Judge the meaning, not the wording: an answer is right when it states the same key ideas correctly, even in other words or with small spelling slips; it is wrong when a key idea is missing, wrong, or contradicted, or when it is too vague to show they know it. Reply with only one line of JSON: {"right": true or false, "why": "one or two short sentences to the student: what was right, and what was missing or wrong"}.`;
+
+/** The parsed verdict from Claude's reply, or null. */
+function verdictOf(text) {
+  const m = /\{[\s\S]*\}/.exec(String(text || ''));
+  if (!m) return null;
+  try {
+    const j = JSON.parse(m[0]);
+    if (typeof j.right !== 'boolean') return null;
+    return { right: j.right, why: String(j.why || '').trim().slice(0, 400) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Claude marks a typed (short) answer: { right, why } or { error } (then the student marks it). This PC's own Claude
+ * only; quick (study.mark.model, low effort, no tools).
+ */
+async function mark(id, req) {
+  const q = req?.question;
+  const answer = String(req?.answer || '').trim().slice(0, 3000);
+  if (!q || !answer) return { error: 'Nothing to mark.' };
+  if (!(await plan.findClaude().catch(() => null))) return { error: 'no-claude' };
+  const message = [`Question: ${q.q}`, '', `Model answer: ${String(q.answer || '').slice(0, 2000)}`, q.explain ? `\nWhy (from the question's explanation): ${String(q.explain).slice(0, 1200)}` : '', '', `Student's answer: ${answer}`].join('\n');
+  const r = await turn(`mark-${id}`, message, null, () => {}, { system: MARK_SYSTEM, model: settings.get('study.mark.model', 'claude-sonnet-5-5'), effort: 'low', checks: 0 });
+  tallied(r);
+  if (r.error || r.stopped) return { error: r.error || 'stopped' };
+  return verdictOf(r.text) || { error: 'Claude’s mark couldn’t be read.' };
+}
+
 /** A lesson on the person's own Claude, counted for the Usage menu (Kea 0.101). */
 function tallied(r) {
   try {
@@ -410,4 +442,4 @@ async function writeWith(job, { progress = async () => ({}), claude = null, cwd 
   return { ok: true, text: r.text, usage: r.usage || null };
 }
 
-module.exports = { teach, stop, route, writeShared, _test: { SYSTEM, systemFor, checksOf, bodyOf, lessonPrompt, given, correct, sharedRequest, followupPrompt, turnApi } };
+module.exports = { teach, mark, stop, route, writeShared, _test: { verdictOf, MARK_SYSTEM, SYSTEM, systemFor, checksOf, bodyOf, lessonPrompt, given, correct, sharedRequest, followupPrompt, turnApi } };

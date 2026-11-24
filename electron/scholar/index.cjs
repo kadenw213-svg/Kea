@@ -999,6 +999,7 @@ function register() {
   // Teach: Claude's lesson on an answered question (streamed to the window as it's written), and follow-ups.
   handleApp(ipcMain, 'scholar:teach', (e, id, req) => inKey(id, () => require('./teach.cjs').teach(String(id), req || {}, (text) => !e.sender.isDestroyed() && e.sender.send('scholar:teach-event', { id: String(id), text }))));
   handleApp(ipcMain, 'scholar:teachStop', (_e, id) => require('./teach.cjs').stop(String(id)));
+  handleApp(ipcMain, 'scholar:markShort', (_e, id, req) => require('./teach.cjs').mark(String(id), req || {}));
   // Where a lesson is written now: this PC's Claude, Kea's shared Claude, or neither.
   handleApp(ipcMain, 'scholar:teachRoute', () => require('./teach.cjs').route().then(({ via, model, error }) => ({ via, model, error: error || null })));
   handleApp(ipcMain, 'scholar:lessons', (_e, k) => inKey(k, () => study.lessons(String(k || ''))));

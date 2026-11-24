@@ -8,6 +8,7 @@ import { StudyQuestion, StudyStep } from '../../lib/api';
 import { cachedSvg, texToSvg } from '../../lib/tex';
 import { firstSentence } from '../../lib/studyQueue';
 import { setting } from '../../lib/settings';
+import { useShortMark } from '../../lib/shortMark';
 import { MathText } from './MathText';
 
 type Shown = { q: StudyQuestion; order: number[] };
@@ -81,6 +82,8 @@ export function Explanation({ q, s, answer, result, onSelf, dunno, brief }: { q:
   const short = !!brief && q.type !== 'short';
   const [more, setMore] = useState(false);
   useEffect(() => setMore(false), [q.k]);
+  // A typed answer: Claude marks it (the student only when Claude can't be reached).
+  const mark = useShortMark(q, typeof answer === 'string' ? answer : '', q.type === 'short' && !dunno, onSelf);
   // A right answer needs no explanation (Settings → Study, study.explainRight): just "Correct.", with the why one
   // click away. Wrong answers and "I don't know" show it all, as before.
   const quiet = result === true && !dunno && q.type !== 'short' && !more && setting('study.explainRight') !== true;
@@ -112,12 +115,28 @@ export function Explanation({ q, s, answer, result, onSelf, dunno, brief }: { q:
           </span>
         </div>
       ) : q.type === 'short' ? (
-        <div className="ex-verdict mark">
-          <b>Model answer</b>
-          <div className="ex-model">
-            <MathText text={q.answer} />
+        <>
+          {mark?.state === 'checking' && (
+            <div className="ex-verdict mark">
+              <span className="muted">Claude is checking your answer…</span>
+            </div>
+          )}
+          {mark?.state === 'done' && (
+            <div className={`ex-verdict ${mark.right ? 'right' : 'wrong'}`}>
+              {mark.right ? <Check size={16} className="ex-check" /> : <X size={16} />}
+              <span>
+                <b>{mark.right ? 'Correct.' : 'Not quite.'}</b>
+                {mark.why ? <> {mark.why}</> : null}
+              </span>
+            </div>
+          )}
+          <div className="ex-verdict mark">
+            <b>Model answer</b>
+            <div className="ex-model">
+              <MathText text={q.answer} />
+            </div>
           </div>
-        </div>
+        </>
       ) : result === null ? null : (
         <div className={`ex-verdict ${result ? 'right' : 'wrong'}`}>
           {result ? <Check size={16} className="ex-check" /> : <X size={16} />}
@@ -147,9 +166,9 @@ export function Explanation({ q, s, answer, result, onSelf, dunno, brief }: { q:
       )}
       {!why && (q.type === 'mc' || q.type === 'multi') && <Choices q={q} s={s} answer={answer} />}
       {!why && <Walkthrough q={q} open={!!dunno || result === false || (!brief && isWorked(q))} />}
-      {q.type === 'short' && !dunno && (
+      {q.type === 'short' && !dunno && mark?.state === 'self' && (
         <div className="st-self">
-          <span className="muted">Did you get it?</span>
+          <span className="muted">{navigator.onLine === false ? 'You’re offline, so mark it yourself. Did you get it?' : 'Claude couldn’t mark this one. Did you get it?'}</span>
           <button className={`btn sm ${result === true ? 'tonal' : ''}`} onClick={() => onSelf(true)}>
             <Check size={13} /> Yes
           </button>

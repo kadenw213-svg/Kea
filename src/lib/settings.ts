@@ -731,6 +731,21 @@ export const SECTIONS: Section[] = [
       { key: 'study.mix.short', label: 'Written answers', type: 'range', default: 1, min: 0, max: 10, advanced: true, help: 'You mark these yourself against the model answer.' },
       { key: 'study.sound', group: 'Studying', label: 'Soft sounds for right and wrong answers', type: 'toggle', default: false, help: 'A gentle rising tone when you’re right, a single low one when you’re not.' },
       { key: 'study.teachOnWrong', label: 'Start Claude’s lesson when I get a question wrong', type: 'toggle', default: true, help: 'Teach opens beside the question and Claude explains where it went wrong and the idea behind it. Questions you get right never start a lesson; Teach me is still there if you want one.' },
+      { key: 'study.markWithClaude', label: 'Claude marks typed answers', type: 'toggle', default: true, help: 'Claude reads what you wrote and decides if it’s right, judging the meaning, not the exact words. You mark it yourself only when you’re offline or Claude can’t be reached.' },
+      { key: 'study.teachTyped', label: 'Always start Claude’s lesson after a typed answer', type: 'toggle', default: true, help: 'Right or wrong, Teach opens beside the question and goes further into the topic.' },
+      {
+        key: 'study.mark.model',
+        label: 'Model that marks typed answers',
+        type: 'select',
+        default: 'claude-sonnet-5-5',
+        advanced: true,
+        options: [
+          { value: 'claude-haiku-5-5', label: 'Haiku 5.5 (fastest)' },
+          { value: 'claude-sonnet-5-5', label: 'Sonnet 5.5' },
+          { value: 'claude-opus-5-5', label: 'Opus 5.5 (most careful)' }
+        ],
+        help: 'Marking is a quick check, so it uses little thinking whichever you pick.'
+      },
       { key: 'study.explainRight', label: 'Show the explanation on questions I get right', type: 'toggle', default: false, advanced: true, help: 'Off: a right answer just says Correct, with Show why if you want it. Wrong answers and I don’t know always show the whole explanation.' },
       { key: 'study.teachOnDontKnow', label: 'Start Claude’s lesson when I press I don’t know', type: 'toggle', default: true, help: 'Teach opens beside the question and Claude explains the idea behind it straight away. The question still counts as missed and comes back later.' },
       { key: 'study.stream.missGap', label: 'A missed question comes back after', type: 'number', default: 4, min: 2, max: 20, step: 1, unit: 'questions', advanced: true, help: 'Give or take one. Answering it then doesn’t count as learned: right just after the explanation isn’t the same as knowing it.' },
