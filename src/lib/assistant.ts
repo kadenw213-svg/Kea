@@ -16,6 +16,7 @@ import { assignmentOf, assignmentSig, assignmentText } from './assignmentContext
 import { route, routeFor, type Route, type Tier } from './funnel';
 import { newPlaceholders, placeholderComment } from './placeholders';
 import { projectOfTab } from './projects';
+import { memoryForClaude } from './projectMemory';
 
 const MAX_STEPS = 40;
 
@@ -50,8 +51,9 @@ import academic from './guidelines/academic.md?raw';
 import classes from './guidelines/classes.md?raw';
 import documents from './guidelines/documents.md?raw';
 import design from './guidelines/design.md?raw';
+import memory from './guidelines/memory.md?raw';
 
-export const SYSTEM = [core, writing, academic, classes, documents, design].map((t) => t.trim()).join('\n\n');
+export const SYSTEM = [core, writing, academic, classes, documents, design, memory].map((t) => t.trim()).join('\n\n');
 
 /**
  * Context sent with each message: which file, and what the student has selected. A passage sent with "Ask Claude"
@@ -153,6 +155,15 @@ async function askRun(tabId: string, text: string, opts: AskOpts, run: { stopped
   if (assignment && giving) {
     content.push({ type: 'text', text: `[The assignment this ${hooks?.noun || 'file'} is for: work against its guidelines and rubric]\n${await assignmentText(assignment)}` });
     patchChat(tabId, { assignmentSent: sig });
+  }
+  // What Claude remembers about this context folder: given once per conversation, and again when the notes change.
+  const proj = projectOfTab(tabId);
+  if (proj) {
+    const mem = await memoryForClaude(proj).catch(() => ({ text: '', sig: '' }));
+    if (mem.text && chatOf(tabId).memorySent !== mem.sig) {
+      content.push({ type: 'text', text: mem.text });
+      patchChat(tabId, { memorySent: mem.sig });
+    }
   }
   const focus = focusOf(tabId);
   setFocus(tabId, null);

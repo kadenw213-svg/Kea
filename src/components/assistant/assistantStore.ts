@@ -47,6 +47,8 @@ export interface Chat {
   assignmentSent?: string;
   /** On an API key: the model the last message went to (the funnel can pick another for the next one). */
   lastModel?: string;
+  /** The context folder notes Claude was last given in this conversation (projectMemory.ts sigOf). */
+  memorySent?: string;
 }
 
 interface AssistantStore {
@@ -131,7 +133,9 @@ const DOING: Record<string, string> = {
   place_image: 'Placing artwork',
   insert_image: 'Placing artwork',
   add_comment: 'Leaving a comment',
-  apply_edits: 'Building'
+  apply_edits: 'Building',
+  remember: 'Remembering that',
+  forget: 'Forgetting that'
 };
 /** "add_text_box" → "Adding text box" (what the overlay says while a step runs). */
 export function doing(name = '') {

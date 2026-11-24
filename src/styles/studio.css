@@ -756,3 +756,90 @@ html .fb-tag {
     display: none;
   }
 }
+
+/* ---------- What Claude remembers, in a context folder's window (Kea 0.104) ---------- */
+html .cf-notes {
+  border-top: 1px solid var(--glass-line);
+}
+html .cf-notes-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px 10px 20px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+html .cf-notes-head:hover {
+  background: var(--hover);
+}
+html .cf-notes-head > svg:first-child {
+  color: var(--accent);
+}
+html .cf-notes-head b {
+  font-weight: 600;
+}
+html .cf-notes-head .muted {
+  font-size: 12px;
+}
+html .cf-notes-body {
+  padding: 0 16px 10px 20px;
+  max-height: 34vh;
+  overflow: auto;
+}
+html .cf-notes-empty {
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 2px 0 8px;
+}
+html .cf-notes-group {
+  margin-bottom: 8px;
+}
+html .cf-notes-topic {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 0;
+}
+html .cf-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+html .cf-note:hover {
+  background: var(--hover);
+}
+html .cf-note > span {
+  flex: 1;
+  min-width: 0;
+}
+html .cf-note .icon-btn {
+  opacity: 0;
+}
+html .cf-note:hover .icon-btn {
+  opacity: 1;
+}
+html .cf-notes-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+html .cf-notes-add .input {
+  flex: 1;
+  min-width: 0;
+}
+html .cf-notes-foot {
+  font-size: 11.5px;
+  padding-top: 6px;
+}

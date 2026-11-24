@@ -10,6 +10,7 @@ import { create } from 'zustand';
 import { api } from './api';
 import { useTabs, type AssistantTool } from '../store';
 import { useSettings } from './settings';
+import { memoryTools } from './projectMemory';
 
 export interface Project {
   dir: string;
@@ -254,8 +255,15 @@ export function projectTools(tabId: string): AssistantTool[] {
         }
       ]
     : [];
+  // The folder's notes (projectMemory.ts): once Claude saves one, this chat already knows it, so it isn't sent again.
+  const known = () =>
+    import('./projectMemory').then(async ({ memoryForClaude }) => {
+      const m = await memoryForClaude(p);
+      (await import('../components/assistant/assistantStore')).patchChat(tabId, { memorySent: m.sig });
+    });
   return [
     ...contacts,
+    ...memoryTools(p, () => void known().catch(() => {})),
     {
       name: 'list_project_files',
       description: `List the files in the project "${p.name}" that this file belongs to (a ${p.kind === 'class' ? 'class: its syllabus, rubrics, instructions, earlier papers and feedback' : p.kind === 'work' ? 'work project: its sheets, contacts, schedules and templates' : 'folder of related files'}). Use it when the student refers to other files ("using the contact sheet", "build on my Essay 1", "the images in this folder") instead of asking them to attach anything.`,

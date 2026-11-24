@@ -3,7 +3,7 @@
 // Claude uses, where it lives and who it's shared with, and the way into the chat about it. Its settings (files,
 // sharing) open the folder's manager. Hidden with Settings → Claude → "Show the folder bar".
 import { useEffect, useState } from 'react';
-import { Briefcase, ChevronDown, Cloud, Folder, FolderCog, FolderOpen, GraduationCap, HardDrive, MessageSquare, Share2, Users, X } from 'lucide-react';
+import { Brain, Briefcase, ChevronDown, Cloud, Folder, FolderCog, FolderOpen, GraduationCap, HardDrive, MessageSquare, Share2, Users, X } from 'lucide-react';
 import { MenuButton } from '../Popover';
 import { api } from '../../lib/api';
 import { useSetting } from '../../lib/settings';
@@ -64,6 +64,9 @@ export function FolderBar({ tabId }: { tabId: string }) {
             <div className="menu-title">Context folder</div>
             <button className="menu-item" onClick={() => (close(), manageContextFolder(p.dir))}>
               <FolderCog size={16} /> Files Claude uses…
+            </button>
+            <button className="menu-item" onClick={() => (close(), manageContextFolder(p.dir, { notes: true }))}>
+              <Brain size={16} /> What Claude remembers…
             </button>
             {(!s || s.personal) && (
               <button className="menu-item" onClick={() => (close(), manageContextFolder(p.dir, { share: true }))}>

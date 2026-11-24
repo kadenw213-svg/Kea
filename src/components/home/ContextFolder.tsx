@@ -12,10 +12,11 @@ import { friendlyPath, useKeaCloud } from '../../lib/keaCloud';
 import { newFile } from '../../lib/open';
 import { MenuButton } from '../Popover';
 import { SharePanel } from './SharePanel';
+import { FolderNotes } from './FolderNotes';
 
-const useManager = create<{ dir: string | null; share?: boolean }>(() => ({ dir: null }));
-/** Open the manager for a context folder (`share`: with its Share panel open). */
-export const manageContextFolder = (dir: string, opts?: { share?: boolean }) => useManager.setState({ dir, share: !!opts?.share });
+const useManager = create<{ dir: string | null; share?: boolean; notes?: boolean }>(() => ({ dir: null }));
+/** Open the manager for a context folder (`share`: with its Share panel open; `notes`: with what Claude remembers open). */
+export const manageContextFolder = (dir: string, opts?: { share?: boolean; notes?: boolean }) => useManager.setState({ dir, share: !!opts?.share, notes: !!opts?.notes });
 
 type F = Awaited<ReturnType<typeof projectFiles>>[number];
 
@@ -66,7 +67,16 @@ export function ContextFolderDialog() {
     return (
       <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
         <div className="dialog cf-dialog">
-          <div className="muted">Opening…</div>
+          {files === null ? (
+            <div className="muted">Opening…</div>
+          ) : (
+            <>
+              <div className="muted">This folder isn't a context folder any more, or it was moved.</div>
+              <div className="cf-foot">
+                <button className="btn" onClick={close}>Close</button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -244,6 +254,8 @@ export function ContextFolderDialog() {
             ))
           )}
         </div>
+
+        <FolderNotes key={p.dir} p={p} startOpen={!!useManager.getState().notes} />
 
         <div className="cf-foot">
           <span className="muted">
