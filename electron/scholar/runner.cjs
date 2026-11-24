@@ -785,7 +785,29 @@ async function curriculumCheck(why = 'schedule') {
   };
   for (const d of due) run('curriculum', d.code, why).then(mark(d.code, () => ({ ...d.ran, ranAt: new Date().toISOString() })));
   for (const code of deep) run('curriculum', `${code} depth`, why).then(mark(code, () => ({ depthAt: new Date().toISOString() })));
+  await guideSets(list, why).catch((err) => console.error('Study guide sets', err));
   return due.map((d) => d.code);
+}
+
+/** New study guides or review sheets for a test in the next three weeks: a practice set for that test (guideSets.cjs). */
+async function guideSets(list, why) {
+  if (settings().get('scholar.guideSets', true) === false) return;
+  const g = require('./guideSets.cjs');
+  const study = require('./study.cjs');
+  const file = path.join(profiles.paths().dir, 'guide-sets.json');
+  let seen = readJson(file, {});
+  for (const c of list) {
+    const tests = await db().upcomingTests(profiles.paths().db, c.code).catch(() => []);
+    const r = g.plan({ tests, files: study.classFiles(c.code), seen, sets: study.list() });
+    seen = r.seen;
+    fs.writeFileSync(file, JSON.stringify(seen, null, 1));
+    for (const { test, fresh } of r.make) {
+      const made = await study.request({ kind: 'exam', courseId: c.code, itemId: test.id, count: Math.min(50, 20 + 5 * (test.chapters || []).length), mode: 'new' }).catch((err) => (console.error('Study guide set', err), null));
+      if (!made?.id) continue;
+      if (!made.ready) run('practice', made.id, why);
+      addNews(g.newsFor(c.code, test, fresh));
+    }
+  }
 }
 
 /**

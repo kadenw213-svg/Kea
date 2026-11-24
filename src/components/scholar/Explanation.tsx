@@ -7,6 +7,7 @@ import { Check, ChevronDown, ChevronRight, HelpCircle, X } from 'lucide-react';
 import { StudyQuestion, StudyStep } from '../../lib/api';
 import { cachedSvg, texToSvg } from '../../lib/tex';
 import { firstSentence } from '../../lib/studyQueue';
+import { setting } from '../../lib/settings';
 import { MathText } from './MathText';
 
 type Shown = { q: StudyQuestion; order: number[] };
@@ -80,6 +81,25 @@ export function Explanation({ q, s, answer, result, onSelf, dunno, brief }: { q:
   const short = !!brief && q.type !== 'short';
   const [more, setMore] = useState(false);
   useEffect(() => setMore(false), [q.k]);
+  // A right answer needs no explanation (Settings → Study, study.explainRight): just "Correct.", with the why one
+  // click away. Wrong answers and "I don't know" show it all, as before.
+  const quiet = result === true && !dunno && q.type !== 'short' && !more && setting('study.explainRight') !== true;
+  if (quiet)
+    return (
+      <div className="st-explain ex">
+        <div className="ex-verdict right">
+          <Check size={16} className="ex-check" />
+          <span>
+            <b>Correct.</b>
+          </span>
+        </div>
+        {(q.explain || (q.steps || []).length) && (
+          <button className="link-btn ex-more" onClick={() => setMore(true)}>
+            Show why
+          </button>
+        )}
+      </div>
+    );
   const why = short && !more ? firstSentence(q.explain || '') : null;
   const hasMore = !!why && (!!why.rest || (q.type === 'mc' || q.type === 'multi' ? !!q.wrong?.some(Boolean) : false) || !!(q.steps || []).length || !!q.final);
   return (

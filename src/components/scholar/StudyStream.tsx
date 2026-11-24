@@ -154,7 +154,9 @@ export function StudyStream({ scope, set }: { scope?: StreamScope; set?: StudySe
       { k: card.served.item.k, q, courseCode: scope?.code || set?.courseCode || '', answer: dunno ? null : mine, right: dunno ? false : result, dunno }
     );
     // "I don't know": Claude's lesson on it starts straight away (Settings → Study, on by default).
-    if (dunno && side?.canTeach && taught.current !== card.served.at && setting('study.teachOnDontKnow') !== false) {
+    // A wrong answer too (study.teachOnWrong); a right one never starts a lesson (Teach me is still there).
+    const wants = dunno ? setting('study.teachOnDontKnow') !== false : result === false && setting('study.teachOnWrong') !== false;
+    if (wants && side?.canTeach && taught.current !== card.served.at) {
       taught.current = card.served.at;
       side.teach('');
     }

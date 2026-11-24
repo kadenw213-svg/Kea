@@ -1082,6 +1082,25 @@ async function practiceSources(file, textbooks, { courseId, chapters = [], itemI
   return { course: { id: c.id, code: c.course_code, name: c.name }, item, chapters: out, tests, course_outcomes, ...(whole ? { whole: true, work } : {}) };
 }
 
+/** A class's tests from today on, with their chapters, study focus and review links (a final with no chapters known too). */
+async function upcomingTests(file, courseId) {
+  const db = await open(file);
+  if (!db) return [];
+  const c = rows(db, 'SELECT * FROM courses WHERE id = ? OR course_code = ?', [courseId, courseId])[0];
+  if (!c) return [];
+  const known = new Set(rows(db, 'SELECT chapter_label FROM chapter_topics WHERE course_id = ?', [c.id]).map((x) => x.chapter_label));
+  const today = new Date().toISOString().slice(0, 10);
+  return rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type IN ${TEST_TYPES} AND ${ACTIVE} AND substr(date, 1, 10) >= ? ORDER BY date`, [c.id, today]).map((r) => ({
+    id: r.id,
+    title: r.title,
+    type: r.item_type,
+    date: r.date,
+    chapters: coveredOf(r, known),
+    study_focus: json(r.study_focus_json, []),
+    review_links: [...json(r.weekly_links_json, []), ...[r.reference_url && { label: r.reference_url_label, url: r.reference_url }, r.resource_url && { label: r.resource_url_label, url: r.resource_url }].filter(Boolean)].map((l) => ({ label: l.label || '', url: l.url }))
+  }));
+}
+
 /**
  * Chapters whose tests ask the student to recognize things from pictures: every chapter of a class with lab practicals,
  * and any chapter whose own notes are about identifying structures, shapes, anatomy or lab equipment. A Set of
@@ -1152,4 +1171,4 @@ async function sourceText(file, id) {
   return r || null;
 }
 
-module.exports = { termCourses, searchSources, syllabusTexts, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { sameChapter, outcomesOf, handIn, norm, relateItems, labNumber, postBase, DUE_KINDS } };
+module.exports = { upcomingTests, termCourses, searchSources, syllabusTexts, sourceText, itemSources, practiceSources, courses, items, course, watchList, gradesFromChecks, chaptersIn, textbookChapters, textbookOf, nextTests, identifyingChapters, sameWork, badCourseCodes, _test: { sameChapter, outcomesOf, handIn, norm, relateItems, labNumber, postBase, DUE_KINDS } };

@@ -2,3 +2,4 @@
 import('./itemRules.test.mjs');
 import('./inbox.test.mjs');
 import('./withdrawn.test.mjs');
+import('./guideSets.test.mjs');
