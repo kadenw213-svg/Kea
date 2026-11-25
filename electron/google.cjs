@@ -236,6 +236,8 @@ async function accessToken() {
   }
 }
 
+const API_OFF = /has not been used in project|it is disabled|SERVICE_DISABLED|accessNotConfigured/i;
+const API_OFF_TEXT = 'Google Drive isn’t switched on for Kea yet, so Kea can’t open Drive files. (For Kea’s owner: turn on the Google Drive API in Kea’s Google Cloud project.)';
 async function api(pathAndQuery, init = {}, raw = false) {
   const token = await accessToken();
   const url = pathAndQuery.startsWith('http') ? pathAndQuery : API + pathAndQuery;
@@ -243,6 +245,8 @@ async function api(pathAndQuery, init = {}, raw = false) {
   if (!res.ok) {
     const j = await res.json().catch(() => ({}));
     const msg = j.error?.message || `Google Drive error ${res.status}`;
+    // (Kea's Google Cloud project has the Drive API switched off: nobody's Drive works until its owner turns it on.)
+    if (API_OFF.test(msg)) throw Object.assign(new Error(API_OFF_TEXT), { code: 'API_OFF', status: res.status });
     const e = new Error(/exportSizeLimitExceeded|too large/i.test(msg) ? 'This file is too large for Google to export (over 10 MB).' : msg);
     e.status = res.status;
     throw e;
@@ -335,6 +339,71 @@ async function exportOffice(id) {
   return { name: `${meta.name}.${t.ext}`, data: Buffer.from(await res.arrayBuffer()) };
 }
 
+// ---------- Adding files straight from Drive (Kea 0.108.1) ----------
+// The context folder's "From Google Drive…" browses the person's Drive in Kea (My Drive and its folders, Shared with
+// me, Recent, or a search) and adds what they tick: Google Docs, Sheets and Slides as live links (read as they are
+// now, every time), everything else (PDFs, Word files, pictures…) copied into the folder.
+const FOLDER = 'application/vnd.google-apps.folder';
+const MAX_DOWNLOAD = 200 * 1024 * 1024;
+const kindOfMime = (mime) => (mime === FOLDER ? 'folder' : Object.values(TYPES).find((t) => t.google === mime)?.kind || (String(mime).startsWith('application/vnd.google-apps.') ? 'other-google' : 'file'));
+/** The Drive search for one view of the browser (pure; tested). */
+function listQuery({ view = 'my', folderId = '', query = '' } = {}) {
+  const words = String(query || '').trim().slice(0, 200);
+  const id = String(folderId || '').replace(/[^\w-]/g, '');
+  if (words) return { q: `(name contains ${q(words)} or fullText contains ${q(words)}) and trashed = false`, orderBy: '' };
+  if (id) return { q: `${q(id)} in parents and trashed = false`, orderBy: 'folder,name_natural' };
+  if (view === 'shared') return { q: 'sharedWithMe = true and trashed = false', orderBy: 'folder,sharedWithMeTime desc' };
+  if (view === 'recent') return { q: `mimeType != ${q(FOLDER)} and trashed = false`, orderBy: 'viewedByMeTime desc' };
+  return { q: "'root' in parents and trashed = false", orderBy: 'folder,name_natural' };
+}
+async function list(opts = {}) {
+  const { q: query, orderBy } = listQuery(opts);
+  const params = new URLSearchParams({ q: query, pageSize: '100', fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,size)', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true' });
+  if (orderBy) params.set('orderBy', orderBy);
+  if (opts.pageToken) params.set('pageToken', String(opts.pageToken).slice(0, 500));
+  const r = await api(`/files?${params}`);
+  return { files: (r.files || []).map((f) => ({ id: f.id, name: f.name, kind: kindOfMime(f.mimeType), size: f.size ? Number(f.size) : null, modifiedTime: f.modifiedTime || null })), next: r.nextPageToken || null };
+}
+/** A name that's safe as a Windows file name. */
+const safeName = (s) => String(s || 'Google file').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/, '').slice(0, 150) || 'Google file';
+/**
+ * Copy Drive files into a context folder (`dir`, which must be one: it has a .kea-project.json). Google Docs, Sheets
+ * and Slides come as .docx/.xlsx/.pptx. Returns { names, skipped: [{ name, why }] }.
+ */
+async function copyInto({ ids, dir }) {
+  if (typeof dir !== 'string' || !path.isAbsolute(dir) || !fs.existsSync(path.join(dir, '.kea-project.json'))) throw new Error('That isn’t a context folder.');
+  const names = [];
+  const skipped = [];
+  for (const raw of (Array.isArray(ids) ? ids : []).slice(0, 100)) {
+    const id = String(raw).replace(/[^\w-]/g, '');
+    const meta = await api(`/files/${id}?fields=id,name,mimeType,size&supportsAllDrives=true`);
+    const kind = kindOfMime(meta.mimeType);
+    let name;
+    let data;
+    if (kind === 'folder' || kind === 'other-google') {
+      skipped.push({ name: meta.name, why: kind === 'folder' ? 'a folder (open it and tick its files)' : 'a Google file Kea can’t read (only Docs, Sheets and Slides)' });
+      continue;
+    }
+    if (kind === 'file') {
+      if (Number(meta.size) > MAX_DOWNLOAD) {
+        skipped.push({ name: meta.name, why: 'over 200 MB' });
+        continue;
+      }
+      const res = await api(`/files/${id}?alt=media&supportsAllDrives=true`, {}, true);
+      name = meta.name;
+      data = Buffer.from(await res.arrayBuffer());
+    } else ({ name, data } = await exportOffice(id));
+    const clean = safeName(name);
+    const ext = path.extname(clean);
+    const base = clean.slice(0, clean.length - ext.length);
+    let to = clean;
+    for (let i = 2; fs.existsSync(path.join(dir, to)); i++) to = `${base} (${i})${ext}`;
+    await fs.promises.writeFile(path.join(dir, to), data, { flag: 'wx' });
+    names.push(to);
+  }
+  return { names, skipped };
+}
+
 /** Upload new contents; Google converts the .docx/.xlsx/.pptx back into its own format. */
 async function saveFile(id, kindExt, data) {
   const type = Object.values(TYPES).find((t) => t.ext === kindExt);
@@ -381,6 +450,8 @@ function register({ log }) {
   handleApp(ipcMain, 'google:linkInfo', wrap((_e, link) => linkInfo(String(link || ''))));
   handleApp(ipcMain, 'google:exportText', wrap((_e, id) => exportText(String(id || '').replace(/[^\w-]/g, ''))));
   handleApp(ipcMain, 'google:save', wrap((_e, id, ext, data) => saveFile(id, ext, data)));
+  handleApp(ipcMain, 'google:list', wrap((_e, opts) => list(opts && typeof opts === 'object' ? opts : {})));
+  handleApp(ipcMain, 'google:copyInto', wrap((_e, a) => copyInto(a || {})));
 }
 
 /** Whether Drive can be used here (the built-in client), and who's connected. */
@@ -398,4 +469,4 @@ function status() {
 /** The Google account signed in to Kea, if any (its email). */
 const signedInEmail = () => loadSession()?.email || null;
 
-module.exports = { register, signedInEmail, authorize, refreshed, exportOffice, _drive: { idFromLink, client, clientFor, driveAuthorizeUrl, status, keaGoogleEmail, refusedError, REFUSED, NOT_HERE } };
+module.exports = { register, signedInEmail, authorize, refreshed, exportOffice, _drive: { idFromLink, listQuery, kindOfMime, safeName, API_OFF, client, clientFor, driveAuthorizeUrl, status, keaGoogleEmail, refusedError, REFUSED, NOT_HERE } };

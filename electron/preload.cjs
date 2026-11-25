@@ -386,7 +386,9 @@ contextBridge.exposeInMainWorld('api', {
     open: (p) => ipcRenderer.invoke('google:open', p),
     linkInfo: (link) => ipcRenderer.invoke('google:linkInfo', link),
     exportText: (id) => ipcRenderer.invoke('google:exportText', id),
-    save: (id, ext, data) => ipcRenderer.invoke('google:save', id, ext, data)
+    save: (id, ext, data) => ipcRenderer.invoke('google:save', id, ext, data),
+    list: (opts) => ipcRenderer.invoke('google:list', opts),
+    copyInto: (a) => ipcRenderer.invoke('google:copyInto', a)
   },
   recovery: {
     put: (meta, data) => ipcRenderer.invoke('recovery:put', meta, data),

@@ -4,7 +4,8 @@
 // Opened from Home's Ask Claude bar (Manage files) and from the project strip in the Claude panel.
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
-import { FileText, Sheet as SheetIcon, Image as ImageIcon, Film, Music, File as FileIcon, Link2, Cloud, HardDrive, Trash2, X, FilePlus2, Users, Plus, Share2 } from 'lucide-react';
+import { FileText, Sheet as SheetIcon, Image as ImageIcon, Film, Music, File as FileIcon, Link2, Cloud, HardDrive, Trash2, X, FilePlus2, Users, Plus, Share2, Triangle } from 'lucide-react';
+import { DriveBrowser, type DrivePicked } from './DriveBrowser';
 import { api } from '../../lib/api';
 import { toast } from '../../store';
 import { findProject, kindWord, projectFiles, saveProject, useProjects, type Project } from '../../lib/projects';
@@ -43,6 +44,7 @@ export function ContextFolderDialog() {
   const cloudRoot = useKeaCloud((s) => s.status?.root);
   const [tick, setTick] = useState(0);
   const [sharing, setSharing] = useState(false);
+  const [drive, setDrive] = useState(false);
   const refresh = () => setTick((t) => t + 1);
   useEffect(() => setSharing(!!useManager.getState().share), [dir]);
 
@@ -118,10 +120,25 @@ export function ContextFolderDialog() {
       toast(`Added ${g.name}`, 'success');
     } catch (err: any) {
       const m = String(err?.message || err);
-      toast(/NO_ACCOUNT|Connect Google Drive/.test(m) ? 'Connect Google Drive first (Settings → Google), then add the link again.' : m.replace(/^.*?\[\w+\]\s*/, ''), 'error');
+      toast(/NO_ACCOUNT|Connect Google Drive/.test(m) ? 'Connect Google Drive first (Settings → Google), or use Add files → From Google Drive.' : m.replace(/^.*?\[\w+\]\s*/, ''), 'error');
     } finally {
       setBusy(false);
     }
+  };
+  // From the Drive browser: Docs, Sheets and Slides linked live, everything else copied in (a shared folder: copied
+  // and uploaded for everyone).
+  const addFromDrive = async ({ links, copies }: DrivePicked) => {
+    if (links.length) await save({ ...p, links: [...(p.links || []).filter((l) => !links.some((n) => n.id === l.id)), ...links] });
+    let names: string[] = [];
+    let skipped: { name: string; why: string }[] = [];
+    if (copies.length) {
+      ({ names, skipped } = await api.google.copyInto!({ ids: copies, dir: p.dir }));
+      if (p.shared) for (const n of names) await api.teamFolders.upload(`${p.dir}${p.dir.includes('\\') ? '\\' : '/'}${n}`).catch((err: any) => toast(String(err?.message || err), 'error'));
+    }
+    const n = links.length + names.length;
+    if (n) toast(n === 1 ? `Added ${links[0]?.name || names[0]}` : `Added ${n} files from Google Drive`, 'success');
+    if (skipped.length) toast(`Not added: ${skipped.map((s) => `${s.name} (${s.why})`).join('; ')}`, 'error');
+    refresh();
   };
   const remove = async (f: F) => {
     try {
@@ -206,6 +223,11 @@ export function ContextFolderDialog() {
                     <Cloud size={16} /> From Kea cloud…
                   </button>
                 )}
+                {api.google.list && (
+                  <button className="menu-item" onClick={() => (done(), setDrive(true))}>
+                    <Triangle size={16} /> From Google Drive…
+                  </button>
+                )}
                 <div className="menu-sep" />
                 <button className="menu-item" onClick={() => (done(), newFile('doc', p.dir), close())}>
                   <FilePlus2 size={16} /> New document in it
@@ -234,7 +256,7 @@ export function ContextFolderDialog() {
           ) : files.length === 0 ? (
             <div className="cf-empty">
               <b>No files yet.</b>
-              <span className="muted">Add files, paste a Google link, or drop files here. Any kind works: sheets, documents, PDFs, slides, photos, video and audio.</span>
+              <span className="muted">Add files (from this PC, Kea cloud or Google Drive), paste a Google link, or drop files here. Any kind works: sheets, documents, PDFs, slides, photos, video and audio.</span>
             </div>
           ) : (
             files.map((f) => (
@@ -283,6 +305,7 @@ export function ContextFolderDialog() {
             Done
           </button>
         </div>
+        {drive && <DriveBrowser folderName={p.name} canLink={!p.shared} onClose={() => setDrive(false)} onAdd={addFromDrive} />}
         {drop && <div className="cf-drop">Drop to {copy ? 'add to' : 'link in'} {p.name}</div>}
       </div>
     </div>

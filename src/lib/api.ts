@@ -401,6 +401,10 @@ export interface KeaApi {
     linkInfo(link: string): Promise<{ id: string; name: string; kind: 'doc' | 'sheet' | 'slides' }>;
     /** That file's text as it is now (a Sheet as CSV). */
     exportText(id: string): Promise<{ name: string; text: string }>;
+    /** Browse Drive: My Drive (or a folder in it), Shared with me, Recent, or a search. */
+    list?(opts: { view?: 'my' | 'shared' | 'recent'; folderId?: string; query?: string; pageToken?: string }): Promise<{ files: DriveEntry[]; next: string | null }>;
+    /** Copy Drive files into a context folder (Docs, Sheets and Slides as .docx/.xlsx/.pptx). */
+    copyInto?(a: { ids: string[]; dir: string }): Promise<{ names: string[]; skipped: { name: string; why: string }[] }>;
   };
   /** Shared work folders (electron/teamFolders.cjs): an organization's folders, kept on this PC download-only. */
   teamFolders: {
@@ -1202,6 +1206,14 @@ export interface MailList {
   drafts: (MailDraft & { key: string; at: string })[];
   /** When Kea last read the class site's mailbox. */
   checked?: string | null;
+}
+/** A file or folder in someone's Google Drive (the context folder's Drive browser). */
+export interface DriveEntry {
+  id: string;
+  name: string;
+  kind: 'folder' | 'doc' | 'sheet' | 'slides' | 'file' | 'other-google';
+  size: number | null;
+  modifiedTime: string | null;
 }
 export interface StudySet {
   id: string;
