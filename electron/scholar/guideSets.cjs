@@ -21,13 +21,23 @@ const NOT_LINK = /quiz_summary|\/quizzing\/|quickLink\.d2l|type=lti|\/dropbox\/|
 const chapterNum = (s) => (/(?:ch(?:apter)?\.?\s*)(\d+)/i.exec(s) || [])[1];
 
 /** Which test a file names: "midterm", "final", or "exam/test 2" (null: none in particular). */
+// (Schools name tests every way: "Exam 2", "Exam II", "Test #2", "Unit 3 Test", "Module 4 Exam", "Lab Practical II",
+// "Midterm 1", "Final". Roman numerals count as numbers; "unit", "module" and "chapter-set" names say which unit.)
+const ROMAN = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+const num = (s) => (/^\d+$/.test(s) ? String(Number(s)) : ROMAN[s] ? String(ROMAN[s]) : null);
 function testWords(s) {
-  const t = String(s).toLowerCase();
+  const t = String(s).toLowerCase().replace(/[_\-–]+/g, ' ');
   const out = [];
-  if (/mid-?term/.test(t)) out.push('midterm');
+  const midterm = /mid ?term/.exec(t);
+  if (midterm) {
+    const n = /mid ?term\s*#?\s*(\d+|[ivx]+)\b/.exec(t);
+    out.push(n && num(n[1]) ? `midterm ${num(n[1])}` : 'midterm');
+  }
   if (/\bfinal\b/.test(t)) out.push('final');
-  for (const m of t.matchAll(/\b(exam|test|unit)\s*#?\s*(\d+)/g)) out.push(`${m[1] === 'unit' ? 'unit' : 'exam'} ${m[2]}`);
-  return out;
+  const NUM = '#?\\s*(\\d+|i{1,3}|iv|vi{0,3}|ix|x)\\b';
+  for (const m of t.matchAll(new RegExp(`\\b(exam|test|practical|quiz)\\s*${NUM}`, 'g'))) if (num(m[2])) out.push(`${m[1] === 'test' ? 'exam' : m[1]} ${num(m[2])}`);
+  for (const m of t.matchAll(new RegExp(`\\b(unit|module)\\s*${NUM}`, 'g'))) if (num(m[2])) out.push(`unit ${num(m[2])}`);
+  return [...new Set(out)];
 }
 
 /** Does this class file belong to this test: it names the test, or (unnamed) one of the test's chapters. */
@@ -36,7 +46,9 @@ function fileFits(name, test) {
   if (!SHEET.test(base) || NOT_SHEET.test(base)) return false;
   const mine = testWords(`${test.title} ${test.type === 'final_exam' ? 'final' : ''} ${test.type === 'midterm' ? 'midterm' : ''}`);
   const named = testWords(base);
-  if (named.length) return named.some((w) => mine.includes(w));
+  // ("Midterm Study Guide" fits "Midterm 1"; "Midterm 2 Review" doesn't.)
+  const fits = (w) => mine.includes(w) || (w === 'midterm' && mine.some((x) => x.startsWith('midterm')));
+  if (named.length) return named.some(fits);
   const n = chapterNum(base);
   return !!n && (test.chapters || []).some((c) => chapterNum(c) === n);
 }

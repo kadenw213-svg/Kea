@@ -34,6 +34,22 @@ test('links and a study focus posted on the test count', () => {
   assert.equal(G.plan({ tests: [t], files: [], now: NOW }).make[0].fresh.length, 2);
 });
 
+test('tests named every way schools name them', () => {
+  const fits = G._test.fileFits;
+  const t = (title, type = 'exam') => ({ title, type, chapters: [] });
+  assert.ok(fits('Exam II Study Guide.pdf', t('Exam 2')));
+  assert.ok(fits('exam_2_review.docx', t('Exam II: Cells')));
+  assert.ok(!fits('Exam 3 Review.pdf', t('Exam 2')));
+  assert.ok(fits('Test #4 practice problems.pdf', t('Test 4')));
+  assert.ok(fits('Unit 3 Review.pdf', t('Unit 3 Test')));
+  assert.ok(fits('Module 4 Study Guide.pdf', t('Module 4 Exam')));
+  assert.ok(fits('Lab Practical II Study Guide.pdf', t('Lab Practical 2', 'lab_practical')));
+  assert.ok(fits('Midterm Study Guide.pdf', t('Midterm 1', 'midterm')));
+  assert.ok(!fits('Midterm 2 Review.pdf', t('Midterm 1', 'midterm')));
+  assert.ok(fits('Final Exam Review.pptx', t('Cumulative Final', 'final_exam')));
+  assert.ok(fits('Final Review.pdf', t('Exam 5', 'final_exam')), 'the final, by its type');
+});
+
 test('a quiz’s results page and tool links on a test are not review material', () => {
   const t = { ...mid, review_links: [{ label: 'View', url: 'https://d2l.x/d2l/lms/quizzing/user/quiz_summary.d2l?qi=1&ou=2' }, { label: 'Tool', url: 'https://d2l.x/d2l/common/dialogs/quickLink/quickLink.d2l?ou=2&type=lti&rcode=X' }] };
   assert.equal(G.plan({ tests: [t], files: [], now: NOW }).make.length, 0);
