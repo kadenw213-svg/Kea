@@ -13,6 +13,8 @@ import { chatOf, patchChat, setActivity, doing, focusOf, setFocus, type ChatItem
 import { toolsFor, picture, summary, runToolHeadless } from './editorTools';
 import { contentBlock, describeAttachment, type Attachment } from './attachments';
 import { assignmentOf, assignmentSig, assignmentText } from './assignmentContext';
+import { compactHistory } from './compactHistory';
+import { notesOf, notesSig } from './docNotes';
 import { route, routeFor, type Route, type Tier } from './funnel';
 import { newPlaceholders, placeholderComment } from './placeholders';
 import { projectOfTab } from './projects';
@@ -52,8 +54,9 @@ import classes from './guidelines/classes.md?raw';
 import documents from './guidelines/documents.md?raw';
 import design from './guidelines/design.md?raw';
 import memory from './guidelines/memory.md?raw';
+import notesGuide from './guidelines/notes.md?raw';
 
-export const SYSTEM = [core, writing, academic, classes, documents, design, memory].map((t) => t.trim()).join('\n\n');
+export const SYSTEM = [core, writing, academic, classes, documents, design, memory, notesGuide].map((t) => t.trim()).join('\n\n');
 
 /**
  * Context sent with each message: which file, and what the student has selected. A passage sent with "Ask Claude"
@@ -165,6 +168,15 @@ async function askRun(tabId: string, text: string, opts: AskOpts, run: { stopped
       patchChat(tabId, { memorySent: mem.sig });
     }
   }
+  // This file's working notes (docNotes.ts): once per conversation, and again after they change.
+  if (hooks && !hooks.workspace) {
+    const notes = notesOf(tabId);
+    if (notes && chatOf(tabId).notesSent !== notesSig(notes)) {
+      content.push({ type: 'text', text: `[Your working notes on this file, from earlier conversations (update_file_notes keeps them current):]
+${notes}` });
+      patchChat(tabId, { notesSent: notesSig(notes) });
+    }
+  }
   const focus = focusOf(tabId);
   setFocus(tabId, null);
   content.push({ type: 'text', text: `${context(tabId, hooks, focus)}${named ? `\n${named}` : ''}\n\n${text || (focus ? 'Help me with this passage.' : 'Here are the files.')}` });
@@ -241,7 +253,7 @@ async function askApi(tabId: string, content: any[], live: () => boolean, run: {
           patchItem(tabId, thinkItem, (i) => ({ text: i.text + ev.text }));
         } else if (ev.type === 'tool') textItem = '';
       });
-      const r = await api.assistant.send(reqId, { model: way.model, effort: way.effort, system: SYSTEM, messages: chatOf(tabId).messages, tools: defs }).finally(off);
+      const r = await api.assistant.send(reqId, { model: way.model, effort: way.effort, system: SYSTEM, messages: setting('assistant.trimHistory') === false ? chatOf(tabId).messages : compactHistory(chatOf(tabId).messages as any), tools: defs }).finally(off);
       if (!live()) break;
       if (r.content) patchChat(tabId, (c) => ({ items: c.items.filter((i) => !streamed.includes(i.id)) }));
       for (const b of r.content || []) {

@@ -5,12 +5,16 @@
 import { api } from './api';
 import { setting } from './settings';
 import { editorRegistry, useTabs, type AiHooks, type AssistantTool, type Tab } from '../store';
+import { docNotesTools } from './docNotes';
+import { partsOf, words } from './docParts';
 import { designGuideTool } from './design/guide';
 import { projectTools, projectOfTab } from './projects';
 import { workspaceTools } from './workspaceTools';
 import { noteTool } from './activity';
 
 const DOC_LIMIT = 400_000; // characters of the file read in one go (about 100k tokens)
+// Over this (characters, about 4,000 words), read_document answers with an outline of parts first (Kea 0.107).
+const OUTLINE_OVER = 24_000;
 
 /** The tools an editor offers from its hooks (reading, inserting, replacing, commenting, looking), plus its own. */
 /** `tabId`: the tab the tools act for, so a file in a project also gets the project's files. */
@@ -26,12 +30,18 @@ export function toolsFor(hooks: AiHooks | undefined, tabId?: string): AssistantT
   const tracked = <T,>(fn: () => T): T => (setting('assistant.track') && hooks.track ? hooks.track(fn) : fn());
   t.push({
     name: 'read_document',
-    description: `Read the whole ${hooks.noun} as plain text, divided into its parts (pages, sheets, slides). Call this before answering questions about its content or editing it; read it again after big edits if you need the current text.`,
-    input_schema: { type: 'object', properties: {} },
-    async run() {
+    description: `Read the ${hooks.noun} as plain text. A ${hooks.noun} up to about 4,000 words comes back whole. A longer one comes back as an outline of numbered parts (by heading) with their sizes: then read just the parts you need with \`parts\` (e.g. [2, 3]), or \`whole: true\` when you really need all of it (a full review). Call this before answering questions about its content or editing it; read again after big edits if you need the current text.`,
+    input_schema: { type: 'object', properties: { parts: { type: 'array', items: { type: 'number' }, description: 'Part numbers from the outline' }, whole: { type: 'boolean', description: 'All of it, however long' } } },
+    async run(input: { parts?: number[]; whole?: boolean } = {}) {
       const d = await hooks.getDocument();
       const text = d.annotated ?? (d.sections.length > 1 ? d.sections.map((s) => `### ${s.label}\n${s.text}`).join('\n\n') : d.full);
-      return text.length > DOC_LIMIT ? `${text.slice(0, DOC_LIMIT)}\n\n[The rest (${text.length - DOC_LIMIT} more characters) was cut off.]` : text || `(The ${hooks.noun} is empty.)`;
+      const cut = (x: string) => (x.length > DOC_LIMIT ? `${x.slice(0, DOC_LIMIT)}\n\n[The rest (${x.length - DOC_LIMIT} more characters) was cut off.]` : x);
+      if (!text) return `(The ${hooks.noun} is empty.)`;
+      const parts = partsOf(d.sections);
+      const asked = Array.isArray(input?.parts) ? input.parts.map(Number).filter((n) => n >= 1 && n <= parts.length) : [];
+      if (asked.length) return asked.map((n) => `## Part ${n}: ${parts[n - 1].title}\n${parts[n - 1].text}`).join('\n\n');
+      if (input?.whole || text.length <= OUTLINE_OVER || parts.length < 2) return cut(text);
+      return `This ${hooks.noun} is long (${words(text).toLocaleString('en-US')} words), so here is its outline. Read the parts you need with read_document({parts: [n, …]}), or {whole: true} for all of it.\n\n${parts.map((p, i) => `Part ${i + 1}: ${p.title} (${words(p.text).toLocaleString('en-US')} words)`).join('\n')}`;
     }
   });
   if (hooks.replaceQuote)
@@ -95,7 +105,7 @@ export function toolsFor(hooks: AiHooks | undefined, tabId?: string): AssistantT
   // Every editor can be designed in, so every editor carries the design knowledge. An editor's own tool replaces the
   // general one of the same name (the document's add_comment has the review format).
   const own = hooks.tools || [];
-  const all = [...t.filter((g) => !own.some((o) => o.name === g.name)), ...own, designGuideTool, findAssignmentTool, ...sourceTools, ...windowTools, ...classTools];
+  const all = [...t.filter((g) => !own.some((o) => o.name === g.name)), ...own, designGuideTool, findAssignmentTool, ...sourceTools, ...windowTools, ...classTools, ...(tabId ? docNotesTools(tabId) : [])];
   // Several edits in one step: each step re-sends the whole conversation, so batching is the biggest saving.
   all.push({
     name: 'apply_edits',

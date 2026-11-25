@@ -49,6 +49,8 @@ export interface Chat {
   lastModel?: string;
   /** The context folder notes Claude was last given in this conversation (projectMemory.ts sigOf). */
   memorySent?: string;
+  /** The fingerprint of the file notes this conversation was given (docNotes.ts). */
+  notesSent?: string;
 }
 
 interface AssistantStore {

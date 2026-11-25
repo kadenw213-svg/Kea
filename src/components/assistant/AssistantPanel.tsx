@@ -12,6 +12,7 @@ import { ProjectChip } from './ProjectChip';
 import { ChatTitle, ChatEmpty } from './ChatPage';
 import { UsageMenu } from './UsageMenu';
 import { ModelMenu } from './ModelMenu';
+import { DocNotesButton } from './DocNotesDialog';
 
 const BAR_KINDS = new Set(['doc', 'sheet', 'slides']);
 import { DraftCard } from './DraftCard';
@@ -235,6 +236,7 @@ export function AssistantPanel({ tabId: pinned, page = false }: { tabId?: string
                 <Trash2 size={15} />
               </button>
             )}
+            {!page && setting('assistant.docNotes') !== false && <DocNotesButton tabId={activeId} />}
             <ModelMenu />
             <UsageMenu onPlan={onPlan} showBars={showBars} />
             <button className="icon-btn sm" title={`Assistant settings (${modelName(model)} ${onPlan ? `on your Claude plan${plan?.email ? `, ${plan.email}` : ''}` : 'on your API key'})`} onClick={() => openSettings('assistant')}>

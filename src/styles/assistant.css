@@ -1006,3 +1006,11 @@ html[data-theme='light'] .ab-chip {
   font-size: 12px;
   padding-top: var(--sp-2);
 }
+
+/* Notes on this file (DocNotesDialog) */
+.dn-dialog { width: min(560px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; }
+.dn-head { display: flex; align-items: center; justify-content: space-between; }
+.dn-text { width: 100%; resize: vertical; min-height: 220px; font: inherit; font-size: 13px; line-height: 1.5; padding: 10px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius, 4px); }
+.dn-foot { display: flex; align-items: center; gap: 8px; }
+.dn-foot .grow { flex: 1; }
+.as-head-tools .icon-btn.on { color: var(--accent); }
