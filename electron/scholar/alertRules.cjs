@@ -18,6 +18,19 @@ function gradeAlert({ kind, percent, comment }, threshold = DEFAULT_THRESHOLD) {
   return 'notify';
 }
 
+// Pop-ups are for what the student has to act on now: a message, missing or late work, a grade or feedback, and
+// Kea being unable to reach the class site or Claude. Everything Kea does by itself (new study material, a curriculum
+// check, a class marked dropped, a due date moved) is listed in Notifications without a pop-up (the student's rule,
+// 2026-11-25: "no popup notifications for small kea actions").
+const POPS_UP = new Set(['message', 'missed', 'late', 'grade', 'feedback', 'signin', 'urgent']);
+/** Whether this alert gets a pop-up of its own (n.urgent always does). */
+function popsUp(n) {
+  return !!n && (n.urgent === true || POPS_UP.has(String(n.kind || '')));
+}
+/** Kea's own work done in the background (study material filed into its class): listed already read, never a pop-up. */
+const FILED = new Set(['study']);
+const isFiled = (n) => !!n && FILED.has(String(n.kind || ''));
+
 /** Classes that are over or that the student dropped: no alerts for them at all. */
 function inactiveCodes({ courses = [], withdrawnLog = {}, today }) {
   const out = new Set();
@@ -49,7 +62,7 @@ function mergeNews(list, n, now = new Date(), windowDays = 14) {
   if (i >= 0) {
     const old = list[i];
     const same = old.title === n.title && old.body === n.body;
-    const item = { ...old, ...n, key, id: old.id, at: old.at, updatedAt: now.toISOString(), count: (old.count || 1) + 1, read: same ? old.read : false };
+    const item = { ...old, ...n, key, id: old.id, at: old.at, updatedAt: now.toISOString(), count: (old.count || 1) + 1, read: n.read === true ? true : same ? old.read : false };
     return { list: [item, ...list.slice(0, i), ...list.slice(i + 1)], isNew: false, item };
   }
   const item = { id: `${t}`, at: now.toISOString(), updatedAt: now.toISOString(), read: false, count: 1, ...n, key };
@@ -99,4 +112,4 @@ let inactiveNow = new Set();
 const setInactive = (s) => void (inactiveNow = new Set(s));
 const isInactive = (code) => !!code && inactiveNow.has(String(code));
 
-module.exports = { DEFAULT_THRESHOLD, setInactive, isInactive, gradeAlert, inactiveCodes, newsKey, mergeNews, resolveNews, isMissing, missingToTell };
+module.exports = { DEFAULT_THRESHOLD, popsUp, isFiled, setInactive, isInactive, gradeAlert, inactiveCodes, newsKey, mergeNews, resolveNews, isMissing, missingToTell };

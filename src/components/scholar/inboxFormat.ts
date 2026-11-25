@@ -8,6 +8,7 @@ export const INBOX_KINDS: Record<ScholarInboxItem['kind'], { label: string; colo
   feedback: { label: 'Feedback', color: '#c58af9' },
   message: { label: 'Message', color: '#fdd663' },
   update: { label: 'Update', color: '#78d9ec' },
+  study: { label: 'Study', color: '#81c995' },
   needs_you: { label: 'Needs you', color: '#f28b82' },
   attention: { label: 'Heads up', color: '#fcad70' },
   missed: { label: 'Missed', color: '#f28b82' },

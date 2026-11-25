@@ -1120,7 +1120,7 @@ export interface ScholarInboxItem {
    * One message about one thing. From the class site directly: announcement, grade, feedback, message, update. From a
    * scan: needs_you, attention, missed (and grade/feedback from outside platforms). "news" is an old daily overview.
    */
-  kind: 'announcement' | 'grade' | 'feedback' | 'message' | 'update' | 'needs_you' | 'attention' | 'missed' | 'news';
+  kind: 'announcement' | 'grade' | 'feedback' | 'message' | 'update' | 'study' | 'needs_you' | 'attention' | 'missed' | 'news';
   course: string;
   title: string;
   body: string;
@@ -1219,6 +1219,8 @@ export interface StudySet {
   /** A chapter's saved question bank (written by Kea in the background); `pictures`: its identification set. */
   bank?: boolean;
   pictures?: boolean;
+  /** Made by Kea by itself, from new material the teacher posted for a test (filed under the class's tests in Study). */
+  auto?: boolean;
   editedAt?: string;
   /** How many of its items were reused from saved sets. */
   reused?: number;

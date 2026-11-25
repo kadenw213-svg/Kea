@@ -1,7 +1,7 @@
 // Study: every class's chapters as one list, each with Read (its textbook) and Study (its questions, as the Study
 // stream), and the practice you've made yourself. Review (what's due) is the one button at the top.
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Check, ClipboardCheck, ClipboardList, ClipboardPaste, Layers, Plus } from 'lucide-react';
+import { BookOpen, Check, ClipboardCheck, ClipboardList, ClipboardPaste, GraduationCap, Layers, Plus } from 'lucide-react';
 import type { PoolItem } from '../../lib/api';
 import { api, ScholarCourse, ScholarCourseDetail, StudySet } from '../../lib/api';
 import { openPaths } from '../../lib/open';
@@ -10,6 +10,8 @@ import { useScholar } from './scholarStore';
 import { SetRow, openStudySet, useStudySets } from './Study';
 import { openStream } from './StudyStream';
 
+/** Practice made for one test (not a set the student made themselves). */
+const forTest = (s: StudySet) => !!s.itemId && !s.bank && s.kind === 'exam' && s.source !== 'mine';
 
 export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[]; courseId?: string }) {
   const version = useScholar((s) => s.version);
@@ -51,7 +53,14 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
   }, [pools]);
   const shownClasses = (details || []).filter((d) => !filter || d.id === filter);
   // Practice that's yours: exams taken, sets being made, your own and imported sets.
-  const practice = (sets || []).filter((s) => !s.bank && (!filter || s.courseId === filter) && (s.attempts > 0 || s.status !== 'ready' || s.source === 'mine'));
+  // (Practice for a test is filed under its class's tests instead.)
+  const practice = (sets || []).filter((s) => !s.bank && !forTest(s) && (!filter || s.courseId === filter) && (s.attempts > 0 || s.status !== 'ready' || s.source === 'mine'));
+  // Each class's tests and the practice for them, Kea's own (made from new review material) and any made from a test.
+  const testsOf = (courseId: string) => {
+    const by = new Map<string, StudySet[]>();
+    for (const s of (sets || []).filter((x) => forTest(x) && x.courseId === courseId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))) by.set(s.itemId!, [...(by.get(s.itemId!) || []), s]);
+    return [...by.values()];
+  };
   const pickedClass = picked[0]?.split('|')[0] || '';
   const toggle = (key: string) => setPicked((p) => (p.includes(key) ? p.filter((x) => x !== key) : [...p.filter((x) => x.split('|')[0] === key.split('|')[0]), key]));
 
@@ -72,7 +81,7 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
       {!courseId && (
         <>
           <h1 className="sch-title">Study</h1>
-          <p className="sch-sub">Every chapter of your classes: read it, or study its questions. Tick several to study them together.</p>
+          <p className="sch-sub">Every chapter of your classes: read it, or study its questions. Tick several to study them together. Practice Kea makes for a test, from new review material your teacher posts, is filed under that class’s tests.</p>
         </>
       )}
       <div className="res-top">
@@ -96,6 +105,26 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
         shownClasses.map((d) => (
           <section key={d.id} className="res-class">
             {!courseId && <h2 className="sch-h2">{d.code}</h2>}
+            {testsOf(d.id).length > 0 && (
+              <div className="res-tests">
+                <div className="tb-h">
+                  <GraduationCap size={13} /> For your tests
+                </div>
+                {testsOf(d.id).map((list) => (
+                  <div key={list[0].itemId!} className="res-test">
+                    <div className="res-test-title">
+                      <b>{list[0].itemTitle || 'Test'}</b>
+                      {list.some((s) => s.auto) && <span className="muted"> · made by Kea from your teacher’s review material</span>}
+                    </div>
+                    <div className="st-list">
+                      {list.map((s) => (
+                        <SetRow key={s.id} s={s} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="res-list">
               {d.chapters.map((ch) => {
                 const key = `${d.id}|${ch.label}`;

@@ -637,7 +637,8 @@ async function follow(dir) {
       writeJson(path.join(study, 'index.json'), list);
       any = true;
       for (const e of shared) {
-        if (e.status === 'ready' && before.get(e.id)?.status === 'making' && Notification.isSupported()) new Notification({ title: e.title, body: `${e.count} ${e.kind === 'exam' ? 'questions' : 'cards'}, ready in My resources.` }).show();
+        // (A set the student asked for on this computer, only while Kea isn't in front: Kea's own sets are filed quietly.)
+        if (e.status === 'ready' && before.get(e.id)?.status === 'making' && !e.auto && !e.bank && !BrowserWindow.getAllWindows().some((w) => w.isFocused()) && Notification.isSupported()) new Notification({ title: e.title, body: `${e.count} ${e.kind === 'exam' ? 'questions' : 'cards'}, ready in Study.` }).show();
       }
     }
   }

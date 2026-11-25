@@ -3,7 +3,7 @@
 // the class ticked is the class in curriculum order, one chapter at a time. Opened from a class's Study button, a
 // chapter, or a test (its chapters ticked already).
 import { useEffect, useMemo, useState } from 'react';
-import { Bookmark, Check, Target, ChevronDown, ChevronRight, Image, Loader2, Minus, Play, Sparkles } from 'lucide-react';
+import { Bookmark, Check, Target, ChevronDown, ChevronRight, Loader2, Minus, Play, Sparkles } from 'lucide-react';
 import { api, PoolItem, ReviewQueue, ScholarChapter } from '../../lib/api';
 import { toast } from '../../store';
 import { useScholar } from './scholarStore';
@@ -148,7 +148,6 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
   const days = c?.test ? Math.round((Date.parse(`${c.test.date}T12:00`) - Date.now()) / 864e5) : null;
   // The chapters ticked (by any of their topics, or the chapter itself when it has no questions yet).
   const tickedChapters = groups.filter((ch) => [...sel].some((k) => k.startsWith(`${ch}${SEP}`) && k !== BOOKMARKS && k !== WEAK));
-  const target = scope.itemId ? { itemId: scope.itemId } : whole ? { chapters: [] } : { chapters: tickedChapters.length ? tickedChapters : scope.chapters };
   // A chapter being written now (a set still being made for it alone; for the whole class, one on no chapter).
   const writing = (ch: string) =>
     (sets || []).some((st) => st.courseId === scope.courseId && st.status === 'making' && st.kind === 'exam' && (ch ? st.chapters.length === 1 && st.chapters[0] === ch : !st.chapters.length && !st.itemId));
@@ -325,24 +324,7 @@ export function StudyHub({ scope }: { scope: StudyScope }) {
           {whole ? (toWrite.length ? 'Write 25 questions for this class' : 'Being written…') : toWrite.length ? `Write 25 questions for ${toWrite.length === 1 ? short(toWrite[0]) : `each of ${toWrite.length} chapters`}` : 'Tick chapters to write questions for'}
         </button>
         {toWrite.length > 1 && <span className="muted hub-write-which">{chapterList(toWrite)}</span>}
-        <button
-          className="btn sm"
-          disabled={canMake === false || !!busy}
-          title="Questions that show a specimen, structure or labeled diagram and ask what it is (pictures from Wikimedia Commons)"
-          onClick={async () => {
-            setBusy('pictures');
-            try {
-              await api.scholar.studyMake({ kind: 'exam', courseId: scope.courseId, ...target, count: 25, mode: 'new', pictures: true });
-              toast('Writing 25 picture questions. They’ll be ready in a few minutes.', 'success');
-            } catch (err: any) {
-              toast(err?.message || 'Kea couldn’t start that.', 'error');
-            } finally {
-              setBusy('');
-            }
-          }}
-        >
-          <Image size={13} /> Picture questions
-        </button>
+        {/* (Picture questions are part of every set, at least 15% of them: no separate button.) */}
       </div>
     </div>
   );

@@ -148,9 +148,9 @@ async function run() {
   });
   if (counts.questions || counts.textbooks) {
     devices.soon(2000);
-    const { BrowserWindow, Notification } = require('electron');
+    const { BrowserWindow } = require('electron');
     BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
-    if (counts.questions && Notification.isSupported()) new Notification({ title: 'New practice questions', body: `${counts.questions === 1 ? 'A new set' : `${counts.questions} new sets`} from Kea’s shared Claude, in My resources.` }).show();
+    // (No pop-up: new practice is filed into its class in Study, the student's rule of 2026-11-25.)
   }
   return counts;
 }

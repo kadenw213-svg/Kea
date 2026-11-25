@@ -975,8 +975,9 @@ function register() {
         const e = study.list().find((x) => x.id === id);
         if (!e) return;
         const { Notification } = require('electron');
-        const body = e.status === 'ready' ? `${e.count} ${e.kind === 'exam' ? 'questions' : 'cards'}, ready in My resources.` : e.error || 'It didn’t work. Try again.';
-        if (Notification.isSupported()) new Notification({ title: e.status === 'ready' ? e.title : `Couldn’t make ${e.title}`, body }).show();
+        const body = e.status === 'ready' ? `${e.count} ${e.kind === 'exam' ? 'questions' : 'cards'}, ready in Study.` : e.error || 'It didn’t work. Try again.';
+        // (Only while Kea isn't in front: in Kea, the set's row in Study shows it.)
+        if (!BrowserWindow.getAllWindows().some((w) => w.isFocused()) && Notification.isSupported()) new Notification({ title: e.status === 'ready' ? e.title : `Couldn’t make ${e.title}`, body }).show();
         BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('scholar:changed'));
       });
       return shown;

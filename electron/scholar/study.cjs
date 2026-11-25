@@ -376,7 +376,7 @@ const REUSE = 0.6;
  * files, and the questions that already exist so it writes different ones). Adds the set to the index and returns
  * { id, ready }: ready when no Claude run is needed. `pick` (keys) repeats another device's choice of saved items.
  */
-async function request({ id: given, kind, courseId, chapters = [], itemId = null, count, mode = 'mix', pick: picked = null, bank = false, upgrade = false, pictures = false, fromHint = false }) {
+async function request({ id: given, kind, courseId, chapters = [], itemId = null, count, mode = 'mix', pick: picked = null, bank = false, upgrade = false, pictures = false, fromHint = false, auto = false }) {
   if (!['exam', 'cards'].includes(kind)) throw new Error('Unknown kind of study set.');
   const p = profiles.paths();
   const src = await db.practiceSources(p.db, p.textbooks, { courseId, chapters, itemId });
@@ -396,7 +396,7 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
   const fresh = mode === 'saved' ? 0 : n - reuse.length;
   const topic = src.item ? src.item.title : whole ? `${src.course.code}, whole class` : src.chapters.map((c) => (c.title ? `${c.label}: ${c.title}` : c.label)).join(', ');
   const title = `${bank ? 'Question bank' : kind === 'exam' ? 'Practice exam' : 'Flashcards'}: ${topic}`;
-  const entry = { id, kind, title: pictures ? title.replace(/^Question bank/, 'Picture questions') : title, ...(bank ? { bank: true } : {}), ...(upgrade ? { upgrade: true } : {}), ...(pictures ? { pictures: true } : {}), ...(fromHint ? { fromHint: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
+  const entry = { id, kind, title: pictures ? title.replace(/^Question bank/, 'Picture questions') : title, ...(bank ? { bank: true } : {}), ...(upgrade ? { upgrade: true } : {}), ...(pictures ? { pictures: true } : {}), ...(fromHint ? { fromHint: true } : {}), ...(auto ? { auto: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
   const list = index().filter((e) => e.id !== id);
   if (!fresh) {
     writeJson(file('sets', `${id}.json`), kind === 'cards' ? { cards: reuse } : { questions: reuse });
@@ -442,21 +442,33 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
 const BANK_LOW = 5;
 const BANK_MORE = 25;
 
+// Picture questions are part of every chapter's questions, not a separate thing to ask for (the student's rule,
+// 2026-11-25): at least 15% of a chapter's saved questions, 25% where its tests ask to identify things from pictures.
+const PICTURE_SHARE = { other: 0.15, identifying: 0.25 };
+/** How many more picture questions a chapter needs to reach its share (0 when it has enough). */
+function picturesShort(total, pictured, identifying) {
+  if (total < 10) return 0;
+  const share = identifying ? PICTURE_SHARE.identifying : PICTURE_SHARE.other;
+  // (The picture questions added count toward the total too.)
+  const want = Math.ceil(((share * (total - pictured)) / (1 - share)) - pictured);
+  return Math.max(0, want);
+}
+
 /**
- * The next chapter (soonest test first) that tests identification and has few picture questions yet, as a request for
- * a picture set (25, saved with the chapter's bank), or null. Nothing while a set is being made, and a chapter whose
- * picture set failed waits a day.
+ * The next chapter (soonest test first) whose saved questions are short of their picture share, as a request for a
+ * picture set (5 to 25, saved with the chapter's bank), or null. Nothing while a set is being made, and a chapter whose
+ * picture set failed or came back short waits a day.
  */
 function pictureNeed(chapters, identifying) {
   const all = index();
   if (all.some((e) => e.status === 'making')) return null;
   for (const { courseId, label } of chapters) {
-    if (!identifying.has(`${courseId}|${label}`)) continue;
-    const pictured = catalog('exam', courseId, [label]).filter((q) => q.image).length;
-    if (pictured >= 10) continue;
+    const qs = catalog('exam', courseId, [label]);
+    const short = picturesShort(qs.length, qs.filter((q) => q.image).length, identifying.has(`${courseId}|${label}`));
+    if (!short) continue;
     const tried = all.find((e) => e.pictures && e.courseId === courseId && e.chapters?.[0] === label && Date.now() - Date.parse(e.createdAt) < 864e5);
     if (tried) continue;
-    return { kind: 'exam', courseId, chapters: [label], count: 25, mode: 'new', bank: true, pictures: true };
+    return { kind: 'exam', courseId, chapters: [label], count: Math.min(25, Math.max(5, short)), mode: 'new', bank: true, pictures: true };
   }
   return null;
 }
@@ -793,10 +805,12 @@ async function prepare(id, docText, step = () => {}, engine = null) {
       'Most items show a picture and ask what it is or what a labeled part is: specimens, organisms, cell and tissue structures, anatomy, lab equipment, molecular shapes, whatever these chapters ask the student to recognize. Find each picture with `uv run academic-sync study-image search "<words>"`, save it with `study-image get "<File:...>" --course ' + req.course.code + ' --name <code>-id-<n>` (a name that never gives the answer away), and put its `image` and `image_credit` on the question or card.',
       ''
     );
-  else if (identifies)
+  else
     lines.push(
-      '## Picture questions',
-      'This class tests identification (lab practicals or identify-the-structure questions). Make about 15 to 25% of the questions picture questions: show a specimen, structure or labeled diagram and ask what it is or what a label points to (see the skill, "Pictures").',
+      '## Picture questions (every set)',
+      identifies
+        ? `This class tests identification (lab practicals or identify-the-structure questions). Make ${Math.round(PICTURE_SHARE.identifying * 100)} to 40% of the ${req.kind === 'exam' ? 'questions' : 'cards'} picture ones: show a specimen, structure or labeled diagram and ask what it is or what a label points to (see the skill, "Pictures").`
+        : `At least ${Math.round(PICTURE_SHARE.other * 100)}% of the ${req.kind === 'exam' ? 'questions' : 'cards'} (${Math.max(1, Math.ceil(req.count * PICTURE_SHARE.other))} of ${req.count}) are picture ones, mixed in with the rest: a picture the student has to read to answer. Pick what this subject really uses: a labeled diagram or structure, a graph or chart to read, a map, a molecule or apparatus, a circuit, a timeline, a painting or historical photograph, a primary-source page. Never a decorative picture: the question can't be answered without it (see the skill, "Pictures").`,
       ''
     );
   if (req.upgrade)
@@ -1424,4 +1438,4 @@ function saveGuides(patch) {
 /** A set request whose questions went to Kea's shared Claude instead (runner.cjs sharedInstead): it ends with that note. */
 const handedOff = (id, note) => update(String(id), { status: 'failed', error: String(note || '').slice(0, 500) });
 
-module.exports = { handedOff, addSet, classFiles, guidesAll, saveGuides, questionOf, lessons, saveLesson, addHint, hints, applyFixes, pictureNeed, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, stepLine, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark, teacherContext, isStream, _test: { pick, historyFrom, strongTopics } };
+module.exports = { handedOff, addSet, classFiles, guidesAll, saveGuides, questionOf, lessons, saveLesson, addHint, hints, applyFixes, pictureNeed, picturesShort, PICTURE_SHARE, pool, stepsNeed, stepsBrief, whereIs, imageData, list, get, remove, saveAttempt, setKnown, catalog, saved, history, request, bankNeed, notesFor, prepare, prompt, ingest, settle, cleanQuestion, cleanCard, stepLine, saveMine, star, starred, learnGet, learnSet, matchBest, reviewQueue, reviewMark, teacherContext, isStream, _test: { pick, historyFrom, strongTopics } };

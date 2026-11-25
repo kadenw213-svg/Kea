@@ -462,7 +462,7 @@ async function depthAfter(code, course, started) {
   const rows = await depthRows(code);
   if (rows.some((r) => r.due)) run('curriculum', `${code} depth`, 'depth');
   if (fixed)
-    addNews({ course: code, kind: 'update', title: `${code}: ${fixed} explanation${fixed > 1 ? 's' : ''} improved on questions you missed`, body: 'Each now names what every symbol in its formula stands for and why each step is taken. Your progress on those questions is kept.' });
+    addNews({ course: code, kind: 'study', title: `${code}: ${fixed} explanation${fixed > 1 ? 's' : ''} improved on questions you missed`, body: 'Each now names what every symbol in its formula stands for and why each step is taken. Your progress on those questions is kept.' });
   const gaps = rows.filter((r) => r.verdict === 'gaps' && r.reviewed_at && r.reviewed_at.slice(0, 19) >= started);
   if (!gaps.length) return;
   const study = require('./study.cjs');
@@ -474,12 +474,12 @@ async function depthAfter(code, course, started) {
   const byTest = new Map();
   for (const g of gaps) if (g.next_test?.id) byTest.set(g.next_test.id, [...(byTest.get(g.next_test.id) || []), g]);
   for (const [itemId, list] of byTest) {
-    const r = await study.request({ kind: 'exam', courseId: course.id, itemId, chapters: list.map((g) => g.label), count: Math.min(40, 15 * list.length), mode: 'new' }).catch(() => null);
+    const r = await study.request({ kind: 'exam', courseId: course.id, itemId, chapters: list.map((g) => g.label), count: Math.min(40, 15 * list.length), mode: 'new', auto: true }).catch(() => null);
     if (r?.id) run('practice', r.id, 'depth');
   }
   addNews({
     course: code,
-    kind: 'update',
+    kind: 'study',
     title: `${code}: new practice for ${[...new Set(gaps.map((g) => g.next_test?.title).filter(Boolean))].join(', ') || 'your next test'}`,
     body: `The teacher posted new material that these chapters didn't fully cover yet:\n${gaps.map((g) => `• ${g.label}: ${String(g.note || '').slice(0, 220)}`).join('\n')}${books.length ? `\nReadings being updated: ${books.map((g) => g.label).join(', ')}.` : ''}`
   });
@@ -807,7 +807,7 @@ async function guideSets(list, why) {
     seen = r.seen;
     fs.writeFileSync(file, JSON.stringify(seen, null, 1));
     for (const { test, fresh } of r.make) {
-      const made = await study.request({ kind: 'exam', courseId: c.code, itemId: test.id, count: Math.min(50, 20 + 5 * (test.chapters || []).length), mode: 'new' }).catch((err) => (console.error('Study guide set', err), null));
+      const made = await study.request({ kind: 'exam', courseId: c.code, itemId: test.id, count: Math.min(50, 20 + 5 * (test.chapters || []).length), mode: 'new', auto: true }).catch((err) => (console.error('Study guide set', err), null));
       if (!made?.id) continue;
       if (!made.ready) run('practice', made.id, why);
       addNews(g.newsFor(c.code, test, fresh));
@@ -823,11 +823,11 @@ async function guideSets(list, why) {
 function addNews(n) {
   const rules = require('./alertRules.cjs');
   if (rules.isInactive(n.course)) return;
-  const r = rules.mergeNews(readJson(newsFile(), []), n);
+  const r = rules.mergeNews(readJson(newsFile(), []), rules.isFiled(n) ? { ...n, read: true } : n);
   fs.mkdirSync(path.dirname(newsFile()), { recursive: true });
   fs.writeFileSync(newsFile(), JSON.stringify(r.list.slice(0, 300), null, 1));
   send('scholar:news', r.item);
-  if (r.isNew && Notification.isSupported()) new Notification({ title: n.course ? `${n.course}: ${n.title}` : n.title, body: String(n.body || '').slice(0, 220) }).show();
+  if (r.isNew && rules.popsUp(n) && Notification.isSupported()) new Notification({ title: n.course ? `${n.course}: ${n.title}` : n.title, body: String(n.body || '').slice(0, 220) }).show();
 }
 
 // ---------- A run stopped partway: pause, then continue where it stopped ----------
@@ -1335,7 +1335,7 @@ async function begin(job) {
     });
     // The run's work went to Kea's shared Claude instead: said in the run's summary and a notification.
     const fellBack = (note) => {
-      if (Notification.isSupported()) new Notification({ title: 'Kea’s shared Claude', body: note }).show();
+      // (Shown in the run's summary, no pop-up: nothing for the student to do.)
       finish(true, note);
     };
     child.on('close', (code) => {
@@ -1373,7 +1373,7 @@ async function begin(job) {
           const until = resetTime(LIMIT.test(text) ? text : said);
           entry.paused = until.toISOString();
           pause(until, 'limit', stoppedRun(job.tries || 0));
-          if (Notification.isSupported()) new Notification({ title: 'Class scan paused', body: `Your Claude usage limit was reached. Kea continues where it stopped at ${atTime(until)}.` }).show();
+          // (Shown in Scans, no pop-up: Kea continues by itself.)
           finish(false, `Paused: your Claude usage limit was reached. Everything found so far is saved, and Kea continues where it stopped at ${atTime(until)}.${also ? ` ${also}` : ''}`);
         };
         // A class scan or a question batch: Kea's shared Claude takes it instead, if it can (its limits apply).

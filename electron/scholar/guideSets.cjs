@@ -96,9 +96,9 @@ function newsFor(code, test, fresh) {
   const list = [...new Set(what)];
   return {
     course: code,
-    kind: 'update',
+    kind: 'study',
     title: `${code}: new practice for ${test.title}`,
-    body: `Your teacher posted new review material for ${test.title} (${list.slice(0, 4).join(', ')}${list.length > 4 ? ', …' : ''}). Kea is making a practice set from it.`
+    body: `Your teacher posted new review material for ${test.title} (${list.slice(0, 4).join(', ')}${list.length > 4 ? ', …' : ''}). Kea is making practice from it; it's in Study, under ${code}'s tests.`
   };
 }
 

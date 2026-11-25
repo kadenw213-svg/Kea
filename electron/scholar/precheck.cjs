@@ -1179,7 +1179,7 @@ function inboxNote(n) {
   box.items.unshift({ at: new Date().toISOString(), read: false, links: [], ...n });
   writeInbox({ ...box, items: box.items.slice(0, 500) });
   const { Notification } = require('electron');
-  if (Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: String(n.body || '').slice(0, 200) }).show();
+  if (require('./alertRules.cjs').popsUp(n) && Notification.isSupported()) new Notification({ title: `${n.course}: ${n.title}`, body: String(n.body || '').slice(0, 200) }).show();
 }
 
 /** Items into Notifications without a pop-up of their own (their sender already showed one), once per id. */

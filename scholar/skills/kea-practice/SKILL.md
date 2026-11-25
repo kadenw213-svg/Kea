@@ -183,12 +183,16 @@ Balance and difficulty:
   comes from them word for word; otherwise invent a clearly made-up source ("a 2021 article by A. Ruiz") rather than
   put remembered or approximate words in a real person's mouth.
 
-## Pictures (identification)
+## Pictures (every set)
 
-When the brief asks for picture questions (or a picture set), find real pictures, freely licensed, from Wikimedia
-Commons through Kea:
+Every set has picture questions mixed in (the brief gives the share: at least 15%, more for classes that test
+identification). A picture question can only be answered by reading the picture: name the specimen or structure,
+read a value off a graph, place a region on a map, identify a molecule's shape or a piece of glassware, date a
+painting's style, interpret a primary-source page. Choose what the subject really uses; never a decorative picture.
+Find real pictures, freely licensed, from Wikimedia Commons through Kea:
 1. `uv run academic-sync study-image search "<words>"` (e.g. "Volvox colony micrograph", "fern sorus", "sea star
-   aboral surface", "Erlenmeyer flask", "trigonal pyramidal molecule"); pick a clear one whose description says what
+   aboral surface", "Erlenmeyer flask", "trigonal pyramidal molecule", "supply and demand graph", "map of the
+   Fertile Crescent", "Liberty Leading the People"); pick a clear one whose description says what
    it shows. Never a picture you can't verify from its description.
 2. `uv run academic-sync study-image get "<File:...>" --course <CODE> --name <code>-id-<n>`: it prints `image` and
    `image_credit`; put both on the question or card exactly as printed. The name never gives the answer away.

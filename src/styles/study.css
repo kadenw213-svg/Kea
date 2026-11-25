@@ -2782,3 +2782,20 @@ html.bg-acrylic .st-stream-card {
 .scholar.studying > :not(.st-player) {
   visibility: hidden;
 }
+
+/* Study: each class's tests and the practice for them (filed there by Kea when the teacher posts review material) */
+.res-tests {
+  margin: 4px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.res-tests > .tb-h {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.res-test-title {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
