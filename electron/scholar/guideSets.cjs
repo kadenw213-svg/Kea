@@ -16,6 +16,8 @@ const DAYS = 21;
 const GAP_MS = 2 * 864e5;
 const SHEET = /fun ?sheet|study guide|review|practice (exam|test|problems)|answer key|\bkey\b|worksheet|objectives|exam prep|test prep/i;
 const NOT_SHEET = /periodic table|conversion|formula sheet|discussion|dropbox|syllabus|calendar|schedule|announcement/i;
+// Links on a test that are the class site's own tools, not material: a quiz's results page, a tool launch, a dropbox.
+const NOT_LINK = /quiz_summary|\/quizzing\/|quickLink\.d2l|type=lti|\/dropbox\/|\/discussions?\//i;
 const chapterNum = (s) => (/(?:ch(?:apter)?\.?\s*)(\d+)/i.exec(s) || [])[1];
 
 /** Which test a file names: "midterm", "final", or "exam/test 2" (null: none in particular). */
@@ -42,7 +44,7 @@ function fileFits(name, test) {
 /** Every piece of review material for a test, as stable keys (a file by name, so its text copy isn't new). */
 function materialOf(test, files) {
   const keys = new Set();
-  for (const l of test.review_links || []) if (l.url) keys.add(`link|${l.url}`);
+  for (const l of test.review_links || []) if (l.url && !NOT_LINK.test(l.url) && !NOT_SHEET.test(l.label || '')) keys.add(`link|${l.url}`);
   for (const f of test.study_focus || []) if (String(f).trim()) keys.add(`focus|${String(f).trim().toLowerCase()}`);
   for (const f of files) {
     const name = String(f.path || f).replace(/\.(pdf|docx|pptx)\.txt$/i, '.$1');

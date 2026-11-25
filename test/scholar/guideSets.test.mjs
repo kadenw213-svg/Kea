@@ -34,6 +34,13 @@ test('links and a study focus posted on the test count', () => {
   assert.equal(G.plan({ tests: [t], files: [], now: NOW }).make[0].fresh.length, 2);
 });
 
+test('a quiz’s results page and tool links on a test are not review material', () => {
+  const t = { ...mid, review_links: [{ label: 'View', url: 'https://d2l.x/d2l/lms/quizzing/user/quiz_summary.d2l?qi=1&ou=2' }, { label: 'Tool', url: 'https://d2l.x/d2l/common/dialogs/quickLink/quickLink.d2l?ou=2&type=lti&rcode=X' }] };
+  assert.equal(G.plan({ tests: [t], files: [], now: NOW }).make.length, 0);
+  const v = { ...mid, review_links: [{ label: 'View', url: 'https://d2l.x/d2l/le/content/2/viewContent/9/View' }] };
+  assert.equal(G.plan({ tests: [v], files: [], now: NOW }).make.length, 1, 'a content page still counts');
+});
+
 test('handouts that are not review material, and exams named for another test, do not count', () => {
   assert.equal(G.plan({ tests: [mid], files: files('Syllabus.pdf', 'Lab 3 handout.pdf', 'Exam 3 Review.pdf', 'Periodic table review.pdf'), now: NOW }).make.length, 0);
 });

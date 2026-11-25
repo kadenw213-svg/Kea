@@ -789,6 +789,11 @@ async function curriculumCheck(why = 'schedule') {
   return due.map((d) => d.code);
 }
 
+/** The study-guide check on every class now (index.cjs: at start and hourly). */
+async function guideSetsNow(why = 'schedule') {
+  return guideSets(await db().watchList(profiles.paths().db), why);
+}
+
 /** New study guides or review sheets for a test in the next three weeks: a practice set for that test (guideSets.cjs). */
 async function guideSets(list, why) {
   if (settings().get('scholar.guideSets', true) === false) return;
@@ -1474,4 +1479,4 @@ function deleteNews(ids = [], keys = []) {
   return gone.map((n) => inboxKey({ course: n.course || '', title: n.title, body: n.body }));
 }
 
-module.exports = { workerUsage: () => workerTally.get(), workerUsageByBackend: () => ({ api: backendTally.api.get(), plan: backendTally.plan.get() }), useBackend, run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, TASKS, _test: { sharedInstead, FALLBACK_TASKS, claudeArgs, runEnv, allowedTools, COMMANDS, DENY, depthRows, transientError, eachOnce, queue: () => queue, current: () => current, side: () => side } };
+module.exports = { workerUsage: () => workerTally.get(), workerUsageByBackend: () => ({ api: backendTally.api.get(), plan: backendTally.plan.get() }), useBackend, run, stop, status, activity, news, markNewsRead, deleteNews, pending, resume, resumeLast, resetTime, adoptStopped, shutdown, curriculumCheck, guideSetsNow, TASKS, _test: { sharedInstead, FALLBACK_TASKS, claudeArgs, runEnv, allowedTools, COMMANDS, DENY, depthRows, transientError, eachOnce, queue: () => queue, current: () => current, side: () => side } };

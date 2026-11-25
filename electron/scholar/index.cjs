@@ -47,6 +47,7 @@ const { handleApp } = require('../ipcGuard.cjs');
  * items read on the phone. Returns true when something changed here.
  */
 let phoneSeen = 0;
+let guideAt = 0; // when the study-guide check last ran (hourly)
 function mergePhone() {
   const dir = cloud.target();
   if (!dir) return false;
@@ -423,6 +424,13 @@ async function tickSite() {
       return;
     }
     if (!checkEvery) return;
+    // New study guides for a coming test: Kea's own check (no Claude), at start and then hourly; a practice set only
+    // when something new turned up (guideSets.cjs). The primary device only, so two PCs don't both make the set.
+    if (Date.now() - guideAt > 36e5 && !devices.follower() && (await ready())) {
+      guideAt = Date.now();
+      await runner.guideSetsNow('schedule').catch((err) => console.error('Study guide sets', err));
+      if (runner.status().running) return;
+    }
     const [h, m] = String(settings.get('scholar.scanTime', '05:00')).split(':').map(Number);
     const now = new Date();
     if (now.getHours() * 60 + now.getMinutes() < (h || 0) * 60 + (m || 0)) return;
