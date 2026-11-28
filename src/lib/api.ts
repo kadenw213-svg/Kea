@@ -1224,6 +1224,8 @@ export interface StudySet {
   chapters: string[];
   itemId: string | null;
   itemTitle: string | null;
+  /** The date of the test it is for (YYYY-MM-DD; sets made before 0.109 have none). */
+  itemDate?: string;
   count: number;
   createdAt: string;
   status: 'making' | 'ready' | 'failed';

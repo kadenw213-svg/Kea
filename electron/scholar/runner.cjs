@@ -474,7 +474,7 @@ async function depthAfter(code, course, started) {
   const byTest = new Map();
   for (const g of gaps) if (g.next_test?.id) byTest.set(g.next_test.id, [...(byTest.get(g.next_test.id) || []), g]);
   for (const [itemId, list] of byTest) {
-    const r = await study.request({ kind: 'exam', courseId: course.id, itemId, chapters: list.map((g) => g.label), count: Math.min(40, 15 * list.length), mode: 'new', auto: true }).catch(() => null);
+    const r = await study.request({ kind: 'exam', courseId: course.id, itemId, chapters: list.map((g) => g.label), count: Math.min(40, 15 * list.length), mode: 'new', auto: true }).catch((err) => (console.error('Depth review set', itemId, err), null));
     if (r?.id) run('practice', r.id, 'depth');
   }
   addNews({
@@ -794,23 +794,38 @@ async function guideSetsNow(why = 'schedule') {
   return guideSets(await db().watchList(profiles.paths().db), why);
 }
 
-/** New study guides or review sheets for a test in the next three weeks: a practice set for that test (guideSets.cjs). */
+/**
+ * Every quiz and exam in the next 30 days gets its review set, and new study guides or review sheets for one add a
+ * set from them (guideSets.cjs). The material is recorded as used only once its set was asked for; a set that then
+ * fails gives it back (plan() retries it).
+ */
 async function guideSets(list, why) {
   if (settings().get('scholar.guideSets', true) === false) return;
   const g = require('./guideSets.cjs');
   const study = require('./study.cjs');
   const file = path.join(profiles.paths().dir, 'guide-sets.json');
   let seen = readJson(file, {});
+  const save = () => fs.writeFileSync(file, JSON.stringify(seen, null, 1));
   for (const c of list) {
-    const tests = await db().upcomingTests(profiles.paths().db, c.code).catch(() => []);
-    const r = g.plan({ tests, files: study.classFiles(c.code), seen, sets: study.list() });
-    seen = r.seen;
-    fs.writeFileSync(file, JSON.stringify(seen, null, 1));
-    for (const { test, fresh } of r.make) {
-      const made = await study.request({ kind: 'exam', courseId: c.code, itemId: test.id, count: Math.min(50, 20 + 5 * (test.chapters || []).length), mode: 'new', auto: true }).catch((err) => (console.error('Study guide set', err), null));
-      if (!made?.id) continue;
-      if (!made.ready) run('practice', made.id, why);
-      addNews(g.newsFor(c.code, test, fresh));
+    try {
+      const tests = await db().upcomingTests(profiles.paths().db, c.code).catch(() => []);
+      const r = g.plan({ tests, files: study.classFiles(c.code), seen, sets: study.list() });
+      seen = r.seen;
+      save();
+      for (const { test, fresh, record } of r.make) {
+        const made = await study
+          .request({ kind: 'exam', courseId: c.code, itemId: test.id, chapters: test.chapters || [], count: g.countFor(test), mode: 'new', auto: true })
+          .catch((err) => (console.error('Test review set', test.title, err), null));
+        // (Not asked for: nothing is marked seen, so the next pass tries again.)
+        if (!made?.id) continue;
+        seen = g.record(seen, test.id, record, made.id);
+        save();
+        if (!made.ready) run('practice', made.id, why);
+        addNews(g.newsFor(c.code, test, fresh));
+      }
+    } catch (err) {
+      // (One class's trouble never stops the others.)
+      console.error('Test review sets', c.code, err);
     }
   }
 }

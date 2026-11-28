@@ -304,8 +304,11 @@ async function textbookChapters(file, textbooks) {
     if (c.end_date && String(c.end_date).slice(0, 10) < today) continue;
     // (Nothing to practise for a class the student withdrew from.)
     if (gone.has(c.id)) continue;
+    // Every chapter the class's curriculum lists (chapter_topics), not only those with a written reading: the
+    // generated textbook is gone (2026-11-28), and practice never depended on it.
     const { pdfs } = readingsFor(db, c.id, c.course_code, textbooks);
-    for (const label of [...pdfs.keys()].sort((a, b) => chapterNumber(a) - chapterNumber(b))) out.push({ courseId: c.id, label });
+    const labels = new Set([...rows(db, 'SELECT chapter_label FROM chapter_topics WHERE course_id = ?', [c.id]).map((r) => r.chapter_label).filter(Boolean), ...pdfs.keys()]);
+    for (const label of [...labels].sort((a, b) => chapterNumber(a) - chapterNumber(b))) out.push({ courseId: c.id, label });
     for (const t of rows(db, `SELECT title, date, covered_chapters_json, study_focus_json FROM academic_items WHERE course_id = ? AND item_type IN ('exam', 'final_exam', 'midterm', 'lab_practical', 'quiz') AND ${ACTIVE} AND date >= ? ORDER BY date`, [c.id, today]))
       for (const label of coveredOf(t)) if (!soon.has(`${c.id}|${label}`)) soon.set(`${c.id}|${label}`, t.date);
   }
@@ -1090,12 +1093,25 @@ async function upcomingTests(file, courseId) {
   if (!c) return [];
   const known = new Set(rows(db, 'SELECT chapter_label FROM chapter_topics WHERE course_id = ?', [c.id]).map((x) => x.chapter_label));
   const today = new Date().toISOString().slice(0, 10);
+  // A test that names no chapters covers what the class read since the last test of its kind (a quiz since the last
+  // quiz; an exam since the last exam; a final with nothing earlier, everything up to it).
+  const all = rows(db, `SELECT id, item_type, date FROM academic_items WHERE course_id = ? AND item_type IN ${TEST_TYPES} AND ${ACTIVE} AND date IS NOT NULL ORDER BY date`, [c.id]);
+  const readings = known.size ? rows(db, `SELECT title, date FROM academic_items WHERE course_id = ? AND item_type = 'weekly_reading' AND ${ACTIVE} AND date IS NOT NULL`, [c.id]) : [];
+  const tier = (t) => (t === 'quiz' ? 'quiz' : 'exam');
+  const inferred = (r) => {
+    if (!readings.length) return [];
+    const day = dayOf(r.date);
+    const prev = all.filter((x) => x.id !== r.id && tier(x.item_type) === tier(r.item_type) && dayOf(x.date) < day).pop();
+    const from = r.item_type === 'final_exam' ? '' : prev ? dayOf(prev.date) : '';
+    const labels = new Set(readings.filter((b) => dayOf(b.date) > from && dayOf(b.date) <= day).flatMap((b) => chaptersIn(b.title)).filter((l) => known.has(l)));
+    return [...labels].sort((a, b) => chapterNumber(a) - chapterNumber(b));
+  };
   return rows(db, `SELECT * FROM academic_items WHERE course_id = ? AND item_type IN ${TEST_TYPES} AND ${ACTIVE} AND substr(date, 1, 10) >= ? ORDER BY date`, [c.id, today]).map((r) => ({
     id: r.id,
     title: r.title,
     type: r.item_type,
     date: r.date,
-    chapters: coveredOf(r, known),
+    chapters: coveredOf(r, known).length ? coveredOf(r, known) : inferred(r),
     study_focus: json(r.study_focus_json, []),
     review_links: [...json(r.weekly_links_json, []), ...[r.reference_url && { label: r.reference_url_label, url: r.reference_url }, r.resource_url && { label: r.resource_url_label, url: r.resource_url }].filter(Boolean)].map((l) => ({ label: l.label || '', url: l.url }))
   }));

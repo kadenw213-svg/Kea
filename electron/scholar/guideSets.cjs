@@ -9,11 +9,19 @@
 //   - class files that look like review material and name the test ("Midterm", "Final", "Exam 2") or one of its
 //     chapters.
 // Anything Kea hasn't seen for that test before makes one new practice set on the test, whose brief already reads
-// every one of those sheets. Never more than one set per test every two days, and none when a set for that test was
-// just made (by the depth review, an instructor hint or the student).
+// every one of those sheets. None while a set for that test was just made (by the depth review, an instructor hint or
+// the student) or is still being made: the new material waits, still new, until then.
+//
+// Every quiz and exam gets its review (the owner's rule, 2026-11-28): a test with no review material at all still
+// gets one set, written from its chapters' objectives, the syllabus and everything else Kea knows (key `test|<id>`).
+// Material only counts as seen once its set was really made: a set that failed gives its material back, tried again
+// after RETRY_MS. A document counts by name and size, so a re-uploaded study guide with new content is new.
 
-const DAYS = 21;
-const GAP_MS = 2 * 864e5;
+const DAYS = 30;
+const GAP_MS = 12 * 36e5;
+const RETRY_MS = 6 * 36e5;
+// New sets per class per pass (the pass runs hourly): a class added with many tests gets them over a few hours.
+const PER_PASS = 2;
 const SHEET = /fun ?sheet|study guide|review|practice (exam|test|problems)|answer key|\bkey\b|worksheet|objectives|exam prep|test prep/i;
 const NOT_SHEET = /periodic table|conversion|formula sheet|discussion|dropbox|syllabus|calendar|schedule|announcement/i;
 // Links on a test that are the class site's own tools, not material: a quiz's results page, a tool launch, a dropbox.
@@ -53,46 +61,87 @@ function fileFits(name, test) {
   return !!n && (test.chapters || []).some((c) => chapterNum(c) === n);
 }
 
-/** Every piece of review material for a test, as stable keys (a file by name, so its text copy isn't new). */
+/**
+ * Every piece of review material for a test, as stable keys. A document (PDF, Word, slides) counts by name and the
+ * document's size (`docBytes`, the same for its text copy), so a re-upload with new content is new; a page counts by
+ * name only, since a re-synced page changes size without the teacher adding anything.
+ */
 function materialOf(test, files) {
   const keys = new Set();
   for (const l of test.review_links || []) if (l.url && !NOT_LINK.test(l.url) && !NOT_SHEET.test(l.label || '')) keys.add(`link|${l.url}`);
   for (const f of test.study_focus || []) if (String(f).trim()) keys.add(`focus|${String(f).trim().toLowerCase()}`);
   for (const f of files) {
     const name = String(f.path || f).replace(/\.(pdf|docx|pptx)\.txt$/i, '.$1');
-    if (fileFits(name, test)) keys.add(`file|${name}`);
+    if (!fileFits(name, test)) continue;
+    const size = /\.(pdf|docx|pptx)$/i.test(name) && Number(f.docBytes ?? f.bytes) > 0 ? `|${Number(f.docBytes ?? f.bytes)}` : '';
+    keys.add(`file|${name}${size}`);
   }
   return [...keys];
 }
 
+/** Seen before: the same key, or (a document) the same name recorded before Kea kept sizes. */
+const isSeen = (k, old) => old.includes(k) || (/^file\|.*\|\d+$/.test(k) && old.includes(k.replace(/\|\d+$/, '')));
+
 /**
  * Which tests get a set now. `tests`: the class's tests ({id, title, type, date, chapters, review_links, study_focus});
- * `files`: classFiles(); `seen`: {testId: {keys, at}}; `sets`: study.list() entries. Returns { make: [{test, fresh}],
- * seen } (the new seen, which records material for tests that already have a set as seen, so nothing repeats).
+ * `files`: classFiles(); `seen`: {testId: {keys, prior, at, setId}}; `sets`: study.list() entries. Returns
+ * { make: [{test, fresh, record}], seen }. Nothing is marked seen here for a set still to make: the caller saves each
+ * `record` (with the set's id, record()) once the set was asked for. Seen gets only tidy-ups: a test that already has
+ * a set counts its `test|<id>` key as seen.
  */
 function plan({ tests, files, seen = {}, sets = [], now = Date.now() }) {
   const today = new Date(now).toISOString().slice(0, 10);
   const next = { ...seen };
   const make = [];
-  for (const t of tests || []) {
+  const upcoming = (tests || []).filter((t) => {
     const day = String(t.date || '').slice(0, 10);
-    if (!day || day < today || (Date.parse(day) - now) / 864e5 > DAYS) continue;
-    const keys = materialOf(t, files || []);
-    if (!keys.length) continue;
+    return day && day >= today && (Date.parse(day) - now) / 864e5 <= DAYS;
+  });
+  for (const t of upcoming.sort((a, b) => String(a.date).localeCompare(String(b.date)))) {
+    const keys = [`test|${t.id}`, ...materialOf(t, files || [])];
     const old = seen[t.id] || { keys: [], at: 0 };
-    const fresh = keys.filter((k) => !old.keys.includes(k));
+    const mine = (sets || []).filter((s) => s.itemId === t.id);
+    // The set made for the last new material failed or was deleted: that material was never used, so it's new again.
+    const last = old.setId ? mine.find((s) => s.id === old.setId) : null;
+    const lost = !!old.setId && (!last || last.status === 'failed');
+    let had = lost ? old.prior || [] : old.keys || [];
+    // (A test that already has a working set, from anywhere, has its review: only new material makes another.)
+    if (mine.some((s) => s.status !== 'failed') && !had.includes(`test|${t.id}`)) {
+      had = [...had, `test|${t.id}`];
+      if (!lost) next[t.id] = { ...old, keys: had };
+    }
+    const fresh = keys.filter((k) => !isSeen(k, had));
     if (!fresh.length) continue;
-    const recent = (sets || []).some((s) => s.itemId === t.id && now - Date.parse(s.createdAt || 0) < GAP_MS);
-    if (now - (old.at || 0) < GAP_MS && old.at) continue; // (waits; the material stays fresh until then)
-    next[t.id] = { keys: [...new Set([...old.keys, ...keys])], at: recent ? old.at || 0 : now };
-    if (!recent) make.push({ test: t, fresh });
+    // (Waits while a set for the test is being made or was just made, and after a failure; the material stays new.)
+    if (mine.some((s) => s.status === 'making')) continue;
+    if (mine.some((s) => s.status !== 'failed' && now - Date.parse(s.createdAt || 0) < GAP_MS)) continue;
+    if (lost && now - (old.at || 0) < RETRY_MS) continue;
+    if (make.length >= PER_PASS) continue;
+    make.push({ test: t, fresh, record: { keys: [...new Set([...had, ...keys])], prior: had, at: now } });
   }
   return { make, seen: next };
 }
 
-/** A news line for a set made from new material. */
+/** Seen, with one set's material recorded under the set that uses it. */
+const record = (seen, testId, rec, setId) => ({ ...seen, [testId]: { ...rec, setId } });
+
+/** How big a test's review is: a quiz a short one, an exam a full one (more chapters, more questions). */
+function countFor(test) {
+  const n = (test.chapters || []).length;
+  return test.type === 'quiz' ? Math.min(30, 15 + 5 * n) : Math.min(50, 20 + 5 * n);
+}
+
+/** A news line for a set made from new material (or, with only the test itself new, its first review). */
 function newsFor(code, test, fresh) {
-  const what = fresh.map((k) => (k.startsWith('file|') ? k.slice(5).split('/').pop() : k.startsWith('focus|') ? 'the study focus' : 'a review link'));
+  const material = fresh.filter((k) => !k.startsWith('test|'));
+  if (!material.length)
+    return {
+      course: code,
+      kind: 'study',
+      title: `${code}: a review for ${test.title}`,
+      body: `Kea is making a review for ${test.title} from what the class covers before it (its chapters' objectives, the syllabus and the class's material). When your teacher posts a study guide or review, Kea adds questions from it. It's in Study, under ${code}'s tests.`
+    };
+  const what = material.map((k) => (k.startsWith('file|') ? k.slice(5).replace(/\|\d+$/, '').split('/').pop() : k.startsWith('focus|') ? 'the study focus' : 'a review link'));
   const list = [...new Set(what)];
   return {
     course: code,
@@ -102,4 +151,4 @@ function newsFor(code, test, fresh) {
   };
 }
 
-module.exports = { plan, newsFor, _test: { fileFits, materialOf, testWords } };
+module.exports = { plan, record, countFor, newsFor, _test: { fileFits, materialOf, testWords, isSeen } };

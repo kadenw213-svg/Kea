@@ -55,12 +55,17 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
   // Practice that's yours: exams taken, sets being made, your own and imported sets.
   // (Practice for a test is filed under its class's tests instead.)
   const practice = (sets || []).filter((s) => !s.bank && !forTest(s) && (!filter || s.courseId === filter) && (s.attempts > 0 || s.status !== 'ready' || s.source === 'mine'));
-  // Each class's tests and the practice for them, Kea's own (made from new review material) and any made from a test.
+  // Each class's coming tests, soonest first, with the practice for them: Kea's own review (made for every quiz and
+  // exam, from the teacher's study guide when there is one) and any made from the test. Past tests drop off.
+  const today = new Date().toLocaleDateString('en-CA');
   const testsOf = (courseId: string) => {
     const by = new Map<string, StudySet[]>();
-    for (const s of (sets || []).filter((x) => forTest(x) && x.courseId === courseId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))) by.set(s.itemId!, [...(by.get(s.itemId!) || []), s]);
-    return [...by.values()];
+    for (const s of (sets || []).filter((x) => forTest(x) && x.courseId === courseId && !(x.itemDate && x.itemDate < today)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)))
+      by.set(s.itemId!, [...(by.get(s.itemId!) || []), s]);
+    const when = (list: StudySet[]) => list.find((s) => s.itemDate)?.itemDate || '9999';
+    return [...by.values()].sort((a, b) => when(a).localeCompare(when(b)));
   };
+  const dateLabel = (d?: string) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : '');
   const pickedClass = picked[0]?.split('|')[0] || '';
   const toggle = (key: string) => setPicked((p) => (p.includes(key) ? p.filter((x) => x !== key) : [...p.filter((x) => x.split('|')[0] === key.split('|')[0]), key]));
 
@@ -81,7 +86,7 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
       {!courseId && (
         <>
           <h1 className="sch-title">Study</h1>
-          <p className="sch-sub">Every chapter of your classes: read it, or study its questions. Tick several to study them together. Practice Kea makes for a test, from new review material your teacher posts, is filed under that class’s tests.</p>
+          <p className="sch-sub">Every chapter of your classes: read it, or study its questions. Tick several to study them together. Every quiz and exam coming up gets a review Kea makes on its own, from your teacher’s study guide when there is one; it’s under that class’s upcoming tests.</p>
         </>
       )}
       <div className="res-top">
@@ -108,13 +113,14 @@ export function ResourcesView({ courses, courseId }: { courses: ScholarCourse[];
             {testsOf(d.id).length > 0 && (
               <div className="res-tests">
                 <div className="tb-h">
-                  <GraduationCap size={13} /> For your tests
+                  <GraduationCap size={13} /> Upcoming tests
                 </div>
                 {testsOf(d.id).map((list) => (
                   <div key={list[0].itemId!} className="res-test">
                     <div className="res-test-title">
                       <b>{list[0].itemTitle || 'Test'}</b>
-                      {list.some((s) => s.auto) && <span className="muted"> · made by Kea from your teacher’s review material</span>}
+                      {list.find((s) => s.itemDate) && <span className="muted"> · {dateLabel(list.find((s) => s.itemDate)?.itemDate)}</span>}
+                      {list.some((s) => s.status === 'making') ? <span className="muted"> · Kea is making its review</span> : list.some((s) => s.auto) && <span className="muted"> · review made by Kea</span>}
                     </div>
                     <div className="st-list">
                       {list.map((s) => (

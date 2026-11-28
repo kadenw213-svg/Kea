@@ -353,7 +353,12 @@ function classFiles(code) {
     for (const f of fs.readdirSync(d, { withFileTypes: true })) {
       const full = path.join(d, f.name);
       if (f.isDirectory()) walk(full, depth + 1);
-      else if (/\.(txt|md|html?)$/i.test(f.name)) files.push({ path: path.relative(ws, full).replace(/\\/g, '/'), bytes: fs.statSync(full).size });
+      else if (/\.(txt|md|html?)$/i.test(f.name)) {
+        // (A text copy of a document carries the document's own size: a re-uploaded guide with new content is new.)
+        const doc = /\.(pdf|docx|pptx)\.txt$/i.test(f.name) ? full.slice(0, -4) : null;
+        const docBytes = doc && fs.existsSync(doc) ? fs.statSync(doc).size : undefined;
+        files.push({ path: path.relative(ws, full).replace(/\\/g, '/'), bytes: fs.statSync(full).size, ...(docBytes ? { docBytes } : {}) });
+      }
       // A PDF or Word file with no text copy yet: Kea converts it before Claude starts.
       else if (/\.(pdf|docx|pptx)$/i.test(f.name) && !fs.existsSync(`${full}.txt`)) files.push({ path: path.relative(ws, full).replace(/\\/g, '/'), bytes: fs.statSync(full).size, needs_text: true });
     }
@@ -396,7 +401,7 @@ async function request({ id: given, kind, courseId, chapters = [], itemId = null
   const fresh = mode === 'saved' ? 0 : n - reuse.length;
   const topic = src.item ? src.item.title : whole ? `${src.course.code}, whole class` : src.chapters.map((c) => (c.title ? `${c.label}: ${c.title}` : c.label)).join(', ');
   const title = `${bank ? 'Question bank' : kind === 'exam' ? 'Practice exam' : 'Flashcards'}: ${topic}`;
-  const entry = { id, kind, title: pictures ? title.replace(/^Question bank/, 'Picture questions') : title, ...(bank ? { bank: true } : {}), ...(upgrade ? { upgrade: true } : {}), ...(pictures ? { pictures: true } : {}), ...(fromHint ? { fromHint: true } : {}), ...(auto ? { auto: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
+  const entry = { id, kind, title: pictures ? title.replace(/^Question bank/, 'Picture questions') : title, ...(bank ? { bank: true } : {}), ...(upgrade ? { upgrade: true } : {}), ...(pictures ? { pictures: true } : {}), ...(fromHint ? { fromHint: true } : {}), ...(auto ? { auto: true } : {}), courseId: src.course.id, courseCode: src.course.code, chapters: labels, itemId: src.item?.id || null, itemTitle: src.item?.title || null, ...(src.item?.date ? { itemDate: String(src.item.date).slice(0, 10) } : {}), count: reuse.length + fresh, reused: reuse.length, createdAt: new Date().toISOString() };
   const list = index().filter((e) => e.id !== id);
   if (!fresh) {
     writeJson(file('sets', `${id}.json`), kind === 'cards' ? { cards: reuse } : { questions: reuse });
@@ -512,6 +517,22 @@ const SKIP = /syllabus|calendar|schedule|announcement|consolidated_events|conten
 // Review links worth fetching for a test (not reference sheets like the periodic table, which every exam allows).
 const SHEET = /fun ?sheet|study guide|review|practice (exam|test|problems)|answer key|\bkey\b|worksheet/i;
 const NOT_SHEET = /periodic table|conversion|formula sheet|quiz(zes)?$|discussion|dropbox|syllabus/i;
+
+const GUIDE_BUDGET = 24000; // characters of the test's own study guide, before everything else in a test's brief
+
+/**
+ * The study guides and review sheets for the test a set is for, among a brief's sources (absolute paths): the sheets
+ * the test itself links to, and class files that name the test (guideSets.cjs fileFits: "Midterm 2 Review").
+ */
+function guideFor(req, sources) {
+  const fits = require('./guideSets.cjs')._test.fileFits;
+  const linked = new Set((req.item?.review_links || []).filter((l) => SHEET.test(l.label || '') && !NOT_SHEET.test(l.label || '')).map((l) => safeName(l.label)));
+  const test = { title: req.item?.title || '', type: req.item?.type, chapters: (req.chapters || []).map((c) => c.label) };
+  return sources.filter((f) => {
+    const name = path.basename(f).replace(/\.txt$/i, '');
+    return linked.has(name.replace(/\.(pdf|docx|html?)$/i, '')) || fits(name, test);
+  });
+}
 
 /** A text file squeezed for reading: page markers and runs of blank space gone, short broken lines rejoined. */
 function squeeze(text) {
@@ -799,6 +820,25 @@ async function prepare(id, docText, step = () => {}, engine = null) {
       ...told.map((h) => `### ${h.subject || 'Message'} (${String(h.at).slice(0, 10)}${h.from ? `, from ${h.from}` : ''})\n${h.text}`),
       ''
     );
+  // A set for one test: the teacher's study guide or review for it comes first, whole where it fits, since the real
+  // test's questions usually mirror it (the owner's rule, 2026-11-28). With none, the brief says how to build the best
+  // review from what Kea has.
+  if (req.item && !req.bank) {
+    const guide = guideFor(req, sources);
+    if (guide.length) {
+      lines.push(
+        `## The teacher's study guide for ${req.item.title} (write from this first)`,
+        `The teacher posted this for ${req.item.title}, and the real test's questions usually mirror it. Cover every question, problem, term and topic it lists at least once, in the same style and at the same difficulty (more than once for the ones it stresses), before anything else; then fill the rest from the chapters below.`,
+        ''
+      );
+      for (const t of share(guide.map((f) => ({ path: rel(f), text: readText(f) })), GUIDE_BUDGET)) lines.push(`### ${path.basename(t.path).replace(/\.txt$/, '')}`, t.text, '');
+    } else
+      lines.push(
+        `## No study guide for ${req.item.title} yet`,
+        `The teacher hasn't posted a review or study guide for this test. Build the best review you can from what Kea has: every objective and syllabus outcome of the chapters it covers first, then the vocabulary, the test's description and study focus, and the class's review material below. Spread the questions over every chapter and objective the test covers, weighted toward what the syllabus and the study focus stress, at the level of the class's real tests.`,
+        ''
+      );
+  }
   if (req.pictures)
     lines.push(
       '## This is a picture set',
@@ -904,6 +944,8 @@ async function prepare(id, docText, step = () => {}, engine = null) {
     const by = new Map();
     for (const x of existing) by.set(x.chapter || 'Other', [...(by.get(x.chapter || 'Other') || []), x]);
     for (const [ch, xs] of by) {
+      // (Out of room: no more chapter headings with nothing under them.)
+      if (room < 0) break;
       lines.push(`### ${ch} (${xs.length})`);
       for (const x of xs) {
         const line = `- ${x.topic ? `[${x.topic}] ` : ''}${x.text}`;
